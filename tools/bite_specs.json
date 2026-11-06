@@ -15572,5 +15572,65 @@
    }
   ],
   "预期红": "⑥ 开始节点选了一个不存在的术语版本 → 校验当场拦"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "注入()命中了也不记事件(「段返回了就够了」)—— 运行详情里看不出这一步带了哪几条术语",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "    if 命:\n        记事(\"glossary.injected\", {\"术语版本\": 版本, \"带了\": [h[\"标准词\"] for h in 命]})\n    return 上下文段(命, 术语们)",
+    "new": "    return 上下文段(命, 术语们)"
+   }
+  ],
+  "预期红": "⑥ 注入():命中就记一条 glossary.injected"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "模型步骤的 mock 那一支不匹配术语(「mock 反正不收提示词」)—— CI 全跑 mock,注入从此验不到",
+  "file": [
+   {
+    "path": "管理后台/workers/worker.py",
+    "old": "            _术语段(_这一步的文本(cfg, 实参))\n            return _mock_llm(cfg, 实参)",
+    "new": "            return _mock_llm(cfg, 实参)"
+   }
+  ],
+  "预期红": "⑦ 模型步骤 live / mock 两支都调 _术语段(_这一步的文本(...))"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "工作流里的 Agent 步骤先匹配术语、后换上这一步的任务(11-06 之前就是这样)—— 任务里提到的术语带不上",
+  "file": [
+   {
+    "path": "管理后台/workers/worker.py",
+    "old": "        if 包.get(\"任务\"):\n            acfg[\"task_template\"] = 包[\"任务\"] if isinstance(包[\"任务\"], str) else _jj.dumps(包[\"任务\"], ensure_ascii=False)\n        # 术语要在**换上这一步的任务之后**再匹配(11-06 自查:原来排在前面,匹配的是 Agent 版本里写的任务模板,\n        # 而工作流交下来的任务里提到的术语一条都带不上)\n        _段 = _Agent术语段(c, job[\"project_id\"], acfg, 包.get(\"输入\"), lambda k, x: 记事(k, dict(x or {}, node_id=包.get(\"node_id\"))))\n        if _段:\n            acfg[\"instructions\"] = _段 + \"\\n\\n\" + acfg[\"instructions\"]\n",
+    "new": "        _段 = _Agent术语段(c, job[\"project_id\"], acfg, 包.get(\"输入\"), lambda k, x: 记事(k, dict(x or {}, node_id=包.get(\"node_id\"))))\n        if _段:\n            acfg[\"instructions\"] = _段 + \"\\n\\n\" + acfg[\"instructions\"]\n        if 包.get(\"任务\"):\n            acfg[\"task_template\"] = 包[\"任务\"] if isinstance(包[\"任务\"], str) else _jj.dumps(包[\"任务\"], ensure_ascii=False)\n"
+   }
+  ],
+  "预期红": "⑦ 工作流里的 Agent 步骤:先换上这一步的任务,再匹配术语"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_glossary_flow.py",
+  "改坏": "聊天助手草稿收到英文键 glossary_version_id 不拦(「不认识的键忽略就好」)—— 照着读出口写的人静默不生效",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/chat_assistants_api.py",
+    "old": "        if \"glossary_version_id\" in 新:\n            raise _错(",
+    "new": "        if False:\n            raise _错("
+   }
+  ],
+  "预期红": "⑦ 聊天助手草稿用读出口的英文键 glossary_version_id 来写 → 422"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_glossary_flow.py",
+  "改坏": "生产配置里术语那一项用中文键「术语版本」(11-06 第一版就是这样)—— 聊天站按约定的 glossary_version_id 读,永远读成「契约没同步」",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/chat_assistants_api.py",
+    "old": "            \"glossary_version_id\": v[\"glossary_version_id\"],",
+    "new": "            \"术语版本\": v[\"glossary_version_id\"],"
+   }
+  ],
+  "预期红": "⑦ 选「术语版本」→ 出版本 → 上生产 → 生产配置给的 glossary_version_id 就是这一版"
  }
 ]

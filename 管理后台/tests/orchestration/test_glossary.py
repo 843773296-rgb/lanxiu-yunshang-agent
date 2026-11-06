@@ -8,6 +8,10 @@
   ③ **短叫法的坑**(项目记过「香云纱」里有「纱」):长词录了 → 对到长词;长词没录 → 误对到短词(这是最长匹配的已知限定,钉住)
   ④ 交给模型的那一段**只有这次提到的**(用户拍):没提到的一条都不带;一条都没提到 → 空串;指标带口径和取数口
   ⑤ 格式检查:标准词空 / 重复、同一叫法对两个标准词、指标缺口径 → 阻断;短叫法是长叫法的一部分 → 提醒(不阻断)
+  ⑥ 注入():有命中才记 glossary.injected(带了哪几条)、返回的段只含命中的;没命中不记事件、返回空串
+  ⑦ 接线(读 worker.py 的语法树,不起 worker —— e2e 的作业会被跑主检出代码的常驻 worker 抢走,副本里改坏看不见):
+     两处取段的函数都走 注入();模型步骤 live / mock 两支都拿同一段文本去匹配;Agent 步骤先换上这一步的任务再匹配;
+     两处 Agent 都把段拼在指令前面
 """
 import os
 import sys
@@ -15,6 +19,7 @@ import sys
 _根 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_根, "services", "api", "app", "runtime"))
 import 术语 as T  # noqa: E402
+import ast  # noqa: E402
 
 过, 挂 = [], []
 
@@ -69,6 +74,36 @@ def main():
                         {"标准词": "F"}])
     ck("⑤ 阻断:标准词空 / 重复 / 同一叫法对两个标准词 / 指标缺口径 / 类别认不出 / 缺定义 —— 各报一条",
        len(阻) == 6 and any("同时对到" in x for x in 阻) and any("口径" in x for x in 阻), 阻)
+    事 = []
+    段 = T.注入("上周到店转化怎么样", 表, "glv_x", lambda k, v: 事.append((k, v)))
+    ck("⑥ 注入():命中就记一条 glossary.injected(版本 + 带了哪几条),段里只有命中的",
+       事 == [("glossary.injected", {"术语版本": "glv_x", "带了": ["到店率"]})] and "到店率" in 段 and "褙子" not in 段, (事, 段))
+    事 = []
+    ck("⑥ 注入():一条都没提到 → 不记事件、返回空串", T.注入("今天天气不错", 表, "glv_x", lambda k, v: 事.append((k, v))) == "" and 事 == [], 事)
+
+    源 = open(os.path.join(_根, "workers", "worker.py"), encoding="utf-8").read()
+    树 = ast.parse(源)
+    函 = {n.name: n for n in ast.walk(树) if isinstance(n, ast.FunctionDef)}
+
+    def 调了(节点, 名):
+        return [x for x in ast.walk(节点) if isinstance(x, ast.Call)
+                and ((isinstance(x.func, ast.Name) and x.func.id == 名) or (isinstance(x.func, ast.Attribute) and x.func.attr == 名))]
+    ck("⑦ 两处取段的函数(工作流 _术语段 / Agent _Agent术语段)都走 注入()(不各写一份匹配 + 记事件)",
+       all(调了(函[f], "注入") for f in ("_术语段", "_Agent术语段") if f in 函) and {"_术语段", "_Agent术语段"} <= set(函), sorted(函)[:0])
+    同段 = [x for x in 调了(树, "_术语段") if x.args and isinstance(x.args[0], ast.Call)
+            and isinstance(x.args[0].func, ast.Name) and x.args[0].func.id == "_这一步的文本"]
+    ck("⑦ 模型步骤 live / mock 两支都调 _术语段(_这一步的文本(...)) —— 同一段文本(原来 mock 只匹配输入,CI 验到的不是 live 的行为)",
+       len(同段) == 2 and len(调了(树, "_术语段")) == 2, (len(同段), len(调了(树, "_术语段"))))
+    live = [n for n in ast.walk(函.get("_按节点llm", 树)) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "系统" for t in n.targets)
+            and isinstance(n.value, ast.BinOp) and isinstance(n.value.left, ast.Name) and n.value.left.id == "段"]
+    ck("⑦ live 那一支把段拼在系统提示**前面**(系统 = 段 + …)", len(live) == 1, len(live))
+    行 = 源.split("\n")
+    任务行 = [i for i, x in enumerate(行) if 'acfg["task_template"] = 包["任务"]' in x]
+    取段行 = [i for i, x in enumerate(行) if "_段 = _Agent术语段(c, job[\"project_id\"], acfg" in x]
+    ck("⑦ 工作流里的 Agent 步骤:先换上这一步的任务,再匹配术语(原来排在前面,匹配的是版本里的模板)",
+       len(任务行) == 1 and len(取段行) == 1 and 任务行[0] < 取段行[0], (任务行, 取段行))
+    拼 = [i for i, x in enumerate(行) if 'acfg["instructions"] = _段 + ' in x or "instructions=_段 + " in x]
+    ck("⑦ 两处 Agent(工作流里的步骤 / 单独跑)都把段拼在指令前面", len(拼) == 2, 拼)
     print()
     if 挂:
         print(f"❌ {len(挂)} 条不过:{' / '.join(挂)}")

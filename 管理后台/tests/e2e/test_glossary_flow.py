@@ -8,7 +8,9 @@
   ④ 「试一下」:只返回这次提到的那几条(用户拍:只带这次提到的),模型会收到的那段里没有没提到的术语
   ⑤ 冻结的版本在库里改不动(版本行不可原地改的触发器)—— 断言错误码 + 表名,不断言中文文案
   ⑥ 工作流开始节点选这一版 → 模型步骤只带这一步提到的术语(事件 glossary.injected);没提到不带;选了不存在的版本校验拦
+  ⑦ 聊天助手选这一版(进程内):英文键写入当场 422;「术语版本」→ 出版本 → 上生产 → 生产配置的 glossary_version_id 就是它
 """
+import json
 import os
 import sys
 import uuid
@@ -139,6 +141,25 @@ def main():
        带 == [["到店率"]], repr(带))
     ck("⑥ 输入一个术语都没提到 → 不带任何术语(不记事件)", 不带 == [], repr(不带))
     ck("⑥ 开始节点选了一个不存在的术语版本 → 校验当场拦(REF_NOT_FOUND)", "REF_NOT_FOUND" in 校, repr(校))
+    # ⑦ 聊天助手选这一版(进程内调接口 —— 咬合在副本里改坏 chat_assistants_api 时看得见;test_chat_assistant_flow 打 8801,看不见)
+    快 = {"角色键": "e2e_glossary", "名称": "术语进程内测试助手", "用途": "测试用", "开头": "你是测试助手。\n", "结尾": "",
+         "工具": [{"名": "mcp__e2e__只读那个", "写": False}], "能力标记": [], "模型": "claude:claude-haiku-5-5",
+         "可选模型": ["claude:claude-haiku-5-5"], "规矩池": [], "装上的规矩": [], "提示词全文": "(测试造的)", "技能": []}
+    打("POST", "/chat-assistants/import", 快, 谁="U001")
+    c_, l = 打("GET", "/chat-assistants?%E5%90%AB%E6%B5%8B%E8%AF%95=true", 谁="U001")   # 参数名「含测试」转成 %XX(门禁:不许新增中文查询参数名)
+    cid = next((x["id"] for x in (l or {}).get("items", []) if x["角色键"] == "e2e_glossary"), None)
+    c_, g = 打("GET", f"/chat-assistants/{cid}", 谁="U001")
+    配, rv = dict(g["草稿"]["配置"]), str(g["草稿"]["revision"])
+    c1, e1 = 打("PATCH", f"/chat-assistants/{cid}/draft", {"配置": {**配, "glossary_version_id": v["id"]}}, {"If-Match": rv}, 谁="U001")
+    ck("⑦ 聊天助手草稿用读出口的英文键 glossary_version_id 来写 → 422 点名(不许静默不生效)",
+       c1 == 422 and "glossary_version_id" in json.dumps(e1, ensure_ascii=False), (c1, e1))
+    c2, _ = 打("PATCH", f"/chat-assistants/{cid}/draft", {"配置": {**配, "术语版本": v["id"]}}, {"If-Match": rv}, 谁="U001")
+    c3, nv = 打("POST", f"/chat-assistants/{cid}/versions", {"变更说明": "e2e 挂术语 " + uuid.uuid4().hex[:4]}, 谁="U001")
+    号 = int((nv or {}).get("版本", "v-1")[1:])
+    打("POST", f"/chat-assistants/{cid}/production", {"版本号": 号, "理由": "e2e"}, 谁="U001")
+    c4, pv2 = 打("GET", "/chat-assistants/by-role/e2e_glossary/production", 谁="U001")
+    ck("⑦ 选「术语版本」→ 出版本 → 上生产 → 生产配置给的 glossary_version_id 就是这一版(聊天站拿这个键)",
+       c2 == 200 and c3 == 201 and c4 == 200 and (pv2 or {}).get("glossary_version_id") == v["id"], (c2, c3, c4, pv2))
     # 这张术语表**留着不归档**:tools/ifmatch_reachable_check 要从术语表列表里取一张样例,验「界面拿得到改草稿要带的 revision」——
     # CI 是新库,这一条要是归档了,那条检查拿不到样例就判红(而那条红的理由是「什么都没验到」,是对的)
     print()

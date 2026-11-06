@@ -23,6 +23,25 @@
 
 顺序:① 改草稿(正式项目 lanxiu-terms)+ 冻 v1 ② 两处咬合(e2e 改走进程内)③ 0 点夜跑跑完后接聊天站 ④ v5 三轮。每步收尾 commit + push。
 
+**进度(22:xx)**:
+- ① ✅ 已推 ccb98b4b(冻结 glv_7cf93d716600,72 条)。
+- ② 代码写完、**未提交**:runtime/术语.注入() 抽出来(worker 两处都走它);worker 模型步骤 live / mock 改成拿**同一段文本**
+  `_这一步的文本()`(渲染后的系统 + 用户模板 + 输入值)匹配 —— 原来 mock 只匹配输入、live 匹配提示词,CI 验到的不是 live 的行为;
+  test_glossary.py 加 ⑥⑦(注入 + 读 worker.py 语法树的接线断言,19 条过);test_glossary_flow 加 ⑦(进程内:聊天助手英文键 422 /
+  生产配置给 glossary_version_id,13 条过);bite_specs 加 5 条,`bite_run --only test_glossary` **10/10 三关过**。
+  **在跑**:锁里 .wip-glossary/all.sh(整轮 + test-e2e-ci + page-smoke,日志 all.log / check.log / e2e.log)。**看「被包的命令退出码」,别看 wrapper**。
+  绿了 → commit --only:runtime/术语.py、workers/worker.py、两份测试、tools/bite_specs.json、HANDOFF.md。
+- ③ **查实的前提(决定 ④ 值不值得跑)**:聊天站只有**店长助手(kind=task)**读后台生产配置(chat_assistants_api `聊天站读的角色 = {"task"}`;
+  sdk.run 里 `后台配置 and kind == "task"` 才取 `assistant_client.生产版`)。正式项目只有 task 一个助手(生产 v2),其余角色 by-role 404。
+  **技能评测跑的是 kind="all"、且不连后台** → 接完术语它测到的上下文**不变**,v4 不作废。所以 ④ 三轮 v5 很可能是空跑 —— 接完先核一句
+  「all 这一轮注入原文里有没有术语」,没有就**不跑**、在汇报里说明(别白花两小时额度);要测术语效果得给全能助手配后台助手,那是用户的决定。
+- ③ 打算的接法(还没写):sdk.run 里 task + 后台配置时 `glossary_client.同步("task")`(进程内缓存 = 启动时同步一次)放进 state["术语"];
+  guards.on_prompt 在日记后面 `glossary_client.这一段(prompt, 状态)`,命中才拼 `[系统注入]` + 段,带 `# 登记:业务术语`,
+  `注入登记` 加「业务术语」(context_conflict_check 按登记制查);新检查要同一提交挂 check.sh(否则 selftest_registry 红)。
+  然后:店长助手草稿选 术语版本=glv_7cf93d716600 → 出版本 → 上生产(真生产配置,用户拍了「接聊天站」)→ 重启聊天站服务。
+- **禁区**:0 点夜跑(com.lanxiu.nightly-eval,周六那晚有技能评测)会拿锁 —— 接聊天站要等它跑完再动 agentsite/,否则夜跑测到半新半旧的上下文。
+  check.sh 在跑时别改被检查的文件(会测到中间态)。
+
 ## ✅ 11-06 20:3x 术语线:整轮 + 管理后台端到端 + 页面冒烟全绿,已推(详细见下面「⏰ 11-06 16:3x」那节)
 
 - **已上库**:迁移 0c3a95ae7655(19:19,锁里)。⚠️ **契约代码还没推** —— 并行会话 19:22 那轮全量门禁可能红在这两列上,已告诉它「判给我」;推完要喊它重跑。
@@ -15297,12 +15316,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-06 20:50。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-06 21:26。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `HEAD` |
-| 最新提交 | f2c6c7af · 2026-11-06 · 交接 + 项目日志:术语线推完、CI 绿、并行会话在 7ac0c7d7 上重跑全量门禁也是 0 |
+| 分支 | `main` |
+| 最新提交 | ccb98b4b · 2026-11-06 · 术语第一版:按用户三处拍板改草稿,冻成正式项目 lanxiu-terms 的 v1 |
 | 代码量 | 1003 个 Python 文件 / 184578 行(不含 .venv) |
 | 验收 | `./check.sh` 共 382 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
@@ -15310,19 +15329,37 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 **未提交的改动:**
 
 ```
-UU HANDOFF.md
-?? .feynman/bite-all-20261016.log
+M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+ M .feynman/tool-eval.json
+ M HANDOFF.md
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+ M tools/bite_specs.json
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/\346\234\257\350\257\255.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_glossary_flow.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tests/orchestration/test_glossary.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/workers/worker.py"
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+ccb98b4b 术语第一版:按用户三处拍板改草稿,冻成正式项目 lanxiu-terms 的 v1
+7dc78140 交接:那张「下一步五件」里四件已经做完了 —— 换成实况
 f2c6c7af 交接 + 项目日志:术语线推完、CI 绿、并行会话在 7ac0c7d7 上重跑全量门禁也是 0
 7ac0c7d7 术语接进三处:工作流 / 智能体 / 聊天助手各选一版,只带这次提到的那几条 + 后台术语页面
 0283fac3 踩过的坑 +1:包命令时 `echo "…$(date)… 退出码=$?"` 永远印 0(今天拿它判过门禁绿没绿)
-894ac58a 项目日志:重新生成(含今天四笔),已发飞书
-6c43fbc3 影响面棘轮:警示段落 345 → 346(取术语那个文件带来的)
 ```
 <!--/AUTO-->
 ## 一句话在做什么

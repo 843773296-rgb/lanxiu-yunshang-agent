@@ -324,10 +324,7 @@ def _Agent术语段(c, 项目, cfg, 输入, 记事):
         raise 干不了("GLOSSARY_VERSION_NOT_FOUND", {"为什么": f"Agent 选的术语版本 {gv} 在这个项目里找不到 —— 不悄悄不带术语跑"})
     import json as _j
     import 术语 as _T
-    命 = _T.匹配(str(cfg.get("task_template") or "") + "\n" + _j.dumps(输入 or {}, ensure_ascii=False), 条)
-    if 命:
-        记事("glossary.injected", {"术语版本": gv, "带了": [h["标准词"] for h in 命]})
-    return _T.上下文段(命, 条)
+    return _T.注入(str(cfg.get("task_template") or "") + "\n" + _j.dumps(输入 or {}, ensure_ascii=False), 条, gv, 记事)
 
 
 def _Agent批准们(c, 项目, run_id):
@@ -624,10 +621,15 @@ def _跑一张工作流(c, job, 打点):
         if not _术语条:
             return ""
         import 术语 as _T
-        命 = _T.匹配(文本, _术语条)
-        if 命:
-            记事("glossary.injected", {"术语版本": _选的术语, "带了": [h["标准词"] for h in 命]})
-        return _T.上下文段(命, _术语条)
+        return _T.注入(文本, _术语条, _选的术语, 记事)
+
+    def _这一步的文本(cfg, 实参):
+        """拿去匹配术语的那段:渲染后的系统提示 + 用户模板 + 输入的值。**live 和 mock 用同一段**(11-06 深夜自查:
+        原来 live 匹配「用户 + 系统」、mock 只匹配输入 —— CI 全跑 mock,验到的不是线上那一支的行为)。"""
+        要 = _处理要求(cfg.get("prompt_version_id")) or {}
+        值 = "\n".join(v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False) for v in (实参 or {}).values())
+        return "\n".join(x for x in (_渲染(要.get("user"), 实参) if 要.get("user") else "", 值,
+                                       _渲染(要.get("system"), 实参) or "") if x)
 
     def _按节点llm(cfg, 实参):
         连 = _节点连接(cfg.get("connection_version_id"))
@@ -641,7 +643,7 @@ def _跑一张工作流(c, job, 打点):
             # 选的就是演示连接,或者这次运行受理时就定成了 mock —— 都是**明确的选择**。
             # 看的是**运行上记的模式**,不是这台 worker 的环境:模式在受理那一刻定,跑的人不许改
             # 术语照样匹配、记事件(mock 那一端不收提示词,但「这一步会带哪几条」要在 CI 的 mock 跑法里也验得到)
-            _术语段("\n".join(v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False) for v in (实参 or {}).values()))
+            _术语段(_这一步的文本(cfg, 实参))
             return _mock_llm(cfg, 实参)
         if not 连["探过吗"]:
             raise RN.节点失败("MODEL_CONNECTION_UNPROBED",
@@ -674,7 +676,7 @@ def _跑一张工作流(c, job, 打点):
         参 = {"max_tokens": cfg.get("max_output_tokens") or 4000, **(cfg.get("sampling_params") or {})}
         try:
             系统 = _渲染(要.get("system"), 实参) or None
-            段 = _术语段(用户 + "\n" + (系统 or ""))
+            段 = _术语段(_这一步的文本(cfg, 实参))
             if 段:
                 # 术语(11-06):只带这一步提到的那几条,拼在系统提示前面(用户拍「只带这次提到的」;算法以代码为准,术语是说明)
                 系统 = 段 + ("\n\n" + 系统 if 系统 else "")
