@@ -52,6 +52,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import dsl as DS  # noqa: E402
 
 
+# 副作用级别的**明确登记的别名**(11-06)。tools/seed_bridge_tools.py 给澜绣的 4 个写工具(派回访任务 / 派补货跟进 /
+# assign_task / save_report)填的是 reversible —— 「可撤回的写」,不在合同那三档(只读 / 写入 / 不可逆)里,网关一律挡。
+# 工作流的工具步骤不过网关,所以一直没暴露;Agent 走网关,这几个就永远调不了(当场审批 e2e 第一次跑就撞到)。
+# 按写入级处理:可撤回的写不是只读、也不是不可逆。**只登这一个**;别的认不出的级别照旧一律挡(未知不等于安全)。
+# 没改库里的数据:工具版本行不许原地改,而且改了 side_effect_type 会变工具指纹、作废用到它的真跑通
+级别别名 = {"reversible": DS.写入}
+
+
 class 要等(Exception):
     """工具这一下**不当场执行**:交给外面(澜绣桥)去办,运行挂起、等回执再接着跑(11-06,Agent 走桥)。
 
@@ -431,7 +439,7 @@ def 执行(请求, *, 工具目录, 有效范围, 批准=None, 账本=None, 适�
                      建议="要放宽范围就去 Agent 的「权限与限制」里改,并重新冻结版本")
 
     # ── 闸 ⑤:确认(§12.2)──────────────────────────────────────
-    级 = 契约.get("side_effect_type")
+    级 = 级别别名.get(契约.get("side_effect_type"), 契约.get("side_effect_type"))
     摘要 = 参数摘要(实参)
     行, 挡 = DS.可以执行吗(
         级,

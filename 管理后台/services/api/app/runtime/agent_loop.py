@@ -104,7 +104,7 @@ def _核验完成(候选, 输出Schema, 必要证据, *, 产物在吗, 账本, �
 
 def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账本=None,
               记事=None, 产物在吗=None, 批准查询=None, run_id="run",
-              系统=None, 执行策略=None, 恢复=None):
+              系统=None, 执行策略=None, 恢复=None, 要人批=None):
     """跑一个 Agent 到终止。返回规格 §10.2 点名要保留的那一套。
 
     `配置` = agent_versions 上那份(task_template / tools / limits / output_schema /
@@ -118,6 +118,11 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
              那条拦截本来就是防重复写的)。
     工具适配器抛 `tool_gateway.要等` → 返回 execution_status="waiting_external" + 检查点 + 等待载荷,
     调用方存起来、挂起运行;回执来了带着 `恢复` 再调一次。
+    `要人批(调, 摘, 契) -> bool` = 这个写工具走**当场审批**吗(用户 11-06 拍:Agent 每次写都当场审批、店长批、只能批或退回)。
+             它说走审批 → **过网关之前**就挂起等人批(execution_status="waiting_approval",
+             等待种类 human,载荷里是这一次的工具 / 参数 / 参数摘要);续跑时 `恢复["结果"]` 是 {决定, 处理人, 理由}:
+             批了 → 带着**绑定这一次参数摘要**的批准再过一次网关;退回 → 照实回传「被退回」和理由,让模型换办法。
+             过期(24 小时没人处理)由 worker 的 扫过期核对 收成 expired,不回到这里。
     `执行策略` = 这次运行采用的那一版(`兜底上限.兜底()` 或已采用的那一版)。
              给了就按 `有效上限.定()` 和 Agent 自己的 `limits` **取更严的那个**;
              不给就还是只看 Agent 自己的 —— **而那种情况会记一笔**,见下面。
@@ -224,13 +229,13 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
         消息们, 回合, 工具尝试 = 点["消息们"], 点["回合"], 点["工具尝试"]
         被拒过 = {tuple(x) for x in 点.get("被拒过") or []}
         问题们 = list(点.get("问题们") or [])
-        待续 = (点["响应"], list(点.get("已回传") or []), 点["第几个"], 恢复.get("结果"), 点.get("动作id"))
+        待续 = (点["响应"], list(点.get("已回传") or []), 点["第几个"], 恢复.get("结果"), 点.get("动作id"), 点.get("等批"))
         记事("agent.resumed", {"回合": 回合, "工具尝试": 工具尝试, "接着处理第几个调用": 点["第几个"] + 1})
 
-    def 检查点(响应, 回传, 第几个, 动作id):
+    def 检查点(响应, 回传, 第几个, 动作id, 等批=None):
         return {"消息们": 消息们, "回合": 回合, "工具尝试": 工具尝试,
                 "被拒过": [list(x) for x in 被拒过], "问题们": 问题们,
-                "响应": 响应, "已回传": 回传, "第几个": 第几个, "动作id": 动作id}
+                "响应": 响应, "已回传": 回传, "第几个": 第几个, "动作id": 动作id, "等批": 等批}
 
     def 处理工具调用(响应, 回传, 从):
         """逐个处理这次回复里的工具调用,从第 `从` 个起。→ ("完", 回传) / ("停", None) / ("等", (检查点, 载荷))。"""
@@ -259,6 +264,13 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
                            f"已经被拒过 —— **这是有依据的停止,"
                            f"不是「调用了两次」一刀切**(§10.3)"})
                 return "停", None
+            if 要人批 and 要人批(调, 摘, 契):
+                # 当场审批(用户 11-06 拍):**过网关之前**就停下来等店长批这一次 —— 批准绑定这一次的参数摘要,内容变了要重批。
+                # ⚠️ 不能等网关拒「要确认」再挂(11-06 测试第一次就撞到):写入级(非不可逆)的工具网关本来就不要求确认,
+                # 会直接执行、交给桥,而桥闸查不到人工批准 → 整次运行 WRITE_NEEDS_REVIEW 失败
+                记事("agent.waiting_approval", {"工具": 调.get("name"), "参数摘要": 摘, "第几个调用": 序 + 1})
+                等批 = {"工具": 调.get("name"), "参数": 调.get("arguments") or {}, "参数摘要": 摘}
+                return "批", (检查点(响应, 回传, 序, None, 等批), 等批)
             try:
                 r = G.执行(调, 工具目录=网关目录, 有效范围=有效范围,
                          批准=(批准查询(调, 摘) if 批准查询 else None),
@@ -281,19 +293,51 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
                                          "reason": e.给模型看的}})
         return "完", 回传
 
-    def 挂起(检, 载):
-        return dict(execution_status="waiting_external", completion_reason=None, output=None,
+    def 挂起(检, 载, 种类="external"):
+        return dict(execution_status="waiting_approval" if 种类 == "human" else "waiting_external",
+                    completion_reason=None, output=None,
                     artifacts=[], evidence_refs=[], validation_results=问题们,
                     usage={"模型回合": 回合, "工具尝试": 工具尝试}, unknown_items=[],
                     quality_evaluation_status="未评",
                     账本条目=[dict(账本.条目[k], logical_action_id=k) for k in 账本.顺序],
-                    检查点=检, 等待={"种类": "external", "node_id": "agent", "载荷": 载})
+                    检查点=检, 等待={"种类": 种类, "node_id": "agent", "载荷": 载})
 
     已停 = False
     if 待续:
-        响应, 回传, 第几个, 回执, 动作id = 待续
+        响应, 回传, 第几个, 回执, 动作id, 等批 = 待续
         调 = 响应["tool_calls"][第几个]
-        if isinstance(回执, dict) and "失败" in 回执:
+        果 = 物 = None
+        if 等批:
+            # 等的是人批(当场审批):批了 → 带着绑定这一次参数摘要的批准再过一次网关;退回 → 照实告诉模型
+            决 = (回执 or {}).get("决定")
+            if 决 == "approve" and (回执 or {}).get("处理人"):
+                try:
+                    r = G.执行(调, 工具目录=网关目录, 有效范围=有效范围,
+                             批准={"参数摘要": 等批["参数摘要"], "批准人": 回执["处理人"], "过期了吗": False},
+                             账本=账本, 适配器=适配器, 记事=记事,
+                             逻辑动作id=f"{run_id}:{调.get('name')}:{等批['参数摘要'][:16]}",
+                             幂等键=f"{run_id}:{工具尝试}")
+                    回传.append({"tool_call_id": 调.get("id"), "name": 调.get("name"),
+                                "result": r["结果"], "复用了吗": r["复用了吗"]})
+                    记事("agent.approved", {"工具": 调.get("name"), "批准人": 回执["处理人"]})
+                except G.要等 as w:
+                    # 批了、交给桥 —— 挂起等澜绣回执(这一个调用接着用同一个序号;回执来了按普通外部等待接上)
+                    记事("agent.approved", {"工具": 调.get("name"), "批准人": 回执["处理人"], "交给桥": True})
+                    return 挂起(检查点(响应, 回传, 第几个, (w.载荷 or {}).get("动作id")),
+                              dict(w.载荷 or {}, 批准人=回执["处理人"], 参数摘要=等批["参数摘要"]))
+                except G.拒绝 as e:
+                    回传.append({"tool_call_id": 调.get("id"), "name": 调.get("name"),
+                                "rejected": {"code": e.code, "reason": e.给模型看的}})
+            else:
+                被拒过.add((调.get("name"), 等批["参数摘要"]))
+                理由 = str((回执 or {}).get("理由") or "")[:300]
+                记事("agent.approval_rejected", {"工具": 调.get("name"), "处理人": (回执 or {}).get("处理人"), "理由": 理由})
+                回传.append({"tool_call_id": 调.get("id"), "name": 调.get("name"),
+                            "rejected": {"code": "HUMAN_REJECTED",
+                                         "reason": f"店长退回了这一步{('：' + 理由) if 理由 else ''}。"
+                                                   "换一个办法,或者在结果里说明需要人来处理"}})
+            果, 物 = 处理工具调用(响应, 回传, 第几个 + 1)
+        elif isinstance(回执, dict) and "失败" in 回执:
             # 桥那边执行失败 —— 照实回传给模型,账本记失败;不伪造成功
             if 动作id:
                 账本.登记结果(动作id, 状态="failed", 错误码="BRIDGE_FAILED")
@@ -305,9 +349,12 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
                 账本.登记结果(动作id, 状态="succeeded", 结果=回执)
             回传.append({"tool_call_id": 调.get("id"), "name": 调.get("name"),
                         "result": 回执, "复用了吗": False})
-        记事("tool.receipt_applied", {"name": 调.get("name"), "logical_action_id": 动作id,
-                                    "桥那边失败了吗": isinstance(回执, dict) and "失败" in 回执})
-        果, 物 = 处理工具调用(响应, 回传, 第几个 + 1)
+        if not 等批:
+            记事("tool.receipt_applied", {"name": 调.get("name"), "logical_action_id": 动作id,
+                                        "桥那边失败了吗": isinstance(回执, dict) and "失败" in 回执})
+            果, 物 = 处理工具调用(响应, 回传, 第几个 + 1)
+        if 果 == "批":
+            return 挂起(*物, 种类="human")
         if 果 == "等":
             return 挂起(*物)
         if 果 == "停":
@@ -367,6 +414,8 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
             果, 物 = 处理工具调用(响应, [], 0)
             if 果 == "等":
                 return 挂起(*物)
+            if 果 == "批":
+                return 挂起(*物, 种类="human")
             if 果 == "停":
                 break
             消息们.append({"role": "assistant", "content": 响应})

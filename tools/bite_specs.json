@@ -15142,8 +15142,8 @@
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/agent_loop.py",
-    "old": "        果, 物 = 处理工具调用(响应, 回传, 第几个 + 1)\n",
-    "new": "        果, 物 = 处理工具调用(响应, 回传, 第几个)\n"
+    "old": "                                        \"桥那边失败了吗\": isinstance(回执, dict) and \"失败\" in 回执})\n            果, 物 = 处理工具调用(响应, 回传, 第几个 + 1)\n",
+    "new": "                                        \"桥那边失败了吗\": isinstance(回执, dict) and \"失败\" in 回执})\n            果, 物 = 处理工具调用(响应, 回传, 第几个)\n"
    }
   ],
   "预期红": "① 续跑:模型拿到回执"
@@ -15339,5 +15339,41 @@
    }
   ],
   "预期红": "① 受理时依赖指纹里有 Agent 版本钉的那条连接"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_approval.py",
+  "改坏": "Agent 写工具不问「要不要店长批」(「网关会管确认」)—— 写入级的网关本来不要求确认,直接执行、交给桥,到桥闸才整次失败",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/agent_loop.py",
+    "old": "            if 要人批 and 要人批(调, 摘, 契):\n",
+    "new": "            if False:\n"
+   }
+  ],
+  "预期红": "① 走审批的写工具 → 过网关之前就挂起"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_approval.py",
+  "改坏": "桥闸认 Agent 批准时不比参数摘要(「这次运行里批过就行」)—— 批 A 能执行 B,批准成了空白授权",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/桥闸.py",
+    "old": "    return any(isinstance(b, dict) and b.get(\"处理人\") and 参数摘要 and b.get(\"参数摘要\") == 参数摘要 for b in 批准们 or [])\n",
+    "new": "    return any(isinstance(b, dict) and b.get(\"处理人\") for b in 批准们 or [])\n"
+   }
+  ],
+  "预期红": "⑧ 桥闸认 Agent 批准"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_approval.py",
+  "改坏": "去掉 reversible 的级别别名(「认不出就挡,原则如此」)—— 澜绣那 4 个写工具 Agent 永远调不了",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/tool_gateway.py",
+    "old": "级别别名 = {\"reversible\": DS.写入}\n",
+    "new": "级别别名 = {}\n"
+   }
+  ],
+  "预期红": "⑦ 登记成 reversible 的写工具"
  }
 ]

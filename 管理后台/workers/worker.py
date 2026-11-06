@@ -308,6 +308,21 @@ def _跑一次prompt(c, job, 打点):
     return {"trace_id": trace, "execution_mode": r["execution_mode"]}
 
 
+Agent写审批 = "Agent写操作审批"          # 人工待办的种类(target_ref.种类)—— 桥闸只认这一种上面的决定
+Agent审批人 = ["approver", "admin"]      # 用户 11-06 拍「店长批」;和正式项目现有的人工核对一致
+Agent审批时限小时 = 24                    # 用户 11-06 拍「24 小时没人处理就作废」(拍脑袋的数,用户知道);到期由 扫过期核对 收成 expired
+
+
+def _Agent批准们(c, 项目, run_id):
+    """这次运行里,种类为「Agent写操作审批」的人工待办上**店长批准了**的那几条 → [{参数摘要, 处理人}]。
+    从库里现查,不从任何模型输出里取 —— 桥闸拿它判 Agent 的写操作能不能记单(runtime/桥闸.Agent批准成立吗)。"""
+    return [dict(r) for r in c.execute(text("""
+        select h.target_ref->>'参数摘要' as 参数摘要, d.actor as 处理人
+          from human_requests h join human_decisions d on d.project_id=h.project_id and d.human_request_id=h.id
+         where h.project_id=:p and h.execution_run_id=:r and h.target_ref->>'种类'=:k and d.decision='approved'"""),
+        {"p": 项目, "r": run_id, "k": Agent写审批}).mappings()]
+
+
 def _挂起(c, job, r, run_id, 定义, 结果, 记事):
     """跑到要等的那一步:存检查点、记要等的东西(人工待办 / 桥请求),运行停在挂起态,**任务结束**。
 
@@ -335,14 +350,18 @@ def _挂起(c, job, r, run_id, 定义, 结果, 记事):
                "pl": _j.dumps(载.get("材料") or {}, ensure_ascii=False),
                "af": _j.dumps(载.get("allowed_fields") or [], ensure_ascii=False),
                "cr": _j.dumps(载.get("candidate_roles") or [], ensure_ascii=False), "ex": 到期,
-               "t": _j.dumps({"node_id": 等["node_id"], "运行": run_id, "第几次挂起": 第几次},
+               "t": _j.dumps({"node_id": 等["node_id"], "运行": run_id, "第几次挂起": 第几次,
+                              **({"种类": 载["种类"], "参数摘要": 载.get("参数摘要")} if 载.get("种类") else {})},
                              ensure_ascii=False),
                "rn": "工作流里的人工核对:批准 = 按定稿接着走;退回 = 记下理由结束这一路",
                "u": 我是谁})
     else:
         import 桥闸
         放行, 为什么不 = 桥闸.放行吗(载.get("工具"), 点.get("节点输出"),
-                                 {n["id"]: n["type"] for n in 定义.get("nodes") or []})
+                                 {n["id"]: n["type"] for n in 定义.get("nodes") or []},
+                                 # Agent 步骤里店长当场批过的写操作(11-06):批准从库里现查、绑定这一次的参数摘要
+                                 Agent批准=_Agent批准们(c, job["project_id"], run_id) if 载.get("参数摘要") else None,
+                                 参数摘要=载.get("参数摘要"))
         # **写跟进之前必须有人批过**(用户 10-24 拍「核对即定稿」)—— 判据在 runtime/桥闸.py
         if not 放行:
             c.execute(text("""update execution_runs set status='failed',
@@ -793,6 +812,10 @@ def _跑一张工作流(c, job, 打点):
                 适[契["name"]] = (lambda 名, sch: lambda 实参: _EM.连接测试替身(名, 实参, sch))(契["name"], 契.get("output_schema"))
             else:
                 适[契["name"]] = (lambda 名: lambda 实参: (_ for _ in ()).throw(_TG.要等({"工具": 名, "参数": 实参})))(契["name"])
+                # 走桥的写操作**查得到外部状态**:每一次都有一张 bridge_calls(待执行 / 已执行 / 执行失败),澜绣按幂等键去重 ——
+            # 网关对写入级要求合同声明 external_status_lookup(崩溃恢复时能核实做没做),桥工具的登记里没写(工作流工具步骤不过网关,
+            # 一直没暴露;11-06 当场审批 e2e 撞到)。只给这次运行里接了桥的工具补,不改库里登记的合同
+            契["external_status_lookup"] = 契.get("external_status_lookup") or {"supported": True, "怎么查": "bridge_calls 回执 + 澜绣按幂等键去重"}
         续 = 包.get("续")
         前回合 = int(((续 or {}).get("检查点") or {}).get("回合") or 0)
         前工具 = int(((续 or {}).get("检查点") or {}).get("工具尝试") or 0)
@@ -800,7 +823,9 @@ def _跑一张工作流(c, job, 打点):
                              有效范围={"paths": [], "hosts": [], "ids": []}, 账本=None,
                              记事=lambda k, x: 记事(k, dict(x or {}, node_id=包.get("node_id"))),
                              产物在吗=lambda ref: False, 批准查询=None,
-                             run_id=f"{run_id}:{包.get('node_id')}", 恢复=续)
+                             run_id=f"{run_id}:{包.get('node_id')}", 恢复=续,
+                             # 澜绣桥里「要批准」的写工具 → 当场审批(用户 11-06 拍)
+                             要人批=lambda 调, 摘, 契: _桥.种类(契.get("name")) == "要批准")
         # 真跑的每一回合进用量账(走唯一写入口;挂起也记 —— 那几回合的钱已经花了)
         if 回合用量:
             import knowledge.usage as _UG
@@ -818,7 +843,17 @@ def _跑一张工作流(c, job, 打点):
         if 结果["execution_status"] == "waiting_external":
             载 = 结果["等待"]["载荷"]
             raise RN.需要等待("external", {"工具": 载.get("工具"), "参数": 载.get("参数"),
-                                          "agent检查点": 结果["检查点"], "本段用量": 本段})
+                                          "agent检查点": 结果["检查点"], "本段用量": 本段,
+                                          "参数摘要": 载.get("参数摘要"), "批准人": 载.get("批准人")})
+        if 结果["execution_status"] == "waiting_approval":
+            # 当场审批:整条工作流挂起成一条人工核对(店长、24 小时、**只能批或退回**:allowed_fields 为空)
+            载 = 结果["等待"]["载荷"]
+            raise RN.需要等待("human", {"request_kind": Agent写审批, "candidate_roles": Agent审批人, "allowed_fields": [],
+                                       "expires_at_policy": {"小时": Agent审批时限小时},
+                                       "材料": {"摘要": f"Agent 要执行「{载.get('工具')}」", "工具": 载.get("工具"),
+                                                "参数": 载.get("参数"), "说明": "批准 = 按这一份执行;要改就退回并写理由(批了不能改)"},
+                                       "种类": Agent写审批, "参数摘要": 载.get("参数摘要"),
+                                       "agent检查点": 结果["检查点"], "本段用量": 本段})
         if 结果["execution_status"] != "succeeded":
             raise RN.节点失败("AGENT_" + str(结果["completion_reason"] or "incomplete").upper(),
                             f"Agent 没完成(停在「{结果['completion_reason']}」):{'; '.join(结果['validation_results'][:2])}",
@@ -1300,7 +1335,20 @@ def _跑一个agent(c, job, 打点):
     # 断点续跑(11-06):调澜绣工具时挂起过、桥回执之后 run_resume.排恢复 把它排回来 —— 取回执,带着检查点接着跑
     恢复 = None
     _快 = r["resume_snapshot"] or {}
-    if t.get("恢复") and _快.get("检查点"):
+    if t.get("恢复") and _快.get("检查点") and (_快.get("等待") or {}).get("种类") == "human":
+        # 等的是店长当场审批(11-06):取这次挂起那条待办上的决定
+        dec = c.execute(text("""select d.actor, d.decision, d.reason from human_requests h
+                                  join human_decisions d on d.project_id=h.project_id and d.human_request_id=h.id
+                                 where h.project_id=:p and h.execution_run_id=:r and h.target_ref->>'node_id'='agent'
+                                   and d.decision in ('approved', 'rejected')
+                                 order by h.created_at desc, d.at desc limit 1"""),
+                        {"p": job["project_id"], "r": run_id}).mappings().first()
+        if not dec:
+            raise 干不了("RESUME_WITHOUT_DECISION", {"为什么": "Agent 被排回队列,但店长还没有批准 / 退回 —— 不猜"})
+        恢复 = {"检查点": _快["检查点"],
+                "结果": {"决定": "approve" if dec["decision"] == "approved" else "reject",
+                         "处理人": dec["actor"], "理由": dec["reason"] or ""}}
+    elif t.get("恢复") and _快.get("检查点"):
         bc = c.execute(text("""select status, result_output, error_detail from bridge_calls
                                 where project_id=:p and execution_run_id=:r and node_id='agent'
                                 order by created_at desc limit 1"""),
@@ -1592,6 +1640,10 @@ def _跑一个agent(c, job, 打点):
                 # 按**工具名**接,不按 adapter 名:同一个 adapter(lanxiu_bridge)底下有好几个工具,网关先查 adapter 名、再查工具名
                 适配器[契["name"]] = (lambda 名: lambda 实参: (_ for _ in ()).throw(
                     TG.要等({"工具": 名, "参数": 实参})))(契["name"])
+                # 走桥的写操作**查得到外部状态**:每一次都有一张 bridge_calls(待执行 / 已执行 / 执行失败),澜绣按幂等键去重 ——
+                # 网关对写入级要求合同声明 external_status_lookup(崩溃恢复时能核实做没做),桥工具的登记里没写(工作流工具步骤不过网关,
+                # 一直没暴露;11-06 当场审批 e2e 撞到)。只给这次运行里接了桥的工具补,不改库里登记的合同
+                契["external_status_lookup"] = 契.get("external_status_lookup") or {"supported": True, "怎么查": "bridge_calls 回执 + 澜绣按幂等键去重"}
         记事("agent.adapters", {
             **_模式.记一笔(模式, 替身, 入口="后台 Agent Loop"),
             "接了": [k for k in 适配器 if k != "model"],
@@ -1618,7 +1670,9 @@ def _跑一个agent(c, job, 打点):
         # 并记一笔 `agent.limits_inline` 说「组织级护栏这一次没参与」——
         # 那条记录是**这件事唯一看得见的地方**。
         执行策略=现的,
-        批准查询=None, run_id=run_id, 恢复=恢复)
+        批准查询=None, run_id=run_id, 恢复=恢复,
+        # 真跑时,澜绣桥里「要批准」的写工具走当场审批(用户 11-06 拍:每次写都当场审批、店长批)
+        要人批=(lambda 调, 摘, 契: __import__("桥工具").种类(契.get("name")) == "要批准") if 模式 == _模式.真 else None)
     打点("执行完", {"状态": 结果["execution_status"]})
 
     # 真跑的每一回合各记一笔(挂起也记 —— 那几回合的钱已经花了);走 knowledge/usage.写进库,账本只有那一个写入口
@@ -1636,12 +1690,44 @@ def _跑一个agent(c, job, 打点):
             except _UG.用量不对:
                 continue
 
+    if 结果["execution_status"] == "waiting_approval":
+        # 当场审批(用户 11-06 拍):记一条人工待办(店长、24 小时、**只能批或退回**:allowed_fields 为空)、存检查点、
+        # 运行停在 waiting_approval,任务结束。店长决定后 human_api → run_resume.排恢复(按 kind 排回 agent_run)接着跑;
+        # 24 小时没人处理由 扫过期核对 收成 expired(按未完成收尾,什么都不写)
+        from datetime import datetime, timedelta, timezone
+        载 = 结果["等待"]["载荷"]
+        第几次 = int(r["checkpoint_seq"] or 0) + 1
+        c.execute(text("""
+            insert into human_requests (id, organization_id, project_id, execution_run_id,
+                kind, payload_ref, allowed_fields, candidate_roles, status, expires_at,
+                target_ref, risk_note, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:r,:k,:pl, cast('[]' as jsonb), cast(:cr as jsonb), 'pending', :ex,
+                    cast(:t as jsonb), :rn, now(), :u, now(), 1)
+        """), {"i": _新("hr"), "o": job["organization_id"], "p": job["project_id"], "r": run_id, "k": Agent写审批,
+               "pl": _j.dumps({"摘要": f"Agent 要执行「{载.get('工具')}」", "工具": 载.get("工具"), "参数": 载.get("参数"),
+                               "说明": "批准 = 按这一份执行;要改就退回并写理由(批了不能改)"}, ensure_ascii=False),
+               "cr": _j.dumps(Agent审批人), "ex": datetime.now(timezone.utc) + timedelta(hours=Agent审批时限小时),
+               "t": _j.dumps({"node_id": "agent", "运行": run_id, "第几次挂起": 第几次, "种类": Agent写审批,
+                              "参数摘要": 载.get("参数摘要")}, ensure_ascii=False),
+               "rn": "Agent 的写操作:批准就按这一份执行,退回会告诉 Agent 换办法", "u": 我是谁})
+        c.execute(text("""
+            update execution_runs
+               set status='waiting_approval', resume_snapshot=cast(:snap as jsonb), checkpoint_seq=:seq,
+                   current_step_id='agent', usage_snapshot=cast(:us as jsonb), updated_at=now(), revision=revision+1
+             where project_id=:p and id=:i
+        """), {"snap": _j.dumps({"从": "agent", "检查点": 结果["检查点"], "等待": 结果["等待"]}, ensure_ascii=False, default=str),
+               "seq": 第几次, "us": _j.dumps(结果["usage"], ensure_ascii=False), "p": job["project_id"], "i": run_id})
+        记事("run.suspended", {"node_id": "agent", "等的是": "human", "说明": f"等店长批「{载.get('工具')}」", "第几次挂起": 第几次})
+        return {"run_id": run_id, "执行状态": "waiting_approval", "停在": "agent", "等": 载.get("工具")}
+
     if 结果["execution_status"] == "waiting_external":
         # 调澜绣工具 → 交给桥:记一张桥请求、存检查点、运行停在挂起态,**任务结束**(不占着 Worker 干等,§12.4)。
         # 回执一到 bridge_api → run_resume.排恢复(按 kind 排回 agent_run)→ 这里带着检查点接着跑
         import 桥闸
         载 = 结果["等待"]["载荷"]
-        放行, 为什么不 = 桥闸.放行吗(载.get("工具"), {}, {})
+        放行, 为什么不 = 桥闸.放行吗(载.get("工具"), {}, {},
+                                 Agent批准=_Agent批准们(c, job["project_id"], run_id) if 载.get("参数摘要") else None,
+                                 参数摘要=载.get("参数摘要"))
         if not 放行:
             # Agent 没有人工节点 → 要批准的桥工具在这里拒(写工具在网关那道「要确认」通常已经先拒了)
             c.execute(text("""update execution_runs set status='failed', completion_reason='WRITE_NEEDS_REVIEW',

@@ -256,8 +256,9 @@ def 待办详情(project_id: str, req_id: str,
         "看得到原文吗": 看得到原文,
         "允许编辑的字段": d["allowed_fields"] or [],
     }
-    if d["execution_run_id"] and d["kind"] == "核对":
-        # 能处理它的人(或本来就看得到原文的人)拿全文;别人仍是形状
+    if d["execution_run_id"] and d["kind"] in ("核对", "Agent写操作审批"):
+        # 能处理它的人(或本来就看得到原文的人)拿全文;别人仍是形状。
+        # 「Agent写操作审批」(11-06):店长要看见 Agent 具体要对谁做什么才批得了 —— 原来只认「核对」,打开是空的
         出["核对材料"] = _核对材料(d["payload_ref"]) if (能 or 看得到原文) else _脱敏参数(d["payload_ref"])
     有人能批, 为啥 = AP.候选角色里有人能审吗(d["candidate_roles"], _谁有审批能力())
     出["有人能批吗"] = 有人能批

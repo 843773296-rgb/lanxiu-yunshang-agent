@@ -28,15 +28,26 @@ def 批准记录(节点输出, 节点类型):
             and isinstance(v, dict) and v.get("决定") == "approve" and v.get("处理人")]
 
 
-def 放行吗(工具, 节点输出, 节点类型):
+def Agent批准成立吗(批准们, 参数摘要):
+    """Agent 写操作的当场审批(用户 11-06 拍:店长批、只能批或退回)。`批准们` 由 worker **从库里现查**:这次运行里
+    种类为「Agent写操作审批」的人工待办上、决定是 approved 的那几条 [{参数摘要, 处理人}]。
+    **只认参数摘要和这一次一模一样的那条** —— 批准绑定这一次的内容,内容变了就不算(批 A 不能执行 B);没有处理人的不算。
+    模型输出里写的「已批准」永远进不来:这里的入参不来自模型。"""
+    return any(isinstance(b, dict) and b.get("处理人") and 参数摘要 and b.get("参数摘要") == 参数摘要 for b in 批准们 or [])
+
+
+def 放行吗(工具, 节点输出, 节点类型, Agent批准=None, 参数摘要=None):
     """(能不能记这张单, 不能的理由)。只读的桥工具不需要批准。
 
-    `节点类型` = {node_id: type},从**这次运行挂起时存下的那一版定义**取。"""
+    `节点类型` = {node_id: type},从**这次运行挂起时存下的那一版定义**取。
+    `Agent批准` / `参数摘要`:Agent 写操作走当场审批时,worker 从库里查到的批准和这一次的参数摘要(见 Agent批准成立吗)。"""
     种 = _桥.种类(工具)
     if 种 is None:
         return False, f"「{工具}」不在澜绣桥的名单里(runtime/桥工具.py)—— 不记单"
     if 种 == "只读":
         return True, None
     if 批准记录(节点输出, 节点类型):
+        return True, None
+    if Agent批准成立吗(Agent批准, 参数摘要):
         return True, None
     return False, f"「{工具}」之前这次运行里没有任何一步被人批准过 —— 没过核对的东西不写进澜绣"

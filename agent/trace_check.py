@@ -46,6 +46,8 @@ SKIP = (".git", ".venv", "__pycache__", "node_modules")
     "管理后台/tests/e2e/test_agent_step_flow.py":
         ("和 test_agent_bridge_flow 同一个本地假 Anthropic 接口(照搬的夹具):`…/v1/messages` 是夹具字符串,不是调用点 ——"
          "这个文件自己不发模型请求,工作流 Agent 步骤的真调用走 worker `_agent` → `runtime/真模型.对话一轮`,那里接了记录仪(11-06)。"),
+    "管理后台/tests/e2e/test_agent_approval_flow.py":
+        ("同一个本地假 Anthropic 接口(照搬 test_agent_bridge_flow 的夹具):`…/v1/messages` 是夹具字符串,不是调用点(11-06)。"),
 }
 
 # 真正发起调用的指纹
