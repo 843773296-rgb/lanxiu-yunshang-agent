@@ -894,6 +894,8 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                                    and tv.tool_definition_id=td.id
                                  where td.project_id=:p and td.archived_at is null and td.status='active'
                                  order by td.id, tv.version_no desc"""), {"p": project_id}).mappings().all()
+        import glossaries_api as _GA
+        术语们 = _GA.可选术语版本(c, project_id)
     读写 = {"read_only": "只读", "write": "写入", "irreversible": "写入 · 不可撤"}
     能批 = {r for r in PM.角色们 if PM.判("审批工具动作", r, [])[0]}
     return {
@@ -911,6 +913,8 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                   "入参": r["input_schema"] or {}, "版本": r["version_no"]}
                  for r in sorted(工, key=lambda x: (x["adapter"] != "lanxiu_bridge", x["name"]))],
         "角色": [{"码": r, "中文": PM.角色中文.get(r, r), "能审批": r in 能批} for r in PM.角色们],
+        # 开始节点「这条流程用哪一版术语」的下拉框(11-06 深夜补:接口早就收 glossary_version_id,页面上却选不了)
+        "术语": 术语们,
     }
 
 

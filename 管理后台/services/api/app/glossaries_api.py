@@ -43,6 +43,16 @@ def _审计(c, me, action, target):
                "t": json.dumps(target, ensure_ascii=False), "e": os.environ.get("APP_ENV", "development")})
 
 
+def 可选术语版本(c, project_id):
+    """编辑页「选一版术语」的下拉框用(工作流开始节点 / 智能体 / 聊天助手三处共用,11-06 深夜补):
+    这个项目里**冻结了的**版本,同一张表新版在前。只给冻结的 —— 草稿会变,选了草稿等于没定。"""
+    return [{"id": r["id"], "名称": r["key"], "版本": f"v{r['version_no']}", "条数": r["n"],
+             "冻结于": r["created_at"].isoformat() if r["created_at"] else None}
+            for r in c.execute(text("""select id, key, version_no, created_at, jsonb_array_length(entries) n
+                                         from glossary_versions where project_id=:p and archived_at is null
+                                        order by key, version_no desc limit 200"""), {"p": project_id}).mappings()]
+
+
 def 取数口问题(c, project_id, 术语们):
     """取数口写的工具,在这个项目里要存在、而且启用(用户拍「算法以代码为准,术语是说明」)。→ 问题清单。"""
     要 = sorted({(t.get("取数口") or {}).get("工具") for t in 术语们 or [] if (t.get("取数口") or {}).get("工具")})

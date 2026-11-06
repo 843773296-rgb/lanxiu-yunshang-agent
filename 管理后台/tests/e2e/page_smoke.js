@@ -184,11 +184,17 @@ setTimeout(() => {
       .then((r) => r.json()).then((d) => {
         const body = 写过.get("body") || "";
         const 坏 = [];
-        // 下拉框:可选连接数 + 一个「(没选)」
-        const opt = (body.match(/<option /g) || []).length;
+        // 下拉框:可选连接数 + 一个「(没选)」。**按那一个下拉框数**,不数整页的 <option> ——
+        // 11-06 深夜加了「用哪一版术语」下拉框之后,整页数法把术语那几项也算进了连接(268 ≠ 222)
+        const 框 = (键) => { const i = body.indexOf(`data-k="${键}"`); if (i < 0) return null;
+          return (body.slice(i, body.indexOf("</select>", i)).match(/<option /g) || []).length; };
+        const opt = 框("connection_version_id");
         const 应 = (d["可选连接"] || []).length + 1;
         if (opt !== 应)
           坏.push(`连接下拉框 ${opt} 项,接口给了 ${应 - 1} 条连接(+1 个「没选」)`);
+        const 术 = 框("glossary_version_id"), 术应 = (d["可选术语"] || []).length + 1;
+        if (术 !== 术应)
+          坏.push(`术语下拉框 ${术} 项,接口给了 ${术应 - 1} 个冻结版本(+1 个「不带术语」)`);
         // **能力那一栏必须写出来**:附录 D.2「不按模型家族名字推断兼容」
         if (!/原生工具调用/.test(body))
           坏.push("连接那一栏没写「原生工具调用」—— "

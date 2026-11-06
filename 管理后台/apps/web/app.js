@@ -2292,6 +2292,12 @@ function 表_设置(n) {
       + `<div class="k">循环里的步骤在「用到的数据」里能选「循环状态 · 名字」。这一轮没走到「取自」的那一步 → 那一项保持不变。</div>`;
   } else if (n.type === "start") {
     体 += `<label class="f">使用者要提供什么</label>` + 字段表编辑(c.input_schema = c.input_schema || { type: "object", properties: {}, required: [] }, true);
+    // 术语(11-06 深夜补):整条流程选一版,挂在开始节点上 —— 模型步骤只带这一步提到的那几条
+    体 += `<label class="f">这条流程用哪一版术语</label>`
+      + 资源选择器("术语版本", c.glossary_version_id, (g.资源.术语 || []).map((v) => ({ id: v.id, 名: v["名称"], 版: v["版本"], 说: `${v["条数"]} 条`, 标: "已冻结" })),
+          (id) => { c.glossary_version_id = id || undefined; 重画(); }, "这个项目还没有冻结的术语版本 —— 先去「术语配置」冻一版;不选就是不带术语")
+      + (c.glossary_version_id ? `<div class="k">不想带术语:在上面选回「请选择术语版本」。换术语版本 = 改了流程,发生产前要重新跑通。</div>`
+                                : `<div class="k">不选 = 不带术语。选了之后,每个模型步骤只带这一步提到的那几条。</div>`);
   } else if (n.type === "answer" || n.type === "template") {
     // 直接回复 / 模板转换(10-27):模板里写 {{名字}},名字在下面「用到的数据」里选来源。写了新名字就**自动加一行待选来源** ——
     // 不加的话,人写完模板以为好了,检查配置才说「单号没有来源」
@@ -4096,6 +4102,18 @@ function 画_agent正文() {
       <div class="note">这一栏显示的是<b>探测回来的能力</b>,不是模型叫什么名字。
         规格附录 D.2:<b>不按模型家族名字推断兼容</b> —— 能不能按契约调工具是按型号来的。
         选一条「没声明」的,点校验会当场被挡住。</div>
+      </div>
+      <div class="card">
+      <h4>术语</h4>
+      <div class="fieldrow"><label>用哪一版术语</label>
+        <select data-k="glossary_version_id">
+          <option value="">不带术语</option>
+          ${(g["可选术语"] || []).map((v) => `<option value="${esc(v.id)}"
+            ${cfg.glossary_version_id === v.id ? "selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["条数"])} 条</option>`).join("")}
+          ${cfg.glossary_version_id && !(g["可选术语"] || []).some((v) => v.id === cfg.glossary_version_id)
+            ? `<option value="${esc(cfg.glossary_version_id)}" selected>(当前选的不在列表里)</option>` : ""}
+        </select></div>
+      <div class="note">每次运行只把任务和输入里提到的那几条术语拼在指令前面。只列<b>冻结了的</b>版本;换术语 = 改了这个智能体,要重新冻一版。</div>
       </div>
       <div class="card">${字段("目标模板", "task_template", cfg.task_template,
         "**和长期角色指令分开**(§9.3):这一次要交付什么,绑运行输入。", 3)}
@@ -7785,6 +7803,11 @@ function 画_聊天编排() {
     <div class="card"><h4>模型</h4><select id="c-model">${(g["草稿"]["可选模型"] || []).map((m) =>
         `<option value="${esc(m)}"${m === c["模型"] ? " selected" : ""}>${esc(m)}</option>`).join("")}</select>
       <div class="note">清单从聊天站带过来(有单价的才在里面)。聊天页上的人仍能临时换,这里定的是这个助手的默认。</div></div>
+    <div class="card"><h4>术语</h4><select id="c-glossary"><option value="">不带术语</option>${(g["可选术语"] || []).map((v) =>
+        `<option value="${esc(v.id)}"${v.id === c["术语版本"] ? " selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["条数"])} 条</option>`).join("")}
+        ${c["术语版本"] && !(g["可选术语"] || []).some((v) => v.id === c["术语版本"]) ? `<option value="${esc(c["术语版本"])}" selected>(当前选的不在列表里)</option>` : ""}</select>
+      <div class="note">每一轮只把顾客这句话里提到的那几条术语交给模型。只列<b>冻结了的</b>版本(草稿会变);换术语 = 出一版新的聊天助手、上生产才生效。
+        ${(g["可选术语"] || []).length ? "" : "这个项目还没有冻结的术语版本 —— 先去「术语配置」冻一版。"}</div></div>
     <div class="card" id="c-tools"><h4>工具(${(c["工具"] || []).filter((t) => t["开"]).length} / ${(c["工具"] || []).length} 开着)</h4>
       <div><b>写入类 ${写.length} 个</b> <span class="pill warn">会改业务数据</span></div><div>${写.map(勾).join("")}</div>
       <div style="margin-top:8px"><b>只读 ${读.length} 个</b></div><div>${读.map(勾).join("")}</div>
@@ -7804,6 +7827,7 @@ function 画_聊天编排() {
   $("#c-head").oninput = (e) => { c["开头"] = e.target.value; 标脏(); };
   $("#c-foot").oninput = (e) => { c["结尾"] = e.target.value; 标脏(); };
   $("#c-model").onchange = (e) => { c["模型"] = e.target.value; 标脏(); };
+  $("#c-glossary").onchange = (e) => { c["术语版本"] = e.target.value || null; 标脏(); };
   $("#c-tools").querySelectorAll("[data-tool]").forEach((b) => {
     b.onchange = () => { c["工具"].find((t) => t["名"] === b.dataset.tool)["开"] = b.checked; 标脏(); };
   });

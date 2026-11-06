@@ -282,11 +282,14 @@ def 聊天助手详情(project_id: str, cid: str, me: 身份 = Depends(要权限
                    created_at, created_by
               from chat_assistant_versions where project_id=:p and chat_assistant_id=:a
              order by version_no desc limit 50"""), {"p": project_id, "a": cid}).mappings().all()
+        import glossaries_api as _GA
+        术语们 = _GA.可选术语版本(c, project_id)
     cfg = a["definition"] or {}
     装, 缺 = 挑规矩(cfg.get("规矩池") or [], 规矩们, _开着的(cfg), _标记(cfg))
     哈希 = 内容哈希(cfg, 装)
     return {
         "id": a["id"], "角色键": a["role_key"], "名称": a["name"], "用途": a["purpose"],
+        "可选术语": 术语们,       # 「这个助手用哪一版术语」的下拉框(11-06 深夜补)
         "草稿": {"revision": a["draft_revision"], "配置": {k: cfg.get(k) for k in 可改的键},
                 "可选模型": cfg.get("可选模型") or [], "和哪一版一样": next(
                     (f"v{v['version_no']}" for v in vs if v["content_hash"] == 哈希), None)},

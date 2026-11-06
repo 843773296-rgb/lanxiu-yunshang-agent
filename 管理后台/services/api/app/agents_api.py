@@ -412,6 +412,8 @@ def agent详情(project_id: str, aid: str, me: 身份 = Depends(要权限("查�
                 on mc.project_id=cv.project_id and mc.id=cv.connection_id
              where cv.project_id=:p order by cv.created_at"""),
                           {"p": project_id}).mappings().all()
+        import glossaries_api as _GA
+        术语们 = _GA.可选术语版本(c, project_id)
     cfg = (d["definition"] if d else None) or {}
     级中文 = {s["名"]: s["中文"] for s in DS.副作用表}
     return {
@@ -424,6 +426,7 @@ def agent详情(project_id: str, aid: str, me: 身份 = Depends(要权限("查�
                   "变更说明": v["change_note"],
                   "冻结于": v["created_at"].isoformat() if v["created_at"] else None,
                   "冻结人": v["created_by"]} for v in vs],
+        "可选术语": 术语们,       # 「这个智能体用哪一版术语」的下拉框(11-06 深夜补)
         "可选连接": [{"id": r["id"], "名称": r["display_name"],
                     "原生工具调用": bool((r["capabilities"] or {}).get("原生工具调用")),
                     "模式": (r["capabilities"] or {}).get("execution_mode"),

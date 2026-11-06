@@ -160,6 +160,15 @@ def main():
     c4, pv2 = 打("GET", "/chat-assistants/by-role/e2e_glossary/production", 谁="U001")
     ck("⑦ 选「术语版本」→ 出版本 → 上生产 → 生产配置给的 glossary_version_id 就是这一版(聊天站拿这个键)",
        c2 == 200 and c3 == 201 and c4 == 200 and (pv2 or {}).get("glossary_version_id") == v["id"], (c2, c3, c4, pv2))
+    # ⑧ 三处编辑页的「选一版术语」下拉框有东西可选(11-06 深夜补:接口早就收,页面上却选不了)
+    c_, res = 打("GET", "/workflow-resources")
+    c2_, gd = 打("GET", f"/chat-assistants/{cid}", 谁="U001")
+    c3_, ag = 打("POST", "/agents", {"名称": f"e2e 术语下拉 {uuid.uuid4().hex[:6]}"})
+    c4_, ad = 打("GET", f"/agents/{(ag or {}).get('id')}")
+    有 = lambda xs: any(x.get("id") == v["id"] and x.get("版本") == "v1" and x.get("条数") == 2 for x in (xs or []))
+    ck("⑧ 工作流资源 / 聊天助手详情 / 智能体详情都列出这一版冻结的术语(名称 / 版本 / 条数)—— 页面下拉框从这里取",
+       c_ == 200 and 有(res.get("术语")) and 有(gd.get("可选术语")) and 有(ad.get("可选术语")),
+       (c_, (res or {}).get("术语", [])[:2], (gd or {}).get("可选术语", [])[:1], (ad or {}).get("可选术语", [])[:1]))
     # 这张术语表**留着不归档**:tools/ifmatch_reachable_check 要从术语表列表里取一张样例,验「界面拿得到改草稿要带的 revision」——
     # CI 是新库,这一条要是归档了,那条检查拿不到样例就判红(而那条红的理由是「什么都没验到」,是对的)
     print()
