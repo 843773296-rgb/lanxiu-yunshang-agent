@@ -15099,5 +15099,65 @@
    }
   ],
   "预期红": "没有真值的那套被印成了全错"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_protocol.py",
+  "改坏": "模型回的工具代号不翻回中文名(「代号也是名字」)—— 网关按 t1 找工具,一个都找不到,Agent 一个工具都用不上,人会去改提示词",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/工具协议.py",
+    "old": "            调们.append({\"id\": b.get(\"id\"), \"name\": 号.get(n, n), \"arguments\": 参})\n",
+    "new": "            调们.append({\"id\": b.get(\"id\"), \"name\": n, \"arguments\": 参})\n"
+   }
+  ],
+  "预期红": "① 正常循环:用代号调中文名工具"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_protocol.py",
+  "改坏": "被网关拒的那条回传不标 is_error(「内容里写了被拒」)—— 模型把拒绝当成一次正常结果接着往下编",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/工具协议.py",
+    "old": "                         **({\"is_error\": True} if \"rejected\" in x else {})} for x in (c or [])])\n",
+    "new": "                         } for x in (c or [])])\n"
+   }
+  ],
+  "预期红": "③ 表里没有的代号 → 网关拒、不执行"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_resume.py",
+  "改坏": "网关不再单独放行「要等」(「适配器抛异常就是出错」)—— 交给桥的那一下被当成执行出错、标待核实,Agent 永远挂不起来",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/tool_gateway.py",
+    "old": "    except 要等 as w:\n        # 交给澜绣桥去办 —— 不是失败;带上动作 id,续跑时按它补账本\n        记事(\"tool.waiting_external\", {\"name\": 名, \"logical_action_id\": 动作id})\n        w.载荷 = dict(w.载荷 or {}, 动作id=动作id)\n        raise\n",
+    "new": ""
+   }
+  ],
+  "预期红": "① 只读工具要等桥 → 挂起"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_resume.py",
+  "改坏": "续跑时把挂起的那个调用重新执行一遍(「从它开始接着跑」)—— 桥多调一次,写工具就是写两次",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/agent_loop.py",
+    "old": "        果, 物 = 处理工具调用(响应, 回传, 第几个 + 1)\n",
+    "new": "        果, 物 = 处理工具调用(响应, 回传, 第几个)\n"
+   }
+  ],
+  "预期红": "① 续跑:模型拿到回执"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_resume.py",
+  "改坏": "续跑时回合数清零(「新的一段重新数」)—— 每挂起一次上限就重置,上限形同虚设",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/agent_loop.py",
+    "old": "        消息们, 回合, 工具尝试 = 点[\"消息们\"], 点[\"回合\"], 点[\"工具尝试\"]\n",
+    "new": "        消息们, 回合, 工具尝试 = 点[\"消息们\"], 0, 点[\"工具尝试\"]\n"
+   }
+  ],
+  "预期红": "⑤ 回合数接着数"
  }
 ]

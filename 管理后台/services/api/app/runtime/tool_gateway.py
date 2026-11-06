@@ -52,6 +52,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import dsl as DS  # noqa: E402
 
 
+class 要等(Exception):
+    """工具这一下**不当场执行**:交给外面(澜绣桥)去办,运行挂起、等回执再接着跑(11-06,Agent 走桥)。
+
+    ⚠️ 网关对适配器抛的其它异常一律当「执行出错、待核实」—— 这一个**原样放行**,不是失败也不是待核实:
+    它是在所有闸都过了之后才抛的,账本停在「已提交」,等回执来了由调用方补结果(agent_loop 续跑那一段)。"""
+
+    def __init__(self, 载荷):
+        self.载荷 = 载荷
+        super().__init__(f"等外部执行:{(载荷 or {}).get('工具')}")
+
+
 class 拒绝(Exception):
     """网关拒绝执行。**这是一个正常结果,不是异常情况** ——
     Agent 会收到它并在剩余合法范围内改方案(§12.2)。"""
@@ -501,6 +512,11 @@ def 执行(请求, *, 工具目录, 有效范围, 批准=None, 账本=None, 适�
                         "logical_action_id": 动作id})
     try:
         r = fn(实参)
+    except 要等 as w:
+        # 交给澜绣桥去办 —— 不是失败;带上动作 id,续跑时按它补账本
+        记事("tool.waiting_external", {"name": 名, "logical_action_id": 动作id})
+        w.载荷 = dict(w.载荷 or {}, 动作id=动作id)
+        raise
     except Exception as e:
         if 动作id:
             # ⚠️ **抛异常不等于外部没做事。** 标「待核实」,不标失败。
