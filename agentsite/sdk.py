@@ -1059,6 +1059,24 @@ def 去掉写工具(工具):
     return [t for t in 工具 if t.rsplit("__", 1)[-1] not in 写]
 
 
+_术语缓存 = {}
+
+
+def _术语状态(角色):
+    """→ backend/glossary_client.同步(角色) 的结果,**一个进程只同步一次**(用户拍的「启动时同步」;
+    术语改了要等聊天站重启才生效 —— 卡上写过这个代价)。同步本身出错 → 记成「取不到」态,**不让聊天跟着崩**。"""
+    if 角色 not in _术语缓存:
+        try:
+            if os.path.join(ROOT, "backend") not in sys.path:
+                sys.path.insert(0, os.path.join(ROOT, "backend"))
+            import glossary_client as _gc
+            _术语缓存[角色] = _gc.同步(角色)
+        except Exception as e:                                               # noqa: BLE001
+            _术语缓存[角色] = {"角色": 角色, "态": "取不到", "术语": [], "条数": 0, "来源": "没有",
+                              "说明": f"同步术语时出错:{type(e).__name__}: {str(e)[:160]}"}
+    return _术语缓存[角色]
+
+
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
               provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None,
               被判押金=None, 分叉=False, 根属性=None, 后台配置=False, 只读=False):
@@ -1130,6 +1148,11 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         # (那句是约定 —— 网页上有人看着确认卡,API 那头没人)。提示词按收窄后的名单装配,管写工具的规矩跟着撤掉
         工具 = 去掉写工具(工具)
     state = {"生效工具": 工具, **({"只读": True} if 只读 else {})}          # 进运行记录:这一轮实际给了哪些,不是配置意图
+    # ── 术语(用户 11-06 拍「聊天站本地存一版冻结的、启动时同步」+ 深夜拍「接聊天站」)──
+    # 只有读后台生产配置的那条路(店长助手 task + 后台配置)才有「这一版挂了哪版术语」可问;别的角色后台没配助手 → 不带。
+    # 同步一次放进程缓存(= 启动时同步),每一轮按这一轮的话现匹配(guards.on_prompt 里)
+    if 后台配置 and kind == "task" and not _研判:
+        state["术语"] = _术语状态("task")
     if images:
         state["带图"] = True          # 体检 g18「看图直接下形制结论」只在带图的那一轮生效
     # ── 跨轮业务状态(外部审阅 10-03 §4.2):续聊时把**当前方案 / 锚点 / 待消费的压缩标记**恢复回来 ──
@@ -1493,6 +1516,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             # 缺的一直是这两头 —— 而「它凭什么这么说」恰恰要靠两头夹着中间看。
             "lanxiu.prompt": (prompt if isinstance(prompt, str) else "(带图)"),
             "lanxiu.context_injected": state.get("注入原文"),
+            "lanxiu.glossary.source": state.get("术语来源"),
+            "lanxiu.glossary.injected": (state.get("术语带了") or {}).get("条"),
             "lanxiu.answer": text or None,
             "lanxiu.answer_all": ("\n\n".join(turns) if len(turns) > 1 else None),
             "lanxiu.rules_n": len(getattr(_pr, "rules_for", lambda *a: [])(kind)) if False else None,
@@ -1584,6 +1609,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             助手配置=({**_ac.记账(_助手, 工具, model),
                      "技能": [str((x.get("args") or {}).get("skill") or "") for x in traj if x.get("tool") == "Skill"]}
                     if _助手 else None),
+            # 术语(11-06):这一轮术语从哪来(那句话每种情形不同)、带了哪几条 —— 只有店长助手那条路上有;别的路上是 None
+            术语=(dict(来源=state.get("术语来源"), 带了=state.get("术语带了")) if state.get("术语") else None),
             会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
             环境故障=_故障,
             # 难题分流看这两项(model_route.该升级吗):报过错的工具、调成功过的工具 —— 报错后同一个工具又调成功了算它自己纠正

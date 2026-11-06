@@ -15632,5 +15632,53 @@
    }
   ],
   "预期红": "⑦ 选「术语版本」→ 出版本 → 上生产 → 生产配置给的 glossary_version_id 就是这一版"
+ },
+ {
+  "script": "agentsite/glossary_inject_check.py",
+  "改坏": "这句话一条术语都没提到也照拼一段(「空的也无所谓」)—— 每轮多一个空壳,还记成「带了」",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "                if 段:\n                    ctx_add += \"\\n\\n[系统注入] \" + 段        # 登记:业务术语",
+    "new": "                if True:\n                    ctx_add += \"\\n\\n[系统注入] \" + 段        # 登记:业务术语"
+   }
+  ],
+  "预期红": "② 一条都没提到 → 不加任何术语"
+ },
+ {
+  "script": "agentsite/glossary_inject_check.py",
+  "改坏": "所有角色都去同步术语(「多带点总没错」)—— 后台没给它们配助手,每次启动多一次请求、拿到的是「没配助手」",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    if 后台配置 and kind == \"task\" and not _研判:\n        state[\"术语\"] = _术语状态(\"task\")",
+    "new": "    if 后台配置 and not _研判:\n        state[\"术语\"] = _术语状态(\"task\")"
+   }
+  ],
+  "预期红": "⑥ 接线:sdk.run 只在「后台配置 + task」那条路上"
+ },
+ {
+  "script": "agentsite/glossary_inject_check.py",
+  "改坏": "每一轮都重新同步术语(「始终最新」)—— 推翻用户拍的「启动时同步」,聊天开始依赖后台在不在",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    if 角色 not in _术语缓存:\n        try:",
+    "new": "    if True:\n        try:"
+   }
+  ],
+  "预期红": "⑤ 同一个进程里只同步一次"
+ },
+ {
+  "script": "agentsite/glossary_inject_check.py",
+  "改坏": "术语段不并进这一轮的规矩原文(「规矩是规矩,术语是术语」)—— 照术语答的口径数被当成编的,整份回答扣下",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "                    state[\"规矩原文\"] = (state.get(\"规矩原文\") or \"\") + \"\\n\" + 段\n",
+    "new": ""
+   }
+  ],
+  "预期红": "⑦ 照术语答的数(30 天)算有出处"
  }
 ]
