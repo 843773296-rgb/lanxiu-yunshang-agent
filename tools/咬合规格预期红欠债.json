@@ -1,0 +1,12 @@
+{
+ "说明": "tools/bite_specs.json 里某条规格的「预期红」在它要跑的那个脚本里**字面找不到** —— 改过判据名字之后,规格会静默过期:重放时它只会报「红了,但红的不是那一条」,而那要花一次锁 + 十几分钟才看得见。这张表是存量,**只许少不许多**。",
+ "怎么还": "把那条规格的「预期红」改成**实测红的那一条**(不是你预期它红的那一条),然后把这个脚本从本表删掉。判据名字是拼出来的(f-string)而扫不到的,也走同一条路:把判据名改成字面量。",
+ "登记于": "2026-11-07",
+ "欠着的": {
+  "agent/growth_eval_judgetest.py": 1,
+  "agent/refund_sets_judgetest.py": 1,
+  "agent/rounds.py": 1,
+  "backend/initpath_check.py": 1,
+  "backend/page_load_check.mjs": 1
+ }
+}

@@ -76,6 +76,25 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import re as _re
 import textmatch as tm      # noqa: E402
 
+# ── 术语装配:**在自己被 import 时就宣告一次** ──────────────────────────────
+# 「这一版代码接了术语」是**代码版本**的属性,不是某一轮的属性。
+# 放进下面那个 `if 术:` 里的话,没走到那条路的轮次(技能评测跑 kind=all,每一轮都是)
+# 会报成「这一版还没接术语」——
+# > 一个「还没接」和一个「接了、而这一轮没走到装配那条路」,**在基线文件里长得一模一样**,
+# > 而下一步完全不同(前者去做,后者去查接线断在哪)。
+# skill_eval 的口径第三样(术语实况)就是为分开这两件事而加的,所以宣告放在这儿。
+# ⚠️ 导不到就不宣告(只带 agentsite 的进程、或还没有这个模块的旧检出)——
+#    不许让钩子整个炸掉(_业务今天 那个 docstring 里记着 623b8e6 栽过的同一脚)。
+_gc模块 = None
+try:
+    _根_g = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.path.join(_根_g, "backend") not in sys.path:
+        sys.path.append(os.path.join(_根_g, "backend"))
+    import glossary_client as _gc模块                                      # noqa: E402
+    _gc模块.宣告接上了()
+except Exception:                                                          # noqa: BLE001
+    _gc模块 = None
+
 
 def _业务今天():
     """这家店的今天 —— **从库里读**(backend/seed.TODAY ← world_meta.world_today)。
@@ -2111,15 +2130,31 @@ def make_hooks(state, 注日期=True):
         # 匹配 / 拼段调后台那份纯函数(glossary_client.这一段 → 管理后台 runtime/术语.py),不另写一份。
         # 没同步到术语(没接后台 / 没挂 / 没配助手)→ state 里没有或条数 0 → 什么都不加;来源那句话照样记下来
         术 = state.get("术语")
+        if _gc模块 is not None:
+            # **每一轮先清**:这一轮没走到装配那条路,就不该留着上一轮的登记 ——
+            # 留着的话,「这一轮塞了什么」会拿上一轮的数回答,而那比不回答更坏
+            _gc模块.清一轮()
         if 术:
             state["术语来源"] = 术.get("说明")
             if 术.get("术语"):
+                _记 = 术
                 try:
                     import glossary_client as _gc
                     段, 命 = _gc.这一段(state["prompt"], 术)
                 except Exception as e:                                       # noqa: BLE001
                     段, 命 = "", []
                     state["术语来源"] = f"匹配术语时出错({type(e).__name__}),这一轮不带术语"
+                    # 登记里也得分得开:「真的一条都没命中」和「匹配崩了」都落成「塞了 0 条」,
+                    # 而前者正常、后者要去修。换掉态,别让两者在基线里同一张脸
+                    _记 = dict(术, 态="匹配出错")
+                if _gc模块 is not None:
+                    try:
+                        # **登记这一轮真塞了什么** —— 基线的「术语」那一栏去问 glossary_client,
+                        # 不靠调用处传参:忘了改实参的话,基线会老实写「没接术语」,
+                        # 而那和真的没接一模一样(agentsite/skill_eval_truth_check.py 有条断言盯着这里)
+                        _gc模块.记一笔(_记, 命, len(段))
+                    except Exception:                                        # noqa: BLE001
+                        pass                 # 登记失败不许影响这一轮的回答
                 if 段:
                     ctx_add += "\n\n[系统注入] " + 段        # 登记:业务术语
                     state["术语带了"] = {"版本": 术.get("版本"), "条": [h["标准词"] for h in 命]}
