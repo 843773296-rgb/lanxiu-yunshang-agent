@@ -15884,5 +15884,41 @@
    }
   ],
   "预期红": "已经修好的,从「预期红扫不到」那张欠债表里删掉了"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "通称命中只带第一条(11-07 之前的形状:一个名字只对一个标准词)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "            for std in hit[1]:\n",
+    "new": "            for std in hit[1][:1]:\n"
+   }
+  ],
+  "预期红": "⑧ 说通称「褙子」→ 挂了这个通称的两条都带(宋制褙子、宋制长褙子),都标是通称命中"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "通称命中不附「先问清是哪一款」—— 模型拿到几条定义会自己挑一条答(09-21 栽过的坑)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "    for 叫 in 通称们:\n",
+    "new": "    for 叫 in 通称们[:0]:\n"
+   }
+  ],
+  "预期红": "⑧ 通称命中时段里两条定义都在,并附一句「是通称,先问清是哪一款」"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "同一个词既当叫法又当通称不阻断 —— 手误录重的叫法从此没人拦",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "        if 叫 in 通:\n            阻.append(",
+    "new": "        if 叫 in 通 and False:\n            阻.append("
+   }
+  ],
+  "预期红": "⑧ 同一个词既当某条的叫法又当通称 → 阻断(叫法照旧不许对两个标准词)"
  }
 ]

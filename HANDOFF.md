@@ -12,6 +12,24 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🧩 11-07 白天:术语第三版(用户拍 4 处)—— 进行中
+
+**已推**:a5b70268(g1 认天数范围换写法 + 术语 v2「到店转化」,店长助手生产 v4 挂 glv_e81b6a39be64,聊天站已重启,真跑 4/4 交付)。
+**用户 11-07 第二张卡**:① 通称「收,带上所有朝代」② 单字面料「收,先补全长词」③ 8 个叫法「我在飞书逐行标」④ 史料「用免费资料逐条查」。
+**未提交(都在主检出,等锁)**:
+- 引擎 `管理后台/services/api/app/runtime/术语.py`:新增「通称」栏(同一通称可挂多条;命中时全带 + 附「先问清是哪一款」;通称又当叫法 → 阻断;只挂一条 → 提醒)。
+  **判据**:不放开叫法重复 —— 那条阻断防手误;通称是有意写的歧义,单开一栏。test_glossary ⑧ 7 条(26/26 过);bite_specs 末尾加 3 条**还没重放**。
+- `apps/web/app.js` 术语编辑页加「通称」栏(node --check 过;**page-smoke 没跑**)。
+- 草稿生成脚本 + json:72 → 84 条(补 5 款形制 + 通称;纱/绡/绢/绫 + 麻纱/真丝提花绡/抽纱)。格式阻断 0。**「罗」没收**(`收单字罗 = False`):业务库 62 位客户名带「罗」,待用户再拍。
+- 两份 md:待拍板4处(已推)/ `澜绣云裳agent-术语第三版新增条目待确认-20261107.md`(未提交,已发飞书 WdB0dq59woZFcDxM4YocKEBJnce)。
+**禁区**:并行会话 eureka-40 的「技能评测 repeat=5」(约 150 分钟锁)还没起,在等用户拍;起之前它会先问我。我说过不再碰 agentsite/guards.py(它在加术语登记口)。改了 runtime/ → 推完要重启 com.lanxiu.aimc。
+**史料(④)已完成**:子 agent 结果 `.wip-glossary/形制史料.md`;我用 `.wip-glossary/核史料.py` + swift PDFKit 逐条抓原页核了引文 —— **全对上**;子 agent 唯一错的是「知识库国博链接 252252 错了」(知识库本来就是 252272,全仓无 252252,没改)。
+  16 条出处已写进生成脚本 `史料` 字典。用户第三张卡拍「9 处按建议改,两边一起改」→ 已改 knowledge/01-形制.md 9 处(每处下面一行「2026-11-07 用户拍…依据…原来写的是…」)+ 生成脚本同 9 条定义。check_kb / kb_depth / xingzhi 过。
+  **未验证**:craft 表正文要下次重建才刷新(check_kb 不比正文);verify_sources.py 联网慢,在整轮里跑。飞书:9 处冲突 SfY4dRIMMoB9nSxQYNmcKQIVnvb。
+**正在跑**:锁里 `.wip-glossary/gate6.sh`(重启 aimc → bite --only 通称 → check.sh → make test-e2e-ci → page-smoke),日志 .wip-glossary/{bite6,check6,e2e6,smoke6,gate6}.log。**本地还没 rebase 并行会话 17510491**;bite_specs.json 会冲突 → 两半都留、json.loads 过关再写。
+**下一步第一个动作**:gate6 全绿 → scan_secrets 单独跑 → commit --only 术语.py、test_glossary.py、app.js、bite_specs.json、生成脚本、json、knowledge/01-形制.md、三份 md(新增条目 / 9 处)、HANDOFF → pull --rebase --autostash → push → 告诉 eureka-40 放锁了。
+  等用户:③ 逐行标 + 新增条目定义 + 罗 A/B/C → 冻 v3 → 店长助手切 v3 → 重启 agentsite → 真跑。
+
 ## 🔁 11-07 14:2x(工 worktree)用户「继续」—— 夜间窗口早过了;**交接里写的「下一步接术语」已被并行会话做完**
 
 **先对时间**:上一轮我按「21:40、0 点前只写代码」在走,而实际已是**周六下午**。夜跑 00:00:08–00:58:59

@@ -725,6 +725,8 @@ async function 页_术语详情(gid) {
       </div>
       <label class="f">叫法 <span style="color:var(--ink3)">店里、客户会怎么说它;逗号或回车分开</span></label>
       <textarea class="t" rows="2" style="min-height:44px" data-i="${i}" data-f="叫法" placeholder="比如 到店转化,预约到店比">${esc((t.叫法 || []).join(","))}</textarea>
+      <label class="f">通称 <span style="color:var(--ink3)">好几款共用的名字(比如「圆领袍」),可以同时写在好几条上;说到它时这几条一起带,并提醒先问清是哪一款</span></label>
+      <textarea class="t" rows="1" style="min-height:36px" data-i="${i}" data-f="通称" placeholder="选填,比如 圆领袍">${esc((t.通称 || []).join(","))}</textarea>
       <label class="f">定义 <span class="req">*</span></label>
       <textarea class="t" rows="2" style="min-height:44px" data-i="${i}" data-f="定义" placeholder="一句话说清它是什么">${esc(t.定义 || "")}</textarea>
       ${指标 ? `<label class="f">口径 <span class="req">*</span> <span style="color:var(--ink3)">分子 / 分母 / 时间至少写清楚,特殊规定写在「其它」</span></label>
@@ -788,7 +790,7 @@ async function 页_术语详情(gid) {
   const 写回 = (el) => {
     const i = Number(el.dataset.i), f = el.dataset.f, t = 条们[i];
     if (!t || !f) return;
-    if (f === "叫法") t.叫法 = 拆叫法(el.value);
+    if (f === "叫法" || f === "通称") t[f] = 拆叫法(el.value);
     else if (f.includes(".")) { const [组, 键] = f.split("."); t[组] = Object.assign({}, t[组] || {}, { [键]: el.value }); }
     else t[f] = el.value;
   };
@@ -812,6 +814,7 @@ async function 页_术语详情(gid) {
     const o = Object.assign({}, t);
     o.标准词 = String(o.标准词 || "").trim(); o.定义 = String(o.定义 || "").trim();
     o.叫法 = 拆叫法((o.叫法 || []).join(","));
+    o.通称 = 拆叫法((o.通称 || []).join(",")); if (!o.通称.length) delete o.通称;
     o.类别 = o.类别 || "名词";
     const 清 = (x) => { const r = {}; Object.entries(x || {}).forEach(([k, v]) => { if (String(v || "").trim()) r[k] = String(v).trim(); }); return r; };
     if (o.类别 === "指标") {
