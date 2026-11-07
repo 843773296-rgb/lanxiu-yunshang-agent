@@ -289,11 +289,23 @@ def g1_no_source(text, calls, prompt="", 规矩=""):
     # 规矩里的数会不会过期,由 tools/prompt_numbers_check.py 对知识库原文对账(对不上就红)。
     if 规矩:
         规 = re.sub(r"\s+", "", 规矩)
+        # ⚠️ 11-07 用户拍板(术语对比试验里带术语那 1 次失败):术语写「181–365 天」「181 ≤ idle_days ≤ 365」,
+        # 第二稿答成「181 到 365 天」—— 意思一样、只是连接写法不同,被当成编的扣下。
+        # 只认**天数范围**换写法:两端的数都和规矩里某个范围一模一样才算(连字符 / 到 / 至 / ~ / 「a ≤ 天数 ≤ b」);
+        # 任何一端改了照样打回,单个数仍走原样比对。
+        规范围 = set()
+        for m in re.finditer(r"(\d+(?:\.\d+)?)(?:[-–—~～至到](\d+(?:\.\d+)?)(?:个)?(?:工作日|日历天|天|工日)"
+                             r"|≤[^≤\d]{0,30}(?:day|天)[^≤\d]{0,10}≤(\d+(?:\.\d+)?))", 规):
+            规范围.add((_num(m.group(1)), _num(m.group(2) or m.group(3))))
         def _在规矩(i):
             for rx in (RE_DAYS, RE_BODY, RE_MONEY):
                 m = rx.match(text, i)
                 if m:
-                    return re.sub(r"\s+", "", m.group(0)) in 规
+                    if re.sub(r"\s+", "", m.group(0)) in 规:
+                        return True
+                    if rx is RE_DAYS and m.group(2):
+                        return (_num(m.group(1)), _num(m.group(2))) in 规范围
+                    return False
             return False
         monies = [(v, i) for v, i in monies if not _在规矩(i)]
         days = [(a, b, i) for a, b, i in days if not _在规矩(i)]
