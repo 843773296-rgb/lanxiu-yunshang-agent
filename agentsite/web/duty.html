@@ -45,9 +45,10 @@
   <h2>队列最前面</h2>
   <p class="sub">超时的排最前,同档按等待时长倒序 —— <b>排序本身就是一条业务规则</b>,写在 <code class="mono">backend/ops.py</code> 里,不在页面上。</p>
   <div class="bar">
-    <button class="pri" id="run">让智能体研判 3 条</button>
+    <label style="font-size:13px">研判 <input id="n" type="number" value="3" min="1" max="10" style="width:52px"> 条</label>
+    <button class="pri" id="run">让智能体研判</button>
     <a href="/queue"><button>去队列逐条销账 →</button></a>
-    <span class="note" id="msg">每条约 2–4 次工具调用,跑之前先想清楚要跑几条 —— 这是真花钱的。</span>
+    <span class="note" id="msg">每条约 2–4 次工具调用,这是真花钱的。</span> <span class="note" id="est"></span>
   </div>
   <div class="box scroll"><table>
     <thead><tr><th>工单</th><th>类型</th><th>等待</th><th>时效</th><th>状态</th><th>智能体研判的根因</th><th>置信度</th></tr></thead>
@@ -165,12 +166,25 @@ async function load(){
     <td><span class="tag ${LV[x.level]}">${esc(x.level)}${x.left_h!=null&&x.left_h>0?" 余"+x.left_h+"h":""}</span></td></tr>`).join(""):
     `<tr><td colspan="4">没有等店长确认的差评。</td></tr>`;
 }
+// 11-08 用户拍:研判是真花钱的 —— 显示大概要花多少。**只用真数据**:最近最多 20 条已销账研判记下的实际花费取平均;
+// 不到 3 条就明说估不出,不编一个数
+async function 估研判(n){
+  try{
+    const q=await fetch("/api/ops-queue?state="+encodeURIComponent("已销账")).then(r=>r.json());
+    const cs=(q.rows||[]).filter(x=>x.cost!=null).slice(0,20).map(x=>+x.cost);
+    if(cs.length<3) return "跑过的研判不到 3 条,估不出这次要花多少";
+    const avg=cs.reduce((a,b)=>a+b,0)/cs.length;
+    return `按最近 ${cs.length} 条的实际花费,每条约 $${avg.toFixed(4)},这次 ${n} 条约 $${(avg*n).toFixed(4)}`;
+  }catch(e){ return "取不到历史花费,估不出这次要花多少"; }
+}
+const 刷估计=async()=>{ const n=Math.min(10,Math.max(1,+$("#n").value||3)); $("#est").textContent=await 估研判(n); };
+$("#n").oninput=刷估计; 刷估计();
 $("#run").onclick=async()=>{
   // 10-18 起提交即返回(用户拍「自建运行记录」):这里只登记,在后台跑;运行号存下,研判队列页打开就接着显示进度
   const btn=$("#run"); btn.disabled=true;
   try{
     const r=await fetch("/run-batch",{method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({n:3})}).then(r=>r.json());
+      body:JSON.stringify({n:Math.min(10,Math.max(1,+$("#n").value||3))})}).then(r=>r.json());
     if(r.error) $("#msg").textContent="没提交成:"+r.error;
     else if(!(r.runs||[]).length) $("#msg").textContent=r.note||"这次一条都没提交 —— 队列里没有可跑的工单";
     else{

@@ -224,8 +224,10 @@ function openFin(r){
     opts.map(o=>`<option>${o.replace(/[<>&"]/g,"")}</option>`).join("");
   $("#mask").className="on"; $("#dsum").focus();
 }
-$("#cancel").onclick=()=>{$("#mask").className=""};
-$("#mask").onclick=e=>{if(e.target.id==="mask")$("#mask").className=""};
+// 11-08 用户拍:点遮罩原来直接关,写好的总结和现场照要重来 → 有内容时先问
+const 想关=()=>{ if(($("#dsum").value.trim()||SPICS.length) && !confirm("总结或现场照还没提交,关掉就丢了。确定关?")) return; $("#mask").className=""; };
+$("#cancel").onclick=想关;
+$("#mask").onclick=e=>{if(e.target.id==="mask")想关()};
 
 $("#dpic").addEventListener("change", async e=>{
   for(const f of e.target.files){

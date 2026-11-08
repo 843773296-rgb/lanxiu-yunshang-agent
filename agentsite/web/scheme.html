@@ -492,14 +492,18 @@ function 开弹窗(row){
   }
   $("dlgTitle").textContent = row ? `编辑方案 ${row.id}` : "新建方案";
   $("dlg").hidden=false;
+  开时=JSON.stringify(SEL);
   check();
   if(SEL.cust) 取着装人(SEL.cust);
 }
 function 关弹窗(){ $("dlg").hidden=true; }
+// 11-08 用户拍:点遮罩 / Esc / × 原来直接关,9 组选择全丢 → 有改动时先问
+let 开时="";
+function 想关(){ if(JSON.stringify(SEL)!==开时 && !confirm("这次的选择还没保存,关掉就丢了。确定关?")) return; 关弹窗(); }
 $("newBtn").addEventListener("click",()=>开弹窗(null));
-$("dlgClose").addEventListener("click",关弹窗);
-$("dlg").addEventListener("click",e=>{ if(e.target===$("dlg")) 关弹窗(); });
-if(document.addEventListener) document.addEventListener("keydown",e=>{ if(e.key==="Escape" && !$("dlg").hidden) 关弹窗(); });
+$("dlgClose").addEventListener("click",想关);
+$("dlg").addEventListener("click",e=>{ if(e.target===$("dlg")) 想关(); });
+if(document.addEventListener) document.addEventListener("keydown",e=>{ if(e.key==="Escape" && !$("dlg").hidden) 想关(); });
 (async()=>{
   OPT=await (await fetch("/api/scheme-options")).json();
   render(); loadList(); })();

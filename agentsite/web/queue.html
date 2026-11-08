@@ -100,8 +100,9 @@ textarea,input[type=text]{width:100%;font-family:var(--sans);font-size:13.5px;pa
       <button data-s="已销账">已销账</button>
       <button data-s="">全部</button>
     </div>
-    <button class="pri" id="run">研判 <input id="n" type="number" value="3" min="1" max="10"
-      style="width:44px;padding:2px 4px;font-family:var(--mono);border-radius:3px;border:1px solid rgba(255,255,255,.4);background:transparent;color:inherit"> 条</button>
+    <label style="font-size:13px">研判 <input id="n" type="number" value="3" min="1" max="10"
+      style="width:52px;padding:2px 4px;font-family:var(--mono)"> 条</label>
+    <button class="pri" id="run">让智能体研判</button> <span class="note" id="est"></span>
     <span class="note" id="msg"></span>
     <span id="转人工们"></span>
     <a href="/triage-board" style="margin-left:auto;font-size:12.5px">质量看板 →</a>
@@ -744,8 +745,20 @@ window.runOne=async(tid)=>{
   提示("提交这一条…", "");
   return 提交研判({task_id:tid});
 };
+// 11-08 用户拍:研判是真花钱的 —— 显示大概要花多少。**只用真数据**:最近最多 20 条已销账研判记下的实际花费取平均;
+// 不到 3 条就明说估不出,不编一个数
+async function 估研判(n){
+  try{
+    const q=await fetch("/api/ops-queue?state="+encodeURIComponent("已销账")).then(r=>r.json());
+    const cs=(q.rows||[]).filter(x=>x.cost!=null).slice(0,20).map(x=>+x.cost);
+    if(cs.length<3) return "跑过的研判不到 3 条,估不出这次要花多少";
+    const avg=cs.reduce((a,b)=>a+b,0)/cs.length;
+    return `按最近 ${cs.length} 条的实际花费,每条约 $${avg.toFixed(4)},这次 ${n} 条约 $${(avg*n).toFixed(4)}`;
+  }catch(e){ return "取不到历史花费,估不出这次要花多少"; }
+}
+const 刷估计=async()=>{ const n=Math.min(10,Math.max(1,+$("#n").value||3)); $("#est").textContent=await 估研判(n); };
+$("#n").oninput=刷估计; 刷估计();
 $("#run").onclick=async(e)=>{
-  if(e.target.id==="n") return;
   提示("提交中…", "");
   await 提交研判({n:+$("#n").value||3});
 };

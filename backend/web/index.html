@@ -262,7 +262,9 @@ h1{font-size:18px;margin:0 0 3px;font-weight:600}
 .cd-h .ed{color:var(--navy);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:4px}
 .cd-h .rt{margin-left:auto;color:var(--navy);font-size:13px;cursor:pointer}
 .tags{display:flex;gap:9px;align-items:center;margin-bottom:13px;flex-wrap:wrap}
-.tags .tg{border:1px solid #D9DCE1;border-radius:4px;padding:4px 16px;font-size:13px;background:#fff}
+.tags .tg{border:1px solid #D9DCE1;border-radius:4px;padding:4px 16px;font-size:13px;background:#fff;
+ width:auto;height:auto;line-height:1.4;vertical-align:baseline;cursor:default}
+.tags .tg::after{display:none} /* 11-08 UI 检查:标签小块和开关共用 .tg —— 被套上开关的固定宽高和白色圆钮,长标签溢出、还多一个圆点 */
 .tags a{color:var(--navy);font-size:13px;cursor:pointer}
 .pf{display:flex;gap:20px;padding:20px 22px}
 .pf .ph2{width:112px;height:132px;border-radius:6px;display:grid;place-items:center;
@@ -2200,8 +2202,10 @@ function formMeasureItem(after,cur){
   ],v=>doOp("/api/mitem-save",{...v,code:cur&&cur.code,role:ROLE},after),true);
 }
 function bindToggle(reload){
-  M.querySelectorAll("[data-tgl]").forEach(e=>e.onclick=()=>{
+  M.querySelectorAll("[data-tgl]").forEach(e=>e.onclick=async()=>{
     const [table,key,val]=e.dataset.tgl.split("|");
+    // 11-08 用户拍:「停用」加确认、「启用」不用(开着的开关点下去 = 停用)
+    if(e.classList.contains("on") && !await sure("停用这一项?",`「${val}」停用后,新建单据里就选不到它了(已有的单据不受影响)。`,"停用"))return;
     doOp("/api/toggle",{table,key,val},reload)});
 }
 

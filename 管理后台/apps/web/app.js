@@ -1593,6 +1593,8 @@ async function 页_意见详情(id) {
   $("#main").querySelectorAll("[data-opact]").forEach((b) => {
     b.onclick = async () => {
       const 话 = ($("#op-act-note") || {}).value || "";
+      // 11-08 用户拍:「不采纳」「答复」写的话提意见的人看得到 → 先确认
+      if (["不采纳", "答复"].includes(b.dataset.opact) && !(await 问一句(`确定${b.dataset.opact}?`, `提意见的人会看到这个决定${话 ? "和你写的这句话" : ""}。`, { 确定: b.dataset.opact }))) return;
       b.disabled = true;
       try {
         await 请求(`${P()}/opinions/${encodeURIComponent(id)}/actions`,
@@ -1886,7 +1888,10 @@ async function 页_工作室(类, 页) {
     $("#new").onclick = 弹_新建应用;
     挂页码($("#list"), (n) => { location.hash = `#/studio/${类}/${n}`; });
     $("#list").querySelectorAll("[data-tk]").forEach((b) => {
-      b.onclick = async () => { b.disabled = true; await 拨接管(b.dataset.tk, b.dataset.on === "1"); 页_工作室(类, 页); };
+      b.onclick = async () => {   // 11-08 用户拍:接管开关一点就改线上真客户的行为 → 先确认
+        const 开 = b.dataset.on === "1";
+        if (!(await 问一句(开 ? "打开聊天接管?" : "关掉聊天接管?", 开 ? "打开后,聊天站碰到这件事会改为发起这条工作流<b>生产环境里的那一版</b> —— 线上真客户马上受影响。" : "关掉后,聊天站改回用技能自己判断怎么做 —— 线上真客户马上受影响。", { 确定: 开 ? "打开接管" : "关掉接管" }))) return;
+        b.disabled = true; await 拨接管(b.dataset.tk, 开); 页_工作室(类, 页); };
     });
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
@@ -2090,7 +2095,7 @@ function 画_保存状态() {
 function 能改图() { return typeof 我的角色 === "undefined" || 我的角色 === "editor" || 我的角色 === "admin"; }
 function 历史() { return 图态.历史 || (图态.历史 = 图逻辑.历史()); }
 function 改图(名, fn, { 合并键 = null, 重绘 = true } = {}) {
-  if (!能改图()) { 提示("只读:你没有「改编排草稿」的权限 —— 可以查看、缩放、查找"); return false; }
+  if (!能改图()) { 轻提示("只读:你没有「改编排草稿」的权限 —— 可以查看、缩放、查找"); return false; }
   const g = 图态, 前 = 图逻辑.快照(g.定义, g.布局);
   let r;
   try { r = fn(); } catch (e) { 回到(前); throw e; }
@@ -2106,16 +2111,16 @@ function 回到(快照) { const o = JSON.parse(快照); 图态.定义 = o.定义
 function 撤销() {
   if (!能改图()) return;
   const x = 历史().撤销();
-  if (!x) { 提示("没有可以撤销的编辑"); return; }
+  if (!x) { 轻提示("没有可以撤销的编辑"); return; }
   回到(x.快照); if (typeof 清理选择 === "function") 清理选择(); 标脏(); 重画全部();
-  提示(`已撤销:${x.名}`);
+  轻提示(`已撤销:${x.名}`);
 }
 function 重做() {
   if (!能改图()) return;
   const x = 历史().重做();
-  if (!x) { 提示("没有可以重做的编辑"); return; }
+  if (!x) { 轻提示("没有可以重做的编辑"); return; }
   回到(x.快照); if (typeof 清理选择 === "function") 清理选择(); 标脏(); 重画全部();
-  提示(`已重做:${x.名}`);
+  轻提示(`已重做:${x.名}`);
 }
 function 重画全部() {
   if (!图态 || 图态.页签 !== "搭建" || !$("#pn")) { 画_底栏(); return; }
@@ -2126,7 +2131,9 @@ const 检查过期 = () => !!(图态.报告 && 图态.报告定义 !== JSON.stri
 
 /* 编辑区底部的结果提示 + 撤销入口(W29)。**自动消失不清撤销历史** */
 let _提示时 = 0;
-function 提示(文, { 撤销: 可撤 = false } = {}) {
+// 11-08 UI 检查:原来也叫「提示」,和上面的弹窗版重名 —— 后写的覆盖前面的,于是 17 处「提示(标题, 正文)」的正文
+// 全被丢掉(发密钥 / 轮换密钥的原文不显示、发布被拦的理由不显示……)。底部小提示条改叫「轻提示」
+function 轻提示(文, { 撤销: 可撤 = false } = {}) {
   let el = document.getElementById("wf-toast");
   if (!el) { el = document.createElement("div"); el.id = "wf-toast"; el.className = "wftoast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
   el.innerHTML = `<span>${esc(文)}</span>${可撤 && 能改图() ? ' <button id="wf-toast-u">撤销</button>' : ""}`;
@@ -2384,7 +2391,7 @@ function 加节点(类型, 接 = null) {
     if (接) {
       const 原 = g.定义.edges.find((e) => e.source === 接.在后 && 图逻辑.同口(e, 接.口));
       if (原 && !图逻辑.能插入吗(类型, 元).可以) {
-        提示(`没加:${图逻辑.能插入吗(类型, 元).为什么}`); return false;
+        轻提示(`没加:${图逻辑.能插入吗(类型, 元).为什么}`); return false;
       }
       if (原) 图逻辑.插入到线(g.定义, 图逻辑.边键(原), g.定义.nodes.pop(), 元);
       else 图逻辑.连(g.定义, 接.在后, 接.口, id);
@@ -2415,14 +2422,14 @@ function 弹_删除(ids) {
   // 名字**删之前**就记下来:删完再取,那一步已经不在图里了(2026-10-25 桩测试逮到的崩溃)
   const 名表 = {}; g.定义.nodes.forEach((n) => { 名表[n.id] = 业务名(n); });
   const 名 = (id) => 名表[id] || id;
-  if (!影.要删.length) { 提示(影.跳过.map((x) => x.为什么).join(";") || "没有可删的步骤"); return; }
+  if (!影.要删.length) { 轻提示(影.跳过.map((x) => x.为什么).join(";") || "没有可删的步骤"); return; }
   const 做 = (桥接) => {
     改图(影.要删.length > 1 ? `删除 ${影.要删.length} 步` : `删除「${名(影.要删[0])}」`, () => {
       图逻辑.删节点(g.定义, g.布局, 影.要删, { 桥接, 元, 是敏感: 是敏感节点 });
       if (g.画) { 影.要删.forEach((x) => g.画.选.delete(x)); g.画.线 = null; }
       if (影.要删.includes(g.选中)) g.选中 = null;
     });
-    提示(`已删除 ${影.要删.map(名).join("、") || ""}` + (影.跳过.length ? `;保留:${影.跳过.map((x) => x.为什么).join(";")}` : "")
+    轻提示(`已删除 ${影.要删.map(名).join("、") || ""}` + (影.跳过.length ? `;保留:${影.跳过.map((x) => x.为什么).join(";")}` : "")
       + (影.引用.length ? `;${影.引用.length} 处数据来源标成「原来源已删除」,要改` : ""), { 撤销: true });
   };
   const 简单 = !影.删边.length && !影.引用.length && !影.跳过.length && !影.删结束;
@@ -2560,8 +2567,8 @@ function 资源选择器(种类, 当前, 项们, 选了, 空话) {
   </div>`;
 }
 async function 重取资源() {
-  try { 图态.资源 = await 请求(`${P()}/workflow-resources`); 提示("资源列表已重新取到"); }
-  catch (e) { 图态.资源 = { ...图态.资源, 拉取失败: true }; 提示("还是取不到:" + e.message + "(当前选择没动)"); }
+  try { 图态.资源 = await 请求(`${P()}/workflow-resources`); 轻提示("资源列表已重新取到"); }
+  catch (e) { 图态.资源 = { ...图态.资源, 拉取失败: true }; 轻提示("还是取不到:" + e.message + "(当前选择没动)"); }
 }
 /* 换业务动作:先摆出入参的**真实差异**(新增必填 / 移除 / 类型变化),确认后才换;
  * 同名且类型兼容的绑定保留,对不上的列出来待核对 —— **不把旧参数原样送进新工具,也不悄悄清空整份表单**(§8.1) */
@@ -2588,7 +2595,7 @@ function 换业务动作(n, id) {
     关弹层();
     改图(`换业务动作为「${新t["名"]}」`, () => { c.tool_version_id = id; 要删.forEach((k) => { delete c.bindings[k]; }); });
     if (差.类型变化.length) (图态.待核对 = 图态.待核对 || {})[n.id] = 差.类型变化;
-    提示(`已换成「${新t["名"]}」` + (差.类型变化.length ? `;${差.类型变化.join("、")} 类型变了,请核对` : ""), { 撤销: true });
+    轻提示(`已换成「${新t["名"]}」` + (差.类型变化.length ? `;${差.类型变化.join("、")} 类型变了,请核对` : ""), { 撤销: true });
   };
   return false;     // 真改在确认之后;这一次控件变更本身不改定义
 }
@@ -2629,12 +2636,12 @@ function 表_设置(n) {
       + c.classes.map((x, i) => `<div class="card">
           <div class="k">第 ${i + 1} 类 · 叫</div>${输入框(x.key || "", (el) => {
             const r = 图逻辑.分支改名(图态.定义, n.id, x.key, el.value);
-            if (!r.可以) { if (!r.没变) 提示(`没改名:${r.为什么}`); el.value = x.key || ""; return false; }
+            if (!r.可以) { if (!r.没变) 轻提示(`没改名:${r.为什么}`); el.value = x.key || ""; return false; }
             重画(); })}
           <div class="k">什么样的算这一类(写给模型看)</div>${输入框(x.说明 || "", (el) => { x.说明 = el.value.trim() || undefined; }, "例如:客户问了价格、档期或约了到店", { 可清空: true })}
           <div class="acts"><button class="danger" data-k="${挂控件(() => {
               const r = 图逻辑.删分支(图态.定义, n.id, i);
-              提示(`已删除「${r.键}」这一类` + (r.删边.length ? `和它的 ${r.删边.length} 条连线(目标步骤保留)` : ""), { 撤销: true }); 重画(); })}"
+              轻提示(`已删除「${r.键}」这一类` + (r.删边.length ? `和它的 ${r.删边.length} 条连线(目标步骤保留)` : ""), { 撤销: true }); 重画(); })}"
               aria-label="删掉第 ${i + 1} 类">删掉这一类</button></div></div>`).join("")
       + `<button data-k="${挂控件(() => { let j = c.classes.length + 1; while (c.classes.some((x) => x.key === `类别${j}`)) j++;
             c.classes.push({ key: `类别${j}` }); 重画(); })}">加一类</button>`
@@ -2723,7 +2730,7 @@ function 表_设置(n) {
       + (c.branches || []).map((b, i) => `<div class="card">
           <div class="k">第 ${i + 1} 路 · 叫</div>${输入框(b.key, (el) => {
             const r = 图逻辑.分支改名(图态.定义, n.id, b.key, el.value);
-            if (!r.可以) { if (!r.没变) 提示(`没改名:${r.为什么}`); el.value = b.key; return false; }
+            if (!r.可以) { if (!r.没变) 轻提示(`没改名:${r.为什么}`); el.value = b.key; return false; }
             重画(); })}
           ${(() => {
             // 一路几条条件,「且 / 或」连(10-27 照 Dify)。老写法只有一条 when:显示成一条;一动就转成新写法
@@ -2748,7 +2755,7 @@ function 表_设置(n) {
             <button data-k="${挂控件(() => { 图逻辑.分支移动(图态.定义, n.id, i, 1); 重画(); })}" ${i === c.branches.length - 1 ? "disabled" : ""} aria-label="第 ${i + 1} 路下移">下移</button>
             <button class="danger" data-k="${挂控件(() => {
               const r = 图逻辑.删分支(图态.定义, n.id, i);
-              提示(`已删除「${r.键}」这一路` + (r.删边.length ? `和它的 ${r.删边.length} 条连线(目标步骤保留)` : ""), { 撤销: true }); 重画(); })}">删除分支</button></div></div>`).join("")
+              轻提示(`已删除「${r.键}」这一路` + (r.删边.length ? `和它的 ${r.删边.length} 条连线(目标步骤保留)` : ""), { 撤销: true }); 重画(); })}">删除分支</button></div></div>`).join("")
       + `<button data-k="${挂控件(() => { let j = (c.branches || []).length + 1; while ((c.branches || []).some((x) => x.key === `第${j}路`)) j++;
             (c.branches = c.branches || []).push({ key: `第${j}路`, logic: "and",
             conditions: [{ op: "equals", left: null, right: { source: "constant", value: "" } }] }); 重画(); })}">加一路</button>`
@@ -2827,9 +2834,9 @@ function 表_设置(n) {
       return `<div class="fieldrow"><label>${esc(o.名)}</label>${下拉(e ? e.target : "", 候选, (el) => {
         if (!el.value) { if (e) 图逻辑.删边(图态.定义, 图逻辑.边键(e)); 重画(); return; }
         const v = 图逻辑.连接校验(图态.定义, n.id, o, el.value, 元);
-        if (!v.可以) { 提示(`没改:${v.为什么}`); el.value = e ? e.target : ""; return false; }
+        if (!v.可以) { 轻提示(`没改:${v.为什么}`); el.value = e ? e.target : ""; return false; }
         图逻辑.连(图态.定义, n.id, o, el.value);
-        if (v.替换) 提示(`已把「${o.名}」的下一步从「${业务名(节点(v.替换.target))}」改为「${业务名(节点(el.value))}」`, { 撤销: true });
+        if (v.替换) 轻提示(`已把「${o.名}」的下一步从「${业务名(节点(v.替换.target))}」改为「${业务名(节点(el.value))}」`, { 撤销: true });
         重画();
       }, o.port === "error" ? "失败就结束这次运行" : "(不接)")}</div>`;
     }).join("") + `</div>`;
@@ -2917,7 +2924,7 @@ function 绑定编辑(n, 键名, 契约 = null) {
       <div class="k">${r && r.source === "node" && !失效 ? "正式运行时取那一步的真实结果;还没跑过,所以这里没有样例" : r ? "" : "未设置来源 —— 字段还在,运行前要选"}</div>
       <div class="acts">${r ? `<button data-k="${挂控件(() => { 绑[k] = null; 重画(); })}">移除来源</button>` : ""}
         ${在契约 && 必.has(k) ? `<span class="k">必填参数不能删,只能移除来源</span>`
-          : 在契约 && !r ? "" : `<button class="danger" data-k="${挂控件(() => { delete 绑[k]; 提示(`已删除字段「${k}」`, { 撤销: true }); 重画(); })}">删除字段</button>`}</div></div>`;
+          : 在契约 && !r ? "" : `<button class="danger" data-k="${挂控件(() => { delete 绑[k]; 轻提示(`已删除字段「${k}」`, { 撤销: true }); 重画(); })}">删除字段</button>`}</div></div>`;
   }).join("");
   return 行 + (契 ? "" : `<button data-k="${挂控件(() => {
       let i = 1; while (绑[`字段${i}`]) i++; 绑[`字段${i}`] = null; 重画(); })}">加一个字段</button>`)
@@ -2962,13 +2969,13 @@ function 字段表编辑(sch, 是输入) {
       <td>${输入框(k, (el) => {
         const 新 = el.value.trim();
         if (!新 || 新 === k) { el.value = k; return false; }
-        if (sch.properties[新]) { 提示(`没改:已经有字段叫「${新}」`); el.value = k; return false; }
+        if (sch.properties[新]) { 轻提示(`没改:已经有字段叫「${新}」`); el.value = k; return false; }
         // 改的是**字段标识**:引用它的地方要同步,否则那几处会安静地取不到值
         const 引 = 字段引用(sch, k);
         sch.properties[新] = v; delete sch.properties[k];
         sch.required = sch.required.map((x) => (x === k ? 新 : x));
         if (引.length) 引.forEach((r) => { r.pointer = "/" + 新; });
-        提示(引.length ? `已改字段标识「${k}」→「${新}」,同步更新了 ${引.length} 处引用(提示词正文里的文字不会被替换)` : `已改字段标识「${k}」→「${新}」`, { 撤销: true });
+        轻提示(引.length ? `已改字段标识「${k}」→「${新}」,同步更新了 ${引.length} 处引用(提示词正文里的文字不会被替换)` : `已改字段标识「${k}」→「${新}」`, { 撤销: true });
         重画(); })}</td>
       ${是输入 ? `<td>${输入框(v.title || "", (el) => { v.title = el.value.trim() || undefined; }, "页面上显示的名字")}</td>` : ""}
       <td>${下拉(v.type || "string", 结果类型们, (el) => { v.type = el.value; })}</td>
@@ -2980,7 +2987,7 @@ function 字段表编辑(sch, 是输入) {
         const 引 = 字段引用(sch, k);
         delete sch.properties[k];
         sch.required = sch.required.filter((x) => x !== k);
-        提示(`已删除字段「${k}」` + (引.length ? `;有 ${引.length} 处还在用它,已标「来源字段已删除」,要改` : ""), { 撤销: true });
+        轻提示(`已删除字段「${k}」` + (引.length ? `;有 ${引.length} 处还在用它,已标「来源字段已删除」,要改` : ""), { 撤销: true });
         重画(); })}" aria-label="删除字段 ${esc(k)}">删除</button></td></tr>`).join("");
   return `<table><thead><tr><th>字段</th>${是输入 ? "<th>显示名</th>" : ""}<th>类型</th><th>必填</th><th>说明</th><th></th></tr></thead>
     <tbody>${行 || `<tr><td colspan="6" class="k">还没有字段</td></tr>`}</tbody></table>
@@ -3363,7 +3370,10 @@ async function 画_版本() {
   document.querySelectorAll("[data-vname]").forEach((b) => { b.onclick = () => 弹_版本起名(b.dataset.vname); });
   document.querySelectorAll("[data-vdel]").forEach((b) => { b.onclick = () => 做_删版本(b.dataset.vdel); });
   document.querySelectorAll("[data-pub]").forEach((b) => { b.onclick = () => 做_发布工作流(b.dataset.pub, b.dataset.env, 各环境); });
-  document.querySelectorAll("[data-rv]").forEach((b) => { b.onclick = () => 做_审核发布(b.dataset.rv, b.dataset.ok === "1"); });
+  document.querySelectorAll("[data-rv]").forEach((b) => { b.onclick = async () => {
+    // 11-08 用户拍:审核通过后这一版就能发到生产
+    if (b.dataset.ok === "1" && !(await 问一句("审核通过这一版?", "通过后,有发布权限的人就能把这一版发到生产。", { 确定: "审核通过" }))) return;
+    做_审核发布(b.dataset.rv, b.dataset.ok === "1"); }; });
 }
 /* 版本命名 / 删除(10-27 照 Dify 版本历史):名字和「删掉了」记在旁表上,冻结版本本身一个字不改 */
 function 弹_版本起名(vid) {
@@ -3379,7 +3389,7 @@ function 弹_版本起名(vid) {
     try {
       const r = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/versions/${encodeURIComponent(vid)}`, { method: "PATCH",
         headers: { "If-Match": String(v["标记revision"] ?? 0) }, body: JSON.stringify({ 名称: 名 }) });
-      v["名称"] = 名 || null; v["标记revision"] = r["标记revision"]; 关弹层(); 提示(名 ? `已改名:${名}` : "已去掉名字"); 画_版本();
+      v["名称"] = 名 || null; v["标记revision"] = r["标记revision"]; 关弹层(); 轻提示(名 ? `已改名:${名}` : "已去掉名字"); 画_版本();
     } catch (e) { 报错(e); }
   };
 }
@@ -3558,7 +3568,7 @@ async function 看冻结版本(vid) {
     $("#vc-ok").onclick = () => {
       关弹层();
       改图(`复制 ${v["版本"]} 为草稿`, () => { 图态.定义 = JSON.parse(JSON.stringify(定)); 图态.布局 = JSON.parse(JSON.stringify(布)); 图态.选中 = null; });
-      提示(`已把 ${v["版本"]} 复制为草稿(未保存)`, { 撤销: true });
+      轻提示(`已把 ${v["版本"]} 复制为草稿(未保存)`, { 撤销: true });
     };
   };
 }
@@ -3612,6 +3622,8 @@ function 画_设置() {
     <h4>运行上限</h4><div>每次最多调模型 8 次(发起时带的默认值)。<span class="k">超过就停、记「没完整完成」,不会无限调。</span></div>
     <h4>人工核对的截止</h4><div>每个核对步骤自己设(搭建 → 人工核对 → 设置)。到点没人处理,这次运行结束、记「已过期」。</div></div>`;
   $("#st-tk").onclick = async () => {
+    const 开 = $("#st-tk").dataset.on === "1";   // 11-08 用户拍:先确认(线上真客户马上受影响)
+    if (!(await 问一句(开 ? "打开聊天接管?" : "关掉聊天接管?", "这一下会改线上聊天站真客户碰到这件事时的走法。", { 确定: 开 ? "打开接管" : "关掉接管" }))) return;
     const r = await 拨接管(g.wid, $("#st-tk").dataset.on === "1", $("#st-sk").value);
     if (r) { Object.assign(g, { 对应技能: r["对应技能"], 聊天接管: r["聊天接管"], 信息rev: r.revision }); 画_画布(); }
   };
@@ -3827,6 +3839,19 @@ let _上个地址 = location.hash, _放行一次 = false;
 function 离开拦截() {
   const 到 = location.hash;
   if (_放行一次) { _放行一次 = false; _上个地址 = 到; return false; }
+  // 11-08 UI 检查:原来只拦工作流画布;智能体 / 聊天助手编辑页有「脏」标记却不拦,一离开改动全丢
+  for (const [态, 前缀, 名] of [[agent态, "#/agent/", "智能体"], [聊态, "#/chat/", "聊天助手"]]) {
+    if (!态 || !态.脏) continue;
+    const 页 = 前缀 + encodeURIComponent(态.aid || 态.cid);
+    if (到 === 页 || 到.startsWith(页 + "/") || decodeURIComponent(到) === 前缀 + (态.aid || 态.cid)) continue;
+    const 回 = _上个地址;
+    _放行一次 = true; location.hash = 回;
+    弹层("有未保存的修改", `<p>这个${名}有还没保存的修改,离开就丢了。</p>
+      <div class="acts"><button class="pri" id="lv-stay">留在此页</button> <button class="danger" id="lv-drop">放弃修改并离开</button></div>`);
+    $("#lv-stay").onclick = 关弹层;
+    $("#lv-drop").onclick = () => { 关弹层(); 态.脏 = false; location.hash = 到; };
+    return true;
+  }
   const g = 图态, 本页 = g ? `#/workflow/${encodeURIComponent(g.wid)}` : null;
   const 还在本条 = 本页 && (到 === 本页 || 到.startsWith(本页 + "/") || decodeURIComponent(到).startsWith(`#/workflow/${g.wid}/`));
   if (!g || !g.脏 || 还在本条) { _上个地址 = 到; return false; }
@@ -3972,7 +3997,7 @@ function 画_变量检查() {
     <div class="vibody"><div class="vileft">${左}</div><div class="viright">${右 || '<div class="k">在左边选一步。</div>'}</div></div>`;
   $("#vi-x").onclick = () => { g.变量开 = false; 画_变量检查(); };
   盒.querySelectorAll("[data-vi]").forEach((b) => { b.onclick = () => { g.变量选 = b.dataset.vi; 画_变量检查(); }; });
-  const 重置 = $("#vi-reset"); if (重置) 重置.onclick = () => { g.变量改 = {}; 画_变量检查(); 提示("已撤掉所有修改,回到上一次运行的值"); };
+  const 重置 = $("#vi-reset"); if (重置) 重置.onclick = () => { g.变量改 = {}; 画_变量检查(); 轻提示("已撤掉所有修改,回到上一次运行的值"); };
   const 回 = $("#vi-back"); if (回) 回.onclick = () => { delete g.变量改[选.id]; 画_变量检查(); };
   const 出 = $("#vi-exp");
   if (出) 出.onclick = () => {
@@ -4031,6 +4056,7 @@ async function 挂样例条({ 前缀, node, 填, 取 }) {
   const 删 = $(`#${前缀}-smpdel`);
   if (删) 删.onclick = async () => {
     const x = 表[sel.value]; if (!x || !x.样例) return;
+    if (!(await 问一句("删掉这条样例?", `「${esc(x.名)}」是团队共用的测试样例,删掉后<b>恢复不了</b>。`, { 确定: "删掉" }))) return;   // 11-08 用户拍
     try { await 请求(`${基}/test-samples/${encodeURIComponent(x.样例)}`, { method: "DELETE" }); 话(`已删掉「${esc(x.名)}」。`); 挂样例条({ 前缀, node, 填, 取 }); }
     catch (e) { 报错(e); }
   };
@@ -4276,6 +4302,8 @@ function 挂运行控制(rid, d) {
   document.querySelectorAll("[data-rc]").forEach((b) => {
     b.onclick = async () => {
       const 动 = b.dataset.rc;
+      // 11-08 UI 检查:取消运行原来点了就执行,撤不回
+      if (动 === "cancel" && !(await 问一句("取消这次运行?", "正在跑的步骤会被停下,<b>取消之后不能恢复</b>,要重新发起一次。", { 确定: "取消运行", 取消: "继续跑" }))) return;
       b.disabled = true;
       if ($("#rcmsg")) $("#rcmsg").innerHTML = `<div class="state"><p>提交中…</p></div>`;
       try {
@@ -4365,7 +4393,7 @@ async function 原始日志(rid, 筛 = {}, 运行 = null) {
       const 文 = JSON.stringify({ 运行: rid, 说明: 是子集 || 态.下一页 != null ? `这是已加载的 ${态.条目.length} 条(筛选后 ${筛后} / 共 ${全}),不是全部` : "全部",
         内容: d["能看原文"] ? "原件" : "部分打码", 条目: 态.条目 }, null, 1);
       (navigator.clipboard ? navigator.clipboard.writeText(文) : Promise.reject(new Error("浏览器不给剪贴板")))
-        .then(() => 提示(`已复制 ${态.条目.length} 条(写明了是不是全部)`), (e) => 提示("复制不了:" + e.message));
+        .then(() => 轻提示(`已复制 ${态.条目.length} 条(写明了是不是全部)`), (e) => 轻提示("复制不了:" + e.message));
     };
     $("#rl-dl").onclick = async () => {
       try {
@@ -4374,7 +4402,7 @@ async function 原始日志(rid, 筛 = {}, 运行 = null) {
         const a = document.createElement("a");
         a.href = URL.createObjectURL(new Blob([JSON.stringify(包, null, 1)], { type: "application/json" }));
         a.download = `原始日志-${rid}${是子集 ? "-筛选子集" : ""}.json`; a.click();
-        提示(`已下载 ${包["条目"].length} 条(${包["是全部还是子集"]} · ${包["内容"].slice(0, 4)});这次导出记进了审计`);
+        轻提示(`已下载 ${包["条目"].length} 条(${包["是全部还是子集"]} · ${包["内容"].slice(0, 4)});这次导出记进了审计`);
       } catch (e) { 报错(e); }
     };
     el.querySelectorAll("[data-rlgo]").forEach((b) => {
@@ -4382,7 +4410,7 @@ async function 原始日志(rid, 筛 = {}, 运行 = null) {
         // L07:回到当时的步骤。当前草稿里已经没有它 → 明说,**不跳到当前同名步骤**
         const id = b.dataset.rlgo, wid = 运行 && 运行["定义来源"] && (运行["定义来源"].id || 运行["定义来源"].workflow_id);
         if (图态 && 图态.wid === wid && 节点(id)) { 图态.选中 = id; location.hash = `#/workflow/${encodeURIComponent(wid)}/搭建`; return; }
-        提示(`「${id}」在你现在打开的草稿里没有 —— 这条记录属于当时的定义(定义哈希 ${String((态.回 || {})["定义哈希"] || "").slice(0, 12)}…),不跳到同名的当前步骤`);
+        轻提示(`「${id}」在你现在打开的草稿里没有 —— 这条记录属于当时的定义(定义哈希 ${String((态.回 || {})["定义哈希"] || "").slice(0, 12)}…),不跳到同名的当前步骤`);
       };
     });
   };
@@ -4390,7 +4418,7 @@ async function 原始日志(rid, 筛 = {}, 运行 = null) {
     while (态.跟随 && el.isConnected !== false && $("#rawlog") === el) {
       await new Promise((r) => setTimeout(r, 3000));
       if (!态.跟随) break;
-      try { await 取(false); 画(); } catch (e) { 态.跟随 = false; 提示("跟随中断:" + e.message + "(已加载的还在)"); 画(); }
+      try { await 取(false); 画(); } catch (e) { 态.跟随 = false; 轻提示("跟随中断:" + e.message + "(已加载的还在)"); 画(); }
     }
   };
   el.innerHTML = `<div class="state">在取原始记录…</div>`;
@@ -4758,8 +4786,10 @@ async function 做_存agent() {
     画_agent();
   } catch (e) {
     if (e.码 === 409) {
+      const 我的 = JSON.stringify(agent态["草稿"]["配置"], null, 2);   // 11-08 用户拍:重载前把没保存的内容留给人复制
       await 路由();
-      提示("别人刚改过", `${md(e.message)}<br>下一步:${md(e.体?.advice || "看一眼最新内容再改")}`);
+      提示("别人刚改过", `${md(e.message)}<br>下一步:${md(e.体?.advice || "看一眼最新内容再改")}
+        <details><summary>我这边没保存的内容(已经被最新版本盖掉,先复制下来再合并)</summary><pre class="io">${esc(我的)}</pre></details>`);
       return;
     }
     报错(e);
@@ -5528,7 +5558,7 @@ async function 页_人工待办() {
 }
 
 /* ── 人工核对(工作流里的 human 节点,2026-10-24)──────────────────────
- * 方案 §5.3 / §7:原文和摘要**并排**,定稿可改,决定只有「通过 / 退回」。
+ * 方案 §5.3 / §7:原文和摘要**并排**,定稿可改,决定只有「通过 / 驳回」(11-08 用户拍:「退回 / 驳回」统一叫驳回)。
  * 和工具审批那一页分开画:审批要看的是「写哪儿、写什么类型」,核对的活是**对着原文看摘要漏没漏、编没编** ——
  * 原文给形状(「419 字 · 开头……」)的话,审核人只能照着摘要点通过,这一步就成了走过场。
  */
@@ -5559,19 +5589,19 @@ function 画_核对页(hid, d, 头) {
         <div class="k">下面几项<b>都填了才派</b>,全空就不派。</div>
         ${额外.map((k, i) => `<label class="f">${esc(k)}${/负责人/.test(k) ? "(工号或姓名)" : ""}</label>
           <input data-rvx="${i}" ${/截止/.test(k) ? 'type="datetime-local"' : /客户号/.test(k) ? 'placeholder="逗号分隔,如 C36892,C36090"' : 'placeholder="如 60000003"'}>`).join("")}` : ""}
-        <label class="f">理由(退回必填)</label><textarea id="rv-why" rows="2"></textarea>
-        <button class="pri" id="rv-ok">通过</button> <button id="rv-no">退回</button>
+        <label class="f">理由(驳回必填)</label><textarea id="rv-why" rows="2"></textarea>
+        <button class="pri" id="rv-ok">通过</button> <button id="rv-no">驳回</button>
         <div id="rv-res"></div>` : `<div class="state err"><h3>你不能处理这条</h3><p>${md(d["为什么"] || "")}</p></div>`}
       </div></div>
     <h2>处理记录</h2>`
     + ((d["决定历史"] || []).length ? `<table><thead><tr><th>谁</th><th>决定</th><th>理由</th></tr></thead><tbody>`
         + d["决定历史"].map((x) => `<tr><td>${esc(x.actor)}</td><td>${x.decision === "approved" ? "通过"
-            : x.decision === "rejected" ? "退回" : esc(x.decision)}</td><td>${esc(x.reason || "")}</td></tr>`).join("")
+            : x.decision === "rejected" ? "驳回" : esc(x.decision)}</td><td>${esc(x.reason || "")}</td></tr>`).join("")
         + `</tbody></table>` : `<div class="k">还没有人处理过。</div>`);
   if (!d["你能处理吗"]) return;
   const 发 = async (决定) => {
     const 理由 = $("#rv-why").value.trim();
-    if (决定 === "rejected" && !理由) { $("#rv-why").focus(); $("#rv-res").innerHTML = `<div class="k">退回要写理由 —— 不然发起的人不知道错在哪。</div>`; return; }
+    if (决定 === "rejected" && !理由) { $("#rv-why").focus(); $("#rv-res").innerHTML = `<div class="k">驳回要写理由 —— 不然发起的人不知道错在哪。</div>`; return; }
     const edits = {};
     if (决定 === "approved" && 能改 && $("#rv-fin").value.trim() !== (材["摘要"] || "").trim()) edits["定稿"] = $("#rv-fin").value.trim();
     if (决定 === "approved" && 额外.length) {
@@ -5586,7 +5616,7 @@ function 画_核对页(hid, d, 头) {
         method: "POST", headers: { "Idempotency-Key": 新键() },
         body: JSON.stringify({ decision: 决定, request_revision: 请.revision, reason: 理由 || null, edits }) });
       $("#rv-res").innerHTML = `<div class="note">${决定 === "approved" ? "已通过 —— 流程接着走,接下来的写入由澜绣的同步程序按定稿去办"
-        : "已退回 —— 这次运行记下理由后结束,什么都不写"}${r["运行"] ? ` · <a href="#/wfrun/${encodeURIComponent(r["运行"].id)}">看这次运行</a>` : ""}</div>`;
+        : "已驳回 —— 这次运行记下理由后结束,什么都不写"}${r["运行"] ? ` · <a href="#/wfrun/${encodeURIComponent(r["运行"].id)}">看这次运行</a>` : ""}</div>`;
       setTimeout(() => 页_待办详情(hid), 1500);
     } catch (e) { const s = 错误块(e, null); $("#rv-res").innerHTML = s.html; }
   };
@@ -6084,6 +6114,8 @@ async function 页_产出详情(id) {
   if (按) 按.onclick = async () => {
     const 理由 = $("#rj-why").value.trim();
     if (理由.length < 4) { $("#rj-msg").textContent = "理由至少 4 个字"; return; }
+    // 11-08 用户拍:打回会触发澜绣那边自动重写
+    if (!(await 问一句("打回这一版?", "打回后澜绣会按你写的理由自动重写一版,报告在店长那边标「被管理平台打回」、不许确认。", { 确定: "打回" }))) return;
     按.disabled = true;
     try {
       await 请求(`${P()}/artifacts/${encodeURIComponent(id)}/reject`,
@@ -7867,6 +7899,8 @@ function 挂绑定事件() {
   });
   document.querySelectorAll("[data-unbind]").forEach((b) => {
     b.onclick = async () => {
+      // 11-08 用户拍:解绑后这名员工在聊天里就发起不了被接管的工作流
+      if (!(await 问一句("解绑这名员工?", `解绑后,工号 ${esc(b.dataset.unbind)} 在聊天里就发起不了被接管的工作流了。`, { 确定: "解绑" }))) return;
       b.disabled = true;
       try {
         await 绑定动作.解绑(b.dataset.unbind);
@@ -8105,6 +8139,8 @@ function 挂产物事件() {
     b.onclick = async () => {
       const aid = b.dataset.dep;
       const sel = document.querySelector(`[data-env="${aid}"]`);
+      // 11-08 UI 检查:部署原来点了就提交(环境下拉里可能是生产),应用详情那页同类操作是有确认的
+      if (!(await 问一句("部署这个模型产物?", `部署到 <b>${esc(sel ? sel.value : "")}</b>。部署后这个环境里调它的地方会换成这一份。`, { 确定: "部署", 取消: "先不" }))) return;
       b.disabled = true;
       if ($("#amsg")) $("#amsg").innerHTML = `<div class="state"><p>部署中…</p></div>`;
       try {
@@ -8355,7 +8391,9 @@ async function 做_存聊天助手() {
       headers: { "If-Match": String(g["草稿"]["revision"]) }, body: JSON.stringify({ 配置: g.改 }) });
     await 页_聊天助手(g.cid);
   } catch (e) {
-    if (e.码 === 409) { await 页_聊天助手(g.cid); 提示("别人刚改过", `${md(e.message)}<br>下一步:${md(e.体?.advice || "看一眼最新内容再改")}`); return; }
+    if (e.码 === 409) { const 我的 = JSON.stringify(g.改, null, 2);   // 11-08 用户拍:重载前把没保存的内容留给人复制
+      await 页_聊天助手(g.cid); 提示("别人刚改过", `${md(e.message)}<br>下一步:${md(e.体?.advice || "看一眼最新内容再改")}
+        <details><summary>我这边没保存的内容(已经被最新版本盖掉,先复制下来再合并)</summary><pre class="io">${esc(我的)}</pre></details>`); return; }
     报错(e);
   }
 }

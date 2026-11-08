@@ -40,7 +40,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   vertical-align:1px}
 .conv .x{position:absolute;right:5px;top:6px;display:none;border:0;background:none;
   color:var(--dim);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:5px}
-.conv:hover .x{display:block}
+.conv .x{display:block;opacity:.45} .conv:hover .x{opacity:1} /* 11-08 用户拍:× 常驻(触屏没有悬停,原来点不到) */
 .conv .x:hover{background:#dcdde1;color:var(--ink)}
 
 /* ── 右侧主区 ─────────────────────────────────────────────── */
@@ -665,6 +665,8 @@ function drawSide(){
     el.onclick = e => {
       if(e.target.dataset && e.target.dataset.act === "del"){
         e.stopPropagation();
+        // 11-08 用户拍:删会话加确认(删了恢复不了;「清空」那里本来就有确认)
+        if(!confirm(`删除会话「${c.title || "未命名"}」?\n删了恢复不了。`)) return;
         DB.convs = DB.convs.filter(x => x.id !== c.id);
         if(DB.cur === c.id) DB.cur = DB.convs.length ? DB.convs[0].id : null;
         save(); drawSide(); drawStream(); return;

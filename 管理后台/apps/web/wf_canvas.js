@@ -3,7 +3,7 @@
  * 这一份只管「画出来、接住手势」。**图怎么改**一律交给 wf_graph.js(图逻辑)经 app.js 的 改图() ——
  * 那里记撤销、标未保存、判检查报告过期。这里不直接动定义。
  *
- * 用到 app.js 里的全局:图态 / 节点 / 元 / 业务名 / 次级标签 / 缺项 / 改图 / 撤销 / 重做 / 能改图 / 提示 /
+ * 用到 app.js 里的全局:图态 / 节点 / 元 / 业务名 / 次级标签 / 缺项 / 改图 / 撤销 / 重做 / 能改图 / 轻提示 /
  * 弹层 / 关弹层 / 画_面板 / 新节点 / 弹_删除 / 是敏感节点 / 步类型名 / esc / $。都在调用时才取,加载顺序无关。
  *
  * 几条设计稿里的硬要求,落在哪:
@@ -680,7 +680,7 @@ function 取消连线() { 画态().待连 = null; 画_节点(); 画_线(); 画_�
 /* 图上连和「下一步」下拉走同一个函数:单目标出口再连 → 预览替换、确认后原子替换(§6.2) */
 function 连上(源, 口, 目标, { 已确认 = false } = {}) {
   const v = 图逻辑.连接校验(图态.定义, 源, 口, 目标, 元);
-  if (!v.可以) { 提示(`不能连:${v.为什么}`); 画_节点(); return false; }
+  if (!v.可以) { 轻提示(`不能连:${v.为什么}`); 画_节点(); return false; }
   if (v.替换 && !已确认) {
     弹层("替换下一步", `<p>「${esc(业务名(节点(源)))}」的「${esc(口.名)}」现在接的是 <b>${esc(业务名(节点(v.替换.target)))}</b>。</p>
       <p>将把下一步从 <b>${esc(业务名(节点(v.替换.target)))}</b> 改为 <b>${esc(业务名(节点(目标)))}</b> —— 一个出口只接一个去向,不会两条线同时执行。</p>
@@ -691,7 +691,7 @@ function 连上(源, 口, 目标, { 已确认 = false } = {}) {
   }
   改图(`连线:${业务名(节点(源))} → ${业务名(节点(目标))}`, () => { 图逻辑.连(图态.定义, 源, 口, 目标); 剪折点(); });
   const 缺 = 缺项(节点(目标));
-  提示(v.替换 ? `已把下一步改为「${业务名(节点(目标))}」` : `已连接「${业务名(节点(源))}」→「${业务名(节点(目标))}」`
+  轻提示(v.替换 ? `已把下一步改为「${业务名(节点(目标))}」` : `已连接「${业务名(节点(源))}」→「${业务名(节点(目标))}」`
     + (缺.length ? `;仍需配置:${缺.map(中文名).join("、")}` : ""), { 撤销: true });
   return true;
 }
@@ -707,7 +707,7 @@ function 删线(键) {
   改图(`删除连线 ${名}`, () => { 图逻辑.删边(图态.定义, 键); 剪折点(); });
   画态().线 = null;
   const 新丢 = [...走不到的()].filter((id) => !丢前.has(id));
-  提示(`已断开「${名}」` + (新丢.length ? `;「${新丢.map((id) => 业务名(节点(id))).join("、")}」从开始走不到了` : ""), { 撤销: true });
+  轻提示(`已断开「${名}」` + (新丢.length ? `;「${新丢.map((id) => 业务名(节点(id))).join("、")}」从开始走不到了` : ""), { 撤销: true });
   if (新丢.length) 定位到(新丢);
   画_线(); 画_状态栏();
 }
@@ -725,27 +725,27 @@ function 拖端点(ev, 哪头) {
       if (!拖了) return;
       const 下 = document.elementFromPoint ? document.elementFromPoint(m.clientX, m.clientY) : null;
       const nd = 下 && 下.closest && 下.closest(".wfnode2");
-      if (!nd) { 提示("未更改连接 —— 原线保留(要断开请用「删除连线」)"); return; }
+      if (!nd) { 轻提示("未更改连接 —— 原线保留(要断开请用「删除连线」)"); return; }
       let 改 = {};
       if (哪头 === "dst") 改 = { target: nd.dataset.id };
       else {
         const po = 下.closest("[data-out]"), n = 节点(nd.dataset.id), 口们 = 图逻辑.出口们(n, 元);
         const 口 = po ? 口们[+po.dataset.oi] : 口们.find((o) => o.port === e.port && (e.port !== "branch" || o.branch_key === e.branch_key)) || 口们[0];
-        if (!口) { 提示("那一步没有出口,未更改连接"); return; }
+        if (!口) { 轻提示("那一步没有出口,未更改连接"); return; }
         改 = { source: nd.dataset.id, 口 };
       }
       重连(键, 改);
     },
-    取消: () => { s.拖线 = null; 画_线(); 提示("未更改连接"); },
+    取消: () => { s.拖线 = null; 画_线(); 轻提示("未更改连接"); },
   });
 }
 function 重连(键, 改) {
   const 试 = JSON.parse(JSON.stringify(图态.定义));
   const v = 图逻辑.重连(试, 键, 改, 元);
-  if (!v.可以) { 提示(v.没变 ? "未更改连接" : `没改:${v.为什么} —— 原线保留`); return false; }
+  if (!v.可以) { 轻提示(v.没变 ? "未更改连接" : `没改:${v.为什么} —— 原线保留`); return false; }
   改图("重新连接", () => { 图逻辑.重连(图态.定义, 键, 改, 元); 剪折点(); });
   画态().线 = v.新键;
-  提示(v.换了起点 ? "已改连接的起点 —— 出口变了,这条路什么时候走也跟着变了,请核对" : "已改连接的终点", { 撤销: true });
+  轻提示(v.换了起点 ? "已改连接的起点 —— 出口变了,这条路什么时候走也跟着变了,请核对" : "已改连接的终点", { 撤销: true });
   画_线(); 画_状态栏();
   return true;
 }
@@ -769,9 +769,9 @@ function 线工具(动作) {
   if (动作 === "bend") {
     const p = 出口点(节点(e.source), { port: e.port, branch_key: e.branch_key ?? null }), q = 入口点(节点(e.target));
     改图("加折点", () => { const t = (图态.布局.$线 = 图态.布局.$线 || {}); (t[键] = t[键] || []).push({ x: Math.round((p.x + q.x) / 2), y: Math.round((p.y + q.y) / 2) + 30 }); });
-    提示("加了一个折点:拖小方块调整线的走向;只改画法,不改执行逻辑", { 撤销: true });
+    轻提示("加了一个折点:拖小方块调整线的走向;只改画法,不改执行逻辑", { 撤销: true });
   }
-  if (动作 === "auto") { 改图("恢复自动布线", () => { delete 图态.布局.$线[键]; }); 提示("已恢复自动布线", { 撤销: true }); }
+  if (动作 === "auto") { 改图("恢复自动布线", () => { delete 图态.布局.$线[键]; }); 轻提示("已恢复自动布线", { 撤销: true }); }
 }
 
 function 弹_插入到线(键) {
@@ -791,12 +791,12 @@ function 弹_插入到线(键) {
     改图(`插入「${步类型名[t] || t}」`, () => {
       const n = 新节点(t);
       const r = 图逻辑.插入到线(图态.定义, 键, n, 元);
-      if (!r.可以) { 提示(r.为什么); return false; }
+      if (!r.可以) { 轻提示(r.为什么); return false; }
       const a = 位(e.source), b = 位(e.target);
       图态.布局[n.id] = { x: Math.round((a.x + b.x) / 2 / 8) * 8, y: Math.round((a.y + b.y) / 2 / 8) * 8 + 40 };
       剪折点(); 新 = n.id;
     });
-    if (新) { 选节点([新]); 提示(`已插入「${业务名(节点(新))}」—— 它还需要配置`, { 撤销: true }); }
+    if (新) { 选节点([新]); 轻提示(`已插入「${业务名(节点(新))}」—— 它还需要配置`, { 撤销: true }); }
   };
 }
 
@@ -834,12 +834,12 @@ function 空位(x, y) {
   return { x: Math.round(x / 8) * 8, y: Math.round(y / 8) * 8 };
 }
 function 加到视口中间(类型, 预设 = null) {
-  if (!(元(类型) || {})["可用"]) { 提示("这类步骤还没实现,不能加入"); return; }
+  if (!(元(类型) || {})["可用"]) { 轻提示("这类步骤还没实现,不能加入"); return; }
   const r = $("#cv").getBoundingClientRect(), c = 屏到图(r.left + r.width / 2, r.top + r.height / 2);
   let id = null;
   改图(`添加「${步类型名[类型] || 类型}」`, () => { const n = 新节点(类型, 预设); 图态.定义.nodes.push(n); 图态.布局[n.id] = 空位(c.x - 画布.W / 2, c.y - 30); id = n.id; });
   选节点([id]);
-  提示(`已添加「${业务名(节点(id))}」,还没接进流程 —— 从上一步的出口拖线连过来`, { 撤销: true });
+  轻提示(`已添加「${业务名(节点(id))}」,还没接进流程 —— 从上一步的出口拖线连过来`, { 撤销: true });
 }
 function 从库拖入(ev, 类型, 预设 = null) {
   ev.preventDefault();
@@ -857,7 +857,7 @@ function 从库拖入(ev, 类型, 预设 = null) {
     const p = 屏到图(e.clientX, e.clientY);
     let id = null;
     改图(`添加「${步类型名[类型] || 类型}」`, () => { const n = 新节点(类型, 预设); 图态.定义.nodes.push(n); 图态.布局[n.id] = { x: Math.max(0, Math.round((p.x - 画布.W / 2) / 8) * 8), y: Math.max(0, Math.round((p.y - 16) / 8) * 8) }; id = n.id; });
-    选节点([id]); 提示(`已添加「${业务名(节点(id))}」`, { 撤销: true });
+    选节点([id]); 轻提示(`已添加「${业务名(节点(id))}」`, { 撤销: true });
   };
   const esc键 = (e) => { if (e.key === "Escape") { 收(); 画_状态栏("已取消添加"); } };
   window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up); window.addEventListener("keydown", esc键, true);
@@ -869,7 +869,7 @@ function 重命名节点(id) {
     <div class="k">只改显示名;步骤编号 <code>${esc(id)}</code> 不变,引用它的地方不受影响。</div>
     <div class="acts"><button class="pri" id="rn-ok">确定</button> <button id="rn-no">取消</button></div>`);
   const i = $("#rn-v"); i.focus(); i.select();
-  const 定 = () => { const v = i.value.trim(); 关弹层(); if (!v) { 提示("名称不能为空,没改"); return; } 改图("改名称", () => { n.name = v; }); };
+  const 定 = () => { const v = i.value.trim(); 关弹层(); if (!v) { 轻提示("名称不能为空,没改"); return; } 改图("改名称", () => { n.name = v; }); };
   i.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) 定(); if (e.key === "Escape") 关弹层(); };
   $("#rn-ok").onclick = 定; $("#rn-no").onclick = 关弹层;
 }
@@ -934,7 +934,7 @@ function 弹_位置(id) {
   $("#ps-no").onclick = 关弹层;
   $("#ps-ok").onclick = () => {
     const x = Number($("#ps-x").value), y = Number($("#ps-y").value);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) { 提示("X / Y 要是数字,没改"); return; }
+    if (!Number.isFinite(x) || !Number.isFinite(y)) { 轻提示("X / Y 要是数字,没改"); return; }
     关弹层(); 改图("位置与对齐", () => { 图态.布局[id] = { ...位(id), x: Math.max(0, x), y: Math.max(0, y) }; });
   };
 }
@@ -944,34 +944,34 @@ function 弹_重置配置(id) {
     <p class="k">保留这一步本身和它的连线;不动共享的模型、业务动作、处理要求。可以撤销。</p>
     <div class="acts"><button class="pri danger" id="rs-ok">重置配置</button> <button id="rs-no">取消</button></div>`);
   $("#rs-no").onclick = 关弹层;
-  $("#rs-ok").onclick = () => { 关弹层(); 改图(`重置「${业务名(n)}」的配置`, () => { n.config = JSON.parse(JSON.stringify(默认配置(n.type))); }); 提示("已重置配置", { 撤销: true }); };
+  $("#rs-ok").onclick = () => { 关弹层(); 改图(`重置「${业务名(n)}」的配置`, () => { n.config = JSON.parse(JSON.stringify(默认配置(n.type))); }); 轻提示("已重置配置", { 撤销: true }); };
 }
 
 /* ── 复制粘贴 / 批量 ────────────────────────────────────────────── */
 function 复制选中(ids) {
   const s = 画态();
   s.剪贴板 = 图逻辑.复制(图态.定义, 图态.布局, ids);
-  if (s.剪贴板.跳过.length) 提示("已跳过开始节点");
+  if (s.剪贴板.跳过.length) 轻提示("已跳过开始节点");
   s.粘贴次 = 0;
   return s.剪贴板.节点们.length;
 }
 function 粘贴() {
   const s = 画态();
-  if (!s.剪贴板 || !s.剪贴板.节点们.length) { 提示("剪贴板里没有步骤"); return; }
+  if (!s.剪贴板 || !s.剪贴板.节点们.length) { 轻提示("剪贴板里没有步骤"); return; }
   s.粘贴次 = (s.粘贴次 || 0) + 1;
   let r = null;
   改图(`粘贴 ${s.剪贴板.节点们.length} 步`, () => { r = 图逻辑.粘贴(图态.定义, 图态.布局, s.剪贴板, { x: 40 * s.粘贴次, y: 40 * s.粘贴次 }); });
   选节点(r.新ids);
   if (r.外部引用.length)
-    提示(`已粘贴 ${r.新ids.length} 步;其中 ${r.外部引用.length} 处数据来源仍引用原步骤,请核对(没有悄悄换来源)`, { 撤销: true });
-  else 提示(`已粘贴 ${r.新ids.length} 步`, { 撤销: true });
+    轻提示(`已粘贴 ${r.新ids.length} 步;其中 ${r.外部引用.length} 处数据来源仍引用原步骤,请核对(没有悄悄换来源)`, { 撤销: true });
+  else 轻提示(`已粘贴 ${r.新ids.length} 步`, { 撤销: true });
 }
 
 function 整理布局() {
   弹层("整理布局", `<p>按执行顺序从左到右重新排列步骤,<b>只改位置,不改连线和配置</b>;手动加的折点会一起恢复成自动布线。</p>
     <p class="k">不满意可以撤销。</p><div class="acts"><button class="pri" id="lo-ok">整理</button> <button id="lo-no">取消</button></div>`);
   $("#lo-no").onclick = 关弹层;
-  $("#lo-ok").onclick = () => { 关弹层(); 改图("整理布局", () => { 图态.布局 = 图逻辑.整理布局(图态.定义, 图态.布局); }); 适应画布(); 提示("已整理布局", { 撤销: true }); };
+  $("#lo-ok").onclick = () => { 关弹层(); 改图("整理布局", () => { 图态.布局 = 图逻辑.整理布局(图态.定义, 图态.布局); }); 适应画布(); 轻提示("已整理布局", { 撤销: true }); };
 }
 
 function 查找(词, 方向 = 1) {
@@ -1000,7 +1000,7 @@ function 画布按键(e) {
   if (主 && (k === "z" || k === "Z") && !e.shiftKey) { e.preventDefault(); return 撤销(); }
   if (主 && ((k === "z" || k === "Z") && e.shiftKey || k === "y")) { e.preventDefault(); return 重做(); }
   if (主 && k === "a") { e.preventDefault(); return 选节点(图态.定义.nodes.map((n) => n.id)); }
-  if (主 && k === "c") { if (s.选.size) { e.preventDefault(); const c = 复制选中([...s.选]); 提示(`已复制 ${c} 步`); } return; }
+  if (主 && k === "c") { if (s.选.size) { e.preventDefault(); const c = 复制选中([...s.选]); 轻提示(`已复制 ${c} 步`); } return; }
   if (主 && k === "v") { if (改) { e.preventDefault(); 粘贴(); } return; }
   if ((k === "Delete" || k === "Backspace") && 改) {
     e.preventDefault();
@@ -1040,8 +1040,8 @@ if (typeof globalThis !== "undefined") globalThis.画布动作 = { 连上, 删�
 async function 弹_导入() {
   let 列 = [];
   try { const d = await 请求(`${P()}/workflows`); 列 = (d.items || d.rows || []).filter((w) => (w.id || w["id"]) !== 图态.wid); }
-  catch (e) { 提示("读不到工作流列表:" + e.message); return; }
-  if (!列.length) { 提示("这个项目里没有别的工作流可以导入"); return; }
+  catch (e) { 轻提示("读不到工作流列表:" + e.message); return; }
+  if (!列.length) { 轻提示("这个项目里没有别的工作流可以导入"); return; }
   弹层("从其他工作流导入步骤", `<label class="f">从哪条工作流</label>
     <select id="im-w">${列.map((w) => `<option value="${esc(w.id)}">${esc(w["名称"] || w.name || w.id)}</option>`).join("")}</select>
     <button id="im-read">读取它的步骤</button><div id="im-list" class="k">选一条,点「读取它的步骤」。</div>`);
@@ -1068,7 +1068,7 @@ async function 弹_导入() {
     if (!$("#im-ok")) return;
     $("#im-ok").onclick = () => {
       const ids = [...document.querySelectorAll("[data-imn]")].filter((x) => x.checked).map((x) => x.dataset.imn);
-      if (!ids.length) { 提示("没选步骤"); return; }
+      if (!ids.length) { 轻提示("没选步骤"); return; }
       关弹层();
       const 板 = 图逻辑.复制(定, 布, ids);
       const r0 = $("#cv").getBoundingClientRect(), c = 屏到图(r0.left + r0.width / 2, r0.top + r0.height / 2);
@@ -1079,7 +1079,7 @@ async function 弹_导入() {
         r = 图逻辑.粘贴(图态.定义, 图态.布局, 板, 偏, (v) => { v.原名 = `「${名}」里的 ${v.node_id}`; v.node_id = `外部:${wid}:${v.node_id}`; });
       });
       选节点(r.新ids);
-      提示(`已从「${名}」导入 ${r.新ids.length} 步(未保存)` + (r.外部引用.length ? `;${r.外部引用.length} 处数据来源在另一条工作流,标成待修了` : ""), { 撤销: true });
+      轻提示(`已从「${名}」导入 ${r.新ids.length} 步(未保存)` + (r.外部引用.length ? `;${r.外部引用.length} 处数据来源在另一条工作流,标成待修了` : ""), { 撤销: true });
     };
   };
 }

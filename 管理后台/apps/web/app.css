@@ -57,12 +57,16 @@ body.demo #side,body.demo #main{padding-top:33px}
 .head .sub{color:var(--ink2);font-size:13px;max-width:760px}
 .head .acts{margin-left:auto;display:flex;gap:8px;flex-shrink:0}
 
-button{height:32px;padding:0 14px;border:1px solid var(--line);border-radius:var(--radius);
+/* 11-08 UI 检查:原来 height:32px 写死,长文案(「删除并接通「步骤A」→「步骤B」」这类)折行后溢出按钮。改成至少 32px、放不下就长高 */
+button{min-height:32px;height:auto;line-height:1.3;padding:4px 14px;border:1px solid var(--line);border-radius:var(--radius);
   background:var(--card);color:var(--ink);cursor:pointer;font-size:13.5px}
 button:hover{border-color:var(--pri);color:var(--pri)}
 button.pri{background:var(--pri);border-color:var(--pri);color:#fff}
 button.pri:hover{opacity:.88;color:#fff}
 button.danger{color:var(--fail);border-color:#ffb3b3}
+/* 11-08 UI 检查:「pri danger」原来红字配蓝底看不清;筛选按钮的选中态(class="on")原来只有工作流工具条里有样式 */
+button.pri.danger{background:var(--fail);border-color:var(--fail);color:#fff}
+button.on{background:var(--pri-bg);border-color:var(--pri);color:var(--pri)}
 button:disabled{background:#f2f3f5;color:var(--faint);border-color:var(--line);
   cursor:not-allowed}
 button:disabled:hover{border-color:var(--line);color:var(--faint)}

@@ -496,7 +496,7 @@ function tree(){
     return `<div class="grp">${grp[g]} · ${rows.length}</div>`+rows.map(f=>{const v=lvl(f);
       return `<button data-c="${esc(f.code)}" class="${CUR===f.code?"on":""}">
         <span class="sw" style="background:${sw(f.name)}"></span>${esc(f.name)}
-        <span class="lv num" style="color:var(--${v>=70?"ok":v>=45?"warn":"crit"})">${v}%</span></button>`;
+        </button>`;   // 11-08 用户拍:掌握度是占位的假数(见上方注释),有真数之前不显示
     }).join("");
   }).join("");
 }
@@ -509,7 +509,6 @@ function pick(code){
   $("#teach").innerHTML=`<article class="lcard">
     <div class="lhead">
       <div style="flex:1"><div class="kpid">${esc(f.code)} · 面料卡</div><h2>${esc(f.name)}</h2></div>
-      <span class="pill ${v>=70?"ok":v>=45?"warn":"crit"}">掌握度 ${v}%</span>
       <span class="pill ${f.src_type==="public"?"ok":f.src_type==="demo"?"warn":"info"}">${esc(f.src_type)}</span>
     </div>
     <div class="lbody">

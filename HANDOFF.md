@@ -26,6 +26,22 @@ agentsite/web:fabric 去重复监听、station .rate.fb 按钮自适应 + 发送
 **飞书**:UI 检查清单 JNJKd9YsQoTS2YxXVxecx9ZgnAf(已修 / 12 条待拍板 / 排着的 / 要他看一眼的 / op_log 两条测试记录)。
 **⚠️ 作废 / 事故**:我手搓副本测 update_customer,`log_op` 往**真业务库 op_log** 写了 2 条(C10000,15:20:51,BAD_PHONE + 一条没发生的地址修改);删被权限检查以「篡改审计日志」拦 → 不绕,已在飞书第五节交用户定。记忆 lanxiu-copy-db-import-order 补了第三种漏法。
 **⚠️ 事故 2(16:2x,已修)**:常驻 aimc 被重启后跑上了我**未提交**的第二期代码(select route_version_id),而迁移 a3f9c1e7b205 因门禁等锁超时没落 → 8801 /chat-assistants/by-role/task/production 500,并行会话整轮红在 assistant_effect_check。已在锁里补跑迁移 + 重启 aimc,接口 200、route_version_id 显式 null。记忆 lanxiu-uncommitted-code-goes-live。并行会话整轮只红一条:我补跑的迁移 a3f9c1e7b205 **文件没推**,它的检出认不出库里的版本(alembic check)→ 我现在锁里跑 gate10,绿了立刻推(第二期 + 业务后台 / agentsite UI 两笔分开 commit --only),推完喊它。
+**已推(18:xx)**:e8112bde 第二期查询路由(含迁移文件)+ 47bd0f43 业务后台 / 聊天站 UI 第一批;gate10 锁里全绿。bite_specs 1366(我 +7,**7 条路由咬合还没重放**)。
+**⚠️ 现在别改 8801 / 8770 读的文件**:常驻服务直接读主检出工作区,并行会话正在跑整轮(含 page-smoke / js_smoke);它放锁后再执行下面两个脚本。
+**管理后台修复脚本已备好(未执行)**:scratchpad/apply_tip.py(`python3 apply_tip.py 管理后台/apps/web/app.js 管理后台/apps/web/wf_canvas.js`:第二个 `提示` 改名 `轻提示`,按参数个数只改小提示条调用 —— app.js 29 处 + wf_canvas 28 处;17 处弹窗调用保持)+ scratchpad/apply_admin.py(智能体 / 聊天助手离开拦截、取消运行确认、产物部署确认、button min-height、button.on、button.pri.danger)。scratchpad 会被清 —— 丢了就按这段描述重写。
+**用户 11-08 傍晚拍(一张卡)**:op_log 两条「删,授权你执行」→ 已删(锁里,删前 2 删后 0;原来那条「自己执行」的命令其实跑不通 —— 脚本当时随被拦的命令一起没写出来,已更正);
+登录页账号密码「先不动」;加确认 **四类都要**:聊天接管开关、删除类(删测试样例 / 解绑员工 / 聊天站删会话 + × 常驻)、弹窗有内容时关闭要问(方案配置 / 平板做完了)、审核类(意见不采纳·答复 / 审核通过 / 打回产出);
+其余**都按建议**:① 冲突时摆出未保存内容 ② 研判统一可填条数默认 3 + 显示大概花多少(花多少要有真数据才显示,没有就别编)③ 假掌握度先不显示 ④ 业务后台停用加确认、启用不用 ⑤ 退回 / 驳回统一叫驳回;导出审批、手机窄屏以后再定。
+**⚠️ 管理后台改动的状态**:apply_tip + apply_admin **已执行过**,改后的 app.js / app.css / wf_canvas.js 备份在 `.wip-glossary/ui2/`;因为并行会话要跑整轮(page-smoke 读主检出),**工作区已恢复成 HEAD 版本**。它推完后:`cp .wip-glossary/ui2/{app.js,app.css} 管理后台/apps/web/ && cp .wip-glossary/ui2/wf_canvas.js 管理后台/apps/web/`(先 git pull,确认它没改这三个文件,改了就要合),再做上面拍的确认类 / ①–⑤,然后门禁 + 提交。
+**拍板项的脚本已备好(都在 .wip-glossary/ui2/,在临时副本上试跑 + 语法过,**未落到真文件**)**:
+apply_decide_admin.py `<app.js 路径>`(接管开关两处 / 删样例 / 解绑 / 审核通过 / 意见不采纳·答复 / 打回 确认;① 冲突摆出未保存内容(智能体 / 聊天助手);⑤ 人工核对「退回」→「驳回」)——**要跑在 ui2/app.js 放回之后**;
+apply_decide_site.py `<仓库根>`(业务后台停用确认 + 标签小块被开关样式套住的修复;聊天站删会话确认 + × 常驻;方案配置 / 平板做完了 弹窗有内容关前问);
+apply_decide_site2.py `<仓库根>`(值班台条数可填默认 3、研判队列输入框挪出按钮、两处按最近 ≤20 条已销账实际花费估计(<3 条明说估不出);面料学堂掩掉假掌握度)。
+**✅ 已执行(18:5x)**:ui2 三个文件已放回 + 三个 apply_decide 脚本都跑了(语法 / js_check / bite_check 过),锁里 gate11 在跑 → 绿了 commit(管理后台三文件 + agentsite/web 7 页 + backend/web/index.html + 两份飞书 md + HANDOFF)、push、bite_replay_touched、重放 7 条路由咬合。
+**执行顺序(已完成)**:并行会话推完 → git pull → 确认它没改 app.js / app.css / wf_canvas.js → cp ui2 三个文件回去 → apply_decide_admin(app.js)→ apply_decide_site / site2(根)→ 拿锁门禁 → 提交。
+**第三期意图清单已发飞书**(Eci0dgahoonTQmxAlmucwtHmn6b,文件 澜绣云裳agent-意图识别第一版待确认-20261108.md,未提交):11 个技能意图 + 4 个日常问答兜底(查客户订单 / 问一个数 / 问知识 / 派一条活,默认照旧交店长助手)+ 投诉 + 闲聊其它;
+⚠️ 我之前说「14 个技能」错了,放行的自有技能是 11 个(skills_own.OURS);activity-review / metric-diagnostics 不在放行名单,问用户要不要列。**提醒了用户:判不出转人工 + 只列技能 → 大半日常问题会被转人工**,上线前量「判不出」比例。
+**并行会话告知**:v5 / v6 技能评测来路章把 sonnet-5 记成 haiku-4-5(evalrec.模型() 读环境变量,和真传的 model_name 分叉);tool_eval / select_eval_layer2 同一条路,拿它们下结论前先用记录仪按时间窗核模型;evalrec 收口要一起定。
 **UI 下一步**:第二期提交后 → 管理后台:`提示` 重名(把 2129 行小提示条版改名,逐个调用点按参数个数分派)、取消运行 / 产物部署 / 聊天接管确认、智能体 / 聊天助手离开拦截、防连点、结果被重画刷掉、英文露出、button.on 选中样式、danger 按钮、按钮 32px 高 → 再跑门禁 → 提交。
 
 ## 🧪 11-08 14:1x–16:0x(工 worktree)v6 跑完 —— **46/50,判定「没结论」,而这正是对的**
