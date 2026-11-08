@@ -15378,12 +15378,12 @@
  },
  {
   "script": "管理后台/tests/orchestration/test_glossary.py",
-  "改坏": "叫法按从短到长试(「先认出来再说」)—— 「宋制对襟长褙」被拆成里面的「褙」,长词白录了",
+  "改坏": "叫法按从短到长试(「先认出来再说」)—— 「宋制对襟长褙」被拆成里面的「褙」,长词白录了 (11-08 实体识别把术语和名字合进同一次排序,_叫法表 自己的排序不再起作用 —— 破坏点挪到 识别实体() 的合并排序上;bite_replay_touched 抓到)",
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/术语.py",
-    "old": "    return sorted(set(出), key=lambda p: (-len(p[0]), p[0]))\n",
-    "new": "    return sorted(set(出), key=lambda p: (len(p[0]), p[0]))\n"
+    "old": "    for c in sorted(候, key=lambda p: (-len(p[0]), p[3], p[0])):\n",
+    "new": "    for c in sorted(候, key=lambda p: (len(p[0]), p[3], p[0])):\n"
    }
   ],
   "预期红": "① 短词是长词的前缀"

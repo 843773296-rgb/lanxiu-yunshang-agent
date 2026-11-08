@@ -22,10 +22,10 @@
 **三期**:一 改名(split_dict_* → entity_dict_*,split_version_id → entity_version_id,/split-dicts → /entity-dicts,拆句版本 → 实体识别版本,页面挂到「查询理解」分组下)
 二 查询路由(把「命中后」从词典里拆出去;条件 = 实体类别 / 意图 / 拿不准 → 去向 6 种;**转人工要短路这一轮回答 → 得动 agentsite/guards.py 或 sdk.py,先问并行会话**)
 三 意图识别(新调模型口必须接 agent/llmtrace.py record;按 algorithm-selection 记 PRD 附录 A)。每期单独门禁、单独上线。
-**第一期进度**:代码已全改(git mv 三个文件 → entity_dicts_api.py / seed_entity.py / test_entity_flow.py;迁移 8e2c4b6d1f37 改表 / 约束 / 索引 / 触发器 / 列;导航「查询理解」分组;PRD A-290 改名段)。锁里 gate9 在跑。
-**⚠️ 并行会话提醒(必做)**:全仓改名把 bite_specs 里的 old/new 也一起换了 → 攻击可能变空操作,门禁(bite_check 只记账)照绿。推完要跑 `python3 tools/bite_replay_touched.py`(按改过的文件算完备集,git -c core.quotepath=false)。
+**第一期已推 d9598485**(gate9 锁里全绿:迁移 / 实体 e2e / test-e2e-ci / page-smoke / 整轮,被包命令退出码 0;rebase 到并行会话 5f3ac267,HANDOFF 两节都留,bite_specs 1359)。agentsite 已重启,同步显示「实体识别:有 后台 v1」(生产 v6 指的 sdv_228c22915bd1 改名后照旧可用,key 还叫 lanxiu-split)。
+**⚠️ 并行会话提醒(必做)**:全仓改名把 bite_specs 里的 old/new 也一起换了 → 攻击可能变空操作。完备集 = 29 文件 / 35 条 / 12 脚本,`bite_replay_touched.py --提交 d9598485 --工作区脏也跑` 跑完:12 个脚本 11 个全过;test_glossary 1 条「叫法按从短到长试」**改坏了却没红** —— 不是改名造成的,是早上 识别实体() 把术语和名字合进同一次排序,_叫法表 自己的排序不再起作用 → 破坏点挪到合并排序上,单独重放过三关。
 **禁区补**:转人工**不在 guards.py on_prompt 里短路**(并行会话:那个钩子返回值被当「这一轮带了什么」读);放 sdk.py 层,先和并行会话一起定「转人工算不算一轮 / 记录仪记不记 / 评测判什么」再写。
-**下一步第一个动作**:读 gate9 → 拉 5f3ac267(bite_specs 尾部冲突,三方合并)→ commit(新文件已 git mv)+ 扫密钥 + push → bite_replay_touched → 修失效规格 → 重建 lanxiu 实体词典(lanxiu-entities)冻 v1、店长助手 v7、重启 agentsite、真跑 → 第二期查询路由。
+**下一步第一个动作**: 要不要把 lanxiu-split 换成 lanxiu-entities 新 key(可选,只是名字)→ 第二期查询路由:先摆数据形状(规则 = 条件 → 去向 6 种)、表 route_*、页面、聊天站应用;转人工先找并行会话。
 ## 🔍 11-08 11:xx(工 worktree)#407 拆成两道 + 对比逐条比题面(用户拍了两件)
 
 **#407 为什么两轮评测都不稳(查清了,不是模型不稳)**:题面「有件衣服坏了,顾客问算谁的,**怎么判**?」
