@@ -37,7 +37,10 @@ agentsite/web:fabric 去重复监听、station .rate.fb 按钮自适应 + 发送
 apply_decide_admin.py `<app.js 路径>`(接管开关两处 / 删样例 / 解绑 / 审核通过 / 意见不采纳·答复 / 打回 确认;① 冲突摆出未保存内容(智能体 / 聊天助手);⑤ 人工核对「退回」→「驳回」)——**要跑在 ui2/app.js 放回之后**;
 apply_decide_site.py `<仓库根>`(业务后台停用确认 + 标签小块被开关样式套住的修复;聊天站删会话确认 + × 常驻;方案配置 / 平板做完了 弹窗有内容关前问);
 apply_decide_site2.py `<仓库根>`(值班台条数可填默认 3、研判队列输入框挪出按钮、两处按最近 ≤20 条已销账实际花费估计(<3 条明说估不出);面料学堂掩掉假掌握度)。
-**✅ 已执行(18:5x)**:ui2 三个文件已放回 + 三个 apply_decide 脚本都跑了(语法 / js_check / bite_check 过),锁里 gate11 在跑 → 绿了 commit(管理后台三文件 + agentsite/web 7 页 + backend/web/index.html + 两份飞书 md + HANDOFF)、push、bite_replay_touched、重放 7 条路由咬合。
+**✅ 咬合重放全过**:e8112bde 33 条 / 47bd0f43 79 条 / b341203c 44 条,三关全过(7 条路由咬合在 e8112bde 那组里)。飞书 UI 清单已更新(拍板落实 + 第二批已修 + 还排着的)。
+**下一步**:等用户批注意图清单 → 第三期意图识别;UI 还排着的明显错(见飞书第三节)下一轮修;「转人工」要先和并行会话定三件事。
+**✅ 已推 b341203c(UI 第二批)**:rebase 在并行会话 d71efb42 上;影响面 351 = 基线。后台 bite_replay_touched 三笔(e8112bde / 47bd0f43 / b341203c,约 156 条)→ .wip-glossary/replay_<提交>.log;失效的另起一笔修。**飞书 UI 清单要补一句「第二批已修」**(待做)。
+**(旧)已执行(18:5x)**:ui2 三个文件已放回 + 三个 apply_decide 脚本都跑了(语法 / js_check / bite_check 过),锁里 gate11 在跑 → 绿了 commit(管理后台三文件 + agentsite/web 7 页 + backend/web/index.html + 两份飞书 md + HANDOFF)、push、bite_replay_touched、重放 7 条路由咬合。
 **执行顺序(已完成)**:并行会话推完 → git pull → 确认它没改 app.js / app.css / wf_canvas.js → cp ui2 三个文件回去 → apply_decide_admin(app.js)→ apply_decide_site / site2(根)→ 拿锁门禁 → 提交。
 **第三期意图清单已发飞书**(Eci0dgahoonTQmxAlmucwtHmn6b,文件 澜绣云裳agent-意图识别第一版待确认-20261108.md,未提交):11 个技能意图 + 4 个日常问答兜底(查客户订单 / 问一个数 / 问知识 / 派一条活,默认照旧交店长助手)+ 投诉 + 闲聊其它;
 ⚠️ 我之前说「14 个技能」错了,放行的自有技能是 11 个(skills_own.OURS);activity-review / metric-diagnostics 不在放行名单,问用户要不要列。**提醒了用户:判不出转人工 + 只列技能 → 大半日常问题会被转人工**,上线前量「判不出」比例。
