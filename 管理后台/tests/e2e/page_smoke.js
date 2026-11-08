@@ -239,6 +239,7 @@ setTimeout(() => {
   const 对账表 = {
     "#/prompts": { 接口: "/prompts", 列表: "items" },
     "#/glossaries": { 接口: "/glossaries", 列表: "items" },
+    "#/splits": { 接口: "/split-dicts", 列表: "items" },
     "#/workflows": { 接口: "/workflows", 列表: "items" },
     // 10-28 导航照 Dify:旧地址跳到工作室 / 集成的页签 —— 新旧两个地址都对账,跳过去渲的必须是同一份
     "#/studio/workflow": { 接口: "/workflows", 列表: "items" },

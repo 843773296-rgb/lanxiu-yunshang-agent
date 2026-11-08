@@ -131,6 +131,18 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "**算法以代码为准,术语是说明**(用户 11-06 拍):口径写在这里是给模型和人看的,真正的计算在 knowledge/*.py 和工具里"],
       依赖=["glossary_drafts"]),
 
+    # ③c 拆句与路由(2026-11-08,用户拍「拆分词典需要有配置的地方」→「新开拆句与路由页」+「大名单实时取,小的冻版本」)
+    E("split_dict_drafts", "拆句词典草稿", 项目级, 可改,
+      ["key", "entries", "revision"],
+      ["一份拆句配置 = 一本本词典(类别 / 来源 / 最短字数 / 同样长时 / 命中后)+ 拿不准规则;检查在 runtime/术语.拆句配置问题",
+       "草稿并发控制和术语草稿同一条:PATCH 要 If-Match,冲突 409;**保存草稿不改任何在跑的东西**"]),
+    E("split_dict_versions", "拆句词典正式版本", 项目级, 不可变,
+      ["key", "version_no", "entries", "content_hash", "created_by"],
+      ["正式版本不可变(版本行不可原地改的触发器);聊天助手引用**确切版本**",
+       "**业务表来源只存表列、不存名字**(用户 11-08 拍「大名单实时取」):客户 / 着装人姓名由聊天站运行时从业务库只读现取,"
+       "名字不复制进管理后台;手工词条随版本冻结"],
+      依赖=["split_dict_drafts"]),
+
     # ④ 知识与 RAG
     # ⚠️ **`uploads` 规格 §18 的实体表里没有,是 2026-09-27 补的**(和 `embeddings`
     # 同一形状:两条接口登记在 §17.1 而没有对应实体)。
@@ -848,7 +860,8 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       ["chat_assistant_id", "version_no", "head_template", "foot_template", "tools",
        "model_name", "rule_pool_ids", "rule_ids", "skill_snapshot", "prompt_snapshot",
        "source_kind", "source_hash", "content_hash", "change_note",
-       "glossary_version_id"],      # 11-06:这一版聊天助手用哪一版术语(可空 = 不带术语);聊天站从生产配置里拿
+       "glossary_version_id",       # 11-06:这一版聊天助手用哪一版术语(可空 = 不带术语);聊天站从生产配置里拿
+       "split_version_id"],         # 11-08:这一版聊天助手用哪一版拆句词典(可空 = 不拆句,只按术语匹配)
       ["**v0 是从代码里算出来的基线**(source_kind=代码导入):调聊天站自己的 `prompts.assemble`,"
        "不在后台照样子重写一份 —— 否则基线本身就可能和在跑的那份不一样",
        "规矩**不另存正文**:rule_pool_ids 是这个角色的候选规矩(按代码里的顺序),"

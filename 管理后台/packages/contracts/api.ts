@@ -100,6 +100,13 @@ export const ENDPOINTS = [
   { method: "POST", path: "/glossaries/{id}/versions", summary: "冻结术语版本", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/glossary-versions/{id}", summary: "术语版本(一次给全:项目 / 版本号 / 冻结时间 / 内容哈希 / 全部术语)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/glossary-versions/{id}/preview", summary: "试一下(命中了哪些术语、模型会收到什么)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/split-dicts", summary: "拆句词典列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/split-dicts", summary: "建拆句词典", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/split-dicts/{id}", summary: "拆句词典详情(含配置检查)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/split-dicts/{id}/draft", summary: "改拆句草稿", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/split-dicts/{id}/versions", summary: "冻结拆句版本", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/split-dict-versions/{id}", summary: "拆句版本(一次给全:项目 / 版本号 / 冻结时间 / 内容哈希 / 整份配置)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/split-dict-versions/{id}/preview", summary: "试一句(这句话拆成哪几段、每段去哪、模型会收到什么)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/prompt-runs", summary: "Prompt 调试跑一次", capability: "运行评测", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/runs/{id}", summary: "看一次运行", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/uploads", summary: "要一个受限上传地址", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -302,4 +309,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 214 条接口 · 24 条异步 · 32 条要幂等键 · 25 条要 If-Match */
+/** 共 221 条接口 · 24 条异步 · 32 条要幂等键 · 26 条要 If-Match */

@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""演示项目的一份演示拆句词典(2026-11-08,拆句与路由)。**可重复执行**:已有同 key 的就跳过,不覆盖。
+
+为什么要它:和 seed_glossary 同一个理由 —— tools/ifmatch_reachable_check / 详情页冒烟要从拆句词典列表里取一份样例,
+CI 是新库,没有它就拿不到样例、判红(而那条红的理由「什么都没验到」是对的)。
+只放草稿、不冻版本:冻结 / 试一句 / 聊天助手引用由 tests/e2e/test_split_flow 自己造数据验。
+"""
+import json
+import os
+import sys
+import uuid
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "services", "api", "app"))
+from sqlalchemy import text  # noqa: E402
+from db import 事务  # noqa: E402
+
+项目, KEY = "project_demo_a", "demo-split"
+配置 = {"词典": [{"名称": "客户名", "类别": "客户", "来源": "业务表", "表列": "customer.name"},
+                 {"名称": "员工名", "类别": "员工", "来源": "手工", "词条": ["演示员工甲", "演示员工乙"]}]}
+
+
+def main():
+    with 事务() as c:
+        if c.execute(text("select 1 from split_dict_drafts where project_id=:p and key=:k"), {"p": 项目, "k": KEY}).first():
+            print(f"已有 {KEY},跳过")
+            return 0
+        org = c.execute(text("select organization_id from projects where id=:p"), {"p": 项目}).scalar()
+        c.execute(text("""insert into split_dict_drafts (id, organization_id, project_id, key, entries, created_at, created_by,
+                              updated_at, revision)
+                          values (:i, :o, :p, :k, cast(:e as jsonb), now(), 'seed-split', now(), 1)"""),
+                  {"i": "sd_" + uuid.uuid4().hex[:12], "o": org, "p": 项目, "k": KEY,
+                   "e": json.dumps(配置, ensure_ascii=False)})
+    print(f"建了 {KEY}({len(配置['词典'])} 本词典)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -151,8 +151,12 @@ def 同步(角色):
     """
     vid, 说, 态 = 哪一版(角色)
     缓存 = 读缓存()
+    try:
+        拆 = 同步拆句(角色)                 # 11-08:拆句词典跟术语同一时刻同步;出错不许连累术语
+    except Exception as e:                                                   # noqa: BLE001
+        拆 = dict(态="取不到", 说明=f"同步拆句出错({type(e).__name__})—— 用代码默认三本", 配置=默认拆句配置, 来源="代码默认")
     底 = dict(角色=角色, 态=态, 说明=说, 版本=None, 版本id=None, 内容哈希=None,
-              术语=[], 条数=0, 来源="没有", 取到于=None)
+              术语=[], 条数=0, 来源="没有", 取到于=None, 拆句=拆)
     if 态 in ("没配", "没挂", "没配助手"):
         return 底                       # 三种都不该带术语、都不该告警,而 `态` 把它们分开了
     if 态 in ("取不到", "字段还没上"):
@@ -203,43 +207,131 @@ def 一句话(状态):
             f"· 取自{状态.get('来源')}")
 
 
-# ── 拆句用的名单(11-08 用户拍「query 拆分 + 路由,词典为主、拿不准再问模型」+「先上线,配置页紧跟」)──
-# 客户名、员工名、着装人名是和术语表**各自独立**的三本词典,拆句时先占掉自己那几个字(「罗晓雯」里的「罗」不算面料)。
-# 名单**不进术语版本、不进日志、不进给模型的那段** —— 只在这个进程里用来切句子。
-# 过渡期写在这里(从业务库只读现取);配置页做好后,「从哪张表哪一列取」搬到后台配置。
+# ── 拆句(11-08 用户拍「query 拆分 + 路由,词典为主、拿不准再问模型」→「拆分词典要有配置的地方」→
+#    「新开拆句与路由页」+「大名单实时取,小的冻版本」)───────────────────────────────────
+# 客户名、员工名、着装人名…是和术语表**各自独立**的词典,拆句时先占掉自己那几个字(「宋锦书」里的「宋锦」不算面料)。
+# 用哪几本、各自怎么处理,写在后台「拆句与路由」冻结的版本里,聊天助手生产配置的 split_version_id 指着它:
+#   · 有值 → 按那一版拆;业务表来源的名字**这里现取**(从业务库只读,不进版本、不进日志、不进给模型的那段)
+#   · 显式 null → 这一版聊天助手没挂拆句,**不拆句**,只按术语找(业务状态)
+#   · 没配后台 / 字段还没上 / 取不到又没缓存 → 用代码里的默认三本(11-08 第一版的行为),并在说明里写清是哪一种
+#   > 「没挂拆句」和「取不到拆句」在「这一轮没有按配置拆」上长得一样,而前者不该拆、后者该照默认拆 —— 分开。
 名单刷新秒 = 600          # 技术参数:新建的客户最多 10 分钟后认得
 _名单缓存 = {"时": 0.0, "名单": None}
+_表列缓存 = {}
+_拆句落盘 = os.path.join(HERE, ".split_last.json")
+# 业务表来源的白名单(和 runtime/术语.可选业务表列 同一组键;**只读、只取姓名这一列**)
+_表列SQL = {"customer.name": "SELECT name FROM customer WHERE name IS NOT NULL AND name!=''",
+            "wearer.name": "SELECT name FROM wearer WHERE name IS NOT NULL AND name!=''",
+            "staff.name": "SELECT name FROM staff WHERE name IS NOT NULL AND name!=''"}
+默认拆句配置 = {"词典": [
+    {"名称": "客户名", "类别": "客户", "来源": "业务表", "表列": "customer.name"},
+    {"名称": "员工名", "类别": "员工", "来源": "业务表", "表列": "staff.name"},
+    {"名称": "着装人名", "类别": "着装人", "来源": "业务表", "表列": "wearer.name"}]}
 
 
-def 名单():
-    """→ {"客户": [...], "员工": [...], "着装人": [...]};业务库读不到 → None(这一轮照旧只按术语匹配,**不崩**)。"""
-    if _名单缓存["名单"] is not None and time.time() - _名单缓存["时"] < 名单刷新秒:
-        return _名单缓存["名单"]
+def 现取(表列):
+    """业务表来源:从业务库只读取那一列 → [名字…];不在白名单 / 读不到 → None(**不是空列表**)。600 秒缓存。"""
+    sql = _表列SQL.get(表列)
+    if not sql:
+        return None
+    缓 = _表列缓存.get(表列)
+    if 缓 and time.time() - 缓[0] < 名单刷新秒:
+        return 缓[1]
     try:
         import sqlite3
         import db_build
         c = sqlite3.connect(f"file:{db_build.DB}?mode=ro", uri=True)
         try:
-            出 = {"客户": [r[0] for r in c.execute("SELECT name FROM customer WHERE name IS NOT NULL AND name!=''")],
-                  "员工": [r[0] for r in c.execute("SELECT name FROM staff WHERE name IS NOT NULL AND name!=''")],
-                  "着装人": [r[0] for r in c.execute("SELECT name FROM wearer WHERE name IS NOT NULL AND name!=''")]}
+            出 = [r[0] for r in c.execute(sql)]
         finally:
             c.close()
     except Exception:                                                        # noqa: BLE001
-        return _名单缓存["名单"]          # 读不到就用上一次的(可能是 None)
-    _名单缓存.update(时=time.time(), 名单=出)
+        return 缓[1] if 缓 else None     # 读不到就用上一次的;一次都没读到过 → None
+    _表列缓存[表列] = (time.time(), 出)
     return 出
+
+
+def 名单():
+    """过渡期的老入口(11-08 第一版):代码默认三本 → {"客户": [...], "员工": [...], "着装人": [...]};读不到 → None。"""
+    T = 术语模块()
+    本们, 缺 = T.按配置的名单(默认拆句配置, 现取)
+    if len(缺) == len(本们):
+        return None
+    return {d["类别"]: d["词条"] for d in 本们}
+
+
+def 拆句哪一版(角色):
+    """→ (版本id, 说明, 态)。和 `哪一版()` 同一套三态,读的是生产配置里的 split_version_id。"""
+    cfg = _tc.配置()
+    if not cfg:
+        return None, "没配管理后台地址 —— 用代码里的默认三本词典拆句", "没配"
+    码, 体 = _tc._curl("GET", f"/chat-assistants/by-role/{角色}/production", cfg)
+    if 码 == "404":
+        return None, f"后台没给角色「{角色}」配聊天助手 —— 用代码里的默认三本词典拆句", "没配助手"
+    if 码 != "200" or not isinstance(体, dict):
+        return None, f"取生产聊天助手配置拿不到 200(码={码})—— 环境问题,不是「没挂拆句」", "取不到"
+    if "split_version_id" not in 体:
+        return None, "生产聊天助手配置里**没有 split_version_id 这个字段** —— 后台契约还没上这一项,要去同步契约", "字段还没上"
+    vid = 体.get("split_version_id")
+    if vid is None:
+        return None, "这一版聊天助手**没挂拆句词典**(显式 null)—— 不拆句,只按术语找", "没挂"
+    return vid, f"该用拆句版本 {vid}", "有"
+
+
+def 同步拆句(角色):
+    """启动时调一次。→ {态, 说明, 版本, 版本id, 内容哈希, 配置, 来源}。配置 = None 表示「不拆句」。"""
+    vid, 说, 态 = 拆句哪一版(角色)
+    底 = dict(态=态, 说明=说, 版本=None, 版本id=None, 内容哈希=None, 配置=默认拆句配置, 来源="代码默认")
+    if 态 == "没挂":
+        return dict(底, 配置=None, 来源="不拆句")
+    try:
+        with open(_拆句落盘, encoding="utf-8") as f:
+            缓存 = json.load(f)
+    except Exception:                                                        # noqa: BLE001
+        缓存 = None
+    if 态 != "有":
+        if 态 in ("取不到", "字段还没上") and 缓存 and 缓存.get("配置"):
+            return dict(底, 版本=缓存.get("版本"), 版本id=缓存.get("版本id"), 内容哈希=缓存.get("内容哈希"),
+                        配置=缓存["配置"], 来源="缓存", 说明=说 + f";**用上一次缓存的拆句 {缓存.get('版本')}**")
+        return 底
+    cfg = _tc.配置()
+    码, 体 = _tc._curl("GET", f"/split-dict-versions/{vid}", cfg)
+    if 码 != "200" or not isinstance(体, dict) or not isinstance(体.get("配置"), dict):
+        if 缓存 and 缓存.get("版本id") == vid:
+            return dict(底, 态="取不到", 版本=缓存.get("版本"), 版本id=vid, 内容哈希=缓存.get("内容哈希"),
+                        配置=缓存["配置"], 来源="缓存", 说明=f"取拆句版本 {vid} 拿不到 200(码={码});用上一次缓存的同一版")
+        return dict(底, 态="取不到", 说明=f"取拆句版本 {vid} 拿不到 200(码={码});本地也没有缓存 —— 用代码默认三本")
+    if not 缓存 or 缓存.get("内容哈希") != 体.get("内容哈希"):     # 比内容哈希,不比版本号(文件头 ①)
+        try:
+            with open(_拆句落盘, "w", encoding="utf-8") as f:
+                json.dump({"版本id": 体.get("id"), "版本": 体.get("版本"), "内容哈希": 体.get("内容哈希"),
+                           "配置": 体.get("配置")}, f, ensure_ascii=False)
+        except Exception:                                                    # noqa: BLE001
+            pass
+    return dict(底, 版本=体.get("版本"), 版本id=体.get("id"), 内容哈希=体.get("内容哈希"), 配置=体.get("配置"),
+                来源="后台", 说明=f"拆句 {体.get('版本')}(哈希 {体.get('内容哈希')})")
 
 
 def 这一段(文本, 状态, 名单表=None):
     """这次要塞给模型的那一段。**调后台那份纯函数**,不另写(见文件头 ④)。
 
-    先拆句(客户名 / 员工名占掉的字不算术语),再只把术语那几段拼给模型。
-    一条术语都没提到 → 空串(不带空壳)。名单表不传 → 用 `名单()` 现取。"""
+    先拆句(名字占掉的字不算术语),再只把术语那几段 + 「占位并提示」的提示拼给模型。
+    一条都没有 → 空串(不带空壳)。拆法:名单表(测试用)> 状态["拆句"](后台配置)> 代码默认三本。"""
     T = 术语模块()
     术语们 = 状态.get("术语") or []
-    命 = T.匹配(文本, 术语们, 名单表 if 名单表 is not None else 名单())
-    return T.上下文段(命, 术语们), 命
+    拆态 = 状态.get("拆句")
+    规则 = None
+    if 名单表 is not None:
+        名 = 名单表
+    elif isinstance(拆态, dict):
+        配 = 拆态.get("配置")
+        名 = T.按配置的名单(配, 现取)[0] if 配 else None          # 配置 None = 这一版没挂拆句,不拆
+        规则 = (配 or {}).get("拿不准")
+    else:
+        名 = 名单()
+    拆 = T.拆句(文本, 术语们, 名, 规则)
+    命 = T.从拆句取命中(拆)
+    return T.上下文段(命, 术语们, 规则, T.名字提示(拆)), 命
 
 
 # ── 这一轮到底塞进去了什么:给评测的口径用 ────────────────────────────────

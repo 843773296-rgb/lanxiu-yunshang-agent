@@ -12,6 +12,25 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🧩 11-08 下午:「拆句与路由」配置页 —— 进行中(拆句 + 术语 v3 已推 38084ae0,店长助手生产 v5)
+
+**用户拍**:「拆分词典需要有配置的地方,具体可以看 dify 或 ragflow」→ 要 GitHub 成熟案例(我先看、有用再给他)→ 已给 5 个核过的(spaCy / HanLP / Elasticsearch 同义词集 / RAGFlow 分类组件 / semantic-router)
+→ 卡拍:**新开「拆句与路由」页**(有自己的版本,店长助手配置多一个「拆句版本」下拉)+ **大名单实时取、小的冻版本**(客户 / 着装人:版本里只存表列,聊天站运行时现取;员工名单 / 称呼词 / 手工词条随版本冻)。
+**已写(未提交,全在主检出)**:
+- 引擎 runtime/术语.py:`拆句配置问题()`(阻断 / 提醒)、`按配置的名单(配置, 现取)`(业务表取不到 ≠ 空,单独报)、`拆句(…, 名单, 规则)` 认新旧两种名单写法、每本词典 最短字数 / 同样长时(让给 / 压过术语)/ 命中后(占位 / 占位并提示)、拿不准称呼和提醒可配可关;`从拆句取命中()` `名字提示()`;`上下文段(…, 规则, 提示们)`。test_glossary ⑩ 13 条(共 49)。
+- 表:entities 登记 split_dict_drafts / split_dict_versions + chat_assistant_versions.split_version_id;models 唯一键;手写迁移 5d1e7a9c3b20(触发器同术语);fk_dep_check 豁免;fieldtypes 必备列。
+- 接口 split_dicts_api.py(7 个,契约 endpoints 登记,make gen 已重生成契约文档 / openapi / api.ts,make contract 绿);chat_assistants_api:「拆句版本」键(英文键 422、悬空 422、只在选了时进哈希)、生产配置给显式 null 的 split_version_id、详情「可选拆句」。
+- 页面 app.js:导航「拆句与路由」、列表页、编辑页(词典卡 / 拿不准 / 保存 / 冻结 / 版本 / 试一句含试用名单)、店长助手配置页「拆句」下拉;node --check 过,nav_smoke 27 页。
+- 聊天站 glossary_client:`同步拆句()` 三态(有 → 按版本;显式 null → 不拆;没配 / 字段还没上 / 取不到无缓存 → 代码默认三本)+ `.split_last.json` 缓存(已 gitignore)+ `现取()` 白名单只读;`这一段()` 按状态拆。glossary_client_check 新 6 条 + 接线断言改成认「拆句 + 从拆句取命中」。⛔ 没动 `_这一轮` 那段(并行会话:别改成 contextvars)。
+- e2e tests/e2e/test_split_flow.py(⑥ 含显式 null);seed_split.py(demo-split 草稿);Makefile e2e-ci / progress / page-smoke 名单、page_smoke 对账、detail_page_hashes、ifmatch_reachable、seed_rerun 都登记了;bite_specs 末尾加 6 条(1348),**还没重放**。
+**正在跑**:锁里 `.wip-glossary/gate8.sh` = 迁移共享库 → 重启 aimc → seed_split → test_split_flow → test-e2e-ci → page-smoke → 整轮。**全绿就立刻推**(库里有表、代码没推会让并行会话门禁红)。已告诉并行会话。
+**下一步第一个动作**:读 gate8 各段 rc → 修红 → 逐条重放 6 条新咬合(`--only` 是子串不是正则,一条一条跑)→ commit(新文件先 git add)+ 扫密钥 + push → 用新页面建 lanxiu 项目的拆句词典(客户名 业务表 / 着装人名 业务表 / 员工名 手工 39 个)冻 v1 → 店长助手挂上出 v6 上生产 → 重启 agentsite → 真跑带真实客户名 / 小罗两句 → PRD A-290 补配置页 → 发飞书 → 给用户总结。
+**未验证的预判**:页面视觉没人看过(page-smoke 只验加载路径);员工名单冻进版本后新员工要重冻(用户选的,写进局限)。
+**判据(为什么这么判)**:聊天站「显式 null = 不拆」「取不到 = 代码默认」分开 —— 前者是后台明说不拆,后者是环境问题,合并就又是「两种状态同一张脸」;业务表来源只存表列 —— 用户选「大名单实时取」,名字不进管理后台;同长时默认让给术语 —— 有客户就叫「宋锦」时说「宋锦」仍该带面料定义;拿不准交给本来就要答的模型、不另调一次 —— 用户 11-08 选「词典为主,拿不准再问模型」,11-06 又否过「让模型判断叫法」。
+**作废的结果**:我说召回判分器那一红「明天就不巧合、不用修」—— 判断它与拆句无关是对的,但「不修」是错的;并行会话已修成每天自己挑日子(4484088a),CI 已绿。38084ae0 那次 CI 红就是它。
+**禁区**:不碰 agentsite/guards.py(答应过并行会话);不碰 agent/rounds.py;不改 glossary_client 里 `_这一轮` 登记(⛔ 别改成 contextvars:评测从 asyncio 任务外读它);bite_specs 尾部和并行会话会冲突 —— 两半都留、json.loads 过关才写。
+**悬而未决**:通称「先问清是哪一款」还没真撞到要问清的题(褙子两款答案相同);g1 认不出汉字数(「快三个月」)没修;配置页的称呼词是拍脑袋的,等用户在页面上改。
+
 ## ⚖️ 11-08 10:xx(工 worktree)判定接上判严度 —— 用户拍「只认安全方向」
 
 **起因**:五轮那份报告里,一行写「两版准确率**不可直接比**」,另一行写「**判定:进步**」——

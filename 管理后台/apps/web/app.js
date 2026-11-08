@@ -106,6 +106,7 @@ const 导航 = [
   ["#/studio", "工作室", true],
   ["#/prompts", "Prompt 管理", true, true],
   ["#/glossaries", "术语配置", true, true],
+  ["#/splits", "拆句与路由", true, true],
   ["#/kb", "知识库", true],
   ["#/uploads", "加资料", true, true],
   ["#/retrieval", "召回测试", true, true],
@@ -674,6 +675,279 @@ async function 页_术语列表() {
       <div class="pager"><span>共 ${rs.length} 张</span></div>`;
   };
   await 画();
+}
+
+/* ── 拆句与路由(11-08;用户拍「拆分词典需要有配置的地方」→「新开拆句与路由页」+「大名单实时取,小的冻版本」)──
+ * 一句话先拆:哪几个字是客户名 / 员工名 / 着装人名,哪几个是术语 —— 名字占掉的字不再算术语,再各自去该去的地方。
+ * 照术语配置同一个形状:草稿随便改(If-Match)、冻结版本不可变、聊天助手里选一版才生效。
+ * 借的是 RAGFlow 分类组件(类别 / 说明 / 例句 / 去哪 / 试一句)、Elasticsearch 同义词集(大名单不进版本)、spaCy / HanLP 词典条目。
+ * **检查全在服务端算**(split_dicts_api._详情);「试一句」打 preview,和运行时同一个函数,页面不自己拆。 */
+async function 页_拆句列表() {
+  $("#main").innerHTML = `<div class="crumb">拆句与路由</div>
+    <div class="head"><div>
+      <h1>拆句与路由</h1>
+      <div class="sub">${md(`店长说的一句话里,哪几个字是**人名**(客户、员工、着装人),哪几个是**术语**,先拆开再各走各的:
+        人名只占位、不再被当成面料或工艺词;术语才带定义。客户、着装人这种大名单**只存「从哪张表取」**,运行时从业务库现取,名字不复制进后台。
+        改草稿不影响在跑的东西,**冻结成版本、在聊天助手里选这一版**才生效。`)}</div>
+    </div><div class="acts"><button id="s-new" class="pri">新建拆句词典</button></div></div>
+    <div id="tbl"><div class="state">加载中…</div></div>`;
+  const 新建 = async () => {
+    const key = await 问一句("新建拆句词典", "给它起一个标识:项目内唯一,建好之后不随意改。", { 输入: "比如 store-split", 确定: "新建", 必填: true });
+    if (!key) return;
+    try {
+      const r = await 请求(`${P()}/split-dicts`, { method: "POST", body: JSON.stringify({ key }) });
+      location.hash = `#/split/${encodeURIComponent(r.id)}`;
+    } catch (e) { 报错(e); }
+  };
+  $("#s-new").onclick = 新建;
+  const 画 = async () => {
+    let d;
+    try { d = await 请求(`${P()}/split-dicts`); }
+    catch (e) { const s = 错误块(e, 画); $("#tbl").innerHTML = s.html; s.挂(); return; }
+    const rs = d.items || [];
+    if (!rs.length) {
+      const s = 状态("", "这个项目还没有拆句词典",
+        "没有拆句词典时,术语按整句去找 —— 客户「宋锦书」名字里的「宋锦」会被当成面料。建一份,把客户名、员工名这些放进来。",
+        { 文: "新建拆句词典", 做: 新建 });
+      $("#tbl").innerHTML = s.html; s.挂(); return;
+    }
+    $("#tbl").innerHTML = `<table><thead><tr><th>标识</th><th>几本词典</th><th>最新冻结版本</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rs.map((r) => `
+        <tr><td class="num">${esc(r.key)}</td><td class="num">${esc(r.本数 ?? 0)}</td>
+          <td>${r.最新冻结版本 ? `<span class="pill ok">${esc(r.最新冻结版本)}</span>` : '<span class="pill none">还没冻结过</span>'}</td>
+          <td class="num">${时间(r.更新时间)}</td><td><a href="#/split/${encodeURIComponent(r.id)}">打开编辑</a></td></tr>`).join("")}
+      </tbody></table><div class="pager"><span>共 ${rs.length} 份</span></div>`;
+  };
+  await 画();
+}
+
+/* 拆句词典编辑页:一本本词典 + 拿不准规则 → 保存草稿(If-Match)→ 冻结 → 试一句。
+ * ⚠️ 检查结果是**上次保存的草稿**的;有没保存的改动时明说。 */
+async function 页_拆句详情(sid) {
+  $("#main").innerHTML = `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/split-dicts/${encodeURIComponent(sid)}`); }
+  catch (e) { const s = 错误块(e, () => 页_拆句详情(sid)); $("#main").innerHTML = s.html; s.挂(); return; }
+  let rev = d.revision, 脏 = false, 版本们 = d.版本 || [];
+  let 配 = JSON.parse(JSON.stringify(d.配置 || {}));
+  if (!Array.isArray(配.词典)) 配.词典 = [];
+  if (!配.拿不准) 配.拿不准 = JSON.parse(JSON.stringify(d.默认拿不准 || {}));
+  const 表列们 = d.可选业务表列 || [];
+  const 拆 = (s) => [...new Set(String(s || "").split(/[,，、;；\n\r]+/).map((x) => x.trim()).filter(Boolean))];
+
+  $("#main").innerHTML = `
+    <div class="crumb"><a href="#/splits">拆句与路由</a> / ${esc(d.key)}</div>
+    <div class="head"><div><h1>${esc(d.key)}</h1>
+      <div class="sub">草稿 revision <code id="s-rev">${esc(rev)}</code> · <span id="s-vcount"></span><br>${md(d.note || "")}</div></div></div>
+    <div id="s-check"></div>
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:6px">词典(<span id="s-n"></span> 本)</div>
+      <div class="note">${md("每本词典是一类名字。**同样长时**:名字和某个术语一字不差时谁赢(默认让给术语 —— 有客户就叫「宋锦」,说「宋锦」照样当面料)。**最短字数**默认 2:单字名字会把「罗」「纱」这类单字术语全吃掉。")}</div>
+      <div id="s-list"></div>
+      <div style="margin-top:10px"><button id="s-add">加一本词典</button></div>
+    </div>
+    <div class="card" id="s-doubt"></div>
+    <div class="card"><div class="footbar">
+      <span class="msg" id="s-fb"></span>
+      <button id="s-back">回列表</button><button id="s-save">保存草稿</button><button id="s-freeze" class="pri">冻结版本</button>
+    </div></div>
+    <div class="card" id="s-vers"></div>
+    <div class="card" id="s-try"></div>`;
+
+  const 选 = (i, f, 值, 项) => `<select class="t" data-i="${i}" data-f="${f}">${项.map(([v, 名]) =>
+    `<option value="${esc(v)}"${String(v) === String(值) ? " selected" : ""}>${esc(名)}</option>`).join("")}</select>`;
+  const 框 = (i, f, 值, 提示) => `<input class="t" data-i="${i}" data-f="${f}" value="${esc(值 ?? "")}" placeholder="${esc(提示)}">`;
+  const 画一本 = (x, i) => {
+    const 业务 = (x.来源 || "业务表") === "业务表";
+    return `<div class="card" data-row="${i}">
+      <div class="two">
+        <div><label class="f">名称 <span class="req">*</span></label>${框(i, "名称", x.名称, "比如 客户名")}</div>
+        <div><label class="f">类别 <span class="req">*</span> <span style="color:var(--ink3)">客户 / 员工 / 着装人 / 商品…(「术语」「通称」留给术语表)</span></label>${框(i, "类别", x.类别, "比如 客户")}</div>
+      </div>
+      <label class="f">说明 <span style="color:var(--ink3)">选填;这本词典装的是谁</span></label>${框(i, "说明", x.说明, "比如 门店客户档案里的姓名")}
+      <label class="f">例句 <span style="color:var(--ink3)">选填;店长会怎么提到他们,逗号分开(试一句时可以直接拿来试)</span></label>
+      <textarea class="t" rows="1" style="min-height:36px" data-i="${i}" data-f="例句">${esc((x.例句 || []).join(","))}</textarea>
+      <div class="two">
+        <div><label class="f">来源</label>${选(i, "来源", x.来源 || "业务表", [["业务表", "业务表(运行时现取,名字不进后台)"], ["手工", "手工词条(随版本冻结)"]])}</div>
+        <div>${业务 ? `<label class="f">从哪张表哪一列取</label>${选(i, "表列", x.表列 || "", [["", "请选择"], ...表列们.map((t) => [t.值, t.名])])}`
+                    : `<label class="f">词条 <span style="color:var(--ink3)">逗号或回车分开</span></label>
+                       <textarea class="t" rows="2" style="min-height:44px" data-i="${i}" data-f="词条">${esc((x.词条 || []).join(","))}</textarea>`}</div>
+      </div>
+      <div class="two">
+        <div><label class="f">最短字数</label><input class="t" type="number" min="1" max="10" data-i="${i}" data-f="最短字数" value="${esc(x.最短字数 ?? 2)}"></div>
+        <div><label class="f">同样长时</label>${选(i, "同样长时", x.同样长时 || "让给术语", [["让给术语", "让给术语(默认)"], ["压过术语", "压过术语"]])}</div>
+      </div>
+      <div class="two">
+        <div><label class="f">命中后</label>${选(i, "命中后", x.命中后 || "占位", [["占位", "只占位,什么都不带"], ["占位并提示", "占位,并给模型一句提示"]])}</div>
+        <div>${(x.命中后 || "占位") === "占位并提示" ? `<label class="f">提示 <span class="req">*</span> <span style="color:var(--ink3)">可以写 {片段},会换成认出来的名字</span></label>${框(i, "提示", x.提示, "比如 「{片段}」是客户,查客户情况用客户档案工具")}` : ""}</div>
+      </div>
+      <div style="margin-top:8px;text-align:right"><button class="danger" data-del="${i}">删掉这本</button></div>
+    </div>`;
+  };
+  const 画列表 = () => {
+    $("#s-n").textContent = String(配.词典.length);
+    $("#s-list").innerHTML = 配.词典.length ? 配.词典.map(画一本).join("")
+      : 状态("", "还没有词典", "点「加一本词典」:比如客户名(业务表 · 客户表姓名)、员工名(手工词条)。").html;
+  };
+  const 画拿不准 = () => {
+    const q = 配.拿不准 || {};
+    $("#s-doubt").innerHTML = `<div style="font-weight:600;margin-bottom:6px">拿不准的时候</div>
+      <div class="note">${md("名单里没有、词典判不了的情况:**单字术语紧挨着称呼**(「小罗」「罗姐」)。这时术语照带,但附一句提醒,让模型自己判断是不是在叫人。称呼词是 11-08 随做法一起定的,**拍脑袋的**,按店里的说法改。")}</div>
+      <label class="f"><input type="checkbox" id="q-on"${q.开 === false ? "" : " checked"}> 开着</label>
+      <div class="two">
+        <div><label class="f">术语前面是这些字 <span style="color:var(--ink3)">逗号分开</span></label><input class="t" id="q-pre" value="${esc((q.称呼前 || []).join(","))}"></div>
+        <div><label class="f">术语后面是这些字 <span style="color:var(--ink3)">逗号分开;别放「总」「工」(「纱总共」「纱工艺」会误报)</span></label><input class="t" id="q-post" value="${esc((q.称呼后 || []).join(","))}"></div>
+      </div>
+      <label class="f">给模型的提醒 <span style="color:var(--ink3)">{片段} 换成那个字,{标准词} 换成那条术语</span></label>
+      <textarea class="t" id="q-msg" rows="2" style="min-height:44px">${esc(q.提醒 || "")}</textarea>`;
+    $("#q-on").onchange = (e) => { 配.拿不准.开 = e.target.checked; 标脏(); };
+    $("#q-pre").oninput = (e) => { 配.拿不准.称呼前 = 拆(e.target.value); 标脏(); };
+    $("#q-post").oninput = (e) => { 配.拿不准.称呼后 = 拆(e.target.value); 标脏(); };
+    $("#q-msg").oninput = (e) => { 配.拿不准.提醒 = e.target.value; 标脏(); };
+  };
+  const 画检查 = (检) => {
+    const 阻 = (检 && 检.阻断) || [], 醒 = (检 && 检.提醒) || [];
+    const 旧 = 脏 ? `<div class="k">⚠️ 下面是<b>上次保存的草稿</b>的检查结果;你有没保存的改动,保存之后会重新检查。</div>` : "";
+    $("#s-check").innerHTML = (阻.length
+      ? `<div class="card bad"><div style="font-weight:600;color:var(--fail)">要改完这 ${阻.length} 处才能冻结</div><ul>${阻.map((x) => `<li>${md(x)}</li>`).join("")}</ul>${旧}</div>`
+      : `<div class="note">${md("**检查通过,没有挡住冻结的问题。**")}${旧}</div>`)
+      + (醒.length ? `<div class="note warn"><b>提醒(不挡冻结,建议看一眼):</b><ul>${醒.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>` : "");
+  };
+  const 画版本 = () => {
+    $("#s-vcount").innerHTML = 版本们.length ? `已有 ${版本们.length} 个冻结版本(最新 ${esc(版本们[0].版本)})` : "<b>还没冻结过版本</b>";
+    $("#s-vers").innerHTML = `<div style="font-weight:600;margin-bottom:8px">冻结的版本</div>`
+      + (版本们.length ? `<table><thead><tr><th>版本</th><th>几本词典</th><th>内容哈希</th><th>冻结于</th><th>冻结人</th></tr></thead><tbody>
+          ${版本们.map((v) => `<tr><td class="num">${esc(v.版本)}</td><td class="num">${esc(v.本数 ?? "")}</td>
+            <td class="num">${esc(String(v.内容哈希 || "").slice(0, 19))}</td><td class="num">${时间(v.冻结于)}</td><td>${esc(v.冻结人 || "")}</td></tr>`).join("")}
+          </tbody></table><div class="note">${md("冻结的版本**内容不再改**。聊天助手要用哪一版,在聊天助手的配置里选,出版本、上生产才生效。")}</div>`
+        : `<div class="state" style="padding:20px">还没有冻结的版本 —— 上面写好、保存之后点「冻结版本」。</div>`);
+    const 业务本 = 配.词典.filter((x) => (x.来源 || "业务表") === "业务表");
+    $("#s-try").innerHTML = `<div style="font-weight:600;margin-bottom:6px">试一句</div>`
+      + (版本们.length ? `<div class="note">${md("输入一句店长会说的话,看它**拆成哪几段、每段去哪、模型实际收到什么**。和正式运行是同一个函数。业务表那几本后台连不到业务库,**在下面填几个名字代替**。")}</div>
+          <div class="two">
+            <div><label class="f">用哪个拆句版本</label><select class="t" id="s-tv">${版本们.map((v) => `<option value="${esc(v.id)}">${esc(v.版本)}(${esc(v.本数 ?? "")} 本 · ${时间(v.冻结于)})</option>`).join("")}</select></div>
+            <div><label class="f">连哪版术语一起看</label><select class="t" id="s-tg"><option value="">不带术语(只看名字怎么拆)</option>${(d.可选术语 || []).map((v) => `<option value="${esc(v.id)}">${esc(v.名称)} · ${esc(v.版本)} · ${esc(v.条数)} 条</option>`).join("")}</select></div>
+          </div>
+          ${业务本.map((x, k) => `<label class="f">「${esc(x.名称 || "")}」试用名单 <span style="color:var(--ink3)">逗号分开</span></label>
+            <input class="t" data-try="${esc(x.名称 || "")}" placeholder="比如 宋锦书,罗晓雯">`).join("")}
+          <label class="f">一句话</label>
+          <textarea class="t" id="s-tt" rows="2" style="min-height:44px" placeholder="比如:宋锦书想做一条宋锦马面,小罗帮她量过了吗?"></textarea>
+          <div style="margin-top:8px"><button class="pri" id="s-tgo">试一句</button> <span class="k" id="s-tmsg"></span></div>
+          <div id="s-tout"></div>`
+        : `<div class="state" style="padding:20px">要先冻结一个版本才能试 —— 试的是冻结版本,和聊天助手真正用的是同一份。</div>`);
+    if (版本们.length) $("#s-tgo").onclick = 试一句;
+  };
+  const 标脏 = () => {
+    if (!脏) { 脏 = true; 画检查(d.检查); }
+    $("#s-fb").textContent = "有没保存的改动"; $("#s-fb").className = "msg";
+  };
+  const 写回 = (el) => {
+    const i = Number(el.dataset.i), f = el.dataset.f, x = 配.词典[i];
+    if (!x || !f) return;
+    if (f === "例句" || f === "词条") x[f] = 拆(el.value);
+    else if (f === "最短字数") x[f] = Number(el.value);
+    else x[f] = el.value;
+  };
+  $("#s-list").oninput = (e) => { if (e.target && e.target.dataset && e.target.dataset.f) { 写回(e.target); 标脏(); } };
+  $("#s-list").onchange = (e) => {
+    const f = e.target && e.target.dataset ? e.target.dataset.f : "";
+    if (f === "来源" || f === "命中后") { 写回(e.target); 标脏(); 画列表(); }
+  };
+  $("#s-list").onclick = async (e) => {
+    const i = e.target && e.target.dataset ? e.target.dataset.del : undefined;
+    if (i === undefined) return;
+    const x = 配.词典[Number(i)] || {};
+    if (!(await 问一句("删掉这本词典?", `「${esc(x.名称 || "没写名称的这本")}」会从草稿里拿掉;要点「保存草稿」才真的存下来。`, { 确定: "删掉", 取消: "留着" }))) return;
+    配.词典.splice(Number(i), 1); 标脏(); 画列表();
+  };
+  $("#s-add").onclick = () => { 配.词典.push({ 名称: "", 类别: "", 来源: "业务表", 表列: "", 最短字数: 2, 同样长时: "让给术语", 命中后: "占位" }); 标脏(); 画列表(); };
+
+  /* 存之前整理:业务表来源不带词条、手工来源不带表列;没选「占位并提示」不带提示(界面上看不到的东西不该悄悄存进去) */
+  const 整理 = () => Object.assign({}, 配, { 词典: 配.词典.map((x) => {
+    const o = Object.assign({}, x);
+    ["名称", "类别", "说明", "提示"].forEach((k) => { if (o[k] !== undefined) o[k] = String(o[k] || "").trim(); });
+    if (!o.说明) delete o.说明;
+    o.例句 = 拆((o.例句 || []).join(",")); if (!o.例句.length) delete o.例句;
+    o.来源 = o.来源 || "业务表";
+    if (o.来源 === "业务表") delete o.词条; else { delete o.表列; o.词条 = 拆((o.词条 || []).join(",")); }
+    o.最短字数 = Number.isFinite(Number(o.最短字数)) ? Number(o.最短字数) : 2;
+    if ((o.命中后 || "占位") !== "占位并提示") delete o.提示;
+    return o;
+  }) });
+
+  $("#s-back").onclick = async () => {
+    if (脏 && !(await 问一句("离开这一页?", "有没保存的改动,离开会丢掉。", { 确定: "丢掉并离开", 取消: "留下" }))) return;
+    location.hash = "#/splits";
+  };
+  const 存草稿 = async () => {
+    try {
+      const r = await 请求(`${P()}/split-dicts/${encodeURIComponent(sid)}/draft`, {
+        method: "PATCH", headers: { "If-Match": String(rev) }, body: JSON.stringify({ 配置: 整理() }) });
+      rev = r.revision; $("#s-rev").textContent = String(rev);
+      d.检查 = r.检查; 配 = JSON.parse(JSON.stringify(r.配置 || {})); if (!Array.isArray(配.词典)) 配.词典 = [];
+      if (!配.拿不准) 配.拿不准 = JSON.parse(JSON.stringify(d.默认拿不准 || {}));
+      版本们 = r.版本 || 版本们; 脏 = false; 画列表(); 画拿不准(); 画检查(r.检查); 画版本();
+      $("#s-fb").innerHTML = md(r.note || "草稿已保存。"); $("#s-fb").className = "msg";
+      return true;
+    } catch (e) {
+      const b = e.体 || {};
+      if (e.码 === 409) {
+        $("#s-fb").innerHTML = `<b>这份词典被别人改过了,刷新再合并,不要直接覆盖。</b><br>${esc(b.message || "")}
+          <br><button id="s-reload">刷新看最新的</button>
+          <details><summary>我这边没保存的内容(刷新会丢,先复制下来)</summary><pre class="io">${esc(JSON.stringify(整理(), null, 2))}</pre></details>`;
+        $("#s-fb").className = "msg bad";
+        $("#s-reload").onclick = () => 页_拆句详情(sid);
+      } else { $("#s-fb").innerHTML = `<b>${esc(b.message || e.message)}</b><br>${md(b.advice || "")}`; $("#s-fb").className = "msg bad"; }
+      return false;
+    }
+  };
+  $("#s-save").onclick = async () => { $("#s-save").disabled = true; await 存草稿(); $("#s-save").disabled = false; };
+  $("#s-freeze").onclick = async () => {
+    if (脏) {
+      if (!(await 问一句("先保存草稿?", "冻结的是<b>已保存的草稿</b>。你有没保存的改动 —— 先保存,再冻结。", { 确定: "保存并冻结", 取消: "先不冻" }))) return;
+      if (!(await 存草稿())) return;
+    }
+    $("#s-freeze").disabled = true;
+    try {
+      const r = await 请求(`${P()}/split-dicts/${encodeURIComponent(sid)}/versions`, { method: "POST" });
+      $("#s-fb").innerHTML = `已冻结为 <b>${esc(r.版本)}</b>(内容哈希 <code>${esc(String(r.内容哈希 || "").slice(0, 19))}</code>)<br>${md(r.note || "")}`;
+      $("#s-fb").className = "msg";
+      setTimeout(() => 页_拆句详情(sid), 900);
+    } catch (e) {
+      const b = e.体 || {}, 阻 = (b.field_errors && b.field_errors.阻断) || [];
+      if (e.码 === 422 && 阻.length) $("#s-fb").innerHTML = `<b>还冻不了,先改这 ${阻.length} 处:</b>${阻.map((x) => "<br>· " + md(x)).join("")}`;
+      else if (b.code === "NO_CHANGE") $("#s-fb").innerHTML = `<b>${esc(b.message || "内容和上一版一样")}</b> —— 不用再冻一版。<br>${md(b.advice || "")}`;
+      else $("#s-fb").innerHTML = `<b>${esc(b.message || e.message)}</b><br>${md(b.advice || "")}`;
+      $("#s-fb").className = "msg bad"; $("#s-freeze").disabled = false;
+    }
+  };
+  async function 试一句() {
+    const 文 = $("#s-tt").value.trim();
+    if (!文) { $("#s-tmsg").textContent = "先写一句话。"; return; }
+    const 试用名单 = {};
+    document.querySelectorAll("[data-try]").forEach((el) => { const v = 拆(el.value); if (v.length) 试用名单[el.dataset.try] = v; });
+    $("#s-tgo").disabled = true; $("#s-tmsg").textContent = "在试…";
+    try {
+      const r = await 请求(`${P()}/split-dict-versions/${encodeURIComponent($("#s-tv").value)}/preview`, {
+        method: "POST", body: JSON.stringify({ 文本: 文, 术语版本: $("#s-tg").value || null, 试用名单 }) });
+      const 段们 = r.分段 || [];
+      const 字 = Array.from(文), 标 = {};
+      段们.forEach((x) => { const n = Array.from(String(x.片段 || "")).length; if (Number.isInteger(x.位置) && n) 标[x.位置] = [n, x.类别]; });
+      let 句 = "", i = 0;
+      while (i < 字.length) {
+        if (标[i]) { const [n, 类] = 标[i]; 句 += `<mark title="${esc(类)}">${esc(字.slice(i, i + n).join(""))}</mark><sub>${esc(类)}</sub>`; i += n; }
+        else { 句 += esc(字[i]); i += 1; }
+      }
+      $("#s-tout").innerHTML = `<div class="note">${句}</div>`
+        + (段们.length ? `<table><thead><tr><th>片段</th><th>类别</th><th>哪本词典</th><th>去哪</th></tr></thead><tbody>${段们.map((x) => `
+            <tr><td>${esc(x.片段)}</td><td>${esc(x.类别)}</td><td>${esc(x.词典 || (x.类别 === "术语" || x.类别 === "通称" ? "术语表" : ""))}</td><td>${esc(x.去向 || "")}</td></tr>`).join("")}</tbody></table>`
+          : `<div class="state" style="padding:12px">这句话没认出任何名字或术语。</div>`)
+        + ((r.没试到的词典 || []).length ? `<div class="note warn">${(r.没试到的词典 || []).map((x) => `「${esc(x.名称)}」没试到:${esc(x.说明)}`).join("<br>")}</div>` : "")
+        + `<label class="f">模型会收到</label><pre class="io">${esc(r.模型会收到 || "(什么都不收到 —— 这句话没有要带的术语或提示)")}</pre>`;
+      $("#s-tmsg").textContent = "";
+    } catch (e) { const b = e.体 || {}; $("#s-tmsg").textContent = b.message || e.message; }
+    $("#s-tgo").disabled = false;
+  }
+  画列表(); 画拿不准(); 画检查(d.检查); 画版本();
 }
 
 /* 术语表编辑页:逐条增删改 → 保存草稿(If-Match)→ 冻结版本 → 选一个版本试一句话。
@@ -7811,6 +8085,11 @@ function 画_聊天编排() {
         ${c["术语版本"] && !(g["可选术语"] || []).some((v) => v.id === c["术语版本"]) ? `<option value="${esc(c["术语版本"])}" selected>(当前选的不在列表里)</option>` : ""}</select>
       <div class="note">每一轮只把顾客这句话里提到的那几条术语交给模型。只列<b>冻结了的</b>版本(草稿会变);换术语 = 出一版新的聊天助手、上生产才生效。
         ${(g["可选术语"] || []).length ? "" : "这个项目还没有冻结的术语版本 —— 先去「术语配置」冻一版。"}</div></div>
+    <div class="card"><h4>拆句</h4><select id="c-split"><option value="">不拆句(只按术语找)</option>${(g["可选拆句"] || []).map((v) =>
+        `<option value="${esc(v.id)}"${v.id === c["拆句版本"] ? " selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["本数"])} 本词典</option>`).join("")}
+        ${c["拆句版本"] && !(g["可选拆句"] || []).some((v) => v.id === c["拆句版本"]) ? `<option value="${esc(c["拆句版本"])}" selected>(当前选的不在列表里)</option>` : ""}</select>
+      <div class="note">每一轮先把这句话里的客户名、员工名、着装人名认出来占位,剩下的字才去找术语 —— 免得「宋锦书」被当成面料。换拆句版本 = 出一版新的聊天助手、上生产才生效。
+        ${(g["可选拆句"] || []).length ? "" : "这个项目还没有冻结的拆句版本 —— 先去「拆句与路由」冻一版。"}</div></div>
     <div class="card" id="c-tools"><h4>工具(${(c["工具"] || []).filter((t) => t["开"]).length} / ${(c["工具"] || []).length} 开着)</h4>
       <div><b>写入类 ${写.length} 个</b> <span class="pill warn">会改业务数据</span></div><div>${写.map(勾).join("")}</div>
       <div style="margin-top:8px"><b>只读 ${读.length} 个</b></div><div>${读.map(勾).join("")}</div>
@@ -7831,6 +8110,7 @@ function 画_聊天编排() {
   $("#c-foot").oninput = (e) => { c["结尾"] = e.target.value; 标脏(); };
   $("#c-model").onchange = (e) => { c["模型"] = e.target.value; 标脏(); };
   $("#c-glossary").onchange = (e) => { c["术语版本"] = e.target.value || null; 标脏(); };
+  $("#c-split").onchange = (e) => { c["拆句版本"] = e.target.value || null; 标脏(); };
   $("#c-tools").querySelectorAll("[data-tool]").forEach((b) => {
     b.onchange = () => { c["工具"].find((t) => t["名"] === b.dataset.tool)["开"] = b.checked; 标脏(); };
   });
@@ -7905,6 +8185,8 @@ async function 路由() {
     if (h === "#/prompts") return await 页_prompt列表();
     if (h.startsWith("#/prompt/")) return await 页_prompt详情(decodeURIComponent(h.slice(9)));
     if (h === "#/glossaries") return await 页_术语列表();
+    if (h === "#/splits") return await 页_拆句列表();
+    if (h.startsWith("#/split/")) return await 页_拆句详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/glossary/")) return await 页_术语详情(decodeURIComponent(h.slice(11)));
     if (h === "#/human") return await 页_人工待办();
     if (h.startsWith("#/human/")) return await 页_待办详情(decodeURIComponent(h.slice(8)));
