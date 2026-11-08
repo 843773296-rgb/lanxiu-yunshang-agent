@@ -372,8 +372,9 @@ $("#send").onclick=async()=>{
   if(t&&t.ref) body.ref_id=$("#cust").value.trim();
   if(!body.assignee_no) return msg(m,"没有可派的顾问",false);
   $("#send").disabled=true;
-  const d=await(await fetch("/api/task-assign",{method:"POST",
-    headers:{"content-type":"application/json"},body:JSON.stringify(body)})).json();
+  let d; try{ d=await(await fetch("/api/task-assign",{method:"POST",
+    headers:{"content-type":"application/json"},body:JSON.stringify(body)})).json(); }
+  catch(e){ d={ok:false,reason:"连不上后台,这次没有派出去"}; }   // 11-08 UI 检查:原来断网时按钮永远灰着
   $("#send").disabled=false;
   msg(m,(d.reason||"").replace(/\*\*/g,""),!!d.ok);
   if(d.ok){$("#note").value="";PICS=[];drawThumbs();loadTasks()}

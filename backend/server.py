@@ -2828,7 +2828,9 @@ def del_template(d,actor="魏欣新",role="顾问"):
         c.execute("DELETE FROM measure_tpl WHERE code=?",(code,))
     log_edit(actor,d.get("actor_no"),"量体模板",code,"删除量体模板",
              [{"字段":"整条","改前":code,"改后":"(已删除)"}],d.get("source") or "后台")
-    log_op(actor,"measure_tpl",code,"—","删除",True,"DELETE","没有任何引用",{})
+    # 11-08 UI 检查:弹窗里要求写的删除原因原来根本没传过来;现在记进操作日志(删除不可逆,事后要查得到为什么删)
+    why=(d.get("why") or "").strip()
+    log_op(actor,"measure_tpl",code,"—","删除",True,"DELETE","没有任何引用"+(f";原因:{why}" if why else ""),{})
     return dict(ok=True,code="DELETE",reason=f"量体模版 {code} 已删除(它没有被任何商品或量体记录引用)")
 
 def save_syscode(d,actor="魏欣新",role="顾问"):

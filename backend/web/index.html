@@ -530,6 +530,8 @@ async function get(u){
   if(r.status===403) throw 载入错("没有权限",(d&&d.error)||"你的账号看不了这一页");
   return d;
 }
+// 11-08 UI 检查:顶栏铃铛有手型光标和「查看待处理任务」提示,原来没绑任何事件。待处理任务在工作台
+{ const b=document.getElementById("bellBtn"); if(b){ b.style.cursor="pointer"; b.onclick=()=>view("workbench"); } }
 function 登录地址(){ return location.protocol+"//"+(location.hostname||"127.0.0.1")+":8770/login"; }
 function 重试载入(){ if(上次要载入) return view(上次要载入[0],上次要载入[1],true); }
 if(window.addEventListener) window.addEventListener("unhandledrejection",e=>{ if(e.reason===已被取代) e.preventDefault(); });
@@ -720,8 +722,12 @@ async function workbench(){
   </div>`);
   M.querySelectorAll("[data-go]").forEach(e=>e.onclick=()=>view(e.dataset.go));
   M.querySelectorAll("[data-pend]").forEach(e=>e.onclick=()=>view(e.dataset.pend));
-  M.querySelectorAll(".seg b").forEach(b=>b.onclick=()=>{
-    M.querySelectorAll(".seg b").forEach(x=>x.classList.remove("on")); b.classList.add("on")});
+  // 11-08 UI 检查:「周 / 月」原来只切高亮、数据不变 —— 看着像切过去了。没做的明说
+  M.querySelectorAll(".seg b").forEach(b=>{ if(b.textContent!=="日"){b.title="周 / 月 视图还没做";b.style.opacity=".45"}
+    b.onclick=()=>{ if(b.textContent!=="日"){res(false,"未做","核心数据概览现在只有「日」视图,周 / 月还没做");return}
+    M.querySelectorAll(".seg b").forEach(x=>x.classList.remove("on")); b.classList.add("on")}});
+  // 「查看全部门店 ›」原来没绑事件
+  M.querySelectorAll(".more").forEach(e=>{ if(e.textContent.includes("查看全部门店")){e.style.cursor="pointer";e.onclick=()=>view("shops")} });
   wbReports(); wbCalendar();
   M.querySelectorAll(".calnav").forEach(b=>b.onclick=()=>wbCalendar(+b.dataset.d));
 }
@@ -1001,13 +1007,13 @@ async function lifecycle(t){
     <div class="tylist">
      ${d.types.map(x=>`<div class="ty ${x.l===d.cur?"on":""}" data-t="${esc(x.l)}">
        <div class="n">${esc(x.l)}客户</div>
-       <div class="m">人数: ${x.n}<a>定向运营</a></div></div>`).join("")}
+       <div class="m">人数: ${x.n}<span style="color:var(--ink4);margin-left:8px" title="定向运营本期未实现">定向运营(未做)</span></div></div>`).join("")}
      <div class="add dead" title="添加生命周期 · 本期未实现">添加生命周期</div></div>
     <div>
      <div class="card"><div class="bd" style="padding:18px 24px">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
         <h3 style="margin:0;font-size:16px">${esc(d.cur)}客户</h3>
-        <span style="font-size:13px;color:var(--ink2)">设为默认值: <span class="sw"><i>默认</i></span></span>
+        <span style="font-size:13px;color:var(--ink2)" title="设为默认值本期未实现">设为默认值(未做): <span class="sw" style="opacity:.45;cursor:not-allowed"><i>默认</i></span></span>
         <span style="margin-left:auto"><button class="btn sol" disabled title="定向运营 · 本期未实现">+ 定向运营</button></span></div>
       <div style="background:var(--tile);border-radius:6px;padding:14px 16px;font-size:13px;color:var(--ink2)">
         <div><b style="color:var(--ink)">判定规则</b> · ${esc(d.rule)}</div>
@@ -1480,9 +1486,9 @@ async function custDetail(cid){
         ${c.manual_lc?`<div style="margin-top:6px">人工于 ${esc(c.manual_at)} 调整为「${esc(c.manual_lc)}」,30 天内优先</div>`:""}
       </div></div>
       <div class="stiles">
-       <div class="st4 a"><div class="l">会员等级<span>⇅</span></div><div class="v">${esc(c.level)}</div>
+       <div class="st4 a"><div class="l">会员等级</div><div class="v">${esc(c.level)}</div>
          <div class="s">生命周期 ${esc(c.lifecycle)}</div></div>
-       <div class="st4 b"><div class="l">累计实付<span>⇅</span></div><div class="v mono">${money(c.paid_amount)}</div>
+       <div class="st4 b"><div class="l">累计实付</div><div class="v mono">${money(c.paid_amount)}</div>
          <div class="s">近 12 月 ${money(c.amount_12m)}</div></div>
        <div class="st4 c"><div class="l">消费记录</div><div class="v mono">${c.order_cnt} 单</div>
          <div class="s">首单 ${esc(c.first_order||"无")}</div></div>
@@ -1707,11 +1713,9 @@ async function staffList(){
    <div class="card"><div class="hd"><h3>角色权限矩阵</h3>
      <span class="n">来源:后台 PRD 第 8 章与 6.2 —— 原设计稿的权限管理页无角色列,此表为按 PRD 补充</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:130px">角色</th>
-     <th style="width:80px">人数</th><th>可执行操作</th></tr></thead><tbody>
+     <th>可执行操作</th></tr></thead><tbody>  <!-- 11-08:「人数」列取值恒为空串,去掉 -->
      ${Object.entries(d.matrix).map(([r,ops])=>`<tr>
       <td><span class="pill p-blue">${esc(r)}</span></td>
-      <td class="mono">${d.rows.concat([]).length?"":""}${(d.facets.role.includes(r))?"":""}
-        ${["顾问","店长","财务","总部运营"].includes(r)?"":""}</td>
       <td>${ops.map(o=>`<span class="pill p-mut" style="margin-right:5px">${esc(o)}</span>`).join("")}</td>
       </tr>`).join("")}
     </tbody></table></div>`);
@@ -1776,6 +1780,9 @@ async function orderList(){
       「<b>${esc(d.tabs.find(t=>t.name===d.tab).prd)}</b>」——
       这是<b>多对一</b>,不是「PRD 里没有」:待审核/待生产/生产中 三个页签在 PRD 里都是「方案确认中」。
       订单表两个口径都存(status / prd_status),映射由 <code>member_order_check.py</code> 逐单校验。</div>`:""}
+    <!-- 11-08 UI 检查:订单卡片 7 列原来没有列头,分不清哪个是应付、哪个是实付 -->
+    <div class="orditem" style="background:var(--tile);color:var(--ink3);font-size:12px;padding:8px 16px">
+      <div>商品</div><div>单价 × 数量</div><div>状态</div><div>应付</div><div>实付</div><div>配送</div><div>操作</div></div>
     <div>${d.rows.map(o=>`
       <div class="ordhd">
         <span>订单号: <span class="no">${esc(o.id)}</span></span>
@@ -2194,12 +2201,12 @@ function formMeasureItem(after,cur){
   modal(cur?`编辑测量项 · ${cur.code}(${cur.used} 个模版引用着它)`:"新增测量项",[
     {k:"name",label:"名称",req:1,val:cur&&cur.name,ph:"例如:小腿围"},
     {k:"unit",type:"select",label:"单位",req:1,opts:["cm","kg","个","°"],val:cur&&cur.unit},
-    {k:"required",type:"select",label:"是否必填",req:1,opts:["0","1"],
-     val:cur&&String(cur.required)},
+    {k:"required",type:"select",label:"是否必填",req:1,opts:["否","是"],   // 11-08:原来给人看 0 / 1
+     val:cur?(String(cur.required)==="1"?"是":"否"):"否"},
     {k:"sort",label:"排序",req:1,val:cur?String(cur.sort):"99"},
     {k:"note",type:"text",label:"说明(量的人会看到)",val:cur&&cur.note,
      ph:"例如:必填。要问穿什么鞋,高跟差 5–8cm"},
-  ],v=>doOp("/api/mitem-save",{...v,code:cur&&cur.code,role:ROLE},after),true);
+  ],v=>doOp("/api/mitem-save",{...v,required:v.required==="是"?"1":"0",code:cur&&cur.code,role:ROLE},after),true);
 }
 function bindToggle(reload){
   M.querySelectorAll("[data-tgl]").forEach(e=>e.onclick=async()=>{
@@ -2320,7 +2327,7 @@ async function measureTpls(){
   M.querySelectorAll("[data-deltpl]:not(.dead)").forEach(e=>e.onclick=()=>
     modal(`删除量体模版 · ${e.dataset.deltpl}`,[{k:"why",type:"text",req:1,
       label:"删除原因(删除不可逆;要临时停掉请走「停用」)",ph:"例如:建错了,没用过"}],
-      ()=>doOp("/api/template-del",{code:e.dataset.deltpl,role:ROLE},measureTpls),true));
+      v=>doOp("/api/template-del",{code:e.dataset.deltpl,why:v.why,role:ROLE},measureTpls),true));   // 11-08:原来没把原因传给后端
   bindToggle(measureTpls); bindTable(st,measureTpls);
 }
 function showTpl(r){
@@ -3140,8 +3147,10 @@ async function levelPage(){
       {k:"target",label:"客户编码",req:1,ph:"例如:C10000"},
       {k:"delta",label:"调整积分(可为负)",req:1,ph:"例如:5000 或 -2000"},
       {k:"note",type:"text",label:"调整原因(必填)",req:1,ph:"例如:活动补发"}],
-      v=>doOp("/api/approval-apply",{kind:"积分调整",target:v.target,
-        payload:{delta:parseInt(v.delta)||0},note:v.note,role:ROLE},levelPage),true));
+      v=>{ // 11-08 UI 检查:原来 parseInt(…)||0 —— 填「abc」被悄悄当成 0 提交
+        if(!/^-?\d+$/.test(String(v.delta).trim())){res(false,"格式不对","调整积分要填整数,比如 5000 或 -2000");return false}
+        return doOp("/api/approval-apply",{kind:"积分调整",target:v.target,
+        payload:{delta:parseInt(v.delta,10)},note:v.note,role:ROLE},levelPage)},true));
 }
 
 async function tagPage(){
@@ -3847,7 +3856,7 @@ function refundPage(d,tid){const p=d.deposit, bad=p.status==="退款失败";
    <div class="bd" style="padding:14px 24px 20px">
     <div style="display:flex;gap:12px">
      ${[0,1,2,3].map(()=>`<div style="width:96px;height:96px;border:1px dashed #D9DCE1;border-radius:6px;
-        display:grid;place-items:center;color:var(--ink4);font-size:12px">+ 上传</div>`).join("")}
+        display:grid;place-items:center;color:var(--ink4);font-size:12px;cursor:not-allowed" title="上传凭证还没做">上传(未做)</div>`).join("")}
     </div>
     <div class="note" style="margin-top:10px">本期仅实现校验规则,上传通道未开放</div></div></div>
   <div class="card"><div class="hd"><h3>支付流水</h3><span class="n">${d.flow.length} 条</span></div>
@@ -3860,17 +3869,17 @@ function refundPage(d,tid){const p=d.deposit, bad=p.status==="退款失败";
     <td class="mono" style="color:var(--ink3)">${esc(f.ts)}</td></tr>`).join("")}</tbody></table></div>
   <div class="card"><div class="hd"><h3>退款日志</h3><span class="n">${d.trace.length} 次尝试 · 上限 3 次</span></div>
    <div class="tl" style="padding-top:16px">
-    <div class="it"><span class="ic"></span><div><div class="tt">退款申请已提交 操作人:客服</div>
+    <div class="it"><span class="ic"></span><div><div class="tt">退款申请已提交</div>
       <div class="dd mono">${esc(p.created)}</div></div></div>
-    <div class="it"><span class="ic"></span><div><div class="tt">退款单审核通过 操作人:店长${p.amount>=1000?"、财务复核":""}</div>
+    <div class="it"><span class="ic"></span><div><div class="tt">退款单审核通过${p.amount>=1000?"(金额 ≥ 1000,要财务复核)":""}</div>
       <div class="dd mono">${esc(p.created)}</div></div></div>
     ${d.trace.map(t=>`<div class="it bad"><span class="ic">
       <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--bad)" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 2.5 7.5 7.5M7.5 2.5 2.5 7.5"/></svg></span>
       <div><div class="tt">第 ${t.attempt} 次退款失败 · <span class="mono">${esc(t.resp_code)}</span> ${esc(t.resp_msg)}
         <span style="color:var(--ink3)">· 请求金额 ¥${money(t.req_amount)} · 幂等号 ${esc(t.idem_key)}</span></div>
        <div class="dd mono">${esc(t.ts)}</div></div></div>`).join("")}
-    <div class="it"><span class="ic"></span><div><div class="tt">已达重试上限,转财务人工任务 操作人:系统</div>
-      <div class="dd mono">${esc(p.updated)} 14:35</div></div></div>
+    ${d.trace.length>=3?`<div class="it"><span class="ic"></span><div><div class="tt">已达重试上限,转财务人工任务</div>
+      <div class="dd mono">${esc(p.updated)}</div></div></div>`:""}  <!-- 11-08 UI 检查:原来这条每单都显示、时间拼一个写死的 14:35,操作人也是写死的 -->
    </div></div>
   <div class="fbar"><button class="btn gray" data-back="finance">返回</button>
    <button class="btn sol" data-retry="${esc(p.id)}" data-idem="${esc(p.idem_key)}">重新退款</button>

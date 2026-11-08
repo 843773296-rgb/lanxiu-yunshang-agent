@@ -241,21 +241,24 @@ $("#dpic").addEventListener("change", async e=>{
     SPICS.push({name:f.name,data});
   }
   e.target.value="";
+  画现场照();
+});
+
+// 11-08 UI 检查:原来删过一张之后,其余 × 还绑着第一次点的那张的序号 —— 再点删掉的不是点的那张。每次重画都按各自序号重新绑
+function 画现场照(){
   $("#sthumbs").innerHTML=SPICS.map((p,i)=>
     `<span class="x"><img src="${p.data}"><button data-rm="${i}">×</button></span>`).join("");
   for(const b of document.querySelectorAll("[data-rm]"))
-    b.onclick=()=>{SPICS.splice(+b.dataset.rm,1);b.closest("#sthumbs").innerHTML=
-      SPICS.map((p,i)=>`<span class="x"><img src="${p.data}"><button data-rm="${i}">×</button></span>`).join("");
-      for(const x of document.querySelectorAll("[data-rm]")) x.onclick=b.onclick};
-});
-
+    b.onclick=()=>{ SPICS.splice(+b.dataset.rm,1); 画现场照(); };
+}
 $("#ok").onclick=async()=>{
   $("#derr").className="";
   $("#ok").disabled=true; $("#ok").textContent="提交中…";
-  const d=await(await fetch("/api/task-finish",{method:"POST",
+  let d; try{ d=await(await fetch("/api/task-finish",{method:"POST",
     headers:{"content-type":"application/json"},
     body:JSON.stringify({id:CUR.id, summary:$("#dsum").value.trim(), files:SPICS,
                          conclusion:$("#dconcsel").value||undefined})})).json();
+  }catch(e){ d={ok:false,reason:"连不上后台,这次没有提交成功 —— 写的总结和照片还在"}; }   // 11-08:原来断网时卡在「提交中…」
   $("#ok").disabled=false; $("#ok").textContent="提交";
   if(!d.ok){
     $("#derr").className="on";

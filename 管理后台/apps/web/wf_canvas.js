@@ -267,9 +267,9 @@ function 画_节点() {
     return `<div class="wfnode2 ${选 ? "sel" : ""} ${坏[n.id] ? "bad" : ""} ${可连}"${跑 ? ` data-run="${esc(跑.状态)}"` : ""} data-id="${esc(n.id)}" tabindex="0" role="button"
         style="left:${p.x}px;top:${p.y}px;height:${h}px"
         aria-label="${esc(业务名(n) + "," + 次级标签(n) + (缺.length ? ",缺 " + 缺.length + " 项" : "") + (选 ? ",已选中" : ""))}">
-      <div class="nh"><span class="t">${esc(业务名(n))}${typeof 同名后缀 === "function" ? 同名后缀(n) : ""}</span>${typeof 运行标 === "function" ? 运行标(n.id) : ""}
+      <div class="nh"><span class="t" title="${esc(业务名(n))}">${esc(业务名(n))}${typeof 同名后缀 === "function" ? 同名后缀(n) : ""}</span>${typeof 运行标 === "function" ? 运行标(n.id) : ""}
         ${改 && typeof 单测类型 !== "undefined" && 单测类型[n.type] ? `<button class="run1" data-run1="${esc(n.id)}" title="单独测这一步" aria-label="单独测「${esc(业务名(n))}」这一步" tabindex="-1">▶</button>` : ""}
-        ${改 || n.type !== "start" ? `<button class="more" data-more="${esc(n.id)}" aria-label="更多操作" tabindex="-1">⋯</button>` : ""}</div>
+        ${改 || n.type !== "start" ? `<button class="more" data-more="${esc(n.id)}" aria-label="更多操作" title="更多操作" tabindex="-1">⋯</button>` : ""}</div>
       <div class="k">${esc(次级标签(n))}</div><div class="tags">${标}</div>
       ${n.type === "start" ? "" : `<span class="wfport in" data-in="${esc(n.id)}" title="入口" aria-hidden="true"></span>`}
       ${口们.map((o, i) => `<button class="wfport out ${下 ? "down" : ""} ${o.port === "error" ? "err" : ""}" data-out="${esc(n.id)}" data-oi="${i}"

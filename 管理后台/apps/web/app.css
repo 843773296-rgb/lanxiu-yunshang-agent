@@ -283,7 +283,8 @@ tr.warn-row td{background:#fff7e8}
 .wfport.out:hover i,.wfport.out:focus-visible i{border-color:var(--pri);background:var(--pri-bg)}
 .wfport.out:focus-visible{outline:2px solid var(--pri);border-radius:50%}
 .wfport.out.err i{border-color:var(--fail)}
-.wfport .pl{position:absolute;right:26px;white-space:nowrap;font-size:10.5px;color:var(--ink3);pointer-events:none}
+.wfport .pl{position:absolute;right:26px;white-space:nowrap;font-size:10.5px;color:var(--ink3);pointer-events:none;
+  max-width:120px;overflow:hidden;text-overflow:ellipsis} /* 11-08 UI 检查:分类器出口名(类别名)长了会伸出卡片、压住下面的字;全名在右侧面板里看 */
 .wfport.down .pl{right:auto;top:22px}
 @media (pointer:coarse){.wfport{width:44px;height:44px}.wfport.in{left:-22px}.wfport.out{right:-22px}}
 .wfmarq{position:absolute;border:1px dashed var(--pri);background:rgba(22,93,255,.06);pointer-events:none}

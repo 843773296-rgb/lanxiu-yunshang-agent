@@ -3713,7 +3713,7 @@ async function 画_访问入口() {
   <div class="card"><h3>最近 ${esc(String(d["最近调用只列了"] || 20))} 次调用</h3>
     ${调 ? `<table><tr><th>时间</th><th>密钥</th><th>接口</th><th>结果</th><th>运行</th><th>说明</th></tr>${调}</table>`
          : `<div class="k">还没有调用。</div>`}</div>`;
-  $("#ak-new").onclick = async () => {
+  $("#ak-new").onclick = 只跑一次(async () => {
     const 名 = $("#ak-n").value.trim(), 上限 = $("#ak-cap").value.trim();
     if (!名 || !上限) { $("#ak-msg").textContent = "名字和每天上限都要填"; return; }
     try {
@@ -3722,7 +3722,7 @@ async function 画_访问入口() {
         <pre>${esc(r["原文"])}</pre><div class="k">调用地址:${esc(location.origin + r["调用地址"])}</div>`);
       画_访问入口();
     } catch (e) { 报错(e); }
-  };
+  });
   $("#tabbody").querySelectorAll("[data-ak-revoke]").forEach((b) => b.onclick = async () => {
     const 理由 = await 问一句("吊销这把密钥", "吊销立刻生效,用它的外部系统下一次调用就会被拒。", { 输入: "理由", 必填: true });
     if (!理由) return;
@@ -4314,13 +4314,14 @@ function 挂运行控制(rid, d) {
         // ⚠️ **原样显示服务端给的 status 和说明,不自己翻译。**
         // 前端编一套中文的话,它和状态机会漂 ——
         // 而漂的表现是**界面上说停了、实际还在跑**。
+        // 11-08 UI 检查:原来先写结果、再整页重画 —— 结果刚出来就被刷掉,点完看不到任何反馈。改成先重画、再写结果
+        await 页_运行详情(rid);
         if ($("#rcmsg")) {
           $("#rcmsg").innerHTML = `<div class="state"><p>
             <code>${esc(r.status || "")}</code>
             ${r["改了吗"] === false ? "（<b>没有改动</b>）" : ""}
             ${md(r.note || r["说明"] || "")}</p></div>`;
         }
-        await 页_运行详情(rid);
       } catch (e) {
         if ($("#rcmsg")) {
           const s2 = 错误块(e, null);
@@ -4455,7 +4456,7 @@ async function 页_运行详情(rid) {
         <div class="k">任务达标状态</div>
         <div class="note" style="margin-top:6px">${md(d["达标说明"])}</div></div>
       <div class="card"><div class="kpi">${esc(d["模式"])}</div>
-        <div class="k">execution_mode</div>
+        <div class="k">执行方式 <span title="字段名">(execution_mode)</span></div>
         <div class="note" style="margin-top:6px">mock 和真实实现<b>同一个契约</b> ——
           正因为无缝,这个标记才是必需的(§19.4)。</div></div>
       <div class="card"><div class="kpi">${esc(JSON.stringify(d["用量"] || {}))}</div>
@@ -4589,6 +4590,16 @@ function 報状态(报, 脏) {
     : `上次校验:<b>${报["阻断数"]} 条阻断</b> / ${报["警告数"]} 条警告`;
 }
 
+// 11-08 UI 检查:页面上原样露出 pending / approved / production 这类英文值,店员和产品经理看不懂。
+// 只翻显示,原值放进 title;后端返回的值本身不动(判断逻辑照旧用英文值)
+// 11-08 UI 检查:这些按钮请求中原来还能连点 —— 试运行 / 单条试跑每点一次就真花一次钱,发密钥连点会发两把,批准 / 驳回会重复提交。
+// 只跑一次():上一次没结束时再点直接忽略
+function 只跑一次(fn) { let 忙 = false; return async (...a) => { if (忙) return; 忙 = true; try { return await fn(...a); } finally { 忙 = false; } }; }
+// 函数声明会提升,所以在这里重新绑定就生效(工作流试运行 / 智能体试运行)
+做_试运行 = 只跑一次(做_试运行); 做_跑agent = 只跑一次(做_跑agent);
+const _英转中 = { pending: "待处理", approved: "已批准", rejected: "已驳回", expired: "已过期", cancelled: "已取消",
+  running: "运行中", queued: "排队中", succeeded: "成功", failed: "失败", ok: "成功", denied: "被拒",
+  test: "测试", staging: "预发", production: "生产", development: "开发" };
 function 字段(标, 键, 值, 说明, 多行) {
   const v = 值 === undefined || 值 === null ? ""
     : (typeof 值 === "object" ? JSON.stringify(值, null, 1) : String(值));
@@ -4609,7 +4620,7 @@ function 画_agent正文() {
   if (g.Tab === "行为") {
     $("#body").innerHTML = 报错块 + `<div class="card">
       <h4>模型连接</h4>
-      <div class="fieldrow"><label>connection_version_id</label>
+      <div class="fieldrow"><label>模型连接版本 <span class="k">(connection_version_id)</span></label>
         <select data-k="connection_version_id">
           <option value="">(没选)</option>
           ${g["可选连接"].map((c) => `<option value="${esc(c.id)}"
@@ -4672,7 +4683,7 @@ function 画_agent正文() {
         <b>不可逆写入必须有确认策略</b>,而且<b>模型不能批准自己</b>(§9.6)。</div>
       </div>
       <div class="card"><h4>上下文与记忆</h4>
-      ${字段("context_policy", "context_policy", cfg.context_policy, "", 3)}
+      ${字段("上下文策略(context_policy)", "context_policy", cfg.context_policy, "", 3)}
       <div class="note"><b>长期记忆首版关闭</b>(§9.5)——
         未经审核就持久化的错误事实会跨任务传染,而作用域、保留期限、撤回都还没实现。<br>
         资料里的指令<b>是资料,不是授权</b>:一句「忽略之前的规则」改不了 allowed_scopes。</div>
@@ -4688,7 +4699,7 @@ function 画_agent正文() {
     });
   } else if (g.Tab === "权限与限制") {
     $("#body").innerHTML = 报错块 + `<div class="card"><h4>运行限制</h4>
-      ${字段("limits", "limits", cfg.limits, "", 5)}
+      ${字段("运行上限(limits)", "limits", cfg.limits, "", 5)}
       <div class="note">界面上那几个数字(回合 8 / 工具 12 / 期限 180 秒)是
         <b>设计初值</b> —— 规格 §9.6 结尾:<b>当前没有性能或模型优劣的实测结论</b>,
         真实任务要靠评测再定。人工确认场景的等待截止时间<b>不能照搬这几个秒数</b>。</div>
@@ -5288,7 +5299,7 @@ async function 画工具详情(tid) {
           : esc(草["读写类型中文"] || 草["读写类型"] || "—")}</td></tr>
         <tr><td class="k">接入方式</td><td><code>${esc(草["接入方式"] || "—")}</code>
           <span class="k">（接口不收可执行代码，这里也不给改）</span></td></tr>
-        <tr><td class="k">draft_revision</td>
+        <tr><td class="k">草稿版本号 <span title="字段名">(draft_revision)</span></td>
           <td><code>${esc(d["draft_revision"])}</code>
             <span class="k">—— <b>改草稿的 If-Match 认这个</b>，不是下面那个
               <code>revision</code>（${esc(d["revision"])}）。
@@ -5462,13 +5473,14 @@ function 挂工具表单() {
     if ($("#tmsg")) $("#tmsg").innerHTML = `<div class="state"><p>注册中…</p></div>`;
     try {
       const r = await 工具动作.注册(体);
+      // 11-08 UI 检查:原来先写结果、再整页重画 —— 结果刚出来就被刷掉,点完看不到任何反馈。改成先重画、再写结果
+      await 页_工具目录();
       if ($("#tmsg")) {
         $("#tmsg").innerHTML = `<div class="state"><p>注册好了
-          <code>${esc(r.id || "")}</code> —— **下一步是冻结一个版本**:
+          <code>${esc(r.id || "")}</code> —— ${md("**下一步是冻结一个版本**")}:
           草稿改不动已经冻结的版本,而引用它的 Agent 认的是版本
           ${md(r.note ? "。" + r.note : "")}</p></div>`;
       }
-      await 页_工具目录();
     } catch (e) {
       if ($("#tmsg")) $("#tmsg").innerHTML = 错误块(e, null).html;
       $("#t-go").disabled = false;
@@ -5541,7 +5553,7 @@ async function 页_人工待办() {
             ? `<div class="k"><span class="pill fail">没人能批</span>
                  ${md(r["没人能批的原因"] || "")}</div>` : ""}</td>
         <td><span class="pill ${r.status === "pending" ? "warn"
-              : r.status === "approved" ? "ok" : ""}">${esc(r.status)}</span></td>
+              : r.status === "approved" ? "ok" : ""}" title="${esc(r.status)}">${esc(_英转中[r.status] || r.status)}</span></td>
         <td class="k">${r.expires_at
               ? esc(String(r.expires_at).slice(5, 16).replace("T", " "))
               : `<span class="pill fail">没设截止</span>`}
@@ -5599,7 +5611,7 @@ function 画_核对页(hid, d, 头) {
             : x.decision === "rejected" ? "驳回" : esc(x.decision)}</td><td>${esc(x.reason || "")}</td></tr>`).join("")
         + `</tbody></table>` : `<div class="k">还没有人处理过。</div>`);
   if (!d["你能处理吗"]) return;
-  const 发 = async (决定) => {
+  const 发 = 只跑一次(async (决定) => {
     const 理由 = $("#rv-why").value.trim();
     if (决定 === "rejected" && !理由) { $("#rv-why").focus(); $("#rv-res").innerHTML = `<div class="k">驳回要写理由 —— 不然发起的人不知道错在哪。</div>`; return; }
     const edits = {};
@@ -5619,7 +5631,7 @@ function 画_核对页(hid, d, 头) {
         : "已驳回 —— 这次运行记下理由后结束,什么都不写"}${r["运行"] ? ` · <a href="#/wfrun/${encodeURIComponent(r["运行"].id)}">看这次运行</a>` : ""}</div>`;
       setTimeout(() => 页_待办详情(hid), 1500);
     } catch (e) { const s = 错误块(e, null); $("#rv-res").innerHTML = s.html; }
-  };
+  });
   $("#rv-ok").onclick = () => 发("approved");
   $("#rv-no").onclick = () => 发("rejected");
 }
@@ -5678,7 +5690,7 @@ async function 页_待办详情(hid) {
           + `</tbody></table>`
         : `<div class="state">还没有人处理过</div>`);
   if (!d["你能处理吗"]) return;
-  const 发 = async (决定) => {
+  const 发 = 只跑一次(async (决定) => {
     const res = $("#res");
     let edits;
     try { edits = JSON.parse($("#edits").value || "{}"); }
@@ -5694,12 +5706,12 @@ async function 页_待办详情(hid) {
                                request_revision: (d["请求"] || {}).revision,
                                reason: $("#why").value || null, edits }),
       });
-      res.innerHTML = `<div class="note">${esc(r.decision)} →
+      res.innerHTML = `<div class="note">${esc(_英转中[r.decision] || r.decision)} →
         <b>${esc(r["当前状态"])}</b>（rev ${r["新的 revision"]}）<br>
         ${md(r.note || "")}</div>`;
       setTimeout(() => 页_待办详情(hid), 1200);
     } catch (e) { const s = 错误块(e, null); res.innerHTML = s.html; }
-  };
+  });
   $("#ap").onclick = () => 发("approved");
   $("#rj").onclick = () => 发("rejected");
   $("#info").onclick = () => 发("info_requested");
@@ -5872,7 +5884,7 @@ async function 页_单条试跑() {
         不是答案 —— 下面显示的是**真实状态**,不是假进度条。`)}</div>
       <div id="步"></div>
     </div>`;
-  $("#go").onclick = async () => {
+  $("#go").onclick = 只跑一次(async () => {
     const 步 = $("#步");
     let 变量;
     try { 变量 = JSON.parse($("#vv").value || "{}"); }
@@ -5890,7 +5902,7 @@ async function 页_单条试跑() {
         body: JSON.stringify({ prompt_id: $("#pp").value, 变量 }),
       });
       步.innerHTML = `<div class="note">
-        派出去了:任务 <code>${esc(r.job_id)}</code>,状态 <b>${esc(r.status)}</b><br>
+        派出去了:任务 <code>${esc(r.job_id)}</code>,状态 <b title="${esc(r.status)}">${esc(_英转中[r.status] || r.status)}</b><br>
         ${md("**202 —— 一个模型都还没调完。**"
              + "这是任务信封,不是答案;要看结果去运行记录。")}
         ${r.note ? "<br>" + md(r.note) : ""}</div>
@@ -5899,7 +5911,7 @@ async function 页_单条试跑() {
       const s = 错误块(e, null);
       步.innerHTML = s.html;
     }
-  };
+  });
 }
 
 /* ── 调用链(M5:/debug 在管理后台重建)──────────────────────────────
@@ -7163,8 +7175,8 @@ async function 页_审计记录() {
           <td>${esc(r["谁"] || "—")}</td>
           <td><b>${esc(r["做了什么"])}</b></td>
           <td class="k">${esc(JSON.stringify(r["对象"] || {}).slice(0, 60))}</td>
-          <td>${r["结果"] === "ok" ? `<span class="pill">ok</span>`
-                : `<span class="pill warn">${esc(r["结果"] || "—")}</span>`}</td>
+          <td>${r["结果"] === "ok" ? `<span class="pill" title="ok">成功</span>`
+                : `<span class="pill warn" title="${esc(r["结果"] || "")}">${esc(_英转中[r["结果"]] || r["结果"] || "—")}</span>`}</td>
           <td class="k">${esc((r["为什么"] || "—").slice(0, 70))}</td></tr>`).join("")
         + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
     } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
@@ -7530,7 +7542,7 @@ function 开面板(aid, 动作, rid, 环, 历史) {
         b.disabled = true; 报("发布…");
         try {
           const r = await 发布链动作.发布(rid, e, rev);
-          报(`**${esc(r["环境"])}** 的指针切了:`
+          报(`**${esc(_英转中[r["环境"]] || r["环境"])}** 的指针切了:`
             + `${r["从"] ? `\`${esc(r["从"])}\`` : "（原来没有）"} → \`${esc(r["到"])}\``
             + `\n\n${r.note || ""}`);
           $("#panel").innerHTML = ""; await 画应用详情(aid);
@@ -7690,8 +7702,9 @@ function 挂连接事件(d) {
       b.disabled = true; 报2("探 capabilities…");
       try {
         const r = await 连接动作.探(b.dataset.probe);
-        报2(`探测提交了:${esc(JSON.stringify(r).slice(0, 180))}`);
+        // 11-08 UI 检查:原来先写结果、再整页重画 —— 结果刚出来就被刷掉,点完看不到任何反馈。改成先重画、再写结果
         await 页_模型与连接();
+        报2(`探测提交了${r && (r.note || r["说明"]) ? ":" + esc(r.note || r["说明"]) : ",结果在上面那一行「探过吗」里"}`);
       } catch (e) { 报2(闸文(e), true); b.disabled = false; }
     };
   });
@@ -7708,9 +7721,10 @@ function 挂连接事件(d) {
     $("#c-go").disabled = true; 报2("建连接…");
     try {
       const r = await 连接动作.建(体);
+      // 11-08 UI 检查:原来先写结果、再整页重画 —— 结果刚出来就被刷掉,点完看不到任何反馈。改成先重画、再写结果
+      await 页_模型与连接();
       报2(`建好了 \`${esc(r.id || "")}\` —— **下一步是探一次 capabilities**:`
         + `不探的话「没探过」会在发布那一刻把它挡住`);
-      await 页_模型与连接();
     } catch (e) { 报2(闸文(e), true); $("#c-go").disabled = false; }
   };
 }
@@ -7807,12 +7821,13 @@ function 挂成员事件(d) {
     if ($("#mmsg")) $("#mmsg").innerHTML = `<div class="state"><p>保存中…</p></div>`;
     try {
       const r = await 成员动作.保存(uid, $("#m-role").value, 专);
+      // 11-08 UI 检查:原来先写结果、再整页重画 —— 结果刚出来就被刷掉,点完看不到任何反馈。改成先重画、再写结果
+      await 页_成员与权限();
       if ($("#mmsg")) {
         $("#mmsg").innerHTML = `<div class="state"><p>保存了 ——
           <b>实际能做的</b>:${esc(((r["实际能做的"] || []).join("、")) || "—")}
           ${md(r.note ? "。" + r.note : "")}</p></div>`;
       }
-      await 页_成员与权限();
     } catch (e) {
       // ⚠️ **闸的每一条都要显示出来。** 这一页的闸里有一条
       // 「你是最后一个能改权限的人」—— 只显示 message 的话
@@ -8099,7 +8114,7 @@ async function 页_训练任务() {
       </tr></thead><tbody>`
       + d["任务"].map((r) => `<tr>
         <td class="k">${esc(r.id)}</td>
-        <td>${esc(r.status)}${r["请求取消了吗"]
+        <td title="${esc(r.status)}">${esc(_英转中[r.status] || r.status)}${r["请求取消了吗"]
               ? ` <span class="pill warn">请求取消中</span>` : ""}</td>
         <td class="k">${esc(r["基座模型"] || "—")}</td>
         <td>${esc(r["训练目标"] || "—")}</td>
@@ -8145,11 +8160,11 @@ function 挂产物事件() {
       if ($("#amsg")) $("#amsg").innerHTML = `<div class="state"><p>部署中…</p></div>`;
       try {
         const r = await 产物动作.部署(aid, sel ? sel.value : "");
-        if ($("#amsg")) {
-          $("#amsg").innerHTML = `<div class="state"><p>部署提交了:
-            ${esc(JSON.stringify(r).slice(0, 220))}</p></div>`;
-        }
+        // 11-08 UI 检查:原来先写结果、再整页重画 —— 结果刚出来就被刷掉,点完看不到任何反馈。改成先重画、再写结果
         await 页_模型产物();
+        if ($("#amsg")) {
+          $("#amsg").innerHTML = `<div class="state"><p>部署提交了${r && (r.note || r["说明"]) ? ":" + md(r.note || r["说明"]) : "。"}</p></div>`;
+        }
       } catch (e) {
         if ($("#amsg")) $("#amsg").innerHTML = 错误块(e, null).html;
         b.disabled = false;
@@ -8297,7 +8312,7 @@ async function 画_聊天访问() {
       <label class="f">有效期(必选,最长 1 年)</label>${有效期下拉("cak-exp")}
       <button class="pri" id="cak-new">发密钥</button> <span id="cak-msg" class="k"></span>
       <div class="k">原文只在发出那一刻显示一次;发密钥的人要绑了澜绣工号,不然调用会被拒(聊天站不知道以谁的身份取数)。</div></div>`;
-  $("#cak-new").onclick = async () => {
+  $("#cak-new").onclick = 只跑一次(async () => {
     const 名 = $("#cak-n").value.trim(), 上限 = $("#cak-cap").value.trim();
     if (!名 || !上限) { $("#cak-msg").textContent = "名字和每天上限都要填"; return; }
     try {
@@ -8305,7 +8320,7 @@ async function 画_聊天访问() {
       提示("密钥发好了 —— 现在就存好", `<div class="note"><b>这是唯一一次看得到原文</b>,关掉这个框就再也看不到了。</div><pre>${esc(r["原文"])}</pre>`);
       画_聊天访问();
     } catch (e) { 报错(e); }
-  };
+  });
   挂轮换($("#body"), 画_聊天访问);
   $("#body").querySelectorAll("[data-ak-revoke]").forEach((b) => b.onclick = async () => {
     const 理由 = await 问一句("吊销这把密钥", "吊销立刻生效。", { 输入: "理由", 必填: true });

@@ -14,6 +14,16 @@
 (function () {
   if (window.__登录守卫__) return;                    // 防止重复注入
   window.__登录守卫__ = true;
+  // 11-08 UI 检查:约 8 处页面加载请求没接失败(研判队列 / 值班台 / 着装人 / 平板 / 任务…),断网或后台出错时
+  // 页面永远停在「加载中」,分不清是后台没起还是真没数据。这里统一兜底:没人处理的请求失败 → 把还停在「加载中」的格子换成一句说明
+  window.addEventListener("unhandledrejection", function () {
+    try {
+      var 停着 = Array.prototype.filter.call(document.querySelectorAll("td,p,div,span"), function (el) {
+        return el.children.length === 0 && /^\s*(加载中|载入中|读取中)…?\s*$/.test(el.textContent || "");
+      });
+      停着.forEach(function (el) { el.textContent = "没加载出来:连不上后台或后台出错 —— 刷新再试"; el.style.color = "#c0392b"; });
+    } catch (e) {}
+  });
   var 原fetch = window.fetch ? window.fetch.bind(window) : null;
   var 已失效 = false, 查中 = false;
   function 去登录() {
