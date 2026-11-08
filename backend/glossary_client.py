@@ -203,13 +203,42 @@ def 一句话(状态):
             f"· 取自{状态.get('来源')}")
 
 
-def 这一段(文本, 状态):
+# ── 拆句用的名单(11-08 用户拍「query 拆分 + 路由,词典为主、拿不准再问模型」+「先上线,配置页紧跟」)──
+# 客户名、员工名、着装人名是和术语表**各自独立**的三本词典,拆句时先占掉自己那几个字(「罗晓雯」里的「罗」不算面料)。
+# 名单**不进术语版本、不进日志、不进给模型的那段** —— 只在这个进程里用来切句子。
+# 过渡期写在这里(从业务库只读现取);配置页做好后,「从哪张表哪一列取」搬到后台配置。
+名单刷新秒 = 600          # 技术参数:新建的客户最多 10 分钟后认得
+_名单缓存 = {"时": 0.0, "名单": None}
+
+
+def 名单():
+    """→ {"客户": [...], "员工": [...], "着装人": [...]};业务库读不到 → None(这一轮照旧只按术语匹配,**不崩**)。"""
+    if _名单缓存["名单"] is not None and time.time() - _名单缓存["时"] < 名单刷新秒:
+        return _名单缓存["名单"]
+    try:
+        import sqlite3
+        import db_build
+        c = sqlite3.connect(f"file:{db_build.DB}?mode=ro", uri=True)
+        try:
+            出 = {"客户": [r[0] for r in c.execute("SELECT name FROM customer WHERE name IS NOT NULL AND name!=''")],
+                  "员工": [r[0] for r in c.execute("SELECT name FROM staff WHERE name IS NOT NULL AND name!=''")],
+                  "着装人": [r[0] for r in c.execute("SELECT name FROM wearer WHERE name IS NOT NULL AND name!=''")]}
+        finally:
+            c.close()
+    except Exception:                                                        # noqa: BLE001
+        return _名单缓存["名单"]          # 读不到就用上一次的(可能是 None)
+    _名单缓存.update(时=time.time(), 名单=出)
+    return 出
+
+
+def 这一段(文本, 状态, 名单表=None):
     """这次要塞给模型的那一段。**调后台那份纯函数**,不另写(见文件头 ④)。
 
-    一条术语都没提到 → 空串(不带空壳)。"""
+    先拆句(客户名 / 员工名占掉的字不算术语),再只把术语那几段拼给模型。
+    一条术语都没提到 → 空串(不带空壳)。名单表不传 → 用 `名单()` 现取。"""
     T = 术语模块()
     术语们 = 状态.get("术语") or []
-    命 = T.匹配(文本, 术语们)
+    命 = T.匹配(文本, 术语们, 名单表 if 名单表 is not None else 名单())
     return T.上下文段(命, 术语们), 命
 
 

@@ -15414,12 +15414,12 @@
  },
  {
   "script": "管理后台/tests/orchestration/test_glossary.py",
-  "改坏": "英文 / 数字叫法不看词边界(「中文没空格,子串就够了」)—— ROI 命中 ROIC、15 命中 115,给模型塞了错的定义",
+  "改坏": "英文 / 数字叫法不看词边界(「中文没空格,子串就够了」)—— ROI 命中 ROIC、15 命中 115,给模型塞了错的定义 (11-08 拆句重写后锚点换到 拆句() 那一行)",
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/术语.py",
-    "old": "            if s.startswith(叫, i) and _边界成立(s, i, 叫):\n",
-    "new": "            if s.startswith(叫, i):\n"
+    "old": "        hit = next((c for c in 索.get(s[i], ()) if s.startswith(c[0], i) and _边界成立(s, i, c[0])), None)\n",
+    "new": "        hit = next((c for c in 索.get(s[i], ()) if s.startswith(c[0], i)), None)\n"
    }
   ],
   "预期红": "① 英文 / 数字叫法要词边界"
@@ -15887,12 +15887,12 @@
  },
  {
   "script": "管理后台/tests/orchestration/test_glossary.py",
-  "改坏": "通称命中只带第一条(11-07 之前的形状:一个名字只对一个标准词)",
+  "改坏": "通称命中只带第一条(11-07 之前的形状:一个名字只对一个标准词) (11-08 锚点换到 匹配() 里展开标准词们那一行)",
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/术语.py",
-    "old": "            for std in hit[1]:\n",
-    "new": "            for std in hit[1][:1]:\n"
+    "old": "        for std in 段[\"标准词们\"]:\n",
+    "new": "        for std in 段[\"标准词们\"][:1]:\n"
    }
   ],
   "预期红": "⑧ 说通称「褙子」→ 挂了这个通称的两条都带(宋制褙子、宋制长褙子),都标是通称命中"
@@ -15920,5 +15920,41 @@
    }
   ],
   "预期红": "⑧ 同一个词既当某条的叫法又当通称 → 阻断(叫法照旧不许对两个标准词)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "名单不进拆句 —— 客户名里的「罗」又被当成面料",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "                候.append((n, 类, (), 1))",
+    "new": "                pass"
+   }
+  ],
+  "预期红": "⑨ 客户名占掉的字不算术语:「罗晓雯最近怎么样」→ 一条术语都不带"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "名字和术语同长时名字赢 —— 叫「宋锦」的客户把面料宋锦吃掉",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "                候.append((n, 类, (), 1))",
+    "new": "                候.append((n, 类, (), -1))"
+   }
+  ],
+  "预期红": "⑨ 名字和术语一模一样(有客户就叫「宋锦」)→ 术语赢,照样带面料定义"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "挨着称呼的单字术语不标拿不准 —— 「小罗」被当成面料,模型不知道可能是人",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "    return (i > 0 and s[i - 1] in _称呼前) or s.startswith(_称呼后, i + 1)",
+    "new": "    return False"
+   }
+  ],
+  "预期红": "⑨ 单字术语挨着称呼(「小罗最近来过吗」)→ 标拿不准,段里附一句「可能是在叫一个人」"
  }
 ]

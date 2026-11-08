@@ -12,6 +12,24 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🧭 11-08:先拆句再路由(客户 / 员工 / 着装人名单 + 术语各自独立)+ 术语第三版 —— 进行中
+
+**用户 11-08 在对话里拍**(不在飞书标了):① 8 个叫法**全部保留**(后台术语配置本来就能改叫法 / 定义,冻一版 → 店长助手配置页「术语版本」下拉选,不用另做)
+② 新增 12 条定义 + 3 个叫法(圆领襕袍 / 襕袍 / 魏晋襦裙)**都对、都留** ③ 「罗」→ 用户:「客户 / 顾问 / 材质应该互相独立」→「需要 query 拆分 + 路由」
+→ 选型卡拍「**词典为主,拿不准再问模型**」→「**先上线,配置页紧跟**」;配置页放哪 / 名单怎么存 → 用户:「先去网上看成熟案例,给我 GitHub 网址,你先看觉得有用再给我」。
+用户批评过:**「合着 query 拆分都没做???」—— 是,之前只是全句扫术语表,没有拆句这一层**,我已认。
+**已改(未提交)**:
+- 引擎 `管理后台/services/api/app/runtime/术语.py`:新增 `拆句(文本, 术语们, 名单)`;`匹配()` 加可选 `名单`;客户 / 员工 / 着装人三本名单和术语一起最长匹配(首字索引),
+  名字占掉的字不算术语;同长时术语赢;名字 < 2 字不收;单字术语挨着称呼(前:小老阿;后:姐哥女士先生老师师傅经理姨叔;不收「总」「工」)→ 标「拿不准」,上下文段附一句交给模型。不给名单 = 原行为(管理后台工作流现在不给)。
+- `backend/glossary_client.py`:`名单()` 从业务库只读现取 customer / staff / wearer 的 name,600 秒缓存,读不到返回上次(可能 None)不崩;`这一段()` 传名单。名单不进版本 / 日志 / 给模型的段。
+- 草稿 `收单字罗 = True`,重新生成 85 条,阻断 0。test_glossary 36/36;glossary_client_check / glossary_inject_check / guards_test / skill_eval_truth_check 全 0(聊天站检查要用 agentsite/.venv/bin/python)。
+- bite_specs 末尾加 3 条(名单不进拆句 / 同长时名字赢 / 不标拿不准),正在逐条跑。
+**量过的数(11-08 只读)**:客户 8087、员工 39、着装人 12341;撞名:罗 62 客户 + 70 着装人 + 工匠罗一机;线上 v2 已误认 宋锦书(客户)、江云锦 / 补子安 / 盘扣娘(工匠)。商品「烟罗」会对到罗(烟罗本就是轻薄罗纱类,没另录)。
+**调研(子 agent,我核过 spaCy 最长优先 / HanLP dict_force「慎用」/ ES 同义词集改了自动重载、上限 10 万条;RAGFlow 新版兜底没核到)**:没有现成的「拆句词典配置页」;拼法 = spaCy/HanLP 的条目字段 + ES 的「按条接口改、自动生效」+ RAGFlow 分类组件的「类别 / 说明 / 例句 / 去哪 / 兜底 / 试一句」。**还没给用户看**。
+**禁区**:不碰 agentsite/guards.py(拆句全在 glossary_client 和 术语.py 里接,没动它)。草稿 v3 **还没冻**。
+**下一步第一个动作**:咬合 3 条过 → 锁里跑整轮 + test-e2e-ci + page-smoke → freeze.py 冻 v3 → 复制 task_glossary_v2.py 改 VID / 说明 → 店长助手切生产 → 重启 com.lanxiu.aimc 和 com.lanxiu.agentsite → live_v2.py 真跑(「褙子能敞着穿吗」「这件纱的透不透」+ 一句带真实客户名的)→ PRD A-289 记第三版 + 附录 A 记拆句算法 → commit --only 自己的路径 + push → 把调研给用户看,再出配置页的卡。
+**未验证的预判**:「拿不准」那句提醒模型会不会真照做,没真跑过;名单 600 秒刷新是技术参数没问用户。
+
 ## 🧩 11-07 白天:术语第三版(用户拍 4 处)—— 进行中
 
 **已推**:a5b70268(g1 认天数范围换写法 + 术语 v2「到店转化」,店长助手生产 v4 挂 glv_e81b6a39be64,聊天站已重启,真跑 4/4 交付)。
@@ -26,9 +44,13 @@
 **史料(④)已完成**:子 agent 结果 `.wip-glossary/形制史料.md`;我用 `.wip-glossary/核史料.py` + swift PDFKit 逐条抓原页核了引文 —— **全对上**;子 agent 唯一错的是「知识库国博链接 252252 错了」(知识库本来就是 252272,全仓无 252252,没改)。
   16 条出处已写进生成脚本 `史料` 字典。用户第三张卡拍「9 处按建议改,两边一起改」→ 已改 knowledge/01-形制.md 9 处(每处下面一行「2026-11-07 用户拍…依据…原来写的是…」)+ 生成脚本同 9 条定义。check_kb / kb_depth / xingzhi 过。
   **未验证**:craft 表正文要下次重建才刷新(check_kb 不比正文);verify_sources.py 联网慢,在整轮里跑。飞书:9 处冲突 SfY4dRIMMoB9nSxQYNmcKQIVnvb。
-**正在跑**:锁里 `.wip-glossary/gate6.sh`(重启 aimc → bite --only 通称 → check.sh → make test-e2e-ci → page-smoke),日志 .wip-glossary/{bite6,check6,e2e6,smoke6,gate6}.log。**本地还没 rebase 并行会话 17510491**;bite_specs.json 会冲突 → 两半都留、json.loads 过关再写。
-**下一步第一个动作**:gate6 全绿 → scan_secrets 单独跑 → commit --only 术语.py、test_glossary.py、app.js、bite_specs.json、生成脚本、json、knowledge/01-形制.md、三份 md(新增条目 / 9 处)、HANDOFF → pull --rebase --autostash → push → 告诉 eureka-40 放锁了。
-  等用户:③ 逐行标 + 新增条目定义 + 罗 A/B/C → 冻 v3 → 店长助手切 v3 → 重启 agentsite → 真跑。
+**已推 dccff010**(11-07 傍晚):通称引擎 + 编辑页 + 84 条草稿(含 16 条史料出处)+ 知识库形制 9 处 + 两份 md。锁里 gate6 全绿(咬合 4/4、整轮、test-e2e-ci、page-smoke,被包命令退出码 0);rebase 到 eureka-40 的 17510491 上,bite_specs 两半都留(1339 条)、HANDOFF 两节都留;合并后补跑 bite_check / glossary_inject_check / guards_test / glossary_client_check / skill_eval_truth_check / test_glossary 全 0;CI 绿;aimc 已重启;已告诉 eureka-40 放锁。
+**禁区**:草稿**没冻**,店长助手仍是 v4(挂术语 v2)—— 别在用户标完之前冻 v3。
+**下一步第一个动作**:等用户在飞书标完 ③ 8 个叫法(VW7DdZru2o6ojbx0R0MctNjPnUg)+ 新增条目定义与「罗」A/B/C(WdB0dq59woZFcDxM4YocKEBJnce)→ 改生成脚本(罗选 B 就把 `收单字罗 = True`)→ 重新生成 → 锁里 `.wip-glossary/freeze.py` 冻 v3 → 复制 task_glossary_v2.py 改 VID 和说明 → 店长助手切生产 → 重启 com.lanxiu.agentsite → `.wip-glossary/live_v2.py` 真跑两轮(「褙子能敞着穿吗」「这件纱的透不透」)→ PRD A-289 记第三版。
+**作废的结果**:史料子 agent 说「知识库国博链接 252252 指错了」—— 错的是它,知识库本来就是 252272(三彩釉陶女俑),全仓无 252252,别去「修」。
+**判据(为什么这么判)**:罗不收 —— 业务库 62 位客户名带「罗」(只读 SELECT count),最长匹配会把「罗某某这个客户」带上面料定义;纱/绡/绢/绫客户名 0。形制 9 处两边一起改 —— 只改术语表会让店长助手和知识库说法分家。通称单开一栏不放开叫法重复 —— 叫法重复阻断防的是手误。
+**未验证的预判**:craft 表正文要下次重建才刷新(check_kb 只比名称/档位/出处,不比正文);通称在真店长助手上的表现**没真跑过**(只有单测 + e2e),冻 v3 后要真跑「褙子能敞着穿吗」看模型是否先问款式。
+**悬而未决**:模型把 181 天说成「快三个月」—— g1 认不出汉字数,已记 PRD,没修。
 
 ## 🔁 11-07 14:2x(工 worktree)用户「继续」—— 夜间窗口早过了;**交接里写的「下一步接术语」已被并行会话做完**
 
