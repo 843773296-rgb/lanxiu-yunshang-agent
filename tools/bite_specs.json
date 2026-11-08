@@ -15078,12 +15078,12 @@
  },
  {
   "script": "tools/export_evals_test.py",
-  "改坏": "让导出的「逐轮」那一栏只印最后一轮 —— **破坏点打在渲染那根线上,纯函数一个字没动**,专门咬那条「判据全打在纯函数上、而破坏点在接线上,自测会全绿」",
+  "改坏": "让导出的「逐轮」那一栏只印最后一轮 —— **破坏点打在渲染那根线上,纯函数一个字没动**,专门咬那条「判据全打在纯函数上、而破坏点在接线上,自测会全绿」。⚠️ 2026-11-08 更新过 old/new:接技能触发那套时那一行加了「只有汇总就印次数」的分支,**攻击载荷当场过期** —— 门禁里 `bite_check` 那条「规格要改的那段在工作区里也找得到」当场红,拦在提交之前。攻击语义一个字没变,还是「只印最后一轮」",
   "file": [
    {
     "path": "tools/export_evals.py",
-    "old": "            本次 = \"\".join(\"✅\" if x.get(\"passed\") else \"❌\" for x in xs) if s[\"有判\"] else \"—\"\n",
-    "new": "            本次 = (\"✅\" if xs[-1].get(\"passed\") else \"❌\") if s[\"有判\"] else \"—\"\n"
+    "old": "            本次 = (\"\".join(\"✅\" if x.get(\"passed\") else \"❌\" for x in xs) if xs\n                   else str(r.get(\"逐轮印\") or \"—\")) if s[\"有判\"] else \"—\"\n",
+    "new": "            本次 = ((\"✅\" if xs[-1].get(\"passed\") else \"❌\") if xs\n                   else str(r.get(\"逐轮印\") or \"—\")) if s[\"有判\"] else \"—\"\n"
    }
   ],
   "预期红": "逐轮那一栏只印了一个格子"
@@ -16352,5 +16352,53 @@
    }
   ],
   "预期红": "给了这一轮真传的模型 → 盖那个,不盖环境默认"
+ },
+ {
+  "script": "tools/export_evals_test.py",
+  "改坏": "咬合键E·挑基线时不再要求盖过来路章 —— 于是 runs/ 里那十个实验文件(pushy / shaped / **v54** 等)也算基线,而 v54 是 24 条的实验、不是「第 54 版」",
+  "file": [
+   {
+    "path": "tools/export_evals.py",
+    "old": "        if 跑于 and d.get(\"明细\"):",
+    "new": "        if d.get(\"明细\"):"
+   }
+  ],
+  "预期红": "⑦ 没盖来路章的不进历次表(版本号最大、跑于最新也不算基线)"
+ },
+ {
+  "script": "tools/export_evals_test.py",
+  "改坏": "咬合键F·把「这一版只存了汇总」那句提醒关掉 —— 读表的人会把「没存是哪一遍错的」当成「这几道没抖」",
+  "file": [
+   {
+    "path": "tools/export_evals.py",
+    "old": "            if not s.get(\"有逐轮\"):",
+    "new": "            if False and not s.get(\"有逐轮\"):"
+   }
+  ],
+  "预期红": "⑦ 明说这一版没存是哪一遍错的 —— **「没存逐轮」和「没抖」不是一回事**"
+ },
+ {
+  "script": "tools/export_evals_test.py",
+  "改坏": "咬合键G·有逐轮也只印一个总的 ✅/❌ —— 「三个 ✅」和「❌❌✅」又合并成同一张脸(这份导出早有一条判据钉着这件事,这是同一个洞在新那套上重开)",
+  "file": [
+   {
+    "path": "tools/export_evals.py",
+    "old": "            印 = \"\".join(\"✅\" if g == want else \"❌\" for g in 逐)",
+    "new": "            印 = \"✅\" if all(g == want for g in 逐) else \"❌\""
+   }
+  ],
+  "预期红": "⑦ 有逐轮的那一版**逐遍印**(三个 ✅ 和「❌❌✅」在一个 ✅ 上分不开)"
+ },
+ {
+  "script": "tools/export_evals_test.py",
+  "改坏": "咬合键H·历次表不印模型那一栏 —— v4→v5 那一跳(41/49 → 47/49)就会被读成「能力涨了」,而真相是 haiku 换成了 sonnet",
+  "file": [
+   {
+    "path": "tools/export_evals.py",
+    "old": "                L.append(f\"| `{版}` | {跑} | {遍 if 遍 else '**没记**'} | {模} | {条} | {准} |\")",
+    "new": "                L.append(f\"| `{版}` | {跑} | {遍 if 遍 else '**没记**'} | {条} | {准} |\")"
+   }
+  ],
+  "预期红": "⑦ 历次表每行带**模型** —— 少了它,换模型那一跳会被读成「能力涨了」"
  }
 ]

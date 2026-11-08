@@ -178,6 +178,84 @@ def main():
            "⑥ 接线 · 野跑那套印「不按对错判」,不印成 0/1",
            "md 里没有「不按对错判」或者出现了 0/1")
 
+        # ───────── 第三层:技能触发那套(结果在 agentsite/evals/runs/,格式不同)─────────
+        # ⚠️ 这一节是补的:加完接入之后跑自测,它**绿了**,而绿的理由是
+        # 临时目录里没有 runs/ 文件、**那条路径一次都没被执行**。
+        # > 一条「这套渲染是对的」的绿勾,和一条「这套渲染一次都没跑到」的绿勾,
+        # > 在那个 ✅ 上长得一模一样。
+        # (看见它的唯一原因是 main 里那句 ℹ️「没东西可导」老实印出来了。)
+        print("\n⑦ 技能触发那套:只有汇总怎么印、没盖章怎么排除、有逐轮怎么印")
+        站3 = os.path.join(tmp, "站3")
+        runs3 = os.path.join(站3, "agentsite", "evals", "runs")
+        os.makedirs(os.path.join(站3, "agent"), exist_ok=True)
+        os.makedirs(runs3, exist_ok=True)
+        写(os.path.join(站3, "agent"), "多", [题("N1", 1, True), 题("N1", 2, True)])
+
+        def 存基线(名, 跑于, 明细, 遍数=5, 模型="claude-sonnet-5", 盖章=True):
+            d = {"准确率": f"{sum(1 for x in 明细 if x.get('ok'))}/{len(明细)}",
+                 "重复遍数": 遍数, "明细": 明细}
+            if 盖章:
+                d["来路"] = {"跑于": 跑于, "模型": 模型, "供应商": "claude"}
+            with open(os.path.join(runs3, f"{名}.json"), "w", encoding="utf-8") as fh:
+                json.dump(d, fh, ensure_ascii=False)
+
+        def 条(i, want, hits, runs, 逐轮=None):
+            x = dict(id=i, prompt=f"第 {i} 问", want=want,
+                     got=want if hits == runs else (f"{want}?2种" if want else None),
+                     ok=(hits == runs), kind="对" if hits == runs else "不稳定",
+                     hits=hits, runs=runs, wobbly=(0 < hits < runs))
+            if 逐轮 is not None:
+                x["逐轮"] = 逐轮
+            return x
+
+        汇总 = [条(1, "quote", 5, 5), 条(2, "quote", 4, 5), 条(3, None, 5, 5)]
+        存基线("v7", "2026-11-01 10:00:00", 汇总, 模型="claude-haiku-4-5")
+        存基线("v8", "2026-11-02 10:00:00", 汇总)
+        # ⚠️ 没盖来路章,而版本号最大、跑于还最新 —— 它**不许**被选中,也不许进历次表。
+        # runs/ 里真的混着十个这样的实验文件,其中一个就叫 `v54.json`(24 条的实验,
+        # 不是「第 54 版」)—— 一个「第 54 版基线」和一个「叫 v54 的实验文件」,
+        # 在文件名上长得一模一样。
+        存基线("v88", "2026-11-09 10:00:00", 汇总, 盖章=False)
+        真ROOT, 真OUT = E.ROOT, E.OUT
+        E.ROOT, E.OUT = 站3, os.path.join(站3, "题集.md")
+        try:
+            E.main()
+            md3 = open(E.OUT, encoding="utf-8").read()
+        finally:
+            E.ROOT, E.OUT = 真ROOT, 真OUT
+        ck("技能触发" in md3, "⑦ 这套真的进了导出(此前整套不在)", "md 里没有「技能触发」")
+        ck("4/5 次对" in md3,
+           "⑦ 只有汇总的那一版,逐轮那栏印「4/5 次对」(不是一个光秃秃的 ❌)",
+           "md 里找不到「4/5 次对」")
+        ck("只存了汇总" in md3,
+           "⑦ 明说这一版没存是哪一遍错的 —— **「没存逐轮」和「没抖」不是一回事**",
+           "md 里没有那句提醒")
+        ck("`v7`" in md3 and "`v8`" in md3, "⑦ 历次表把盖过章的两版都列出来")
+        ck("`v88`" not in md3,
+           "⑦ 没盖来路章的不进历次表(版本号最大、跑于最新也不算基线)",
+           "v88 混进去了")
+        ck("claude-haiku-4-5" in md3 and "claude-sonnet-5" in md3,
+           "⑦ 历次表每行带**模型** —— 少了它,换模型那一跳会被读成「能力涨了」",
+           "md 里缺模型那一栏")
+        ck("不该触发任何技能" in md3,
+           "⑦ 负向题(want 为空)的标准答案印出来了", "md 里没有那句")
+        # 有逐轮的那一版:印一串 ✅❌,而且那句「只存了汇总」要消失
+        存基线("v9", "2026-11-03 10:00:00",
+               [条(1, "quote", 5, 5, 逐轮=["quote"] * 5),
+                条(2, "quote", 3, 5, 逐轮=["quote", None, "quote", "quote", None])])
+        E.ROOT, E.OUT = 站3, os.path.join(站3, "题集2.md")
+        try:
+            E.main()
+            md4 = open(E.OUT, encoding="utf-8").read()
+        finally:
+            E.ROOT, E.OUT = 真ROOT, 真OUT
+        ck("✅❌✅✅❌" in md4,
+           "⑦ 有逐轮的那一版**逐遍印**(三个 ✅ 和「❌❌✅」在一个 ✅ 上分不开)",
+           "md 里找不到那一串")
+        ck("只存了汇总" not in md4,
+           "⑦ 有逐轮之后,那句「只存了汇总」的提醒不再印(不然它会变成一句假话)",
+           "有逐轮了还在印那句")
+
         print("\n" + ("❌ 挂了 %d 条:%s" % (len(挂), "、".join(挂)) if 挂
                       else "✅ 全部符合预期"))
         return 1 if 挂 else 0
