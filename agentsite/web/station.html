@@ -158,6 +158,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   font-size:12px;color:var(--dim)}
 .rate button{border:1px solid var(--line);background:#fff;border-radius:7px;
   width:30px;height:28px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
+/* 11-08 UI 检查:30px 是给 1–5 分数字按钮的;反馈条(.rate.fb)也带 rate,「报告执行问题」「反馈问题」「提交」被压成一字一行 */
+.rate.fb button{width:auto;min-width:30px;padding:0 10px;white-space:nowrap}
 .rate button:hover{border-color:var(--accent);color:var(--accent)}
 .rate button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .rate .done{color:var(--ok,#2a7)}
@@ -1487,6 +1489,7 @@ async function ask(){
   // **删元素的时候要连引用一起删** —— 这类错只有真点一下才会露出来。
   if(!c.msgs.length){ c.title = text.slice(0, 26); }
   const imgs = PEND.map(p => p.url);
+  const 原图 = PEND.slice();          // 11-08 UI 检查:发送失败时要能放回去
   c.msgs.push({role:"user", text, images: imgs});
   c.at = Date.now();
   PEND = []; drawThumbs();
@@ -1521,6 +1524,9 @@ async function ask(){
   c.msgs.push(r && r.error ? {role:"assistant", error: r.error, trace_id: r.trace_id || null}
                            : Object.assign({role:"assistant"}, r));
   c.at = Date.now(); save(); drawSide(); drawStream();
+  // 11-08 UI 检查:原来发出去之前就清空了输入框和图片,失败后要重试只能从气泡里复制、图要重选。
+  // 失败了、而输入框还空着(没开始打下一句)→ 把这一句和图放回去
+  if(r && r.error && !q.value.trim()){ q.value = text; grow(); if(!PEND.length){ PEND = 原图; drawThumbs(); } }
   if($("#ev").classList.contains("on")) drawEv();   // 侧栏开着就跟着刷新证据
 }
 

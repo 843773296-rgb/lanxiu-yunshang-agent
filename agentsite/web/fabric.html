@@ -560,8 +560,7 @@ function flips(){
     </div></div>`;
   }).join("");
 }
-$("#flips").addEventListener("click",e=>{const f=e.target.closest(".flip"); if(f) f.classList.toggle("f");});
-
+// 11-08 UI 检查:这一行原来写了两遍 —— 点一次翻两次,等于没动,速记卡整块用不了
 $("#flips").addEventListener("click",e=>{const f=e.target.closest(".flip"); if(f) f.classList.toggle("f");});
 
 let QI=0;

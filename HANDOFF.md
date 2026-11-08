@@ -12,6 +12,22 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🎛️ 11-08 晚:UI 控件全站检查(用户:「优化 ui 控件,全网检查」+「按钮大小不匹配文字、文字放不下这类」)—— 进行中
+
+**用户拍**:四套都查(管理后台 8801 / 店长顾问聊天站 / 业务后台 8760 / 智能运维平台 8770;他还写了「chat」—— 我按聊天站理解,~/Desktop/chatgpt 只读没碰);
+**明显的错直接改,取舍类列清单发飞书给他定**;**不许用本机无窗口浏览器量溢出,只读代码**(问过,答「不行」)。
+**四个只读子 agent 报告已回**(管理后台前后半 / 业务后台 / 运维+聊天站),**高危的要我逐条对代码核实再改**。最急:
+- 管理后台:`提示` 函数定义两次(app.js 1735 弹窗版 / 2129 小提示条版,后者覆盖)→ 发密钥、轮换密钥的**原文不显示**、发布被拦理由不显示(约 16 处);取消运行 / 产物部署 / 聊天接管开关无确认;智能体 / 聊天助手编辑离开不拦未保存
+- 业务后台 backend/web/index.html:589 `craftDoc(a)` a 未定义 → 订单详情 6 入口打不开;3038 编辑客户预填脱敏手机号去星号 → 改资料把手机号写成 7 位;导出接口错(1833 商品导出客户、930 导出 oplog、1046 没绑、2893 下载中心);弹窗不校验必填且先关后提交(约 40 弹窗);退款 / 取消预约 / 发布无确认
+- 运维 / 聊天站 agentsite/web:fabric 563/565 速记卡监听写两遍(翻两次=没动);station 159 `.rate button{width:30px}` 把反馈按钮压成竖排;scheme 作废无确认;tasks 342 改派下拉默认第一个人;发送失败清空输入;login 页展示账号密码(取舍)
+**顺序**:第二期(查询路由)还没提交;gate10 等锁 60 分钟超时(并行会话 14:11 起占锁 150 分钟跑技能评测 v6,约 16:40 结束)→ 锁空了**先重跑 gate10 并提交第二期**,再修管理后台 app.js。**别重启 agentsite**(并行会话在量基线)。
+**已改未提交(UI)**:backend/web/index.html(craftDoc(arg)、编辑客户手机号留空、modal 必填 / 提交中变灰 / 失败留窗、sure() 确认 6 处、导出 4 处、post() 断网 / 500 兜底、doTransit 返回 r、.fi label、.tg 加宽、补 p-green / p-red / note.bad / btn.xs)+ backend/server.py update_customer 校验 11 位;
+agentsite/web:fabric 去重复监听、station .rate.fb 按钮自适应 + 发送失败放回输入、scheme 作废 / 锁定确认 + 删「试着退回」、tasks 改派加「请选择」+ send try。js_check 15 段全过;**整轮没跑**(要锁)。
+**飞书**:UI 检查清单 JNJKd9YsQoTS2YxXVxecx9ZgnAf(已修 / 12 条待拍板 / 排着的 / 要他看一眼的 / op_log 两条测试记录)。
+**⚠️ 作废 / 事故**:我手搓副本测 update_customer,`log_op` 往**真业务库 op_log** 写了 2 条(C10000,15:20:51,BAD_PHONE + 一条没发生的地址修改);删被权限检查以「篡改审计日志」拦 → 不绕,已在飞书第五节交用户定。记忆 lanxiu-copy-db-import-order 补了第三种漏法。
+**⚠️ 事故 2(16:2x,已修)**:常驻 aimc 被重启后跑上了我**未提交**的第二期代码(select route_version_id),而迁移 a3f9c1e7b205 因门禁等锁超时没落 → 8801 /chat-assistants/by-role/task/production 500,并行会话整轮红在 assistant_effect_check。已在锁里补跑迁移 + 重启 aimc,接口 200、route_version_id 显式 null。记忆 lanxiu-uncommitted-code-goes-live。并行会话整轮只红一条:我补跑的迁移 a3f9c1e7b205 **文件没推**,它的检出认不出库里的版本(alembic check)→ 我现在锁里跑 gate10,绿了立刻推(第二期 + 业务后台 / agentsite UI 两笔分开 commit --only),推完喊它。
+**UI 下一步**:第二期提交后 → 管理后台:`提示` 重名(把 2129 行小提示条版改名,逐个调用点按参数个数分派)、取消运行 / 产物部署 / 聊天接管确认、智能体 / 聊天助手离开拦截、防连点、结果被重画刷掉、英文露出、button.on 选中样式、danger 按钮、按钮 32px 高 → 再跑门禁 → 提交。
+
 ## 🧠 11-08 傍晚:「拆句」改成专业叫法 → 「查询理解」三件套 —— 刚开始(配置页已推 a2fece6d / 92bcad84,生产 v6 = 术语 v3 + 拆句 v1)
 
 **用户拍(三张卡)**:① 「拆句应该有专业的 AI 词汇」→ **查询理解(Query Understanding)只当导航分组、没有自己的页面**;下属 **实体识别 / 查询路由 / 意图识别** 三样,**每样都要列表-详情-配置**
@@ -25,7 +41,12 @@
 **第一期已推 d9598485**(gate9 锁里全绿:迁移 / 实体 e2e / test-e2e-ci / page-smoke / 整轮,被包命令退出码 0;rebase 到并行会话 5f3ac267,HANDOFF 两节都留,bite_specs 1359)。agentsite 已重启,同步显示「实体识别:有 后台 v1」(生产 v6 指的 sdv_228c22915bd1 改名后照旧可用,key 还叫 lanxiu-split)。
 **⚠️ 并行会话提醒(必做)**:全仓改名把 bite_specs 里的 old/new 也一起换了 → 攻击可能变空操作。完备集 = 29 文件 / 35 条 / 12 脚本,`bite_replay_touched.py --提交 d9598485 --工作区脏也跑` 跑完:12 个脚本 11 个全过;test_glossary 1 条「叫法按从短到长试」**改坏了却没红** —— 不是改名造成的,是早上 识别实体() 把术语和名字合进同一次排序,_叫法表 自己的排序不再起作用 → 破坏点挪到合并排序上,单独重放过三关。
 **禁区补**:转人工**不在 guards.py on_prompt 里短路**(并行会话:那个钩子返回值被当「这一轮带了什么」读);放 sdk.py 层,先和并行会话一起定「转人工算不算一轮 / 记录仪记不记 / 评测判什么」再写。
-**下一步第一个动作**: 要不要把 lanxiu-split 换成 lanxiu-entities 新 key(可选,只是名字)→ 第二期查询路由:先摆数据形状(规则 = 条件 → 去向 6 种)、表 route_*、页面、聊天站应用;转人工先找并行会话。
+**第二期(查询路由)已写完、未提交**:引擎 runtime/术语.py 加 路由配置问题 / 应用路由(条件 实体|意图|歧义 → 去向 6 种,第一条对上的生效,默认 = 第一期行为;「转人工」冻结时拦住、「交给技能」是强提示);
+表 route_drafts / route_versions + chat_assistant_versions.route_version_id(迁移 a3f9c1e7b205);routes_api.py 7 个接口(试一句接实体识别 + 术语 + 手填意图);
+chat_assistants「路由版本」(英文键 / 悬空 422 + **路由点名的工具 / 技能必须是助手开着的**,工具名认 mcp__x__名 后缀);页面 #/routes 列表 / 编辑(规则卡、上移下移、试一句)+ 店长助手「查询路由」下拉;
+实体识别页去掉「命中后」(搬到路由,引擎仍认老数据的「占位并提示」);聊天站 同步路由()(.route_last.json 已 gitignore)+ 这一段 走 应用路由;
+测试 test_glossary ⑪ 12 条(共 63)、glossary_client_check 路由 5 条、e2e test_route_flow、seed_route、登记 Makefile / page_smoke / detail_page_hashes / ifmatch / seed_rerun / fk_dep;bite_specs +7(1366)**还没重放**。锁里 gate10 在跑。
+**下一步第一个动作**:读 gate10 → 修红 → 提交(新文件先 git add:routes_api.py / 迁移 a3f9c1e7b205 / test_route_flow.py / seed_route.py)+ 扫密钥 + 推 → 逐条重放 7 条新咬合 → 重启 agentsite → PRD 记 A-291 查询路由 → 第三期意图识别(先拟 14 技能 → 意图发飞书给用户看)。
 ## 🔍 11-08 11:xx(工 worktree)#407 拆成两道 + 对比逐条比题面(用户拍了两件)
 
 **#407 为什么两轮评测都不稳(查清了,不是模型不稳)**:题面「有件衣服坏了,顾客问算谁的,**怎么判**?」

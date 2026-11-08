@@ -2062,6 +2062,12 @@ def update_customer(cid,d,actor="魏欣新",role="顾问"):
     if not r: return {"error":"客户不存在"}
     old=r[0]
     ph=rules.norm_phone(d.get("phone") or old["phone"])
+    # 11-08 UI 检查:编辑弹窗原来预填「脱敏号去星号」(7 位),这里不查位数就写库 —— 改个地址就把手机号写坏。
+    # 弹窗已改成留空 = 不改;这里再兜一道:**给了新号就必须是 11 位手机号**,不合格拒绝并说清楚,不写库
+    import re as _re
+    if d.get("phone") and not _re.fullmatch(r"1\d{10}", ph):
+        log_op(actor,"customer",cid,"编辑","编辑",False,"BAD_PHONE",f"手机号格式不对:{len(ph)} 位",{})
+        return dict(ok=False,code="BAD_PHONE",reason=f"手机号要是 11 位、1 开头的数字,现在填的是 {len(ph)} 位 —— 不改手机号就把那一栏留空")
     if ph!=rules.norm_phone(old["phone"]):
         ex=[c for c in rows("SELECT id,name,phone,shop FROM customer") if c["id"]!=cid]
         same=[c for c in ex if rules.norm_phone(c["phone"])==ph]

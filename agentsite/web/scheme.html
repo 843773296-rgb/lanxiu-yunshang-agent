@@ -456,7 +456,7 @@ async function loadList(){
     if(r.status==="草稿")   acts.push(["已保存","保存"]);
     if(r.status==="已保存") acts.push(["已锁定","锁定"]);
     if(r.status!=="已失效") acts.push(["已失效","作废"]);
-    acts.push(["已保存","← 试着退回"]);      // 故意留一个非法流转,用来演示引擎会拒
+    // 11-08 UI 检查:原来这里留了一个「← 试着退回」—— 故意的非法流转,演示用,点了永远「引擎拒绝」。正式页面不留
     return `<tr><td style="font-family:var(--mono)">${esc(r.id)}</td><td>${esc(r.name)}</td>
       <td style="color:var(--ink-3);font-size:12.5px">${esc(r.xz)} + ${esc(r.mt)}${r.kf?" + "+esc(r.kf):""}
         <div>${r.customer_id?"客户 "+esc(r.customer_id):"<span style='color:var(--warn)'>没挂客户</span>"} · ${r.pattern?"版型 "+esc(r.pattern):"版型未定"}</div></td>
@@ -468,6 +468,10 @@ async function loadList(){
     const r=ROWS.find(x=>x.id===b.dataset.edit); if(r) 开弹窗(r);
   }));
   document.querySelectorAll("#list button[data-to]").forEach(b=>b.addEventListener("click",async()=>{
+    // 11-08 UI 检查:「作废」是终态、「锁定」后不能再改,原来点一下就生效
+    if(b.dataset.to==="已失效" && !confirm(`作废方案 ${b.dataset.id}?\n作废是终态,不能撤回。`)) return;
+    if(b.dataset.to==="已锁定" && !confirm(`锁定方案 ${b.dataset.id}?\n锁定后这一版方案不能再改。`)) return;
+    b.disabled=true;
     const j=await (await fetch("/api/scheme-transit",{method:"POST",
       headers:{"content-type":"application/json"},
       body:JSON.stringify({id:b.dataset.id,to:b.dataset.to})})).json();

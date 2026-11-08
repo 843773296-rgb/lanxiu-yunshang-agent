@@ -173,6 +173,9 @@ tbody tr.clk{cursor:pointer} tbody tr.clk:hover td{background:var(--blue-bg)}
 .p-bad{background:var(--bad-bg);color:var(--bad)} .p-warn{background:var(--warn-bg);color:var(--warn)}
 .p-ok{background:var(--ok-bg);color:var(--ok)} .p-blue{background:var(--blue-bg);color:var(--blue)}
 .p-mut{background:var(--tile);color:var(--ink3)}
+/* 11-08 UI 检查:页面里用到了这几个样式名而样式表里没有 → 「免邮」「要人确认」没颜色、警告和普通说明一样 */
+.p-green{background:var(--ok-bg);color:var(--ok)} .p-red{background:var(--bad-bg);color:var(--bad)}
+.note.bad{color:var(--bad)} .btn.xs{height:24px;padding:0 9px;font-size:12px}
 .dot{width:6px;height:6px;border-radius:99px;display:inline-block;margin-right:5px;vertical-align:1px}
 
 /* 明细 */
@@ -194,7 +197,7 @@ h1{font-size:18px;margin:0 0 3px;font-weight:600}
 /* 表单区 */
 .form{display:grid;grid-template-columns:repeat(3,1fr);gap:15px 26px;padding:22px 24px 0}
 .fi{display:flex;align-items:center;gap:11px}
-.fi label{width:66px;text-align:right;color:var(--ink2);font-size:13.5px;flex:none}
+.fi label{min-width:66px;white-space:nowrap;text-align:right;color:var(--ink2);font-size:13.5px;flex:none} /* 11-08:原来写死 66px,「SKU/SPU/单据号/操作人」这类长标签折成两三行、和输入框错位 */
 .fi .ctl{flex:1;height:34px;border:1px solid #D9DCE1;border-radius:3px;background:#fff;
  display:flex;align-items:center;padding:0 11px;color:var(--ink4);font-size:13.5px;gap:6px}
 .fi .ctl .r{margin-left:auto;color:var(--ink4);font-size:12px}
@@ -301,12 +304,12 @@ h1{font-size:18px;margin:0 0 3px;font-weight:600}
 .tabs2 .add2{margin-left:auto;color:var(--navy);font-size:13px;cursor:pointer;padding-bottom:11px}
 .empty{text-align:center;color:var(--ink4);padding:38px;font-size:13px}
 /* 开关(量体模版状态列)*/
-.tg{width:40px;height:21px;border-radius:99px;background:#C9CDD4;position:relative;
+.tg{width:52px;height:21px;border-radius:99px;background:#C9CDD4;position:relative;
  display:inline-block;cursor:pointer;transition:.15s;vertical-align:-5px}
 .tg.on{background:var(--navy)}
 .tg::after{content:"";position:absolute;left:2px;top:2px;width:17px;height:17px;border-radius:99px;
  background:#fff;transition:.15s}
-.tg.on::after{left:21px}
+.tg.on::after{left:33px} /* 11-08:原来宽 40px,「启用 / 停用」后一个字被圆钮盖住 */
 .tg i{position:absolute;font-style:normal;font-size:10.5px;color:#fff;line-height:21px}
 .tg.on i{left:7px} .tg:not(.on) i{right:6px;color:#fff}
 /* 订单卡片式表格 */
@@ -528,7 +531,16 @@ async function get(u){
 function 登录地址(){ return location.protocol+"//"+(location.hostname||"127.0.0.1")+":8770/login"; }
 function 重试载入(){ if(上次要载入) return view(上次要载入[0],上次要载入[1],true); }
 if(window.addEventListener) window.addEventListener("unhandledrejection",e=>{ if(e.reason===已被取代) e.preventDefault(); });
-async function post(u,b){return (await fetch(u,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b||{})})).json()}
+// 11-08 UI 检查:原来直接 .json() —— 服务报 500 / 返回的不是 JSON / 断网时整条链静默失败,页面上什么都不显示。
+// 现在三种都变成一份带 error 的结果(各写各的话),调用方原有的「r.error → 提示」那条路就接得住
+async function post(u,b){
+  let r;
+  try{ r=await fetch(u,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b||{})}) }
+  catch(e){ return {ok:false,code:"NETWORK",error:"连不上后台(断网或服务没起)—— 这次没有提交成功",reason:"连不上后台,这次没有提交成功"} }
+  let d=null; try{ d=await r.json() }catch(e){}
+  if(d===null) return {ok:false,code:"HTTP_"+r.status,error:`后台返回了看不懂的内容(HTTP ${r.status})—— 这次可能没有提交成功`,reason:`后台出错(HTTP ${r.status})`};
+  return d;
+}
 
 const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合并确认",finance:"押金退款异常",
   appts:"客户预约",lifecycle:"客户生命周期类型",oplog:"操作日志",
@@ -586,8 +598,8 @@ async function route(v,arg){
   if(v==="product")  return productDetail(arg);
   if(v==="categories")return categoryPage();
   if(v==="stock")    return stockList();
-  if(v==="craftdoc") return craftDoc(a);
-  if(v==="orderlog") return orderLog(a);
+  if(v==="craftdoc") return craftDoc(arg);   // 11-08 UI 检查:原来写成 a(未定义),订单详情 / 订单日志 6 个入口都打不开
+  if(v==="orderlog") return orderLog(arg);
   if(v==="mitems")   return measureItems();
   if(v==="mtpls")    return measureTpls();
   if(v==="freight")  return freightPage();
@@ -927,7 +939,8 @@ async function listPage(kind){
      ${d.rows.length?"":'<tr><td colspan="6" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的记录</td></tr>'}
      </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-t]").forEach(e=>e.onclick=()=>view("task",e.dataset.t));
-  M.querySelectorAll("[data-exp-task]").forEach(e=>e.onclick=()=>dl("/api/export/oplog"));
+  // 11-08 UI 检查:原来导出的是全站操作日志,不是这一页的退款 / 合并单。后端没有这一类导出 → 明说没做
+  M.querySelectorAll("[data-exp-task]").forEach(e=>{e.title="这一页的导出还没做";e.onclick=()=>res(false,"未做","这一页(押金退款异常 / 客户合并)的导出还没做 —— 后端没有这一类导出")});
   bindTable(st,()=>listPage(kind));
 }
 
@@ -1060,6 +1073,8 @@ async function apptList(){
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-a]").forEach(e=>e.onclick=()=>view("appt",e.dataset.a));
   M.querySelectorAll("[data-new-apt]").forEach(e=>e.onclick=()=>formAppt("",apptList));
+  // 11-08 UI 检查:原来这个「导出」没绑任何事件,点了没反应。后端没有预约导出 → 明说没做
+  M.querySelectorAll("[data-export]").forEach(e=>{e.title="预约导出还没做";e.onclick=()=>res(false,"未做","预约的导出还没做 —— 后端现在只有客户档案 / 订单 / 在制工单 / 操作日志四种导出")});
   bindTable(st,apptList);
 }
 
@@ -1120,8 +1135,9 @@ async function apptDetail(aid){
       {k:"结论",type:"select",label:"结论",opts:["通过","驳回"]},
       {k:"意见",type:"text",label:"意见(驳回必填)",ph:"例如:已与客户电话核实取消原因"}],
       v=>doOp("/api/refund-approve",{deposit:e.dataset.approve,结论:v.结论,意见:v.意见},()=>view("appt",aid)))});
-  M.querySelectorAll("[data-cancel]").forEach(e=>e.onclick=()=>
-    doTransit("bk-appt",e.dataset.cancel,"已取消",{},()=>view("appt",aid)));
+  M.querySelectorAll("[data-cancel]").forEach(e=>e.onclick=async()=>{
+    if(!await sure("取消这个预约?","客户会收到取消通知,这一单不再占用顾问的时间。","取消预约"))return;
+    doTransit("bk-appt",e.dataset.cancel,"已取消",{},()=>view("appt",aid))});
 }
 
 /* ── 操作:统一走引擎,结果(含拒绝理由)必须显形 ── */
@@ -1147,16 +1163,39 @@ function modal(title,fields,onOk,wide){
     <button class="btn sol" data-y>确定</button></div></div>`;
   document.body.appendChild(m);
   m.querySelector("[data-x]").onclick=()=>m.remove();
-  m.querySelector("[data-y]").onclick=()=>{
+  // 11-08 UI 检查:原来不查带 * 的必填、先关弹窗再提交 —— 后端一拒,写的原因 / 跟进内容全丢。
+  // 现在:必填没填不关、标红;提交中按钮变灰(防连点);onOk 抛错或返回 false 时弹窗留着、输入还在
+  m.querySelector("[data-y]").onclick=async()=>{
     const v={}; m.querySelectorAll("[data-k]").forEach(e=>v[e.dataset.k]=e.value);
-    m.remove(); onOk(v)};
+    const 缺=fields.filter(f=>f.req&&!String(v[f.k]||"").trim());
+    m.querySelectorAll("[data-k]").forEach(e=>e.style.borderColor=缺.some(f=>f.k===e.dataset.k)?"var(--bad)":"");
+    let tip=m.querySelector(".mtip");
+    if(!tip){tip=document.createElement("div");tip.className="mtip";tip.style.cssText="color:var(--bad);font-size:12.5px;margin:6px 0 0";m.querySelector(".bd2").after(tip)}
+    if(缺.length){tip.textContent="还没填:"+缺.map(f=>f.label).join("、");return}
+    const y=m.querySelector("[data-y]"); y.disabled=true; tip.textContent="";
+    try{ const r=await onOk(v); if(r===false||(r&&(r.error||r.ok===false))){y.disabled=false;tip.textContent="没成功(原因见右上角提示)—— 填的内容还在,改一下再点确定";return} m.remove() }
+    catch(err){ y.disabled=false; tip.textContent="没提交成功:"+(err&&err.message||err)+" —— 填的内容还在,改一下再点确定" }
+  };
   m.onclick=e=>{if(e.target===m)m.remove()};
+}
+// 11-08 UI 检查:钱、对外、删除类操作原来点一下就执行。sure() 返回 true / false
+function sure(title,text,ok){
+  return new Promise(done=>{
+    const m=document.createElement("div"); m.className="mask";
+    m.innerHTML=`<div class="modal"><h4>${esc(title)}</h4><div class="bd2" style="font-size:13.5px;color:var(--ink2);line-height:1.7">${esc(text)}</div>
+      <div class="ft"><button class="btn gray" data-x>先不</button><button class="btn sol" data-y style="background:var(--bad);border-color:var(--bad)">${esc(ok||"确定")}</button></div></div>`;
+    document.body.appendChild(m);
+    const end=v=>{m.remove();done(v)};
+    m.querySelector("[data-x]").onclick=()=>end(false); m.querySelector("[data-y]").onclick=()=>end(true);
+    m.onclick=e=>{if(e.target===m)end(false)};
+  });
 }
 async function doTransit(machine,target,to,ctx,after){
   const r=await post("/api/transit",{machine,target,to,ctx:ctx||{}});
-  if(r.error){res(false,"ERR",r.error);return}
+  if(r.error){res(false,"ERR",r.error);return r}   // 11-08:返回 r,弹窗据此判断要不要留着
   res(r.ok,r.code,r.reason);
   if(r.ok&&after)after();
+  return r;
 }
 async function doOp(url,body,after){
   const r=await post(url,body);
@@ -1830,7 +1869,8 @@ async function productList(){
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-pd]").forEach(e=>e.onclick=()=>view("product",e.dataset.pd));
   M.querySelectorAll("[data-newprod]").forEach(e=>e.onclick=()=>formProduct(null,productList));
-  M.querySelectorAll("[data-exp-prd]").forEach(e=>e.onclick=()=>dl("/api/export/customers?"+qs(st)));
+  // 11-08 UI 检查:原来调的是客户档案导出(商品库里点导出,下载到带手机尾号的客户名单)。后端没有商品导出 → 明说没做
+  M.querySelectorAll("[data-exp-prd]").forEach(e=>{e.title="商品导出还没做";e.onclick=()=>res(false,"未做","商品库的导出还没做 —— 后端现在只有客户档案 / 订单 / 在制工单 / 操作日志四种导出")});
   bindTable(st,productList);
 }
 
@@ -2236,8 +2276,9 @@ async function freightPage(){
          :f.k==="sort"?r.排序:(r.兜底?"是":"否")})),v=>doOp("/api/freight-save",
       {action:"改",zone:r.区域,provinces:v.provinces,fee:v.fee,sort:v.sort,
        is_fallback:v.is_fallback==="是"},freightPage),1)});
-  M.querySelectorAll("[data-fzdel]:not(.dead)").forEach(e=>e.onclick=()=>
-    doOp("/api/freight-save",{action:"删",zone:e.dataset.fzdel},freightPage));
+  M.querySelectorAll("[data-fzdel]:not(.dead)").forEach(e=>e.onclick=async()=>{
+    if(!await sure("删掉这个运费区域?",`「${e.dataset.fzdel}」删掉后,这个区域的下单会改按兜底规则算运费。`,"删掉"))return;
+    doOp("/api/freight-save",{action:"删",zone:e.dataset.fzdel},freightPage)});
   M.querySelectorAll("[data-fzover]").forEach(e=>e.onclick=()=>
     modal("改满额免邮门槛",[{k:"free_over",label:"满多少元免运费",req:1,
       val:d.满额免邮门槛,ph:"2000"}],v=>doOp("/api/freight-save",
@@ -2494,8 +2535,10 @@ async function pageDetail(code){
   M.querySelectorAll("[data-dblk]").forEach(e=>e.onclick=()=>
     modal("删除内容区块",[{k:"c",type:"select",label:"确认删除该区块?删除后序号自动重排",opts:["确认删除"]}],
       ()=>doOp("/api/block-save",{act:"del",page:code,id:e.dataset.dblk},()=>view("page",code))));
-  M.querySelectorAll("[data-pgt]").forEach(e=>e.onclick=()=>
-    doTransit("bk-page",code,e.dataset.pgt==="已发布"?"已发布":"草稿",{},()=>view("page",code)));
+  M.querySelectorAll("[data-pgt]").forEach(e=>e.onclick=async()=>{
+    const 发=e.dataset.pgt==="已发布";
+    if(!await sure(发?"发布这个页面?":"下线为草稿?",发?"发布后顾客马上能看到这一页。":"下线后顾客就看不到这一页了。",发?"发布":"下线"))return;
+    doTransit("bk-page",code,发?"已发布":"草稿",{},()=>view("page",code))});
 }
 
 async function syscodeList(){
@@ -2891,7 +2934,10 @@ async function downloadList(){
   M.querySelectorAll("[data-newdl]").forEach(e=>e.onclick=()=>
     doOp("/api/download-create",{kind:e.dataset.newdl,filters:"全部"},downloadList));
   M.querySelectorAll("[data-dlf]").forEach(e=>e.onclick=()=>
-    dl(e.dataset.dlf==="操作日志"?"/api/export/oplog":"/api/export/customers"));
+    // 11-08 UI 检查:原来除了「操作日志」一律落成客户档案。按这一行的导出类型对上;对不上的明说
+    ({"客户档案":"customers","操作日志":"oplog","订单":"orders","在制工单":"workorders"})[e.dataset.dlf]
+      ? dl("/api/export/"+({"客户档案":"customers","操作日志":"oplog","订单":"orders","在制工单":"workorders"})[e.dataset.dlf])
+      : res(false,"未做",`「${e.dataset.dlf}」这一类没有对应的下载`));
   bindTable(st,downloadList);
 }
 
@@ -2974,8 +3020,9 @@ async function approvalCenter(定位单){
   M.querySelectorAll("[data-apno]").forEach(e=>e.onclick=()=>
     modal("驳回合并",[{k:"note",type:"text",req:1,label:"驳回原因"}],
       v=>doOp("/api/merge",{id:e.dataset.apno,to:"已驳回",note:v.note,role:ROLE},approvalCenter)));
-  M.querySelectorAll("[data-dlok]").forEach(e=>e.onclick=()=>
-    doTransit("bk-download",e.dataset.dlok,"已完成",{},approvalCenter));
+  M.querySelectorAll("[data-dlok]").forEach(e=>e.onclick=async()=>{
+    if(!await sure("批准这次导出?","批准后申请人就能下载这份数据(可能含客户信息),24 小时内有效。","批准导出"))return;
+    doTransit("bk-download",e.dataset.dlok,"已完成",{},approvalCenter)});
   M.querySelectorAll("[data-dlno]").forEach(e=>e.onclick=()=>
     doTransit("bk-download",e.dataset.dlno,"失败",{},approvalCenter));
   M.querySelectorAll("[data-rkok]").forEach(e=>e.onclick=()=>
@@ -3035,7 +3082,8 @@ function formImport(after){
 function formEditCustomer(c,after){
   modal(`编辑客户 · ${c.id}`,[
     {k:"name",label:"客户姓名",req:1,val:c.name},
-    {k:"phone",label:"手机号",req:1,val:(c.phone_mask||"").replace(/\*/g,"")||""},
+    // 11-08 UI 检查:原来预填「脱敏号去掉星号」(138****5678 → 1385678),一点确定就把手机号写成 7 位。改成留空 = 不改
+    {k:"phone",label:"手机号(不改就留空)",val:"",ph:`现在是 ${c.phone_mask||"—"}`},
     {k:"shop",type:"select",label:"归属店铺",req:1,opts:SHOPS,val:c.shop},
     {k:"advisor",type:"select",label:"销售顾问",req:1,opts:ADVS,val:c.advisor},
     {k:"birthday",label:"生日",val:c.birthday},
@@ -3748,8 +3796,9 @@ function bindOps(tid){
              "已核验":["标记为非同一人","核验依据"],"待核验":["退回重新核验","退回说明"]}[to];
     modal(L[0],[{k:"note",type:"text",label:L[1],req:1,ph:"例如:生日与地址一致,判为同一人"}],
       v=>doOp("/api/merge",{id:tid,to,note:v.note,role:ROLE},()=>view("task",tid)))});
-  M.querySelectorAll("[data-retry]").forEach(e=>e.onclick=()=>
-    doTransit("bk-deposit",e.dataset.retry,"退款处理中",{idem_key:e.dataset.idem},()=>view("task",tid)));
+  M.querySelectorAll("[data-retry]").forEach(e=>e.onclick=async()=>{
+    if(!await sure("重新发起退款?","会把这笔押金退款重新提交给支付渠道 —— 钱会退出去,提交后不能撤回。","重新退款"))return;
+    doTransit("bk-deposit",e.dataset.retry,"退款处理中",{idem_key:e.dataset.idem},()=>view("task",tid))});
   M.querySelectorAll("[data-fin]").forEach(e=>e.onclick=()=>
     modal("转财务人工处理",[{k:"note",type:"text",label:"处理说明",ph:"写明为何转人工、建议的补偿方式"}],
       v=>doOp("/api/task-close",{id:tid,result:"已转财务",note:v.note},()=>view("finance"))));

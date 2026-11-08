@@ -339,20 +339,25 @@ async function loadPool(){
       ${r.建议?`<button class="go" style="padding:7px 15px;font-size:13px"
           data-ok="${esc(r.id)}" data-no="${esc(r.建议.no)}">按建议派给 ${esc(r.建议.name)}</button>`:""}
       <span style="font-size:12px;color:var(--dim)">或改派：</span>
-      <select style="width:auto;min-width:165px">${opts}</select>
+      <select style="width:auto;min-width:165px"><option value="">请选择…</option>${opts}</select>
       <button class="fin" data-dis="${esc(r.id)}">分给他</button>
     </div></div>`).join("");
   for(const b of document.querySelectorAll("[data-ok]"))
     b.onclick=()=>send(b, b.dataset.ok, b.dataset.no);
   for(const b of document.querySelectorAll("[data-dis]"))
-    b.onclick=()=>send(b, b.dataset.dis, b.parentElement.querySelector("select").value);
+    // 11-08 UI 检查:下拉框原来默认选中名单第一个人,没选就点「分给他」会派给排第一的顾问
+    b.onclick=()=>{ const to=b.parentElement.querySelector("select").value;
+      if(!to){ alert("先在下拉框里选一位顾问"); return; } send(b, b.dataset.dis, to); };
 }
 
 async function send(b, id, to){
   const t=b.textContent; b.disabled=true; b.textContent="…";
-  const d=await(await fetch("/api/task-dispatch",{method:"POST",
+  // 11-08 UI 检查:原来没有 try,断网时按钮永远停在「…」、灰着
+  let d;
+  try{ d=await(await fetch("/api/task-dispatch",{method:"POST",
     headers:{"content-type":"application/json"},
-    body:JSON.stringify({id, assignee_no:to})})).json();
+    body:JSON.stringify({id, assignee_no:to})})).json(); }
+  catch(e){ d={ok:false,reason:"连不上后台,这次没有派出去"}; }
   if(!d.ok){alert((d.reason||"").replace(/\*\*/g,""));b.disabled=false;b.textContent=t;return}
   loadPool(); loadTasks();
 }
