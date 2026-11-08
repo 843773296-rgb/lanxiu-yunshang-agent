@@ -375,6 +375,8 @@
     "glossary_versions": {"key", "version_no", "entries", "content_hash"},
     # 实体词典版本(11-08):少一样就说不清「这一轮是按哪一份词典拆的句」
     "entity_dict_versions": {"key", "version_no", "entries", "content_hash"},
+    # 查询路由版本(11-08 第二期)
+    "route_versions": {"key", "version_no", "entries", "content_hash"},
     "workflow_schedules": {"workflow_id", "cadence", "fire_time", "timezone", "schedule_enabled", "principal",
                            "input_snapshot"},
     # 检索试跑记录(2026-10-08):这五列**一列都不能空**,否则那一行没有用 ——

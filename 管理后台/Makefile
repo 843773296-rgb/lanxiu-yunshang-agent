@@ -314,7 +314,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	@echo "▸ 页面冒烟(一级页 + 详情页)"
 	@rc=0; \
 	for h in '#/workbench' '#/studio' '#/integrations' '#/studio/all' '#/studio/workflow' '#/studio/agent' '#/studio/chat' '#/studio/app' \
-	         '#/integrations/models' '#/integrations/tools' '#/prompts' '#/glossaries' '#/entities' '#/runs' '#/opinions' '#/monitoring' '#/alerts' '#/workflows' '#/schedules' '#/uploads' \
+	         '#/integrations/models' '#/integrations/tools' '#/prompts' '#/glossaries' '#/entities' '#/routes' '#/runs' '#/opinions' '#/monitoring' '#/alerts' '#/workflows' '#/schedules' '#/uploads' \
 	         '#/kb' '#/retrieval' '#/rruns' '#/usage' '#/traces' '#/health' '#/tryout' \
 	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
 	         '#/datasets' '#/training' '#/artifacts' '#/audit' '#/outputs' \
@@ -422,7 +422,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_access_api_flow.py test_opinions_flow.py \
           test_opinions_migration_with_data.py test_monitoring_flow.py test_alerts_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
-          test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_fingerprint_ratchet.py
+          test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_fingerprint_ratchet.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -439,6 +439,7 @@ test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 mak
 	@./.venv/bin/python tools/seed_training.py > /dev/null
 	@./.venv/bin/python tools/seed_glossary.py > /dev/null
 	@./.venv/bin/python tools/seed_entity.py > /dev/null
+	@./.venv/bin/python tools/seed_route.py > /dev/null
 # ⚠️ **失败时把输出贴全,不 `tail` 截。**
 # 第一版截 12 行,而挂的详情(每条断言的 `补`)在更前面 ——
 # 于是 CI 上只看到「挂: 某条断言」而**看不到它拿到的是什么值**,
@@ -551,6 +552,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_agent_approval_flow.py
 	@./.venv/bin/python tests/e2e/test_glossary_flow.py
 	@./.venv/bin/python tests/e2e/test_entity_flow.py
+	@./.venv/bin/python tests/e2e/test_route_flow.py
 	@./.venv/bin/python tests/e2e/test_fingerprint_ratchet.py
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py
 	@echo ""
@@ -667,6 +669,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tools/seed_training.py > /dev/null
 	@./.venv/bin/python tools/seed_glossary.py > /dev/null
 	@./.venv/bin/python tools/seed_entity.py > /dev/null
+	@./.venv/bin/python tools/seed_route.py > /dev/null
 	@./.venv/bin/python tests/e2e/test_training_flow.py
 	@echo ""
 	@echo "▸ 文件上传端到端:**「上传成功不等于内容可用」有代码兜着**(§17.1)"
@@ -826,6 +829,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_entity_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_entity_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_entity_flow.log
+	@./.venv/bin/python tests/e2e/test_route_flow.py > /tmp/prog-test_route_flow.log 2>&1 \
+	  || { echo "  ❌ test_route_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_route_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_route_flow.log
 	@./.venv/bin/python tests/e2e/test_fingerprint_ratchet.py > /tmp/prog-test_fingerprint_ratchet.log 2>&1 \
 	  || { echo "  ❌ test_fingerprint_ratchet 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_fingerprint_ratchet.log; exit 1; }

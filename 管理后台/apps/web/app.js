@@ -113,6 +113,7 @@ const 导航 = [
   // 11-08 用户拍:「查询理解」(Query Understanding)只是个分组、没有自己的页面;下属实体识别 / 查询路由 / 意图识别,各自列表-详情-配置
   ["grp", "查询理解"],
   ["#/entities", "实体识别", true, true],
+  ["#/routes", "查询路由", true, true],
   ["grp", "待办与定时"],
   ["#/human", "人工待办", true, true],
   ["#/schedules", "定时", true, true],
@@ -778,10 +779,7 @@ async function 页_实体识别详情(sid) {
         <div><label class="f">最短字数</label><input class="t" type="number" min="1" max="10" data-i="${i}" data-f="最短字数" value="${esc(x.最短字数 ?? 2)}"></div>
         <div><label class="f">同样长时</label>${选(i, "同样长时", x.同样长时 || "让给术语", [["让给术语", "让给术语(默认)"], ["压过术语", "压过术语"]])}</div>
       </div>
-      <div class="two">
-        <div><label class="f">命中后</label>${选(i, "命中后", x.命中后 || "占位", [["占位", "只占位,什么都不带"], ["占位并提示", "占位,并给模型一句提示"]])}</div>
-        <div>${(x.命中后 || "占位") === "占位并提示" ? `<label class="f">提示 <span class="req">*</span> <span style="color:var(--ink3)">可以写 {片段},会换成认出来的名字</span></label>${框(i, "提示", x.提示, "比如 「{片段}」是客户,查客户情况用客户档案工具")}` : ""}</div>
-      </div>
+      <div class="k">认出来之后去哪(只占位 / 提示一句 / 先调工具 / 交给技能),在「查询路由」里配。</div>
       <div style="margin-top:8px;text-align:right"><button class="danger" data-del="${i}">删掉这本</button></div>
     </div>`;
   };
@@ -852,7 +850,7 @@ async function 页_实体识别详情(sid) {
   $("#s-list").oninput = (e) => { if (e.target && e.target.dataset && e.target.dataset.f) { 写回(e.target); 标脏(); } };
   $("#s-list").onchange = (e) => {
     const f = e.target && e.target.dataset ? e.target.dataset.f : "";
-    if (f === "来源" || f === "命中后") { 写回(e.target); 标脏(); 画列表(); }
+    if (f === "来源") { 写回(e.target); 标脏(); 画列表(); }
   };
   $("#s-list").onclick = async (e) => {
     const i = e.target && e.target.dataset ? e.target.dataset.del : undefined;
@@ -861,7 +859,7 @@ async function 页_实体识别详情(sid) {
     if (!(await 问一句("删掉这本词典?", `「${esc(x.名称 || "没写名称的这本")}」会从草稿里拿掉;要点「保存草稿」才真的存下来。`, { 确定: "删掉", 取消: "留着" }))) return;
     配.词典.splice(Number(i), 1); 标脏(); 画列表();
   };
-  $("#s-add").onclick = () => { 配.词典.push({ 名称: "", 类别: "", 来源: "业务表", 表列: "", 最短字数: 2, 同样长时: "让给术语", 命中后: "占位" }); 标脏(); 画列表(); };
+  $("#s-add").onclick = () => { 配.词典.push({ 名称: "", 类别: "", 来源: "业务表", 表列: "", 最短字数: 2, 同样长时: "让给术语" }); 标脏(); 画列表(); };
 
   /* 存之前整理:业务表来源不带词条、手工来源不带表列;没选「占位并提示」不带提示(界面上看不到的东西不该悄悄存进去) */
   const 整理 = () => Object.assign({}, 配, { 词典: 配.词典.map((x) => {
@@ -950,6 +948,219 @@ async function 页_实体识别详情(sid) {
     $("#s-tgo").disabled = false;
   }
   画列表(); 画拿不准(); 画检查(d.检查); 画版本();
+}
+
+/* ── 查询路由(11-08 第二期;用户拍「查询理解」下三样各自列表-详情-配置、各自冻版本;去向 6 种全要)──
+ * 一条规则 = 条件(某类实体 / 某个意图 / 拿不准)→ 去向;从上往下,第一条对上的生效;都没对上走默认(和第一期一样)。
+ * 「转人工」这一版冻结时服务端会拦(还没接上店长助手主循环),页面上照实写明,不藏。
+ * 检查全在服务端(routes_api._详情);「试一句」打 preview,和运行时同一套函数。 */
+async function 页_路由列表() {
+  $("#main").innerHTML = `<div class="crumb">查询理解 / 查询路由</div>
+    <div class="head"><div><h1>查询路由</h1>
+      <div class="sub">${md(`**查询路由**(Query Routing):实体识别认出来的东西,各自**去哪**。比如认出客户名 → 提示模型先调客户档案工具;
+        认出「报价」意图 → 交给报价技能;拿不准 → 提示模型自己判断。从上往下,**第一条对上的规则生效**;都没对上走默认:术语带定义、人名只占位、拿不准提示一句。
+        冻结成版本、在聊天助手里选这一版才生效。`)}</div>
+    </div><div class="acts"><button id="r-new" class="pri">新建路由</button></div></div>
+    <div id="tbl"><div class="state">加载中…</div></div>`;
+  const 新建 = async () => {
+    const key = await 问一句("新建路由", "给它起一个标识:项目内唯一,建好之后不随意改。", { 输入: "比如 store-routes", 确定: "新建", 必填: true });
+    if (!key) return;
+    try { const r = await 请求(`${P()}/routes`, { method: "POST", body: JSON.stringify({ key }) }); location.hash = `#/route/${encodeURIComponent(r.id)}`; }
+    catch (e) { 报错(e); }
+  };
+  $("#r-new").onclick = 新建;
+  const 画 = async () => {
+    let d;
+    try { d = await 请求(`${P()}/routes`); }
+    catch (e) { const s = 错误块(e, 画); $("#tbl").innerHTML = s.html; s.挂(); return; }
+    const rs = d.items || [];
+    if (!rs.length) {
+      const s = 状态("", "这个项目还没有查询路由", "没有路由时全走默认:术语带定义、人名只占位、拿不准提示一句。建一份,就能让「认出客户名」「判出某个意图」各自去该去的地方。", { 文: "新建路由", 做: 新建 });
+      $("#tbl").innerHTML = s.html; s.挂(); return;
+    }
+    $("#tbl").innerHTML = `<table><thead><tr><th>标识</th><th>几条规则</th><th>最新冻结版本</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rs.map((r) => `
+        <tr><td class="num">${esc(r.key)}</td><td class="num">${esc(r.本数 ?? 0)}</td>
+          <td>${r.最新冻结版本 ? `<span class="pill ok">${esc(r.最新冻结版本)}</span>` : '<span class="pill none">还没冻结过</span>'}</td>
+          <td class="num">${时间(r.更新时间)}</td><td><a href="#/route/${encodeURIComponent(r.id)}">打开编辑</a></td></tr>`).join("")}
+      </tbody></table><div class="pager"><span>共 ${rs.length} 份</span></div>`;
+  };
+  await 画();
+}
+
+async function 页_路由详情(rid) {
+  $("#main").innerHTML = `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/routes/${encodeURIComponent(rid)}`); }
+  catch (e) { const s = 错误块(e, () => 页_路由详情(rid)); $("#main").innerHTML = s.html; s.挂(); return; }
+  let rev = d.revision, 脏 = false, 版本们 = d.版本 || [];
+  let 配 = JSON.parse(JSON.stringify(d.配置 || {})); if (!Array.isArray(配.规则)) 配.规则 = [];
+  const 去向们 = d.去向们 || [], 没接上 = d.还没接上的去向 || [], 种类们 = d.条件种类们 || [];
+  $("#main").innerHTML = `
+    <div class="crumb">查询理解 / <a href="#/routes">查询路由</a> / ${esc(d.key)}</div>
+    <div class="head"><div><h1>${esc(d.key)}</h1>
+      <div class="sub">草稿 revision <code id="r-rev">${esc(rev)}</code> · <span id="r-vcount"></span><br>${md(d.note || "")}</div></div></div>
+    <div id="r-check"></div>
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:6px">规则(<span id="r-n"></span> 条,从上往下第一条对上的生效)</div>
+      <div class="note">${md(`条件:**实体**(写类别:客户 / 员工 / 着装人 / 术语 / 通称)、**意图**(第三期「意图识别」接上后才生效)、**歧义**(拿不准的时候)。
+        去向:带术语定义 / 只占位 / 提示一句 / 提示先调工具 / 交给技能 / 转人工。提示里可以写 {片段}、{标准词}。
+        ⚠️ 「交给技能」是**强提示**,技能仍由模型挑;「转人工」${没接上.includes("转人工") ? "**还没接上店长助手**(要改主循环),这一版冻结时会被拦住" : "已接上"}。`)}</div>
+      <div id="r-list"></div>
+      <div style="margin-top:10px"><button id="r-add">加一条规则</button></div>
+    </div>
+    <div class="card"><div class="footbar">
+      <span class="msg" id="r-fb"></span>
+      <button id="r-back">回列表</button><button id="r-save">保存草稿</button><button id="r-freeze" class="pri">冻结版本</button>
+    </div></div>
+    <div class="card" id="r-vers"></div>
+    <div class="card" id="r-try"></div>`;
+  const 选 = (i, f, 值, 项) => `<select class="t" data-i="${i}" data-f="${f}">${项.map(([v, 名]) =>
+    `<option value="${esc(v)}"${String(v) === String(值) ? " selected" : ""}>${esc(名)}</option>`).join("")}</select>`;
+  const 框 = (i, f, 值, 提示) => `<input class="t" data-i="${i}" data-f="${f}" value="${esc(值 ?? "")}" placeholder="${esc(提示)}">`;
+  const 画一条 = (r, i) => {
+    const 条 = r.条件 || {}, 去 = r.去向 || "提示一句";
+    return `<div class="card" data-row="${i}">
+      <div class="two">
+        <div><label class="f">名称 <span class="req">*</span></label>${框(i, "名称", r.名称, "比如 客户名先查档案")}</div>
+        <div style="text-align:right;padding-top:22px"><button data-up="${i}"${i === 0 ? " disabled" : ""}>上移</button> <button data-down="${i}"${i === 配.规则.length - 1 ? " disabled" : ""}>下移</button></div>
+      </div>
+      <div class="two">
+        <div><label class="f">条件</label>${选(i, "条件.种类", 条.种类 || "实体", 种类们.map((x) => [x, x]))}</div>
+        <div>${(条.种类 || "实体") === "歧义" ? '<label class="f">值</label><div class="k">拿不准的时候(不用填)</div>'
+          : `<label class="f">${(条.种类 || "实体") === "实体" ? "哪类实体" : "哪个意图"} <span class="req">*</span></label>${框(i, "条件.值", 条.值, (条.种类 || "实体") === "实体" ? "客户 / 员工 / 着装人 / 术语 / 通称" : "比如 报价")}`}</div>
+      </div>
+      <div class="two">
+        <div><label class="f">去向</label>${选(i, "去向", 去, 去向们.map((x) => [x, 没接上.includes(x) ? `${x}(还没接上)` : x]))}</div>
+        <div>${去 === "提示先调工具" ? `<label class="f">工具名 <span class="req">*</span> <span style="color:var(--ink3)">要是店长助手开着的工具</span></label>${框(i, "工具", r.工具, "比如 customer_profile")}`
+          : 去 === "交给技能" ? `<label class="f">技能名 <span class="req">*</span> <span style="color:var(--ink3)">要是店长助手放行的技能</span></label>${框(i, "技能", r.技能, "比如 quote")}`
+          : 去 === "转人工" ? `<label class="f">说明</label>${框(i, "说明", r.说明, "比如 投诉一律转店长")}` : ""}</div>
+      </div>
+      ${["提示一句", "提示先调工具", "交给技能"].includes(去) ? `<label class="f">给模型的提示 ${去 === "提示一句" ? '<span class="req">*</span>' : '<span style="color:var(--ink3)">选填,不写用默认那句</span>'}</label>
+        <textarea class="t" rows="2" style="min-height:44px" data-i="${i}" data-f="提示">${esc(r.提示 || "")}</textarea>` : ""}
+      <div style="margin-top:8px;text-align:right"><button class="danger" data-del="${i}">删掉这条</button></div>
+    </div>`;
+  };
+  const 画列表 = () => {
+    $("#r-n").textContent = String(配.规则.length);
+    $("#r-list").innerHTML = 配.规则.length ? 配.规则.map(画一条).join("")
+      : 状态("", "还没有规则", "一条都没有时全走默认。点「加一条规则」:比如「实体 · 客户 → 提示先调工具」。").html;
+  };
+  const 画检查 = (检) => {
+    const 阻 = (检 && 检.阻断) || [], 醒 = (检 && 检.提醒) || [];
+    const 旧 = 脏 ? `<div class="k">⚠️ 下面是<b>上次保存的草稿</b>的检查结果;你有没保存的改动,保存之后会重新检查。</div>` : "";
+    $("#r-check").innerHTML = (阻.length
+      ? `<div class="card bad"><div style="font-weight:600;color:var(--fail)">要改完这 ${阻.length} 处才能冻结</div><ul>${阻.map((x) => `<li>${md(x)}</li>`).join("")}</ul>${旧}</div>`
+      : `<div class="note">${md("**检查通过,没有挡住冻结的问题。**")}${旧}</div>`)
+      + (醒.length ? `<div class="note warn"><b>提醒(不挡冻结,建议看一眼):</b><ul>${醒.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>` : "");
+  };
+  const 画版本 = () => {
+    $("#r-vcount").innerHTML = 版本们.length ? `已有 ${版本们.length} 个冻结版本(最新 ${esc(版本们[0].版本)})` : "<b>还没冻结过版本</b>";
+    $("#r-vers").innerHTML = `<div style="font-weight:600;margin-bottom:8px">冻结的版本</div>`
+      + (版本们.length ? `<table><thead><tr><th>版本</th><th>几条规则</th><th>内容哈希</th><th>冻结于</th><th>冻结人</th></tr></thead><tbody>
+          ${版本们.map((v) => `<tr><td class="num">${esc(v.版本)}</td><td class="num">${esc(v.本数 ?? "")}</td>
+            <td class="num">${esc(String(v.内容哈希 || "").slice(0, 19))}</td><td class="num">${时间(v.冻结于)}</td><td>${esc(v.冻结人 || "")}</td></tr>`).join("")}
+          </tbody></table>` : `<div class="state" style="padding:20px">还没有冻结的版本 —— 上面写好、保存之后点「冻结版本」。</div>`);
+    $("#r-try").innerHTML = `<div style="font-weight:600;margin-bottom:6px">试一句(每段会走哪条规则)</div>`
+      + (版本们.length ? `<div class="note">${md("先用选的实体识别版本认出名字和术语,再用这一版路由决定每段去哪。业务表那几本在下面填几个名字代替;意图在第三期接上前**手填**。")}</div>
+          <div class="two">
+            <div><label class="f">路由版本</label><select class="t" id="r-tv">${版本们.map((v) => `<option value="${esc(v.id)}">${esc(v.版本)}(${esc(v.本数 ?? "")} 条)</option>`).join("")}</select></div>
+            <div><label class="f">实体识别版本</label><select class="t" id="r-te"><option value="">不认名字(只认术语)</option>${(d.可选实体识别 || []).map((v) => `<option value="${esc(v.id)}">${esc(v.名称)} · ${esc(v.版本)}</option>`).join("")}</select></div>
+            <div><label class="f">术语版本</label><select class="t" id="r-tg"><option value="">不带术语</option>${(d.可选术语 || []).map((v) => `<option value="${esc(v.id)}">${esc(v.名称)} · ${esc(v.版本)} · ${esc(v.条数)} 条</option>`).join("")}</select></div>
+            <div><label class="f">意图(手填,选填)</label><input class="t" id="r-ti" placeholder="比如 报价"></div>
+          </div>
+          <label class="f">试用名单 <span style="color:var(--ink3)">一行一本:词典名称: 名字,名字(比如「客户名: 宋锦书,罗晓雯」)</span></label>
+          <textarea class="t" id="r-tn" rows="2" style="min-height:44px"></textarea>
+          <label class="f">一句话</label><textarea class="t" id="r-tt" rows="2" style="min-height:44px" placeholder="比如:宋锦书想做一条宋锦马面,小罗帮她量过了吗?"></textarea>
+          <div style="margin-top:8px"><button class="pri" id="r-tgo">试一句</button> <span class="k" id="r-tmsg"></span></div><div id="r-tout"></div>`
+        : `<div class="state" style="padding:20px">要先冻结一个版本才能试。</div>`);
+    if (版本们.length) $("#r-tgo").onclick = 试一句;
+  };
+  const 标脏 = () => { if (!脏) { 脏 = true; 画检查(d.检查); } $("#r-fb").textContent = "有没保存的改动"; $("#r-fb").className = "msg"; };
+  const 写回 = (el) => {
+    const i = Number(el.dataset.i), f = el.dataset.f, r = 配.规则[i];
+    if (!r || !f) return;
+    if (f.startsWith("条件.")) { r.条件 = Object.assign({}, r.条件 || {}, { [f.slice(3)]: el.value }); }
+    else r[f] = el.value;
+  };
+  $("#r-list").oninput = (e) => { if (e.target && e.target.dataset && e.target.dataset.f) { 写回(e.target); 标脏(); } };
+  $("#r-list").onchange = (e) => { const f = e.target && e.target.dataset ? e.target.dataset.f : ""; if (f === "去向" || f === "条件.种类") { 写回(e.target); 标脏(); 画列表(); } };
+  $("#r-list").onclick = async (e) => {
+    const ds = (e.target && e.target.dataset) || {};
+    if (ds.up !== undefined || ds.down !== undefined) {
+      const i = Number(ds.up ?? ds.down), j = ds.up !== undefined ? i - 1 : i + 1;
+      if (j < 0 || j >= 配.规则.length) return;
+      [配.规则[i], 配.规则[j]] = [配.规则[j], 配.规则[i]]; 标脏(); 画列表(); return;
+    }
+    if (ds.del === undefined) return;
+    const r = 配.规则[Number(ds.del)] || {};
+    if (!(await 问一句("删掉这条规则?", `「${esc(r.名称 || "没写名称的这条")}」会从草稿里拿掉;要点「保存草稿」才真的存下来。`, { 确定: "删掉", 取消: "留着" }))) return;
+    配.规则.splice(Number(ds.del), 1); 标脏(); 画列表();
+  };
+  $("#r-add").onclick = () => { 配.规则.push({ 名称: "", 条件: { 种类: "实体", 值: "" }, 去向: "提示一句", 提示: "" }); 标脏(); 画列表(); };
+  /* 存之前整理:去向用不到的参数不发(界面上看不到的东西不该悄悄存进去) */
+  const 整理 = () => ({ 规则: 配.规则.map((r) => {
+    const o = { 名称: String(r.名称 || "").trim(), 条件: { 种类: (r.条件 || {}).种类 || "实体" }, 去向: r.去向 || "提示一句" };
+    if (o.条件.种类 !== "歧义") o.条件.值 = String((r.条件 || {}).值 || "").trim();
+    if (["提示一句", "提示先调工具", "交给技能"].includes(o.去向) && String(r.提示 || "").trim()) o.提示 = String(r.提示).trim();
+    if (o.去向 === "提示先调工具") o.工具 = String(r.工具 || "").trim();
+    if (o.去向 === "交给技能") o.技能 = String(r.技能 || "").trim();
+    if (o.去向 === "转人工" && String(r.说明 || "").trim()) o.说明 = String(r.说明).trim();
+    return o;
+  }) });
+  $("#r-back").onclick = async () => { if (脏 && !(await 问一句("离开这一页?", "有没保存的改动,离开会丢掉。", { 确定: "丢掉并离开", 取消: "留下" }))) return; location.hash = "#/routes"; };
+  const 存草稿 = async () => {
+    try {
+      const r = await 请求(`${P()}/routes/${encodeURIComponent(rid)}/draft`, { method: "PATCH", headers: { "If-Match": String(rev) }, body: JSON.stringify({ 配置: 整理() }) });
+      rev = r.revision; $("#r-rev").textContent = String(rev);
+      d.检查 = r.检查; 配 = JSON.parse(JSON.stringify(r.配置 || {})); if (!Array.isArray(配.规则)) 配.规则 = [];
+      版本们 = r.版本 || 版本们; 脏 = false; 画列表(); 画检查(r.检查); 画版本();
+      $("#r-fb").innerHTML = md(r.note || "草稿已保存。"); $("#r-fb").className = "msg"; return true;
+    } catch (e) {
+      const b = e.体 || {};
+      if (e.码 === 409) {
+        $("#r-fb").innerHTML = `<b>这份路由被别人改过了,刷新再合并,不要直接覆盖。</b><br>${esc(b.message || "")}<br><button id="r-reload">刷新看最新的</button>
+          <details><summary>我这边没保存的内容(刷新会丢,先复制下来)</summary><pre class="io">${esc(JSON.stringify(整理(), null, 2))}</pre></details>`;
+        $("#r-reload").onclick = () => 页_路由详情(rid);
+      } else $("#r-fb").innerHTML = `<b>${esc(b.message || e.message)}</b><br>${md(b.advice || "")}`;
+      $("#r-fb").className = "msg bad"; return false;
+    }
+  };
+  $("#r-save").onclick = async () => { $("#r-save").disabled = true; await 存草稿(); $("#r-save").disabled = false; };
+  $("#r-freeze").onclick = async () => {
+    if (脏) { if (!(await 问一句("先保存草稿?", "冻结的是<b>已保存的草稿</b>。你有没保存的改动 —— 先保存,再冻结。", { 确定: "保存并冻结", 取消: "先不冻" }))) return; if (!(await 存草稿())) return; }
+    $("#r-freeze").disabled = true;
+    try {
+      const r = await 请求(`${P()}/routes/${encodeURIComponent(rid)}/versions`, { method: "POST" });
+      $("#r-fb").innerHTML = `已冻结为 <b>${esc(r.版本)}</b>(内容哈希 <code>${esc(String(r.内容哈希 || "").slice(0, 19))}</code>)<br>${md(r.note || "")}`; $("#r-fb").className = "msg";
+      setTimeout(() => 页_路由详情(rid), 900);
+    } catch (e) {
+      const b = e.体 || {}, 阻 = (b.field_errors && b.field_errors.阻断) || [];
+      if (e.码 === 422 && 阻.length) $("#r-fb").innerHTML = `<b>还冻不了,先改这 ${阻.length} 处:</b>${阻.map((x) => "<br>· " + md(x)).join("")}`;
+      else if (b.code === "NO_CHANGE") $("#r-fb").innerHTML = `<b>${esc(b.message || "内容和上一版一样")}</b> —— 不用再冻一版。`;
+      else $("#r-fb").innerHTML = `<b>${esc(b.message || e.message)}</b><br>${md(b.advice || "")}`;
+      $("#r-fb").className = "msg bad"; $("#r-freeze").disabled = false;
+    }
+  };
+  async function 试一句() {
+    const 文 = $("#r-tt").value.trim();
+    if (!文) { $("#r-tmsg").textContent = "先写一句话。"; return; }
+    const 试用名单 = {};
+    String($("#r-tn").value || "").split(/\n/).forEach((行) => { const m = 行.split(/[:：]/); if (m.length >= 2) { const v = m.slice(1).join(":").split(/[,，、]/).map((x) => x.trim()).filter(Boolean); if (v.length) 试用名单[m[0].trim()] = v; } });
+    $("#r-tgo").disabled = true; $("#r-tmsg").textContent = "在试…";
+    try {
+      const r = await 请求(`${P()}/route-versions/${encodeURIComponent($("#r-tv").value)}/preview`, { method: "POST",
+        body: JSON.stringify({ 文本: 文, 实体识别版本: $("#r-te").value || null, 术语版本: $("#r-tg").value || null, 意图: $("#r-ti").value.trim() || null, 试用名单 }) });
+      const 走 = r.走了 || [];
+      $("#r-tout").innerHTML = (走.length ? `<table><thead><tr><th>对象</th><th>走了哪条规则</th><th>去向</th></tr></thead><tbody>${走.map((x) => `
+          <tr><td>${esc(x.对象)}</td><td>${esc(x.规则)}</td><td>${esc(x.去向)}</td></tr>`).join("")}</tbody></table>` : `<div class="state" style="padding:12px">这句话没认出任何实体,也没有意图。</div>`)
+        + (r.技能 ? `<div class="note">这一句会被<b>强提示</b>交给技能「${esc(r.技能)}」(技能仍由模型挑)。</div>` : "")
+        + ((r.没试到的词典 || []).length ? `<div class="note warn">${(r.没试到的词典 || []).map((x) => `「${esc(x.名称)}」没试到:${esc(x.说明)}`).join("<br>")}</div>` : "")
+        + `<label class="f">模型会收到</label><pre class="io">${esc(r.模型会收到 || "(什么都不收到)")}</pre>`;
+      $("#r-tmsg").textContent = "";
+    } catch (e) { const b = e.体 || {}; $("#r-tmsg").textContent = b.message || e.message; }
+    $("#r-tgo").disabled = false;
+  }
+  画列表(); 画检查(d.检查); 画版本();
 }
 
 /* 术语表编辑页:逐条增删改 → 保存草稿(If-Match)→ 冻结版本 → 选一个版本试一句话。
@@ -8092,6 +8303,11 @@ function 画_聊天编排() {
         ${c["实体识别版本"] && !(g["可选实体识别"] || []).some((v) => v.id === c["实体识别版本"]) ? `<option value="${esc(c["实体识别版本"])}" selected>(当前选的不在列表里)</option>` : ""}</select>
       <div class="note">每一轮先把这句话里的客户名、员工名、着装人名认出来占位,剩下的字才去找术语 —— 免得「宋锦书」被当成面料。换实体识别版本 = 出一版新的聊天助手、上生产才生效。
         ${(g["可选实体识别"] || []).length ? "" : "这个项目还没有冻结的实体识别版本 —— 先去「实体识别」冻一版。"}</div></div>
+    <div class="card"><h4>查询路由</h4><select id="c-route"><option value="">全走默认路由</option>${(g["可选路由"] || []).map((v) =>
+        `<option value="${esc(v.id)}"${v.id === c["路由版本"] ? " selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["本数"])} 条规则</option>`).join("")}
+        ${c["路由版本"] && !(g["可选路由"] || []).some((v) => v.id === c["路由版本"]) ? `<option value="${esc(c["路由版本"])}" selected>(当前选的不在列表里)</option>` : ""}</select>
+      <div class="note">认出来的实体、判出的意图各自去哪(带定义 / 只占位 / 提示 / 先调工具 / 交给技能)。不选 = 全走默认:术语带定义、人名只占位、拿不准提示一句。
+        路由里点名的工具和技能必须是这个助手开着的,否则保存时会拦。${(g["可选路由"] || []).length ? "" : "这个项目还没有冻结的路由版本 —— 先去「查询路由」冻一版。"}</div></div>
     <div class="card" id="c-tools"><h4>工具(${(c["工具"] || []).filter((t) => t["开"]).length} / ${(c["工具"] || []).length} 开着)</h4>
       <div><b>写入类 ${写.length} 个</b> <span class="pill warn">会改业务数据</span></div><div>${写.map(勾).join("")}</div>
       <div style="margin-top:8px"><b>只读 ${读.length} 个</b></div><div>${读.map(勾).join("")}</div>
@@ -8113,6 +8329,7 @@ function 画_聊天编排() {
   $("#c-model").onchange = (e) => { c["模型"] = e.target.value; 标脏(); };
   $("#c-glossary").onchange = (e) => { c["术语版本"] = e.target.value || null; 标脏(); };
   $("#c-entity").onchange = (e) => { c["实体识别版本"] = e.target.value || null; 标脏(); };
+  $("#c-route").onchange = (e) => { c["路由版本"] = e.target.value || null; 标脏(); };
   $("#c-tools").querySelectorAll("[data-tool]").forEach((b) => {
     b.onchange = () => { c["工具"].find((t) => t["名"] === b.dataset.tool)["开"] = b.checked; 标脏(); };
   });
@@ -8188,6 +8405,8 @@ async function 路由() {
     if (h.startsWith("#/prompt/")) return await 页_prompt详情(decodeURIComponent(h.slice(9)));
     if (h === "#/glossaries") return await 页_术语列表();
     if (h === "#/entities") return await 页_实体识别列表();
+    if (h === "#/routes") return await 页_路由列表();
+    if (h.startsWith("#/route/")) return await 页_路由详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/entity/")) return await 页_实体识别详情(decodeURIComponent(h.slice(9)));
     if (h.startsWith("#/glossary/")) return await 页_术语详情(decodeURIComponent(h.slice(11)));
     if (h === "#/human") return await 页_人工待办();

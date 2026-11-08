@@ -73,6 +73,8 @@ sys.path.insert(0, os.path.join(根, "services", "api", "app"))
     ("glossary_versions", "glossary_drafts"):
         "和 prompt_versions → prompt_drafts 同一形状(11-06):版本和草稿靠 (project_id, key) 认,不留指针 —— "
         "草稿可以删了重建,版本照旧在;版本里存的是冻结那一刻的全部术语,不需要回指草稿",
+    ("route_versions", "route_drafts"):
+        "和 glossary_versions → glossary_drafts 同一形状(11-08 第二期):版本和草稿靠 (project_id, key) 认,不留指针",
     ("entity_dict_versions", "entity_dict_drafts"):
         "和 glossary_versions → glossary_drafts 同一形状(11-08):版本和草稿靠 (project_id, key) 认,不留指针 —— "
         "版本里存的是冻结那一刻的整份实体识别配置,不需要回指草稿",

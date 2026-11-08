@@ -16160,5 +16160,89 @@
    }
   ],
   "预期红": "#407 的题面不再带「怎么判」那个歧义"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "路由成「只占位」的术语照样带定义 —— 店长配了「术语不带」也没用",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "        if 是术语 and 去 == \"带术语定义\":\n",
+    "new": "        if 是术语:\n"
+   }
+  ],
+  "预期红": "⑪ 「只占位」压掉术语定义:规则把术语路由成只占位 → 一条术语都不带"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "路由变成最后一条对上的生效 —— 页面上排在前面的规则被后面的覆盖",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "        r = next((r for r in 规则们 if _对上(r.get(\"条件\"), 段=段)), None)\n",
+    "new": "        r = next((r for r in reversed(规则们) if _对上(r.get(\"条件\"), 段=段)), None)\n"
+   }
+  ],
+  "预期红": "⑪ 第一条对上的生效:同条件的第二条不执行"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "歧义规则对上了还照样附默认提醒 —— 模型收到两句意思一样的话",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "            if r is None:\n                加提示(_填(醒默认",
+    "new": "            if True:\n                加提示(_填(醒默认"
+   }
+  ],
+  "预期红": "⑪ 歧义规则接管提醒,不再附默认那句(不重复)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "「转人工」冻结时不拦 —— 看起来能用而店长助手根本没接上",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "        elif 去 in 还没接上的去向:\n",
+    "new": "        elif False:\n"
+   }
+  ],
+  "预期红": "⑪ 配置检查:转人工这一版拦住 / 提示一句没写提示 / 先调工具没写工具 / 实体没写类别 / 条件和去向不在清单里 → 都阻断"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_route_flow.py",
+  "改坏": "冻结路由前不查配置 —— 缺工具名、选了转人工也照冻",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/routes_api.py",
+    "old": "        阻, _ = T.路由配置问题(配)\n        if 阻:",
+    "new": "        阻, _ = T.路由配置问题(配)\n        if False:"
+   }
+  ],
+  "预期红": "② 转人工(还没接上)/ 先调工具没写工具 → 检查点名、冻结 422"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_route_flow.py",
+  "改坏": "店长助手挂路由时不查点名的工具 / 技能 —— 模型被提示去调一个调不了的工具",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/chat_assistants_api.py",
+    "old": "                if 缺:\n                    raise _错(422, \"VALIDATION\", f\"这一版路由点名了",
+    "new": "                if False:\n                    raise _错(422, \"VALIDATION\", f\"这一版路由点名了"
+   }
+  ],
+  "预期红": "⑥ 路由点名了助手没有的工具 → 422,点名那个工具(不然模型会被提示去调一个调不了的工具)"
+ },
+ {
+  "script": "backend/glossary_client_check.py",
+  "改坏": "聊天站这一段不走路由 —— 后台配的路由一条都不生效",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "    走 = T.应用路由(拆, (路态 or {}).get(\"配置\") if isinstance(路态, dict) else None,",
+    "new": "    走 = T.应用路由(拆, None,"
+   }
+  ],
+  "预期红": "路由:按路由走 → 术语被路由成只占位(不带宋锦定义),客户名那句提示进了段"
  }
 ]

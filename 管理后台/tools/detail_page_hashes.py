@@ -52,6 +52,8 @@ G, Y, R, D = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
     ("#/glossary/", "页_术语详情",   "glossary_drafts",  "and archived_at is null"),
     # 实体词典编辑页(2026-11-08)。样例 id 来自 tools/seed_entity.py 铺的 demo-entities
     ("#/entity/",    "页_实体识别详情",   "entity_dict_drafts", "and archived_at is null"),
+    # 查询路由编辑页(2026-11-08 第二期)。样例 id 来自 tools/seed_route.py 铺的 demo-routes
+    ("#/route/",     "页_路由详情",   "route_drafts", "and archived_at is null"),
     ("#/human/",    "页_待办详情",   "human_requests",   ""),
     ("#/trace/",    "页_调用树",     "traces",           ""),
     ("#/workflow/", "页_画布",       "workflows",        ""),
