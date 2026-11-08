@@ -15603,27 +15603,26 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-08 10:19。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-08 11:53。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `w75` |
-| 最新提交 | 4484088a · 2026-11-08 · 技能评测跑满 5 遍存成 v5(47/49),顺手修一条被今天的日历打断的夹具 |
-| 代码量 | 1004 个 Python 文件 / 185558 行(不含 .venv) |
+| 最新提交 | a2fece6d · 2026-11-08 · 管理后台新开「拆句与路由」页:拆句词典可配置、冻版本、店长助手选一版;大名单运行时现取 |
+| 代码量 | 1008 个 Python 文件 / 185735 行(不含 .venv) |
 | 验收 | `./check.sh` 共 383 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M agent/rounds.py
+M  agentsite/.claude/skills/rating-repair/SKILL.md
  M agentsite/evals/funnel.jsonl
+M  agentsite/evals/skill_trigger.json
  M agentsite/evals/skill_usage.jsonl
- M agentsite/skill_eval.py
- M agentsite/skill_eval_truth_check.py
- M tools/bite_specs.json
- M "tools/\345\275\261\345\223\215\351\235\242\345\237\272\347\272\277.json"
+M  agentsite/skill_eval.py
+M  agentsite/skill_eval_truth_check.py
+M  tools/bite_specs.json
 ?? .feynman/bite-all-20261016.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
@@ -15631,11 +15630,11 @@ M HANDOFF.md
 **最近 5 次提交:**
 
 ```
+a2fece6d 管理后台新开「拆句与路由」页:拆句词典可配置、冻版本、店长助手选一版;大名单运行时现取
+3e11bd80 判定「进步 / 退步」现在听尺子了(用户 11-08 拍「只认安全方向」)
 4484088a 技能评测跑满 5 遍存成 v5(47/49),顺手修一条被今天的日历打断的夹具
 38084ae0 术语先拆句再分流:客户/员工/着装人名字和术语各是独立词典;收「罗」,冻术语第三版
 845502f2 夜跑评测结果 2026-11-08(自动提交:评测结果、报告、压缩过的运行日志)
-dccff010 术语加「通称」栏;第三版草稿补通称款式、单字面料和史料出处;形制 9 处按史料改
-17510491 基线报告的三处「两种状态同一张脸」,各做成一条判据(41 → 50 条)
 ```
 <!--/AUTO-->
 ## 一句话在做什么

@@ -25,7 +25,7 @@ sys.path.insert(0, HERE)
 # ⚠️ 只取那一个函数,不跑 main ——
 # `skill_eval` 顶上 import sdk 要 .venv 里的 claude_agent_sdk,
 # 而这条检查在门禁里用系统 python 跑。所以用源码里那一段单独 exec。
-import ast, io
+import ast, io, json
 _src = io.open(os.path.join(HERE, "skill_eval.py"), encoding="utf-8").read()
 _树 = ast.parse(_src)
 _节 = next((n for n in _树.body if isinstance(n, ast.FunctionDef) and n.name == "定真值"), None)
@@ -352,6 +352,46 @@ _基线遍数常量 = [_n for _n in ast.walk(_main)
                and isinstance(_n.value, ast.Constant) and isinstance(_n.value.value, int)]
 ck("基线遍数不许兜一个默认数(兜了就把「不知道」说成一个确凿的遍数)",
    _基线遍数常量, [])
+
+# ── 接线 ②之三:**id 一样而题面换了,也要报出来** ──────────────────────────
+# `_缺 / _多` 只比「哪几条」,而**改一句题面不增不减任何 id** ——
+# 于是「这条从错变对了」既可能是模型变好了、也可能是题换了。
+# > 一条「模型真变好了」和一条「题被换了」,**在那个 ↑ 上长得一模一样。**
+# 2026-11-08 当天真改了一条(#407 去掉「怎么判」那个歧义),所以这条判据有真事撑着。
+# ⚠️ 初始化那处是**元组赋值**(`基线, …, 题面改过的 = None, …, []`),
+# `targets` 里是一个 Tuple 节点而不是 Name —— 只看 targets 的第一层会漏掉它。
+_题面漂 = [_n for _n in ast.walk(_main)
+          if isinstance(_n, ast.Assign)
+          and any(isinstance(_t, ast.Name) and _t.id == "题面改过的"
+                  for _tt in _n.targets for _t in ast.walk(_tt))]
+ck("样本量:算「题面改过的」那一处有几个(1 处初始化 + 1 处真算)", len(_题面漂), 2)
+_比了题面 = any(isinstance(_n, ast.Attribute) and _n.attr == "prompt"
+              for _a in _题面漂 for _n in ast.walk(_a)) or any(
+    isinstance(_n, ast.Constant) and _n.value == "prompt"
+    for _a in _题面漂 for _n in ast.walk(_a))
+ck("逐条比题面:真的去读了两边的题面(不是只比 id)", _比了题面, True)
+# 这个脚本已经把 skill_eval.py 的源码读进 `_src` 了 —— 别再开一次文件,
+# 两份来源会漂(而且 `ROOT` 在这个脚本里不是模块级名字)。
+_印了 = ("题面换过" in _src)
+ck("接线:题面漂移印在对比那一块里(**判据绿而屏幕上没有,等于没做**)", _印了, True)
+
+# ── #408 的期望值要有依据:技能自己得定过「只问规则不走它」这一档 ──────────
+# ⚠️ **这条判据防的是「评测期望值凭空来」。** 2026-11-08 之前,技能的「什么时候不用」
+# 里没有这一档,那时拿「只问规则 → 无」当期望**找不到依据**,模型两种做法都站得住 ——
+# 而那样的判据量的是一句歧义话,不是能力。
+_技能正文 = io.open(os.path.join(HERE, ".claude", "skills",
+                             "rating-repair", "SKILL.md"), encoding="utf-8").read()
+_不用段 = _技能正文.split("## 什么时候不用", 1)[-1].split("\n## ", 1)[0]
+ck("#408 有依据:rating-repair 的「什么时候不用」里定了「只问判责规则」这一档",
+   ("只问判责规则" in _不用段), True)
+_题集 = json.load(io.open(os.path.join(HERE, "evals", "skill_trigger.json"),
+                        encoding="utf-8"))
+_cs = _题集["cases"] if isinstance(_题集, dict) else _题集
+_408 = next((c for c in _cs if c["id"] == 408), None)
+ck("#408 在题集里,而且期望是「无」", (_408 or {}).get("expect", "没这条"), None)
+_407 = next((c for c in _cs if c["id"] == 407), None)
+ck("#407 的题面不再带「怎么判」那个歧义(它有第二种读法:问规则)",
+   "怎么判" in (_407 or {}).get("prompt", "怎么判"), False)
 
 # ── 接线 ③:存基线那一处真的**去问**术语实况,不是写死的 ────────────────
 # 写死一个「没接」会让接了术语之后的基线照旧记「没接」——
