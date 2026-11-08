@@ -76,8 +76,8 @@ P = f"{基址}/api/v1/projects/{项目}"
         读="/prompts/{id}", 字段="草稿.revision"),
     "PATCH /glossaries/{id}/draft": dict(          # 术语配置(11-06):详情顶层就是草稿的 revision
         取id=("/glossaries", "items[0].id"), 读="/glossaries/{id}", 字段="revision", 项目="project_demo_a"),
-    "PATCH /split-dicts/{id}/draft": dict(         # 拆句与路由(11-08):详情顶层就是草稿的 revision
-        取id=("/split-dicts", "items[0].id"), 读="/split-dicts/{id}", 字段="revision", 项目="project_demo_a"),
+    "PATCH /entity-dicts/{id}/draft": dict(         # 实体识别(11-08):详情顶层就是草稿的 revision
+        取id=("/entity-dicts", "items[0].id"), 读="/entity-dicts/{id}", 字段="revision", 项目="project_demo_a"),
     "PATCH /applications/{id}/draft": dict(
         取id=("/applications", "应用[0].id"),
         读="/applications/{id}", 字段="候选revision"),

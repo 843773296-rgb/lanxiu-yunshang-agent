@@ -228,7 +228,7 @@ _额外唯一 = {
                         ("project_id", "key", "version_no")],
     "glossary_versions": [("project_id", "key", "content_hash"),
                           ("project_id", "key", "version_no")],
-    "split_dict_versions": [("project_id", "key", "content_hash"),
+    "entity_dict_versions": [("project_id", "key", "content_hash"),
                             ("project_id", "key", "version_no")],
     "document_versions": [("project_id", "document_id", "content_hash")],
     "dataset_versions": [("project_id", "dataset_id", "content_hash")],

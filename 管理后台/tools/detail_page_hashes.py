@@ -50,8 +50,8 @@ G, Y, R, D = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
     ("#/prompt/",   "页_prompt详情", "prompt_drafts",    ""),
     # 术语表编辑页(2026-11-06)。样例 id 来自 tools/seed_glossary.py 在演示项目铺的 demo-terms(CI 里排在冒烟前面)
     ("#/glossary/", "页_术语详情",   "glossary_drafts",  "and archived_at is null"),
-    # 拆句词典编辑页(2026-11-08)。样例 id 来自 tools/seed_split.py 铺的 demo-split
-    ("#/split/",    "页_拆句详情",   "split_dict_drafts", "and archived_at is null"),
+    # 实体词典编辑页(2026-11-08)。样例 id 来自 tools/seed_entity.py 铺的 demo-entities
+    ("#/entity/",    "页_实体识别详情",   "entity_dict_drafts", "and archived_at is null"),
     ("#/human/",    "页_待办详情",   "human_requests",   ""),
     ("#/trace/",    "页_调用树",     "traces",           ""),
     ("#/workflow/", "页_画布",       "workflows",        ""),

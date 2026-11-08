@@ -84,7 +84,7 @@ PY = os.path.join(根, ".venv", "bin", "python")
     ("tools/seed_pricing.py", "计价表夹具", None),
     # 11-06:术语表的演示草稿 —— 给 ifmatch_reachable_check 一张样例(改草稿要带的 revision 从哪来);已有同 key 就跳过
     ("tools/seed_glossary.py", "演示术语表草稿(demo-terms,ifmatch 的样例)", None),
-    ("tools/seed_split.py", "演示拆句词典草稿(demo-split,ifmatch / 详情页冒烟的样例)", None),
+    ("tools/seed_entity.py", "演示实体词典草稿(demo-entities,ifmatch / 详情页冒烟的样例)", None),
     # 2026-10-08 加。⚠️ 这一份和上面几个**不是同一种 seed**:
     # 它不往库里写夹具,而是**走产品自己的接口**(建索引 → 等 Worker →
     # 跑一次试跑),为的是让三条判据在 CI 上有东西可验

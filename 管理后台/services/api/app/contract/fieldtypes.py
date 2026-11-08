@@ -223,7 +223,7 @@
     "id": "TEXT", "name": "TEXT", "status": "TEXT", "role": "TEXT",
     "purpose": "TEXT", "adapter": "TEXT", "endpoint": "TEXT", "revision": "BIGINT",
     "messages": "JSONB", "params": "JSONB", "capabilities": "JSONB",
-    "entries": "JSONB",          # 术语表的那一组术语(11-06)/ 拆句配置对象(11-08)
+    "entries": "JSONB",          # 术语表的那一组术语(11-06)/ 实体识别配置对象(11-08)
     "acl": "JSONB", "text": "TEXT", "ordinal": "INTEGER", "format": "TEXT",
     # ⚠️ `rating` 点名登记成 INTEGER(2026-10-08,检索试跑的 5 档评价)。
     # **不叫 `rating_count`** —— 那样能命中 `_count` 后缀不用登记,
@@ -373,8 +373,8 @@
                                 "model_name", "source_kind", "content_hash"},
     # 术语表版本(11-06):少一样就说不清「模型拿到的是哪一份术语」
     "glossary_versions": {"key", "version_no", "entries", "content_hash"},
-    # 拆句词典版本(11-08):少一样就说不清「这一轮是按哪一份词典拆的句」
-    "split_dict_versions": {"key", "version_no", "entries", "content_hash"},
+    # 实体词典版本(11-08):少一样就说不清「这一轮是按哪一份词典拆的句」
+    "entity_dict_versions": {"key", "version_no", "entries", "content_hash"},
     "workflow_schedules": {"workflow_id", "cadence", "fire_time", "timezone", "schedule_enabled", "principal",
                            "input_snapshot"},
     # 检索试跑记录(2026-10-08):这五列**一列都不能空**,否则那一行没有用 ——

@@ -15414,7 +15414,7 @@
  },
  {
   "script": "管理后台/tests/orchestration/test_glossary.py",
-  "改坏": "英文 / 数字叫法不看词边界(「中文没空格,子串就够了」)—— ROI 命中 ROIC、15 命中 115,给模型塞了错的定义 (11-08 拆句重写后锚点换到 拆句() 那一行)",
+  "改坏": "英文 / 数字叫法不看词边界(「中文没空格,子串就够了」)—— ROI 命中 ROIC、15 命中 115,给模型塞了错的定义 (11-08 实体识别重写后锚点换到 实体识别() 那一行)",
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/术语.py",
@@ -15923,7 +15923,7 @@
  },
  {
   "script": "管理后台/tests/orchestration/test_glossary.py",
-  "改坏": "名单不进拆句 —— 客户名里的「罗」又被当成面料",
+  "改坏": "名单不进实体识别 —— 客户名里的「罗」又被当成面料",
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/术语.py",
@@ -16042,23 +16042,23 @@
   "预期红": "基线遍数不许兜一个默认数"
  },
  {
-  "script": "管理后台/tests/e2e/test_split_flow.py",
-  "改坏": "冻结前不查拆句配置 —— 类别占用「术语」、业务表列不在白名单也照冻",
+  "script": "管理后台/tests/e2e/test_entity_flow.py",
+  "改坏": "冻结前不查实体识别配置 —— 类别占用「术语」、业务表列不在白名单也照冻",
   "file": [
    {
-    "path": "管理后台/services/api/app/split_dicts_api.py",
-    "old": "        阻, _ = T.拆句配置问题(配)\n        if 阻:",
-    "new": "        阻, _ = T.拆句配置问题(配)\n        if False:"
+    "path": "管理后台/services/api/app/entity_dicts_api.py",
+    "old": "        阻, _ = T.实体配置问题(配)\n        if 阻:",
+    "new": "        阻, _ = T.实体配置问题(配)\n        if False:"
    }
   ],
   "预期红": "② 类别占用「术语」、业务表列不在白名单 → 检查点名、冻结 422"
  },
  {
-  "script": "管理后台/tests/e2e/test_split_flow.py",
+  "script": "管理后台/tests/e2e/test_entity_flow.py",
   "改坏": "试一句里业务表那本没给试用名单也不说「没试到」—— 看起来像这本词典是空的",
   "file": [
    {
-    "path": "管理后台/services/api/app/split_dicts_api.py",
+    "path": "管理后台/services/api/app/entity_dicts_api.py",
     "old": "                          for n in 取不到],",
     "new": "                          for n in 取不到[:0]],"
    }
@@ -16066,40 +16066,40 @@
   "预期红": "④ 业务表那本没给试用名单 → 明说「没试到」(不当成「这本是空的」)"
  },
  {
-  "script": "管理后台/tests/e2e/test_split_flow.py",
-  "改坏": "聊天助手草稿选了不存在的拆句版本也收 —— 存一个悬空引用,上生产后聊天站取不到",
+  "script": "管理后台/tests/e2e/test_entity_flow.py",
+  "改坏": "聊天助手草稿选了不存在的实体识别版本也收 —— 存一个悬空引用,上生产后聊天站取不到",
   "file": [
    {
     "path": "管理后台/services/api/app/chat_assistants_api.py",
-    "old": "            if sv and not c.execute(text(\"select 1 from split_dict_versions where project_id=:p and id=:i\"),",
-    "new": "            if False and not c.execute(text(\"select 1 from split_dict_versions where project_id=:p and id=:i\"),"
+    "old": "            if sv and not c.execute(text(\"select 1 from entity_dict_versions where project_id=:p and id=:i\"),",
+    "new": "            if False and not c.execute(text(\"select 1 from entity_dict_versions where project_id=:p and id=:i\"),"
    }
   ],
-  "预期红": "⑥ 选了不存在的拆句版本 → 422 REF_NOT_FOUND"
+  "预期红": "⑥ 选了不存在的实体识别版本 → 422 REF_NOT_FOUND"
  },
  {
-  "script": "管理后台/tests/e2e/test_split_flow.py",
-  "改坏": "生产配置不给 split_version_id —— 聊天站分不清「没挂拆句」和「后台契约没同步」",
+  "script": "管理后台/tests/e2e/test_entity_flow.py",
+  "改坏": "生产配置不给 entity_version_id —— 聊天站分不清「没挂实体识别」和「后台契约没同步」",
   "file": [
    {
     "path": "管理后台/services/api/app/chat_assistants_api.py",
-    "old": "            \"split_version_id\": v[\"split_version_id\"],\n",
+    "old": "            \"entity_version_id\": v[\"entity_version_id\"],\n",
     "new": ""
    }
   ],
-  "预期红": "⑥ 选「拆句版本」→ 出版本 → 上生产 → 生产配置给的 split_version_id 就是这一版(聊天站拿这个键)"
+  "预期红": "⑥ 选「实体识别版本」→ 出版本 → 上生产 → 生产配置给的 entity_version_id 就是这一版(聊天站拿这个键)"
  },
  {
   "script": "backend/glossary_client_check.py",
-  "改坏": "拆句显式 null 也当成代码默认 —— 后台明说「不拆」而聊天站照拆",
+  "改坏": "实体识别显式 null 也当成代码默认 —— 后台明说「不拆」而聊天站照拆",
   "file": [
    {
     "path": "backend/glossary_client.py",
-    "old": "    if 态 == \"没挂\":\n        return dict(底, 配置=None, 来源=\"不拆句\")",
+    "old": "    if 态 == \"没挂\":\n        return dict(底, 配置=None, 来源=\"不实体识别\")",
     "new": "    if 态 == \"没挂\":\n        return 底"
    }
   ],
-  "预期红": "拆句:显式 null → 不拆句(配置=None),不是代码默认"
+  "预期红": "实体识别:显式 null → 不实体识别(配置=None),不是代码默认"
  },
  {
   "script": "管理后台/tests/orchestration/test_glossary.py",
