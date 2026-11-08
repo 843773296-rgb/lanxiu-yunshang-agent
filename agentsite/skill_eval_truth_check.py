@@ -330,6 +330,29 @@ _严度用了 = any(isinstance(_n, ast.Call) and isinstance(_n.func, ast.Name)
               and _n.func.id == "严度差异" for _n in ast.walk(_main))
 ck("接线:对比两版那一处真的在比判严度(**判据绿而屏幕上没有,等于没做**)", _严度用了, True)
 
+# ── 接线 ②之二:**判严度要递给 `rounds.报()`,不然判定那一行照旧不看尺子** ──────
+# 这是第三层:上面那条只验到「屏幕上印出了判严度」,而**报告最后那句「判定:进步 / 退步」
+# 是 `rounds.报()` 打的**,它不看判严度就会和上面那句自相矛盾 ——
+# 2026-11-08 五轮那次正是如此:一行写「两版准确率不可直接比」、另一行写「判定:进步」。
+# > 一份「印出了限定」的报告,和一份「限定真的管住了结论」的报告,
+# > **在屏幕上都能看到那句限定** —— 差别只在最后那一行听不听它的。
+_报调用 = [_n for _n in ast.walk(_main)
+          if isinstance(_n, ast.Call) and isinstance(_n.func, ast.Attribute)
+          and _n.func.attr == "报"]
+ck("样本量:找到几处 rounds.报() 调用", len(_报调用), 1)
+_递了 = [_k.arg for _c in _报调用 for _k in _c.keywords]
+_少 = [x for x in ("本轮遍数", "基线遍数") if x not in _递了]
+ck("接线:判严度递给了 rounds.报()(光印在屏幕上不算 —— 判定那一行得听它的)",
+   _少, [])
+# **两个 None 不许合并**:本轮遍数永远有;基线遍数为 None 才是「老基线没这一栏」。
+# 合并了就把「不知道」说成「一样」—— 正是这一整天在修的那类毛病。
+_基线遍数常量 = [_n for _n in ast.walk(_main)
+               if isinstance(_n, ast.Assign)
+               and any(isinstance(_t, ast.Name) and _t.id == "基线遍数" for _t in _n.targets)
+               and isinstance(_n.value, ast.Constant) and isinstance(_n.value.value, int)]
+ck("基线遍数不许兜一个默认数(兜了就把「不知道」说成一个确凿的遍数)",
+   _基线遍数常量, [])
+
 # ── 接线 ③:存基线那一处真的**去问**术语实况,不是写死的 ────────────────
 # 写死一个「没接」会让接了术语之后的基线照旧记「没接」——
 # **而它和真的没接,在基线文件里长得一模一样。**
