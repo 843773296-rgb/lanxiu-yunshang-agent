@@ -3,7 +3,7 @@
  "技能档": "own",
  "来路": {
   "供应商": "claude",
-  "模型": "claude-haiku-4-5",
+  "模型": "claude-sonnet-5",
   "跑于": "2026-11-08 08:32:23",
   "代码": "845502f2+dirty",
   "方案": null,
@@ -15,7 +15,9 @@
    "build_logic_fp": "8d9bb8420c3eba55",
    "build_logic_n": "161",
    "build_fp_ver": "2ee45596eda6"
-  }
+  },
+  "模型_原记录": "claude-haiku-4-5",
+  "模型来路": "⚠️ 事后订正(2026-11-08):存的时候这一栏写的是 claude-haiku-4-5 —— 那是 `evalrec.模型()` 读 ANTHROPIC_MODEL 的默认值,而这一轮**没设那个环境变量**;真跑的是 claude-sonnet-5 —— `skill_eval` 把 `sdk.default_model_id()`(它的默认是 sonnet-5)拆开**显式传给** `sdk.run(model_name=...)`。**两个默认值不同,所以分叉。**依据不是代码推理,是记录仪:.feynman 记录仪在 2026-11-08 06:07–08:32 窗口里 4434 次调用全是 claude-sonnet-5、零次 haiku。原值留在 `模型_原记录`。修法已落地:`skill_eval.来路章()` 以这一轮真传的那个为准。"
  },
  "重复遍数": 5,
  "没测到": [],

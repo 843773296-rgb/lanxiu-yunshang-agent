@@ -16244,5 +16244,113 @@
    }
   ],
   "预期红": "路由:按路由走 → 术语被路由成只占位(不带宋锦定义),客户名那句提示进了段"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "对比那行又自己造一句话,不转述采集点存盘的那句「说明」——它只会说「接线可能断了」这一种原因,而存盘那句写着两种(① 这套评测的角色本来就不走那条路 = 预期;② 该走而没走到 = 接线断了),于是报告指着一条根本没坏的线。11-08 真发生过,被骗到的是写它的人:照着它查了一小时,还差点去补一条早就存在的判据",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "            if 说:\n                return 说",
+    "new": "            if 说:\n                return \"接了,而那一轮没走到装配那条路(接线可能断了)\""
+   }
+  ],
+  "预期红": "报告那句转述存盘的「说明」(喂甲就该出现甲)"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "「变了」那一支把**这一轮**的状态当老基线传进去 —— 于是拿新的那句冒充老的,而那一行照旧印得通顺(这一刀砍在接线上,不是砍在纯函数里:`_说术` 本身一个字没改,只是喂错了参数)",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "两版的上下文术语不同({_说术(_老态, 老术)}",
+    "new": "两版的上下文术语不同({_说术(术语状态, 老术)}"
+   }
+  ],
+  "预期红": "「变了」那一支:老的那句来自老基线自己的说明,不拿这一轮的顶替"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "存盘那一行又把「逐轮」丢掉(只写汇总 hits/runs)—— `got_all` 本来就在内存里,丢了它导出题集那边就印不出「哪一遍错的」,而「三个 ✅」和「❌❌✅」在一个 ✅ 上分不开",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "wobbly=wobbly,\n                逐轮=list(got_all))",
+    "new": "wobbly=wobbly)"
+   }
+  ],
+  "预期红": "存盘那一行带「逐轮」"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把「逐轮」从拷贝改成**引用**原列表(`list(got_all)` → `got_all`)——外面那个循环复用它,于是下一道题会把上一道题的存盘数据一起改掉,**而文件里那一栏照旧有值、长度也对**,只是内容变成了别人的",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "逐轮=list(got_all))",
+    "new": "逐轮=got_all)"
+   }
+  ],
+  "预期红": "逐轮是拷贝,不是原列表的引用"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把 main 里那句 `行 = 一行(...)` 换成调另一个名字 —— 接线断开:判据照旧能把 `一行()` 这个纯函数验得全绿,**而入口压根没在用它**(11-04 栽过这一层:四条用例全打在纯函数上,关掉调用点照旧全绿)",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "        行 = 一行(c, want, got_all)",
+    "new": "        行 = _不是那个一行_(c, want, got_all)"
+   }
+  ],
+  "预期红": "接线:main 真的用 一行() 攒那一行(不是另拼一份 dict)"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "咬合键A·把模型闸的判断反过来(设了模型反而拒跑、没设反而放行)",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "    if (环境里的模型 or \"\").strip():\n        return None",
+    "new": "    if not (环境里的模型 or \"\").strip():\n        return None"
+   }
+  ],
+  "预期红": "设了 → 放行(返回 None)"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "咬合键B·把传给模型闸的实参换成写死的模型名 —— 这道闸从此**永远放行**,而「main 调了模型闸」那条判据照旧是绿的(破坏点打在实参上,不是打在调用上)",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "模型闸(os.environ.get(\"ANTHROPIC_MODEL\"))",
+    "new": "模型闸(\"claude-sonnet-5\")"
+   }
+  ],
+  "预期红": "接线②:传给它的是真的环境变量,不是写死的值(写死就永远放行)"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "咬合键C·存基线那一处改回直接盖 evalrec 的章 —— 模型那一栏又变成环境变量的默认,而 v4→v5 就是这么悄悄换掉模型、报告照旧说「同模型」的",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "来路=来路章(_er.盖章(), _mid), 重复遍数=轮数,",
+    "new": "来路=_er.盖章(), 重复遍数=轮数,"
+   }
+  ],
+  "预期红": "接线:存基线那一处真的用 来路章() 盖(不是直接盖 evalrec 的章)"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "咬合键D·来路章拿到了这一轮真传的模型却**不覆盖**模型那一栏(只覆盖供应商)——文件里那一栏照旧「有值」,只是记的是环境默认",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "            出[\"供应商\"], 出[\"模型\"] = 供, 模",
+    "new": "            出[\"供应商\"] = 供"
+   }
+  ],
+  "预期红": "给了这一轮真传的模型 → 盖那个,不盖环境默认"
  }
 ]
