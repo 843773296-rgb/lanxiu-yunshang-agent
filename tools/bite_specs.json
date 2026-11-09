@@ -16427,12 +16427,12 @@
  },
  {
   "script": "管理后台/tests/orchestration/test_intent.py",
-  "改坏": "调用失败抛出去 —— 分类坏了拖垮这一轮回答",
+  "改坏": "调用失败谎报成「判不出」—— 网络 / 额度问题被当成意图说明不好,查错方向",
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/意图.py",
-    "old": "    except Exception as e:                                                 # noqa: BLE001\n        return {",
-    "new": "    except ZeroDivisionError as e:\n        return {"
+    "old": "        return {\"意图\": None, \"态\": \"调用失败\", \"原因\": f\"{type(e).__name__}: {e}\"[:200],",
+    "new": "        return {\"意图\": None, \"态\": \"判不出\", \"原因\": f\"{type(e).__name__}: {e}\"[:200],"
    }
   ],
   "预期红": "③④ 调用失败:抛错不往外抛,态=调用失败、原因带错误类型"
