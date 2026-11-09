@@ -937,6 +937,13 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "查询或重试,不能重复生成多条」)—— 挂一轮的那种靠 (项目, 那一轮, 工号) 唯一,而独立建议那一列是空的,PG 把 NULL 当互不相同,防不了"],
       依赖=["samples"]),
     # ②''' 告警(DF-04 第二步,2026-11-04;Dify 对标 §8.1 / C16;用户拍「连续 N 次越线才报、连续 M 次正常才恢复、样本不够那轮不算」)
+    E("chat_handoffs", "聊天转人工", 项目级, 可改,
+      ["chat_trace_ref", "session_ref", "asker_staff_code", "asker_snapshot", "question_note", "intent_name", "reason_note",
+       "status", "handled_by", "handled_at", "note"],
+      ["店长助手这一轮不让模型答、交给人处理时落一条;**不塞进 human_requests** —— 那张表必须属于一次工作流运行,聊天转人工不是",
+       "同一轮只一条(项目, chat_trace_ref 唯一):聊天站重试不会变成两条待办",
+       "question_note 是店长原话:列表不给,详情只给有「受理意见」的人(处理这件事的人)",
+       "状态:待处理 → 已处理;只能处理一次(If-Match + 409)"]),
     E("alert_rules", "告警规则", 项目级, 可改,
       ["name", "filter_snapshot", "metric_code", "direction_code", "threshold_value", "window_minutes", "min_sample_count",
        "trigger_count", "recover_count", "dedupe_minutes", "owner", "paused_at",

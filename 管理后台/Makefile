@@ -420,7 +420,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_exec_mode_flow.py test_retrieval_runs_flow.py \
           test_raw_log_flow.py test_chat_assistant_flow.py \
           test_access_api_flow.py test_opinions_flow.py \
-          test_opinions_migration_with_data.py test_monitoring_flow.py test_alerts_flow.py \
+          test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
           test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py
 
@@ -555,6 +555,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_entity_flow.py
 	@./.venv/bin/python tests/e2e/test_route_flow.py
 	@./.venv/bin/python tests/e2e/test_intent_flow.py
+	@./.venv/bin/python tests/e2e/test_chat_handoff_flow.py
 	@./.venv/bin/python tests/e2e/test_fingerprint_ratchet.py
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py
 	@echo ""
@@ -840,6 +841,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_intent_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_intent_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_intent_flow.log
+	@./.venv/bin/python tests/e2e/test_chat_handoff_flow.py > /tmp/prog-test_chat_handoff_flow.log 2>&1 \
+	  || { echo "  ❌ test_chat_handoff_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_chat_handoff_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_chat_handoff_flow.log
 	@./.venv/bin/python tests/e2e/test_fingerprint_ratchet.py > /tmp/prog-test_fingerprint_ratchet.log 2>&1 \
 	  || { echo "  ❌ test_fingerprint_ratchet 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_fingerprint_ratchet.log; exit 1; }

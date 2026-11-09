@@ -299,6 +299,7 @@ _额外唯一 = {
     "access_keys": [("project_id", "lookup_hash")],
     # 意见单:一个人对一轮只一条 —— 两条的话「他到底觉得有没有帮助」各说各的,有帮助比例的分母也被撑大
     # (独立建议 chat_trace_ref 为空,PG 把 NULL 当互不相同 —— 它的防重要靠提交幂等键,做独立建议入口时一起加)
+    "chat_handoffs": [("project_id", "chat_trace_ref")],
     "opinions": [("project_id", "chat_trace_ref", "asker_staff_code"), ("project_id", "asker_staff_code", "submit_ref")],
     # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
     "trace_incidents": [("project_id", "trace_id")],
@@ -364,6 +365,10 @@ _额外检查 = {
         ("ck_opinion_events_action", "action_code in ('开始核实', '请求补充', '关联问题', '答复', '不采纳', '重开', '提的人补充', '提为样本', '店长通过', '店长退回')"),
         # 不采纳 / 重开 / 请求补充 / 答复 一定要写为什么(给提的人看的那句话也在这里)
         ("ck_opinion_events_note", "action_code in ('开始核实', '关联问题', '提的人补充', '店长通过') or note is not null"),
+    ],
+    "chat_handoffs": [
+        ("ck_chat_handoffs_status", "status in ('待处理', '已处理')"),
+        ("ck_chat_handoffs_handled", "(status = '已处理') = (handled_at is not null)"),
     ],
     "opinions": [
         ("ck_opinions_source", "source in ('问答', '执行失败', '独立建议')"),

@@ -287,6 +287,10 @@ export const ENDPOINTS = [
   { method: "GET", path: "/runs/{id}/events", summary: "对外:订阅进度(按事件序号续传)", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/runs/{id}/cancel", summary: "对外:取消这把密钥发起的运行", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/runs/{id}", summary: "对外:查这把密钥发起的那次运行", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/chat-handoffs", summary: "聊天站建一条转人工待办", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/chat-handoffs", summary: "聊天转人工列表(不含原话)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/chat-handoffs/{id}", summary: "一条聊天转人工(原话要「受理意见」)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/chat-handoffs/{id}/resolve", summary: "处理一条聊天转人工(只能处理一次)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/opinions", summary: "聊天站转来一条意见(有帮助 / 有问题,记提问人工号)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/opinions/mine", summary: "我的意见(提的人看自己的意见和进度)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/monitoring", summary: "监测:可用性 / 业务办成 / 性能 / 成本 + 按应用×版本分组", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -323,4 +327,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 235 条接口 · 24 条异步 · 32 条要幂等键 · 28 条要 If-Match */
+/** 共 239 条接口 · 24 条异步 · 32 条要幂等键 · 29 条要 If-Match */

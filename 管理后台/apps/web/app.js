@@ -5617,15 +5617,17 @@ async function 页_人工待办() {
       <div class="sub">${md(`不可逆写入要人点头。**列表上没有批准按钮,这是有意的。**`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
-  let d;
-  try { d = await 请求(`${P()}/human-requests`); }
+  let d, 转;
+  try { [d, 转] = await Promise.all([请求(`${P()}/human-requests`), 请求(`${P()}/chat-handoffs?page_size=100`)]); }
   catch (e) { const s = 错误块(e, 页_人工待办); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 转栏 = 画_聊天转人工(转.items);
   if (!d.items.length) {
-    $("#main").innerHTML = 头 + 状态("", "没有待办",
+    $("#main").innerHTML = 头 + 转栏 + 状态("", "没有待批准的写入",
       "Agent 请求不可逆写入时会在这里出现。").html;
+    挂_聊天转人工();
     return;
   }
-  $("#main").innerHTML = 头 + `<table><thead><tr>
+  $("#main").innerHTML = 头 + 转栏 + `<table><thead><tr>
       <th>要做什么</th><th>状态</th><th>截止</th><th>你能处理吗</th><th></th>
     </tr></thead><tbody>`
     + d.items.map((r) => `<tr>
@@ -5648,6 +5650,43 @@ async function 页_人工待办() {
     + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
   $("#main").querySelectorAll("[data-hr]").forEach((b) => {
     b.onclick = () => { location.hash = "#/human/" + encodeURIComponent(b.dataset.hr); };
+  });
+  挂_聊天转人工();
+}
+
+/* 聊天转人工(11-09):店长助手这一轮交给人处理的问题。列表不带原话,有受理权限的人点开才看;只能处理一次。 */
+function 画_聊天转人工(行们) {
+  if (!行们.length) return `<h3>聊天转人工</h3><div class="note">没有店长助手转来的问题。</div>`;
+  return `<h3>聊天转人工</h3><table><thead><tr><th>谁问的</th><th>意图</th><th>为什么转人工</th><th>状态</th><th>什么时候</th><th></th></tr></thead><tbody>`
+    + 行们.map((r) => { const 人 = r.asker_snapshot || {}; return `<tr>
+        <td>${esc(人["姓名"] || 人["工号"] || "")}<div class="k">${esc(人["门店"] || "")}</div></td>
+        <td>${esc(r.intent_name || "判不出")}</td>
+        <td>${esc(r.reason_note || "")}</td>
+        <td><span class="pill ${r.status === "待处理" ? "warn" : "ok"}">${esc(r.status)}</span></td>
+        <td class="k">${esc(String(r.created_at || "").slice(5, 16).replace("T", " "))}</td>
+        <td><button data-ho="${esc(r.id)}">看详情</button></td></tr>`; }).join("")
+    + `</tbody></table>`;
+}
+function 挂_聊天转人工() {
+  $("#main").querySelectorAll("[data-ho]").forEach((b) => { b.onclick = 只跑一次(() => 开_聊天转人工(b.dataset.ho)); });
+}
+async function 开_聊天转人工(编号) {
+  let r;
+  try { r = await 请求(`${P()}/chat-handoffs/${encodeURIComponent(编号)}`); }
+  catch (e) { 提示("打不开这条转人工", `<div>${esc(e.message || String(e))}</div>`); return; }
+  const 原话 = r["原话看得到吗"] ? `<div class="k">店长原话</div><div>${esc(r.question_note || "")}</div>`
+    : `<div class="note">你没有受理权限,看不到店长原话。</div>`;
+  const 已办 = r.status === "已处理" ? `<div class="k">处理说明</div><div>${esc(r.note || "")}</div>` : "";
+  提示(`转人工 ${r.id}`, `${原话}<div class="k">为什么转人工</div><div>${esc(r.reason_note || "")}</div>${已办}
+    ${r["还能处理吗"] ? `<div class="acts" style="margin-top:12px"><button id="ho-do">标记已处理</button></div>` : ""}`);
+  const 钮 = $("#ho-do");
+  if (钮) 钮.onclick = 只跑一次(async () => {
+    const 说明 = await 问一句("标记已处理", "写一句怎么处理的,之后不能再改。", { 输入: "比如 已电话联系客户", 必填: true, 确定: "标记已处理" });
+    if (!说明) return;
+    try {
+      await 请求(`${P()}/chat-handoffs/${encodeURIComponent(编号)}/resolve`, { method: "POST", headers: { "If-Match": String(r.revision) }, body: JSON.stringify({ 说明 }) });
+      await 页_人工待办(); 轻提示("已标记处理");
+    } catch (e) { 提示("没处理成功", `<div>${esc(e.message || String(e))}</div>`); }
   });
 }
 
