@@ -15651,8 +15651,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "    if 后台配置 and kind == \"task\" and not _研判:\n        state[\"术语\"] = _术语状态(\"task\")",
-    "new": "    if 后台配置 and not _研判:\n        state[\"术语\"] = _术语状态(\"task\")"
+    "old": "    if 后台配置 and kind == \"task\" and not _研判:\n        # 11-09 第三期",
+    "new": "    if 后台配置 and not _研判:\n        # 11-09 第三期"
    }
   ],
   "预期红": "⑥ 接线:sdk.run 只在「后台配置 + task」那条路上"
@@ -16448,5 +16448,41 @@
    }
   ],
   "预期红": "③ 判不出:答了清单外的名字,原因里点名"
+ },
+ {
+  "script": "agentsite/glossary_inject_check.py",
+  "改坏": "没挂意图版本也分类 —— 每轮白花一次模型调用",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        if _意配:          # 这一版",
+    "new": "        if True:          # 这一版"
+   }
+  ],
+  "预期红": "⑧ 接线:挂了意图版本才分类(判意图 在 if _意配 底下)"
+ },
+ {
+  "script": "agentsite/glossary_inject_check.py",
+  "改坏": "分类直接在主线程调 —— 一次请求堵住所有会话",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "            _意结果 = await asyncio.to_thread(_gc意.判意图, prompt, _意配)",
+    "new": "            _意结果 = _gc意.判意图(prompt, _意配)"
+   }
+  ],
+  "预期红": "⑧ 接线:sdk.run 真的调了 判意图(放线程里,不堵住别的会话)"
+ },
+ {
+  "script": "backend/glossary_client_check.py",
+  "改坏": "这一轮意图不交给路由 —— 按意图配的规则永远不生效",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "状态.get(\"这一轮意图\"), (规则 or {}).get(\"提醒\"))",
+    "new": "None, (规则 or {}).get(\"提醒\"))"
+   }
+  ],
+  "预期红": "意图:判出的意图交给路由 → 按意图的规则生效"
  }
 ]

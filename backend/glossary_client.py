@@ -156,11 +156,15 @@ def 同步(角色):
     except Exception as e:                                                   # noqa: BLE001
         路 = dict(态="取不到", 说明=f"同步路由出错({type(e).__name__})—— 全走默认路由", 配置=None, 来源="默认路由")
     try:
+        意 = 同步意图(角色)                 # 11-09 第三期:意图版本同一时刻同步;出错不许连累术语
+    except Exception as e:                                                   # noqa: BLE001
+        意 = dict(态="取不到", 说明=f"同步意图出错({type(e).__name__})—— 不做意图分类", 配置=None, 来源="不分类")
+    try:
         拆 = 同步实体识别(角色)                 # 11-08:实体词典跟术语同一时刻同步;出错不许连累术语
     except Exception as e:                                                   # noqa: BLE001
         拆 = dict(态="取不到", 说明=f"同步实体识别出错({type(e).__name__})—— 用代码默认三本", 配置=默认实体配置, 来源="代码默认")
     底 = dict(角色=角色, 态=态, 说明=说, 版本=None, 版本id=None, 内容哈希=None,
-              术语=[], 条数=0, 来源="没有", 取到于=None, 实体识别=拆, 路由=路)
+              术语=[], 条数=0, 来源="没有", 取到于=None, 实体识别=拆, 路由=路, 意图=意)
     if 态 in ("没配", "没挂", "没配助手"):
         return 底                       # 三种都不该带术语、都不该告警,而 `态` 把它们分开了
     if 态 in ("取不到", "字段还没上"):
@@ -362,6 +366,66 @@ def 同步路由(角色):
                 来源="后台", 说明=f"路由 {版.get('版本')}(哈希 {版.get('内容哈希')})")
 
 
+# ── 意图识别(11-09 第三期)—— 同一套三态,读生产配置里的 intent_version_id;配置 = None 表示这一轮不做意图分类
+_意图落盘 = os.path.join(HERE, ".intent_last.json")
+
+
+def 同步意图(角色):
+    """启动时调一次。→ {态, 说明, 版本, 版本id, 内容哈希, 配置, 来源}。配置 = None 表示「不做意图分类」。"""
+    底 = dict(态="没配", 说明="", 版本=None, 版本id=None, 内容哈希=None, 配置=None, 来源="不分类")
+    cfg = _tc.配置()
+    if not cfg:
+        return dict(底, 说明="没配管理后台地址 —— 不做意图分类")
+    码, 体 = _tc._curl("GET", f"/chat-assistants/by-role/{角色}/production", cfg)
+    try:
+        with open(_意图落盘, encoding="utf-8") as f:
+            缓存 = json.load(f)
+    except Exception:                                                        # noqa: BLE001
+        缓存 = None
+    if 码 == "404":
+        return dict(底, 态="没配助手", 说明=f"后台没给角色「{角色}」配聊天助手 —— 不做意图分类")
+    if 码 != "200" or not isinstance(体, dict) or "intent_version_id" not in 体:
+        态 = "取不到" if 码 != "200" or not isinstance(体, dict) else "字段还没上"
+        if 缓存 and 缓存.get("配置") is not None:
+            return dict(底, 态=态, 版本=缓存.get("版本"), 版本id=缓存.get("版本id"), 内容哈希=缓存.get("内容哈希"),
+                        配置=缓存["配置"], 来源="缓存", 说明=f"{态}(码={码});用上一次缓存的意图 {缓存.get('版本')}")
+        return dict(底, 态=态, 说明=f"{态}(码={码});本地也没有缓存 —— 不做意图分类")
+    vid = 体.get("intent_version_id")
+    if vid is None:
+        return dict(底, 态="没挂", 说明="这一版聊天助手没挂意图(显式 null)—— 不做意图分类")
+    码2, 版 = _tc._curl("GET", f"/intent-versions/{vid}", cfg)
+    if 码2 != "200" or not isinstance(版, dict) or not isinstance(版.get("配置"), dict):
+        if 缓存 and 缓存.get("版本id") == vid:
+            return dict(底, 态="取不到", 版本=缓存.get("版本"), 版本id=vid, 内容哈希=缓存.get("内容哈希"), 配置=缓存["配置"],
+                        来源="缓存", 说明=f"取意图版本 {vid} 拿不到 200(码={码2});用上一次缓存的同一版")
+        return dict(底, 态="取不到", 说明=f"取意图版本 {vid} 拿不到 200(码={码2});本地也没有缓存 —— 不做意图分类")
+    if not 缓存 or 缓存.get("内容哈希") != 版.get("内容哈希"):     # 比内容哈希,不比版本号(文件头 ①)
+        try:
+            with open(_意图落盘, "w", encoding="utf-8") as f:
+                json.dump({"版本id": 版.get("id"), "版本": 版.get("版本"), "内容哈希": 版.get("内容哈希"), "配置": 版.get("配置")},
+                          f, ensure_ascii=False)
+        except Exception:                                                    # noqa: BLE001
+            pass
+    return dict(底, 态="有", 版本=版.get("版本"), 版本id=版.get("id"), 内容哈希=版.get("内容哈希"), 配置=版.get("配置"),
+                来源="后台", 说明=f"意图 {版.get('版本')}(哈希 {版.get('内容哈希')})")
+
+
+def 判意图(文本, 配置):
+    """这一轮的意图分类:runtime/意图.分类 + 走 agent/v1.py::call(全项目唯一发请求口,记录仪包在那层)。永不抛错。"""
+    import importlib.util as u
+    sp = u.spec_from_file_location("意图纯函数", os.path.join(os.path.dirname(_纯函数), "意图.py"))
+    I = u.module_from_spec(sp)
+    sp.loader.exec_module(I)
+
+    def 调模型(system, user, 模型):
+        import v1
+        pv = dict(v1.provider(), model=模型)
+        r = v1.call(pv, dict(model=模型, max_tokens=80, system=system, messages=[{"role": "user", "content": user}]),
+                    retries=2, purpose="意图分类", gen="V3")
+        return "".join(b.get("text", "") for b in r["content"] if b.get("type") == "text")
+    return I.分类(文本, 配置, 调模型)
+
+
 def 这一段(文本, 状态, 名单表=None):
     """这次要塞给模型的那一段。**调后台那份纯函数**,不另写(见文件头 ④)。
 
@@ -382,7 +446,8 @@ def 这一段(文本, 状态, 名单表=None):
     拆 = T.识别实体(文本, 术语们, 名, 规则)
     # 第二期:识别结果交给查询路由决定带哪些定义、给模型哪些提示(没挂路由 = 默认路由 = 第一期行为)
     路态 = 状态.get("路由")
-    走 = T.应用路由(拆, (路态 or {}).get("配置") if isinstance(路态, dict) else None, None, (规则 or {}).get("提醒"))
+    # 第三期:这一轮判出的意图由 sdk.run 放在状态顶层(只加顶层键,状态是浅拷贝);判不出 / 没分类 = None,按意图的规则不生效
+    走 = T.应用路由(拆, (路态 or {}).get("配置") if isinstance(路态, dict) else None, 状态.get("这一轮意图"), (规则 or {}).get("提醒"))
     命 = 走["术语命中"]
     return T.上下文段(命, 术语们, 规则, 走["提示们"]), 命
 

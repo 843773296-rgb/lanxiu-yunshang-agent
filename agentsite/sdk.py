@@ -1152,7 +1152,14 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 只有读后台生产配置的那条路(店长助手 task + 后台配置)才有「这一版挂了哪版术语」可问;别的角色后台没配助手 → 不带。
     # 同步一次放进程缓存(= 启动时同步),每一轮按这一轮的话现匹配(guards.on_prompt 里)
     if 后台配置 and kind == "task" and not _研判:
-        state["术语"] = _术语状态("task")
+        # 11-09 第三期:**浅拷贝、只往顶层加键** —— _术语状态 是进程共享的缓存,改它或它的嵌套值会串到别的会话
+        state["术语"] = dict(_术语状态("task"))
+        _意配 = (state["术语"].get("意图") or {}).get("配置")
+        if _意配:          # 这一版聊天助手挂了意图版本才分类;没挂什么都不发生。判不出 / 调用失败:交给模型照答(转人工没接上)
+            import glossary_client as _gc意
+            _意结果 = await asyncio.to_thread(_gc意.判意图, prompt, _意配)
+            state["意图结果"] = _意结果
+            state["术语"]["这一轮意图"] = _意结果.get("意图")
     if images:
         state["带图"] = True          # 体检 g18「看图直接下形制结论」只在带图的那一轮生效
     # ── 跨轮业务状态(外部审阅 10-03 §4.2):续聊时把**当前方案 / 锚点 / 待消费的压缩标记**恢复回来 ──
@@ -1611,6 +1618,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                     if _助手 else None),
             # 术语(11-06):这一轮术语从哪来(那句话每种情形不同)、带了哪几条 —— 只有店长助手那条路上有;别的路上是 None
             术语=(dict(来源=state.get("术语来源"), 带了=state.get("术语带了")) if state.get("术语") else None),
+            意图=state.get("意图结果"),      # 11-09 第三期:{意图, 态(判出 / 判不出 / 调用失败), 原因, 用时ms, 模型};没挂版本 = None
             会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
             环境故障=_故障,
             # 难题分流看这两项(model_route.该升级吗):报过错的工具、调成功过的工具 —— 报错后同一个工具又调成功了算它自己纠正

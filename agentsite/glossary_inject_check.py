@@ -91,11 +91,19 @@ def main():
         _gc.同步 = 原
         sdk._术语缓存.clear()
     源 = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
-    行 = [l for l in 源.split("\n") if 'state["术语"] = _术语状态(' in l]
-    i = 源.find('state["术语"] = _术语状态(')
+    行 = [l for l in 源.split("\n") if 'state["术语"] = dict(_术语状态(' in l]
+    i = 源.find('state["术语"] = dict(_术语状态(')
     条件 = 源[源.rfind("\n    if ", 0, i):i]
     ck("⑥ 接线:sdk.run 只在「后台配置 + task」那条路上把术语放进 state",
        len(行) == 1 and "后台配置" in 条件 and 'kind == "task"' in 条件, (行, 条件[:200]))
+    # ⑧ 第三期:浅拷贝防串台;挂了意图版本才分类,结果进返回值(走语法树,别搜字符串 —— 注释会顶住判据)
+    import ast as _ast
+    树 = _ast.parse(源)
+    调 = [x for x in _ast.walk(树) if isinstance(x, _ast.Call) and isinstance(x.func, _ast.Attribute) and x.func.attr == "to_thread"
+         and len(x.args) >= 2 and isinstance(x.args[0], _ast.Attribute) and x.args[0].attr == "判意图"]
+    ck("⑧ 接线:sdk.run 真的调了 判意图(放线程里,不堵住别的会话)", len(调) == 1, len(调))
+    ck("⑧ 接线:挂了意图版本才分类(判意图 在 if _意配 底下)", any(isinstance(n, _ast.If) and getattr(n.test, "id", "") == "_意配"
+       and any(c in _ast.walk(n) for c in 调) for n in _ast.walk(树)), False if not 调 else "没找到")
     print()
     if 坏:
         print(f"{R}❌ {坏} 条不过{D}")
