@@ -68,6 +68,9 @@ def 几条(xs, 上限=4):
      "两处白名单一字不差(源码注释写着必须同时改)"),
     ("往两处白名单都加上「没跑成(找不到脚本)」(于是没跑成的那一晚会被算成跑完了)",
      "「找不到脚本」不算「跑完了」"),
+    ("把 `额外参数` 里研判流水线那条 `--做` 删掉(它不带这个开关只印一行用法提示然后退 0,"
+     "于是每晚被记成「过」,而一道题都没跑)",
+     "有动作开关的套都配上了参数"),
 ]
 
 sp = _u.spec_from_file_location("nightly_eval", _源)
@@ -91,6 +94,62 @@ def 路径(名):
 
 缺 = [(f, 路径(f)) for f in 全部套 if not os.path.exists(os.path.join(ROOT, 路径(f)))]
 ck("每个套的脚本都找得到", 几条(f"{f} → {p}" for f, p in 缺) or "都在", "都在")
+
+
+# ── 有动作开关的套,必须配上那个开关 ──────────────────────────────────
+# ⚠️⚠️ **2026-11-09 全项目快照起跑前的通路验证当场抓到的:**
+# `triage_pipeline_eval.py` 不带 `--做` 只会印一行用法提示然后**退 0**,
+# 于是 `归类()` 把它记成**「过」**,而它**一道题都没跑**。
+#
+# > 一套「真跑完 5 道题全过」和一套「因为少了一个开关而只印了用法提示」,
+# > **在报告的「过」这个字上长得一模一样** —— 后者连「没跑」都不会说。
+#
+# 这套在夜跑里**一直是这么跑的**,而每晚的报告都把它算成跑完了。
+# 判据查**结构**(argparse 里的 store_true 动作开关),不枚举开关名字 ——
+# 「--做 / --run / --真跑」是生成式的,词表永远追不上。
+不用配参数 = {
+    # 套名: 为什么(它不加这个开关**也真跑**,开关只是可选增强)。
+    # 空着是最好的状态 —— 这是**豁免名单,只许少不许多**:
+    # 加一行就是声明「这套不配参数也不会跑空」,而那句声明以后没人会回来复查。
+}
+
+
+def _动作开关(套):
+    """这个套的 argparse 里有哪些 store_true 开关。空列表 = 它不需要开关就跑。"""
+    q = os.path.join(ROOT, 路径(套))
+    if not os.path.exists(q):
+        return []
+    try:
+        t = ast.parse(io.open(q, encoding="utf-8").read(), q)
+    except SyntaxError:
+        return []
+    出 = []
+    for x in ast.walk(t):
+        if (isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute)
+                and x.func.attr == "add_argument" and x.args
+                and isinstance(x.args[0], ast.Constant)
+                and str(x.args[0].value).startswith("--")
+                and any(k.arg == "action" and getattr(k.value, "value", None) == "store_true"
+                        for k in x.keywords)):
+            出.append(str(x.args[0].value))
+    return 出
+
+
+_带开关 = {f: _动作开关(f) for f in 全部套}
+_漏配 = [(f, k) for f, k in _带开关.items()
+         if k and not M._参数(f) and f not in 不用配参数]
+print(f"     (这一条扫了 {len(全部套)} 个套的 argparse;"
+      f"{sum(1 for k in _带开关.values() if k)} 个套带动作开关)")
+ck("有动作开关的套都配上了参数(不配 = 它每晚跑空,而报告写「过」)",
+   几条(f"{f} 有 {'、'.join(k)},而 `额外参数` 里一个都没配" for f, k in _漏配) or "都配了",
+   "都配了")
+
+# 反向检查:豁免不许囤积 —— 一条指着「已经不带开关了」的豁免,既不报错也不生效,
+# 而它会让下一个人以为这件事有人想过。
+_陈 = [f for f in 不用配参数 if f not in 全部套 or not _带开关.get(f)]
+ck("「不用配参数」名单里没有过期的(套没了、或它已经不带开关了)",
+   几条(f"{f} —— {'不在任何一晚的清单里' if f not in 全部套 else '已经不带动作开关了'}"
+       for f in _陈) or "没有过期的", "没有过期的")
 
 # 把「靠映射才找得到的」单独印出来 —— 它们是最容易在搬文件时断掉的那几个
 _映射的 = sorted(M.别处的套)
