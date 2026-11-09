@@ -114,6 +114,7 @@ const 导航 = [
   ["grp", "查询理解"],
   ["#/entities", "实体识别", true, true],
   ["#/routes", "查询路由", true, true],
+  ["#/intents", "意图识别", true, true],
   ["grp", "待办与定时"],
   ["#/human", "人工待办", true, true],
   ["#/schedules", "定时", true, true],
@@ -1160,6 +1161,87 @@ async function 页_路由详情(rid) {
     } catch (e) { const b = e.体 || {}; $("#r-tmsg").textContent = b.message || e.message; }
     $("#r-tgo").disabled = false;
   }
+  画列表(); 画检查(d.检查); 画版本();
+}
+
+async function 页_意图列表() {
+  $("#main").innerHTML = `<div class="crumb">查询理解 / 意图识别</div>
+    <div class="head"><div><h1>意图识别</h1>
+      <div class="sub">${md(`**意图识别**(Intent Recognition):每轮先让最便宜那档模型判一次「店长想干什么」,判出的意图交给查询路由决定去哪。每个意图写清名称、说明、例句 —— 模型就靠这些判。冻结成版本、在聊天助手里选这一版才生效。`)}</div>
+    </div><div class="acts"><button id="in-new" class="pri">新建意图配置</button></div></div>
+    <div id="tbl"><div class="state">加载中…</div></div>`;
+  const 新建 = async () => {
+    const key = await 问一句("新建意图配置", "给它起一个标识:项目内唯一,建好之后不随意改。", { 输入: "比如 store-intents", 确定: "新建", 必填: true });
+    if (!key) return;
+    try { const r = await 请求(`${P()}/intents`, { method: "POST", body: JSON.stringify({ key }) }); location.hash = `#/intent/${encodeURIComponent(r.id)}`; }
+    catch (e) { 报错(e); }
+  };
+  $("#in-new").onclick = 新建;
+  const 画 = async () => {
+    let d;
+    try { d = await 请求(`${P()}/intents`); }
+    catch (e) { const s = 错误块(e, 画); $("#tbl").innerHTML = s.html; s.挂(); return; }
+    const rs = d.items || [];
+    if (!rs.length) {
+      const s = 状态("", "这个项目还没有意图配置", "没有意图配置时,店长助手不做意图分类。", { 文: "新建意图配置", 做: 新建 });
+      $("#tbl").innerHTML = s.html; s.挂(); return;
+    }
+    $("#tbl").innerHTML = `<table><thead><tr><th>标识</th><th>几个意图</th><th>最新冻结版本</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rs.map((r) => `
+        <tr><td class="num">${esc(r.key)}</td><td class="num">${esc(r.本数 ?? 0)}</td>
+          <td>${r.最新冻结版本 ? `<span class="pill ok">${esc(r.最新冻结版本)}</span>` : '<span class="pill none">还没冻结过</span>'}</td>
+          <td class="num">${时间(r.更新时间)}</td><td><a href="#/intent/${encodeURIComponent(r.id)}">打开编辑</a></td></tr>`).join("")}
+      </tbody></table><div class="pager"><span>共 ${rs.length} 份</span></div>`;
+  };
+  await 画();
+}
+
+async function 页_意图详情(iid) {
+  $("#main").innerHTML = `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/intents/${encodeURIComponent(iid)}`); }
+  catch (e) { const s = 错误块(e, () => 页_意图详情(iid)); $("#main").innerHTML = s.html; s.挂(); return; }
+  let rev = d.revision, 脏 = false, 版本们 = d.版本 || [], 配 = JSON.parse(JSON.stringify(d.配置 || {}));
+  if (!Array.isArray(配.意图)) 配.意图 = [];
+  const 拆 = (t) => [...new Set(String(t || "").split(/[\n\r]+/).map((x) => x.trim()).filter(Boolean))];
+  $("#main").innerHTML = `<div class="crumb">查询理解 / <a href="#/intents">意图识别</a> / ${esc(d.key)}</div>
+    <div class="head"><div><h1>${esc(d.key)}</h1><div class="sub">草稿 revision <code id="i-rev">${esc(rev)}</code><br>${md(d.note || "")}</div></div></div>
+    <div id="i-check"></div>
+    <div class="card"><div style="font-weight:600;margin-bottom:6px">意图(<span id="i-n"></span> 个)</div>
+      <div class="note">${md(`说明写清「什么情况算这个意图」,例句一行一句 —— 模型靠这些判。分类模型默认 ${d.默认模型 || ""}(最便宜那档)。`)}</div>
+      <div id="i-list"></div><div style="margin-top:10px"><button id="i-add">加一个意图</button></div></div>
+    <div class="card"><div class="footbar"><span class="msg" id="i-fb"></span><button id="i-back">回列表</button><button id="i-save">保存草稿</button><button id="i-freeze" class="pri">冻结版本</button></div></div>
+    <div class="card" id="i-vers"></div>`;
+  const 画列表 = () => { $("#i-n").textContent = String(配.意图.length);
+    $("#i-list").innerHTML = 配.意图.map((x, i) => `<div class="card"><div class="two">
+      <div><label class="f">名称 <span class="req">*</span></label><input class="t" data-i="${i}" data-f="名称" value="${esc(x.名称 || "")}"></div>
+      <div><label class="f">对应技能 <span style="color:var(--ink3)">选填</span></label><input class="t" data-i="${i}" data-f="对应技能" value="${esc(x.对应技能 || "")}"></div></div>
+      <label class="f">说明 <span class="req">*</span></label><textarea class="t" rows="2" data-i="${i}" data-f="说明">${esc(x.说明 || "")}</textarea>
+      <label class="f">例句 <span style="color:var(--ink3)">一行一句</span></label><textarea class="t" rows="3" data-i="${i}" data-f="例句">${esc((x.例句 || []).join("\n"))}</textarea>
+      <div style="margin-top:8px;text-align:right"><button class="danger" data-del="${i}">删掉这个</button></div></div>`).join("")
+      || 状态("", "还没有意图", "点「加一个意图」开始写。").html; };
+  const 画检查 = (检) => { const 阻 = (检 && 检.阻断) || [], 醒 = (检 && 检.提醒) || [];
+    $("#i-check").innerHTML = (阻.length ? `<div class="card bad"><div style="font-weight:600;color:var(--fail)">要改完这 ${阻.length} 处才能冻结</div><ul>${阻.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>` : `<div class="note">${md("**检查通过,没有挡住冻结的问题。**")}</div>`)
+      + (醒.length ? `<div class="note warn"><ul>${醒.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>` : "")
+      + (脏 ? `<div class="k">⚠️ 上面是上次保存的结果,你有没保存的改动。</div>` : ""); };
+  const 画版本 = () => { $("#i-vers").innerHTML = `<div style="font-weight:600;margin-bottom:8px">冻结的版本</div>` + (版本们.length
+      ? `<table><thead><tr><th>版本</th><th>几个意图</th><th>冻结于</th><th>冻结人</th></tr></thead><tbody>${版本们.map((v) => `<tr><td class="num">${esc(v.版本)}</td><td class="num">${esc(v.本数 ?? "")}</td><td class="num">${时间(v.冻结于)}</td><td>${esc(v.冻结人 || "")}</td></tr>`).join("")}</tbody></table>
+        <label class="f">试一句(看模型会收到什么,这里不真调模型)</label><textarea class="t" id="i-tt" rows="2"></textarea>
+        <div style="margin-top:8px"><button class="pri" id="i-tgo">试一句</button></div><pre class="io" id="i-tout" hidden></pre>`
+      : `<div class="state" style="padding:20px">还没有冻结的版本。</div>`);
+    if (版本们.length) $("#i-tgo").onclick = async () => { try { const r = await 请求(`${P()}/intent-versions/${encodeURIComponent(版本们[0].id)}/preview`, { method: "POST", body: JSON.stringify({ 文本: $("#i-tt").value }) });
+      const o = $("#i-tout"); o.hidden = false; o.textContent = `【用 ${r.模型}】\n${r.系统提示}\n\n${r.用户消息}`; } catch (e) { 报错(e); } }; };
+  const 标脏 = () => { if (!脏) { 脏 = true; 画检查(d.检查); } $("#i-fb").textContent = "有没保存的改动"; };
+  $("#i-list").oninput = (e) => { const t = e.target; if (!t.dataset || !t.dataset.f) return; const x = 配.意图[Number(t.dataset.i)]; x[t.dataset.f] = t.dataset.f === "例句" ? 拆(t.value) : t.value; 标脏(); };
+  $("#i-list").onclick = async (e) => { const i = e.target.dataset && e.target.dataset.del; if (i === undefined) return;
+    if (!(await 问一句("删掉这个意图?", `「${esc(配.意图[Number(i)].名称 || "")}」要点保存草稿才真的存下来。`, { 确定: "删掉" }))) return; 配.意图.splice(Number(i), 1); 标脏(); 画列表(); };
+  $("#i-add").onclick = () => { 配.意图.push({ 名称: "", 说明: "", 例句: [] }); 标脏(); 画列表(); };
+  $("#i-back").onclick = async () => { if (脏 && !(await 问一句("离开这一页?", "有没保存的改动,离开会丢掉。", { 确定: "丢掉并离开" }))) return; location.hash = "#/intents"; };
+  const 存 = async () => { try { const r = await 请求(`${P()}/intents/${encodeURIComponent(iid)}/draft`, { method: "PATCH", headers: { "If-Match": String(rev) }, body: JSON.stringify({ 配置: 配 }) });
+      rev = r.revision; $("#i-rev").textContent = String(rev); d.检查 = r.检查; 版本们 = r.版本 || 版本们; 脏 = false; 画检查(r.检查); 画版本(); $("#i-fb").innerHTML = md(r.note || "已保存"); return true;
+    } catch (e) { const b = e.体 || {}; $("#i-fb").innerHTML = e.码 === 409 ? `<b>被别人改过了,刷新再合并。</b><details><summary>我这边没保存的内容</summary><pre class="io">${esc(JSON.stringify(配, null, 2))}</pre></details>` : `<b>${esc(b.message || e.message)}</b>`; return false; } };
+  $("#i-save").onclick = 存;
+  $("#i-freeze").onclick = async () => { if (脏 && !(await 存())) return; try { const r = await 请求(`${P()}/intents/${encodeURIComponent(iid)}/versions`, { method: "POST" }); $("#i-fb").innerHTML = `已冻结为 <b>${esc(r.版本)}</b>`; setTimeout(() => 页_意图详情(iid), 900); }
+    catch (e) { const b = e.体 || {}, 阻 = (b.field_errors && b.field_errors.阻断) || []; $("#i-fb").innerHTML = 阻.length ? 阻.map((x) => "· " + md(x)).join("<br>") : `<b>${esc(b.message || e.message)}</b>`; } };
   画列表(); 画检查(d.检查); 画版本();
 }
 
@@ -8354,6 +8436,8 @@ function 画_聊天编排() {
         ${c["实体识别版本"] && !(g["可选实体识别"] || []).some((v) => v.id === c["实体识别版本"]) ? `<option value="${esc(c["实体识别版本"])}" selected>(当前选的不在列表里)</option>` : ""}</select>
       <div class="note">每一轮先把这句话里的客户名、员工名、着装人名认出来占位,剩下的字才去找术语 —— 免得「宋锦书」被当成面料。换实体识别版本 = 出一版新的聊天助手、上生产才生效。
         ${(g["可选实体识别"] || []).length ? "" : "这个项目还没有冻结的实体识别版本 —— 先去「实体识别」冻一版。"}</div></div>
+    <div class="card"><h4>意图识别</h4><select id="c-intent"><option value="">不做意图分类</option>${(g["可选意图"] || []).map((v) => `<option value="${esc(v.id)}"${v.id === c["意图版本"] ? " selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["本数"])} 个意图</option>`).join("")}</select>
+      <div class="note">每轮先判一次店长想干什么(多一次最便宜档的模型调用)。换版本 = 出一版新的聊天助手、上生产才生效。</div></div>
     <div class="card"><h4>查询路由</h4><select id="c-route"><option value="">全走默认路由</option>${(g["可选路由"] || []).map((v) =>
         `<option value="${esc(v.id)}"${v.id === c["路由版本"] ? " selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["本数"])} 条规则</option>`).join("")}
         ${c["路由版本"] && !(g["可选路由"] || []).some((v) => v.id === c["路由版本"]) ? `<option value="${esc(c["路由版本"])}" selected>(当前选的不在列表里)</option>` : ""}</select>
@@ -8380,6 +8464,7 @@ function 画_聊天编排() {
   $("#c-model").onchange = (e) => { c["模型"] = e.target.value; 标脏(); };
   $("#c-glossary").onchange = (e) => { c["术语版本"] = e.target.value || null; 标脏(); };
   $("#c-entity").onchange = (e) => { c["实体识别版本"] = e.target.value || null; 标脏(); };
+  $("#c-intent").onchange = (e) => { c["意图版本"] = e.target.value || null; 标脏(); };
   $("#c-route").onchange = (e) => { c["路由版本"] = e.target.value || null; 标脏(); };
   $("#c-tools").querySelectorAll("[data-tool]").forEach((b) => {
     b.onchange = () => { c["工具"].find((t) => t["名"] === b.dataset.tool)["开"] = b.checked; 标脏(); };
@@ -8459,6 +8544,8 @@ async function 路由() {
     if (h === "#/glossaries") return await 页_术语列表();
     if (h === "#/entities") return await 页_实体识别列表();
     if (h === "#/routes") return await 页_路由列表();
+    if (h === "#/intents") return await 页_意图列表();
+    if (h.startsWith("#/intent/")) return await 页_意图详情(decodeURIComponent(h.slice(9)));
     if (h.startsWith("#/route/")) return await 页_路由详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/entity/")) return await 页_实体识别详情(decodeURIComponent(h.slice(9)));
     if (h.startsWith("#/glossary/")) return await 页_术语详情(decodeURIComponent(h.slice(11)));

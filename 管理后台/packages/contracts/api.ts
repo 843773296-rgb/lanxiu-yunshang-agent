@@ -107,6 +107,13 @@ export const ENDPOINTS = [
   { method: "POST", path: "/entity-dicts/{id}/versions", summary: "冻结实体识别版本", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/entity-dict-versions/{id}", summary: "实体识别版本(一次给全:项目 / 版本号 / 冻结时间 / 内容哈希 / 整份配置)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/entity-dict-versions/{id}/preview", summary: "试一句(这句话拆成哪几段、每段去哪、模型会收到什么)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/intents", summary: "意图配置列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/intents", summary: "建意图配置", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/intents/{id}", summary: "意图配置详情(含配置检查)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/intents/{id}/draft", summary: "改意图草稿", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/intents/{id}/versions", summary: "冻结意图版本", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/intent-versions/{id}", summary: "意图版本(一次给全)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/intent-versions/{id}/preview", summary: "试一句(模型会收到的分类提示)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/routes", summary: "查询路由列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/routes", summary: "建查询路由", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/routes/{id}", summary: "查询路由详情(含配置检查)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -316,4 +323,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 228 条接口 · 24 条异步 · 32 条要幂等键 · 27 条要 If-Match */
+/** 共 235 条接口 · 24 条异步 · 32 条要幂等键 · 28 条要 If-Match */

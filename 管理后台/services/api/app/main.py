@@ -198,6 +198,7 @@ import alerts_api as _ALR  # 告警(11-04,DF-04 第二步):连续 N 次越线才
 import monitoring_api as _MON  # 监测(11-04,DF-04):办成 = 跑完 + 每处写入有回执;未知不补零
 import glossaries_api as _GLS  # 术语配置 / 语义层(11-06):草稿 / 冻结版本 / 试一下
 import entity_dicts_api as _ENT  # 实体识别(11-08):词典草稿 / 冻结版本 / 试一句
+import intents_api as _INT  # 意图识别(11-09 第三期)
 import routes_api as _RT  # 查询路由(11-08 第二期):路由草稿 / 冻结版本 / 试一句
 import opinions_api as _AF  # 意见单(11-04,DF-03 第 2 步):聊天站每条问答都能提意见,记提问人工号
 import open_api as _OA              # 访问 API(11-03):外部系统带密钥跑应用的生产版;先工作流,聊天那一半还没做
@@ -230,6 +231,7 @@ app.include_router(_ALR.router)
 app.include_router(_GLS.router)
 app.include_router(_ENT.router)
 app.include_router(_RT.router)
+app.include_router(_INT.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

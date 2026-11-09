@@ -104,13 +104,15 @@ def 算(c, project_id, *, 范围="业务", 应用=None, 环境=None, 版本=None
                (select count(*) from bridge_calls b where b.project_id=:p and b.execution_run_id=跑.id) 写入数,
                (select count(*) from bridge_calls b where b.project_id=:p and b.execution_run_id=跑.id
                    and b.status='已执行') 已执行数,
-               (select coalesce(sum(u.amount) filter (where u.amount_known), 0) from usage_ledger u
-                 where u.project_id=:p and u.trace_id=跑.trace_id) 已知费用,
-               (select count(*) filter (where not u.amount_known) from usage_ledger u
-                 where u.project_id=:p and u.trace_id=跑.trace_id) 算不出笔数,
-               (select coalesce(sum(u.quantity) filter (where u.unit='token'), 0) from usage_ledger u
-                 where u.project_id=:p and u.trace_id=跑.trace_id) token
-          from 跑 where true {where}"""), 参).mappings().all()
+               coalesce(用.已知费用, 0) 已知费用, coalesce(用.算不出笔数, 0) 算不出笔数, coalesce(用.token, 0) token
+          from 跑
+          -- 11-09:原来对每一行运行各扫三遍 usage_ledger,测试运行攒到 9000 多条后这条语句要 3.5 秒;改成先按 trace 汇总一次再关联,结果不变
+          left join (select u.trace_id,
+                            coalesce(sum(u.amount) filter (where u.amount_known), 0) 已知费用,
+                            count(*) filter (where not u.amount_known) 算不出笔数,
+                            coalesce(sum(u.quantity) filter (where u.unit='token'), 0) token
+                       from usage_ledger u where u.project_id=:p group by u.trace_id) 用 on 用.trace_id=跑.trace_id
+         where true {where}"""), 参).mappings().all()
     分位 = c.execute(text(f"""
         with 跑 as (
             select r.status, r.created_at, r.started_at, r.ended_at, {_维度}

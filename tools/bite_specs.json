@@ -16400,5 +16400,53 @@
    }
   ],
   "预期红": "⑦ 历次表每行带**模型** —— 少了它,换模型那一跳会被读成「能力涨了」"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_intent_flow.py",
+  "改坏": "冻结意图前不查配置 —— 没说明、占用「判不出」也照冻",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/intents_api.py",
+    "old": "        阻, _ = I.意图配置问题(配)\n        if 阻:",
+    "new": "        阻, _ = I.意图配置问题(配)\n        if False:"
+   }
+  ],
+  "预期红": "② 占用「判不出」/ 没说明 → 点名、冻结 422"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_intent_flow.py",
+  "改坏": "生产配置不给 intent_version_id —— 聊天站分不清「没挂意图」和「后台契约没同步」",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/chat_assistants_api.py",
+    "old": "            \"intent_version_id\": v[\"intent_version_id\"],",
+    "new": "            "
+   }
+  ],
+  "预期红": "⑥ 没挂 → intent_version_id 显式 null"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_intent.py",
+  "改坏": "调用失败抛出去 —— 分类坏了拖垮这一轮回答",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/意图.py",
+    "old": "    except Exception as e:                                                 # noqa: BLE001\n        return {",
+    "new": "    except ZeroDivisionError as e:\n        return {"
+   }
+  ],
+  "预期红": "③④ 调用失败:抛错不往外抛,态=调用失败、原因带错误类型"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_intent.py",
+  "改坏": "答了清单外的名字也算判出 —— 路由拿到一个不存在的意图",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/意图.py",
+    "old": "    if 名 not in 名们:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "③ 判不出:答了清单外的名字,原因里点名"
  }
 ]

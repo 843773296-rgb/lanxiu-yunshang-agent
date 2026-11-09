@@ -78,6 +78,8 @@ P = f"{基址}/api/v1/projects/{项目}"
         取id=("/glossaries", "items[0].id"), 读="/glossaries/{id}", 字段="revision", 项目="project_demo_a"),
     "PATCH /entity-dicts/{id}/draft": dict(         # 实体识别(11-08):详情顶层就是草稿的 revision
         取id=("/entity-dicts", "items[0].id"), 读="/entity-dicts/{id}", 字段="revision", 项目="project_demo_a"),
+    "PATCH /intents/{id}/draft": dict(
+        取id=("/intents", "items[0].id"), 读="/intents/{id}", 字段="revision", 项目="project_demo_a"),
     "PATCH /routes/{id}/draft": dict(              # 查询路由(11-08 第二期):详情顶层就是草稿的 revision
         取id=("/routes", "items[0].id"), 读="/routes/{id}", 字段="revision", 项目="project_demo_a"),
     "PATCH /applications/{id}/draft": dict(

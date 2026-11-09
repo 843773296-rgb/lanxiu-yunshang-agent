@@ -241,6 +241,7 @@ setTimeout(() => {
     "#/glossaries": { 接口: "/glossaries", 列表: "items" },
     "#/entities": { 接口: "/entity-dicts", 列表: "items" },
     "#/routes": { 接口: "/routes", 列表: "items" },
+    "#/intents": { 接口: "/intents", 列表: "items" },
     "#/workflows": { 接口: "/workflows", 列表: "items" },
     // 10-28 导航照 Dify:旧地址跳到工作室 / 集成的页签 —— 新旧两个地址都对账,跳过去渲的必须是同一份
     "#/studio/workflow": { 接口: "/workflows", 列表: "items" },
