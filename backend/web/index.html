@@ -883,6 +883,26 @@ function bindCb(){
   if(all) all.onclick=()=>{const on=!all.classList.contains("ck");
     all.classList.toggle("ck",on); items.forEach(e=>e.classList.toggle("ck",on))};
 }
+// 11-09 用户拍「勾选框留着、每页加批量操作」:有单条写接口的 = 先确认 → 逐条调 → 汇总成功 / 失败;没有的先做导出所选。
+// 只作用于当前这一页勾选的行
+function 已选(){return [...M.querySelectorAll(".cb.ck[data-cb]")].map(x=>x.dataset.cb)}
+function 没选(){res(false,"没选","先勾选要操作的行(只算当前这一页)")}
+function 导出所选(文件,列,行们,键){
+  const ids=new Set(已选()); if(!ids.size){没选();return}
+  const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const 选中=行们.filter(r=>ids.has(String(r[键])));
+  const csv="\ufeff"+[列.map(c=>q(c[0])).join(","),...选中.map(r=>列.map(c=>q(r[c[1]])).join(","))].join("\n");
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download=文件+".csv"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  res(true,"已导出",`${选中.length} 行(只含当前页勾选的,在浏览器里生成)`);
+}
+async function 批量跑(ids,一条,after){
+  let 成=0; const 败=[];
+  for(const id of ids){ const r=await 一条(id); if(r&&r.ok&&!r.error)成++; else 败.push(`${id}:${(r&&(r.reason||r.error))||"没成功"}`) }
+  res(!败.length,"批量结果",`成功 ${成} 条,失败 ${败.length} 条`+(败.length?" —— "+败.slice(0,3).join(";")+(败.length>3?` 等 ${败.length} 条`:""):""));
+  if(after)after();
+  return {ok:true};
+}
 function bindTable(st,reload){
   bindCb();
   M.querySelectorAll("[data-sort]").forEach(e=>e.onclick=()=>{
@@ -933,13 +953,13 @@ async function listPage(kind){
     </div>
     <div class="ops">
       <button class="btn sol" disabled title="${fin?"新建退款":"手动合并"} · 本期未实现">+ ${fin?"新建退款":"手动合并"}</button>
-      <button class="btn" data-exp-task>导出</button></div>
+      <button class="btn" data-exp-task title="每单涉及钱或合并、要单独审核,不做一键批量处理">导出所选</button></div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:44px"><span class="cb" data-cball></span></th>
      ${sortTh("任务号","id",st,"150px")}${sortTh(fin?"押金单号":"客户档案","ref_id",st)}
      ${sortTh("创建时间","created",st,"160px")}${sortTh("状态","status",st,"110px")}
      <th style="width:150px">操作</th></tr></thead><tbody>
-     ${d.rows.map(t=>`<tr><td><span class="cb"></span></td>
+     ${d.rows.map(t=>`<tr><td><span class="cb" data-cb="${esc(t.id)}"></span></td>
       <td class="mono">${esc(t.id)}</td><td class="mono">${esc(t.ref_id)}</td>
       <td class="mono">${esc(t.created)}</td>
       <td><span class="pill ${t.status==="待处理"?"p-warn":"p-ok"}">${esc(t.status)}</span></td>
@@ -947,8 +967,7 @@ async function listPage(kind){
      ${d.rows.length?"":'<tr><td colspan="6" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的记录</td></tr>'}
      </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-t]").forEach(e=>e.onclick=()=>view("task",e.dataset.t));
-  // 11-08 UI 检查:原来导出的是全站操作日志,不是这一页的退款 / 合并单。后端没有这一类导出 → 明说没做
-  M.querySelectorAll("[data-exp-task]").forEach(e=>{e.title="这一页的导出还没做";e.onclick=()=>res(false,"未做","这一页(押金退款异常 / 客户合并)的导出还没做 —— 后端没有这一类导出")});
+  M.querySelectorAll("[data-exp-task]").forEach(e=>e.onclick=()=>导出所选(fin?"押金退款异常":"客户合并",[["任务号","id"],["关联单号","ref_id"],["创建时间","created"],["状态","status"]],d.rows,"id"));
   bindTable(st,()=>listPage(kind));
 }
 
@@ -1027,12 +1046,13 @@ async function lifecycle(t){
       </div>`:""}
      </div></div>
      <div class="card">
+      <div class="ops"><button class="btn" data-lc-batch>批量调整所选</button> <button class="btn" data-lc-exp title="不含客户姓名">导出所选</button></div>
       <table class="tb"><thead><tr><th style="width:44px"><span class="cb" data-cball></span></th>
       <th style="width:96px">客户编码</th><th>客户姓名</th><th style="width:80px">未互动</th>
       <th style="width:110px">近12月实付</th><th style="width:74px">订单/季度</th>
       <th>命中条件</th><th style="width:80px">操作</th></tr></thead><tbody>
       ${d.customers.map(c=>`<tr${c.overridden?' style="background:var(--navy-bg)"':(c.conflict?' style="background:#FFFCF5"':"")}>
-       <td><span class="cb"></span></td><td class="mono">${esc(c.id)}</td>
+       <td><span class="cb" data-cb="${esc(c.id)}"></span></td><td class="mono">${esc(c.id)}</td>
        <td>${esc(c.name)}${c.overridden?' <span class="pill p-blue">人工</span>':""}</td>
        <td class="mono">${c.idle_days}天</td>
        <td class="mono">${money(c.amount_12m)}</td>
@@ -1043,6 +1063,13 @@ async function lifecycle(t){
       </tbody></table>
       <div class="pg"><span style="color:var(--ink3)">共 ${d.customers.length} 人 · 其中 ${d.conflicts} 人同时命中多个条件</span></div></div>
     </div></div>`);
+  bindCb();
+  M.querySelectorAll("[data-lc-exp]").forEach(e=>e.onclick=()=>导出所选("生命周期-"+d.cur,[["客户编码","id"],["未互动天数","idle_days"],["近12月金额","amount_12m"],["近12月订单","orders_12m"]],d.customers,"id"));
+  M.querySelectorAll("[data-lc-batch]").forEach(e=>e.onclick=()=>{ const ids=已选(); if(!ids.length){没选();return}
+    modal(`批量调整生命周期 · 已选 ${ids.length} 人`,[
+      {k:"to",type:"select",label:"调整为",req:1,opts:d.priority},
+      {k:"reason",type:"text",label:"调整原因(必填,每人都写入审计日志)",req:1,ph:"例如:客户已电话确认仍在服务中"}],
+      v=>批量跑(ids,id=>post("/api/lifecycle-adjust",{id,to:v.to,reason:v.reason}),()=>view("lifecycle",d.cur)))});
   M.querySelectorAll(".ty[data-t]").forEach(e=>e.onclick=()=>view("lifecycle",e.dataset.t));
   M.querySelectorAll("[data-adj]").forEach(e=>e.onclick=()=>
     modal(`人工调整生命周期 · ${e.dataset.adj}`,[
@@ -1064,14 +1091,14 @@ async function apptList(){
       ${acts()}
     </div>
     <div class="ops"><button class="btn sol" data-new-apt>+ 新增预约</button>
-      <button class="btn" data-export>导出</button></div>
+      <button class="btn" data-apt-cancel>批量取消所选</button> <button class="btn" data-export title="不含客户姓名">导出所选</button></div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:44px"><span class="cb" data-cball></span></th>
      ${sortTh("预约编号","id",st,"110px")}<th>客户</th>
      ${sortTh("预约时间","start_ts",st,"170px")}${sortTh("归属店铺","shop",st)}
      <th style="width:100px">顾问</th>${sortTh("状态","status",st,"100px")}
      <th style="width:110px">押金</th><th style="width:80px">操作</th></tr></thead><tbody>
-     ${d.rows.map(x=>`<tr><td><span class="cb"></span></td><td class="mono">${esc(x.id)}</td>
+     ${d.rows.map(x=>`<tr><td><span class="cb" data-cb="${esc(x.id)}"></span></td><td class="mono">${esc(x.id)}</td>
       <td>${esc(x.cname||"")} <span class="mono" style="color:var(--ink3)">${esc(x.customer_id)}</span></td>
       <td class="mono">${esc(x.start_ts)}</td><td>${esc(x.shop)}</td><td>${esc(x.advisor)}</td>
       <td><span class="pill ${APILL[x.status]||"p-mut"}">${esc(x.status)}</span></td>
@@ -1081,8 +1108,10 @@ async function apptList(){
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-a]").forEach(e=>e.onclick=()=>view("appt",e.dataset.a));
   M.querySelectorAll("[data-new-apt]").forEach(e=>e.onclick=()=>formAppt("",apptList));
-  // 11-08 UI 检查:原来这个「导出」没绑任何事件,点了没反应。后端没有预约导出 → 明说没做
-  M.querySelectorAll("[data-export]").forEach(e=>{e.title="预约导出还没做";e.onclick=()=>res(false,"未做","预约的导出还没做 —— 后端现在只有客户档案 / 订单 / 在制工单 / 操作日志四种导出")});
+  M.querySelectorAll("[data-export]").forEach(e=>e.onclick=()=>导出所选("客户预约",[["预约号","id"],["客户ID","customer_id"],["时间","start_ts"],["门店","shop"],["顾问","advisor"],["状态","status"]],d.rows,"id"));
+  M.querySelectorAll("[data-apt-cancel]").forEach(e=>e.onclick=async()=>{ const ids=已选(); if(!ids.length){没选();return}
+    if(!await sure(`取消这 ${ids.length} 个预约?`,"客户会收到取消通知;状态不允许取消的那几条会失败,结果里列出来。","批量取消"))return;
+    批量跑(ids,id=>post("/api/transit",{machine:"bk-appt",target:id,to:"已取消",ctx:{}}),apptList)});
   bindTable(st,apptList);
 }
 
@@ -1695,6 +1724,7 @@ async function staffList(){
   M.innerHTML=chrome([["首页","workbench"],"系统","权限管理"],`
    <div class="card">
     <div class="form">${fld("工号/姓名","q",st,null,"请输入")}${fld("角色","role",st,d.facets.role)}${acts()}</div>
+    <div class="ops"><button class="btn" data-stf-exp title="改权限本期没有写接口,这里只能导出">导出所选</button></div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:44px"><span class="cb" data-cball></span></th>
      <th style="width:140px">工号</th><th style="width:120px">姓名</th>
@@ -1719,6 +1749,7 @@ async function staffList(){
       <td>${ops.map(o=>`<span class="pill p-mut" style="margin-right:5px">${esc(o)}</span>`).join("")}</td>
       </tr>`).join("")}
     </tbody></table></div>`);
+  M.querySelectorAll("[data-stf-exp]").forEach(e=>e.onclick=()=>导出所选("员工",[["工号","no"],["姓名","name"],["角色","role"],["门店","shop"],["状态","status"]],d.rows,"no"));
   bindTable(st,staffList);
 }
 
@@ -1845,7 +1876,7 @@ async function productList(){
         <option value="">全部</option>${F.category.map(c=>`<option value="${esc(c)}" ${st.category===c?"selected":""}>${esc(d.catnames[c]||c)}</option>`).join("")}
       </select></div>${acts()}</div>
     <div class="ops"><button class="btn sol" data-newprod>+ 新建商品</button>
-      <button class="btn" data-exp-prd>导出</button>
+      <button class="btn" data-prd-on>批量上架</button> <button class="btn" data-prd-off>批量下架</button> <button class="btn" data-exp-prd>导出所选</button>
       ${d.img_cover ? `<span class="n" style="margin-left:12px" title="有图的是 AI 生成的效果图,不是实物照片;其余是按商品属性现画的剪影">
         商品图:<b style="color:var(--ink)">${d.img_cover.有}/${d.img_cover.总}</b> 款已出图
         ·<span style="color:var(--ink3)"> 其余 ${d.img_cover.总-d.img_cover.有} 款用现画的示意图</span></span>` : ""}</div>
@@ -1878,8 +1909,10 @@ async function productList(){
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-pd]").forEach(e=>e.onclick=()=>view("product",e.dataset.pd));
   M.querySelectorAll("[data-newprod]").forEach(e=>e.onclick=()=>formProduct(null,productList));
-  // 11-08 UI 检查:原来调的是客户档案导出(商品库里点导出,下载到带手机尾号的客户名单)。后端没有商品导出 → 明说没做
-  M.querySelectorAll("[data-exp-prd]").forEach(e=>{e.title="商品导出还没做";e.onclick=()=>res(false,"未做","商品库的导出还没做 —— 后端现在只有客户档案 / 订单 / 在制工单 / 操作日志四种导出")});
+  M.querySelectorAll("[data-exp-prd]").forEach(e=>e.onclick=()=>导出所选("商品库",[["SPU","spu"],["名称","name"],["类型","kind"],["基础价","base_price"],["库存","stock"],["可用","avail"],["状态","status"]],d.rows,"spu"));
+  [["data-prd-on","上架"],["data-prd-off","下架"]].forEach(([k,to])=>M.querySelectorAll(`[${k}]`).forEach(e=>e.onclick=()=>{ const ids=已选(); if(!ids.length){没选();return}
+    modal(`批量${to} · 已选 ${ids.length} 款`,[{k:"note",type:"text",req:1,label:`${to}原因(必填)`+(to==="下架"?",下架后不可新增下单,历史订单保留":""),ph:"例如:面料断货"}],
+      v=>批量跑(ids,id=>post("/api/transit",{machine:"bk-product",target:id,to,ctx:{note:v.note}}),productList))}));
   bindTable(st,productList);
 }
 

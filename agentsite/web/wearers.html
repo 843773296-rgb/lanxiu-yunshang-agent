@@ -52,6 +52,7 @@ ul.lim{margin:0;padding-left:18px;font-size:12.6px;color:var(--ink-3);line-heigh
   <h2>场景倒推</h2>
   <p class="sub">客户说「明年六月毕业礼要穿」时,要回答的<b>不是一个日期,是一个窗口</b>。</p>
   <div class="bar">
+    <input id="wq" placeholder="搜孩子姓名(搜全部着装人)" style="width:190px">
     <select id="w"><option>加载中…</option></select>
     <input id="d" type="date" value="2027-06-20">
     <select id="p"><option value="PT04">明制马面裙·标准</option><option value="PT01">齐胸襦裙·标准</option></select>
@@ -127,10 +128,20 @@ async function load(页=1){
   $("#rows").innerHTML=ROWS.map(row).join("");
   const 钮=(p,t)=>p>=1&&p<=r.总页数&&p!==r.页?`<button type="button" class="pg" data-p="${p}">${t}</button>`:"";
   $("#pager").innerHTML=`第 ${r.页} / ${r.总页数} 页 · 每页 ${r.每页} 人,该复量的排最前 `+钮(r.页-1,"‹ 上一页")+钮(r.页+1,"下一页 ›");
-  const kids=ROWS.filter(x=>x.年龄!=null&&x.年龄<18&&x.量体日);
+  if(!$("#wq").value.trim()) 填孩子(ROWS);
+}
+// 11-09 UI 检查:下拉原来只从本页取,第 2 页以后的孩子选不到,一翻页选择还被重置。搜索框搜全部;搜着时翻页不动下拉
+function 填孩子(rows){
+  const kids=rows.filter(x=>x.年龄!=null&&x.年龄<18&&x.量体日);
   $("#w").innerHTML=kids.map(x=>`<option value="${x.着装人}">${esc(x.姓名)}(${x.年龄}岁)</option>`).join("")
     ||`<option value="">没有可推算的着装人</option>`;
 }
+let _搜时=null;
+$("#wq").oninput=()=>{ clearTimeout(_搜时); _搜时=setTimeout(async()=>{
+  const q=$("#wq").value.trim(); if(!q){ 填孩子(ROWS); return; }
+  try{ const r=await fetch("/api/wearers?q="+encodeURIComponent(q)).then(r=>r.json()); 填孩子(r.rows||[]); }
+  catch(e){ $("#w").innerHTML=`<option value="">搜索失败:连不上后台</option>`; }
+},300); };
 function plan(r){
   if(r.error){ $("#plan").innerHTML=`<div class="box" style="padding:15px">⚠ ${esc(r.error)}</div>`; return; }
   const w=(k,v,n,hi)=>`<div><div class="k">${k}</div><div class="v${hi?" hi":""}">${v}</div><div class="n">${n}</div></div>`;

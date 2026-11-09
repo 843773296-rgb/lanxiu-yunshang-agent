@@ -1559,6 +1559,16 @@ function evOpen(on){
   $("#evbtn").textContent = on ? "证据 \u25c2" : "证据 \u25b8";
   if(on) drawEv();
 }
+// 11-09 UI 检查:整块重画时,报问题 / 反馈面板 / 子助手里写了一半的字会被冲掉(点个分、另一轮回答回来都会重画)。
+// 重画前按「标签 + 属性 + 同名序号」记下有内容的输入框,重画后同一个框还在就放回去;框没了(面板已关)就不放
+function 留住输入(根, 画){
+  if(!根) return 画();
+  const 键们 = el => { const 计 = {}; return [...el.querySelectorAll("textarea,input[type=text],input:not([type])")]
+    .map(e => { const k = e.tagName + "|" + [...e.attributes].filter(a => a.name !== "value" && a.name !== "style").map(a => a.name + "=" + a.value).join("&"); 计[k] = (计[k] || 0) + 1; return [k + "#" + 计[k], e]; }); };
+  const 旧 = new Map(键们(根).filter(([, e]) => e.value).map(([k, e]) => [k, e.value]));
+  画();
+  if(旧.size) 键们(根).forEach(([k, e]) => { if(旧.has(k) && !e.value) e.value = 旧.get(k); });
+}
 function drawEv(){
   $("#evt1").classList.toggle("on", EVTAB === "证据");
   $("#evt2").classList.toggle("on", EVTAB === "子助手");
@@ -2149,6 +2159,10 @@ document.addEventListener("click", async e => {
     b.textContent = "已显示(已留痕)";
   }catch(err){ b.textContent = "取不到"; b.disabled = false; }
 });
+// 11-09 UI 检查:两处整块重画都经过 留住输入(函数声明可以重新绑定,原来的调用点一个不用改)
+{ const 原流 = drawStream, 原证 = drawEv;
+  drawStream = function(){ 留住输入($("#stream"), 原流); };
+  drawEv = function(){ 留住输入($("#evbody"), 原证); }; }
 </script>
 <div id="arrival" hidden><div class="box">
   <div class="hd"><b>上新待办</b><small class="n"></small><button class="x" data-act="close-arrival">关闭</button></div>

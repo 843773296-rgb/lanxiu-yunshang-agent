@@ -3635,10 +3635,16 @@ class H(BaseHTTPRequestHandler):
             rl=_o.recheck_list()
             due={x["id"]:x for x in rl["该复量"]}
             超=lambda i: due[i]["已过"]-due[i]["上限"]
-            全=_api._rows("SELECT id,birthday FROM wearer ORDER BY customer_id,id")
+            全=_api._rows("SELECT id,name,birthday FROM wearer ORDER BY customer_id,id")
             今=_api._wc.今天()
             序=sorted([w["id"] for w in 全 if w["id"] in due], key=超, reverse=True) + \
                [w["id"] for w in 全 if w["id"] not in due]
+            # 11-09 UI 检查:「场景倒推」的下拉只列当前这一页的孩子,第 2 页以后的选不到 → 给 q(按姓名搜全部着装人);不带 q 行为不变
+            from urllib.parse import parse_qs as _pq2
+            _词=(_pq2(urlparse(self.path).query).get("q") or [""])[0].strip()
+            if _词:
+                _中=_词.lower(); _名={w["id"]:(w["name"] or "") for w in 全}
+                序=[i for i in 序 if _中 in _名.get(i,"").lower()]
             每页=100
             总页=max(1,-(-len(序)//每页))
             try: 页=min(max(1,int((Q.get("page") or ["1"])[0])),总页)
