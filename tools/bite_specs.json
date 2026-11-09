@@ -16580,5 +16580,53 @@
    }
   ],
   "预期红": "有动作开关的套都配上了参数"
+ },
+ {
+  "script": "agentsite/chat_handoff_check.py",
+  "改坏": "咬合·开关关着也当开着 —— 用户要点头才开的转人工,会在没人点头时生效",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "return os.environ.get(\"LANXIU_CHAT_HANDOFF\") == \"1\"",
+    "new": "return True"
+   }
+  ],
+  "预期红": "判不出也进模型循环,不建待办"
+ },
+ {
+  "script": "agentsite/chat_handoff_check.py",
+  "改坏": "咬合·建待办成功也不短路 —— 店长看不到编号,模型照答,等于转人工没发生",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "                    if _转号:\n                        return 转人工的回答(",
+    "new": "                    if False:\n                        return 转人工的回答("
+   }
+  ],
+  "预期红": "不进模型循环"
+ },
+ {
+  "script": "agentsite/chat_handoff_check.py",
+  "改坏": "咬合·只判意图态、漏掉路由规则 —— 投诉这条规则永远不生效",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "    if 走.get(\"转人工\"):\n        意 = 状态.get(\"这一轮意图\")",
+    "new": "    if False:\n        意 = 状态.get(\"这一轮意图\")"
+   }
+  ],
+  "预期红": "意图判出 + 规则转人工 → 转"
+ },
+ {
+  "script": "agentsite/chat_handoff_check.py",
+  "改坏": "咬合·机器调用也转人工 —— 后面没有人等答复,请求就丢了",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        if me and not 只读:\n            import glossary_client as _gc转",
+    "new": "        if me:\n            import glossary_client as _gc转"
+   }
+  ],
+  "预期红": "机器调用 → 不转"
  }
 ]

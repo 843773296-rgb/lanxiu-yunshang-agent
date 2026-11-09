@@ -723,6 +723,7 @@ run "工具收窄落到 MCP 那一层 · 真起服务读回、空集合不扩成
 run "研判专用角色 · 只挂研判用得上的只读工具、提示词跟着收,后台运营助手不动(用户 10-20)" ./agentsite/.venv/bin/python agentsite/triage_scope_check.py
 run "每一份候选答案都检查 · 修正后通过 / 未通过 / 未检查 / 不完整分开,未通过的不当正式答复交(外部审阅 4.1)" ./agentsite/.venv/bin/python agentsite/delivery_check.py
 run "会话的业务状态跨请求恢复 · 只恢复跨轮的、先核归属和权限、方案被删不带回、并发不覆盖(外部审阅 4.2)" ./agentsite/.venv/bin/python agentsite/session_state_check.py
+run "聊天转人工 · 开关默认关、判不出和规则点名才转、建待办失败不短路、机器调用不转" ./agentsite/.venv/bin/python agentsite/chat_handoff_check.py
 run "聊天站接术语 · 只带这句话提到的、段由后台纯函数拼、没同步到就不带但来源照记、启动时只同步一次、只在店长助手那条路上" ./agentsite/.venv/bin/python agentsite/glossary_inject_check.py
 run "中文否定与子串 · 29 条(十次踩过的坑)" python3 agent/textmatch.py
 run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judgetest.py

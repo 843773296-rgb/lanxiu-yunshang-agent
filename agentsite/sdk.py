@@ -1077,6 +1077,17 @@ def _术语状态(角色):
     return _术语缓存[角色]
 
 
+def 转人工的回答(待办编号, 原因, 轮号, 会话号, 意图结果, 模型, 起始):
+    """这一轮不进模型循环时的返回 —— 键和正常那支对齐,调用方不用分两种。轨迹里那条是记录,不是工具调用(每次 run 一条,评测按它数误转)。"""
+    轨迹 = [{"tool": "handoff.human", "args": {"意图": (意图结果 or {}).get("意图"), "原因": 原因, "待办编号": 待办编号}}]
+    return dict(text=f"已转给人工处理,待办编号 {待办编号}(原因:{原因})", budget_hit=False, budget_limit=0,
+                trajectory=轨迹, seconds=round(time.time() - 起始, 1), session_id=会话号, trace_id=轮号,
+                usage={}, sdk_cost_usd=0, cost_usd=0, model=模型, guard_blocked=False, guard_violations=[],
+                交付检查="未检查", 未通过草稿=None, 最终违规=[], tool_calls_seen=0, 助手配置=None, 术语=None,
+                转人工=dict(待办编号=待办编号, 原因=原因), 意图=意图结果, 会话状态=dict(恢复说明=[], 存=None),
+                环境故障=None, 工具失败=[], 工具成功=[], answer_turns=0, text_all=f"已转给人工处理,待办编号 {待办编号}(原因:{原因})")
+
+
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
               provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None,
               被判押金=None, 分叉=False, 根属性=None, 后台配置=False, 只读=False):
@@ -1153,6 +1164,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 同步一次放进程缓存(= 启动时同步),每一轮按这一轮的话现匹配(guards.on_prompt 里)
     if 后台配置 and kind == "task" and not _研判:
         # 11-09 第三期:**浅拷贝、只往顶层加键** —— _术语状态 是进程共享的缓存,改它或它的嵌套值会串到别的会话
+        _这轮起 = time.time()
         state["术语"] = dict(_术语状态("task"))
         _意配 = (state["术语"].get("意图") or {}).get("配置")
         if _意配:          # 这一版聊天助手挂了意图版本才分类;没挂什么都不发生。判不出 / 调用失败:交给模型照答(转人工没接上)
@@ -1160,6 +1172,19 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             _意结果 = await asyncio.to_thread(_gc意.判意图, prompt, _意配)
             state["意图结果"] = _意结果
             state["术语"]["这一轮意图"] = _意结果.get("意图")
+        # 转人工(11-09):开关默认关。只在有登录店长、不是机器调用的这条路上走 —— 待办要记是谁问的,机器调用后面没有人等答复
+        if me and not 只读:
+            import glossary_client as _gc转
+            if _gc转.转人工开着吗():
+                _转因 = await asyncio.to_thread(_gc转.该转人工, prompt, state["术语"], state.get("意图结果"))
+                if _转因:
+                    import answer_feedback as _af转
+                    _转轮 = uuid.uuid4().hex
+                    _转号, _转错 = await asyncio.to_thread(_af转.建转人工, me, prompt, _转轮, resume,
+                                                     state["术语"].get("这一轮意图"), _转因)
+                    if _转号:
+                        return 转人工的回答(_转号, _转因, _转轮, resume, state.get("意图结果"), model_name, _这轮起)
+                    state["转人工"] = dict(失败=_转错)      # 建不了待办就照常让模型答:宁可多答一句,也不把请求弄丢
     if images:
         state["带图"] = True          # 体检 g18「看图直接下形制结论」只在带图的那一轮生效
     # ── 跨轮业务状态(外部审阅 10-03 §4.2):续聊时把**当前方案 / 锚点 / 待消费的压缩标记**恢复回来 ──
@@ -1618,6 +1643,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                     if _助手 else None),
             # 术语(11-06):这一轮术语从哪来(那句话每种情形不同)、带了哪几条 —— 只有店长助手那条路上有;别的路上是 None
             术语=(dict(来源=state.get("术语来源"), 带了=state.get("术语带了")) if state.get("术语") else None),
+            转人工=state.get("转人工"),
             意图=state.get("意图结果"),      # 11-09 第三期:{意图, 态(判出 / 判不出 / 调用失败), 原因, 用时ms, 模型};没挂版本 = None
             会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
             环境故障=_故障,

@@ -101,6 +101,17 @@ def _curl(方法, url, 体=None, 头=(), 凭证=None):
     return 码, d
 
 
+def 建转人工(me, 原话, 轮号, 会话号, 意图, 原因, 凭证=None):
+    """→ (待办编号, None) 或 (None, 失败原因)。店长是谁只从登录身份取。失败照实返回,由调用方决定不短路。"""
+    码, d = _curl("POST", f"{后台基址}/api/v1/projects/{后台项目}/chat-handoffs",
+                 {"聊天站trace": 轮号, "会话号": 会话号, "原话": 原话, "意图": 意图, "原因": 原因,
+                  "提问人": {"工号": me.get("no"), "姓名": me.get("name"), "角色": me.get("role"), "门店": me.get("shop")}},
+                 凭证=凭证)
+    if 码 == 201 and (d or {}).get("id"):
+        return d["id"], None
+    return None, str((d or {}).get("message") or (d or {}).get("error") or f"HTTP {码}")[:200]
+
+
 def 查我的(me, 页=1, 凭证=None):
     """「我的意见」:工号只从登录身份取。"""
     # ⚠️ 参数名「工号」是中文,**整条 query 要编码** —— 裸中文进 URL,后台 uvicorn 直接回「Invalid HTTP request」
