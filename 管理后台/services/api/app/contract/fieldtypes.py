@@ -377,6 +377,8 @@
     "entity_dict_versions": {"key", "version_no", "entries", "content_hash"},
     # 查询路由版本(11-08 第二期)
     "route_versions": {"key", "version_no", "entries", "content_hash"},
+    # 意图识别版本(11-09 第三期)
+    "intent_versions": {"key", "version_no", "entries", "content_hash"},
     "workflow_schedules": {"workflow_id", "cadence", "fire_time", "timezone", "schedule_enabled", "principal",
                            "input_snapshot"},
     # 检索试跑记录(2026-10-08):这五列**一列都不能空**,否则那一行没有用 ——

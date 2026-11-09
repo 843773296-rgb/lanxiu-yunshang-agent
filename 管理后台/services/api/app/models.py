@@ -232,6 +232,8 @@ _额外唯一 = {
                             ("project_id", "key", "version_no")],
     "route_versions": [("project_id", "key", "content_hash"),
                        ("project_id", "key", "version_no")],
+    "intent_versions": [("project_id", "key", "content_hash"),
+                        ("project_id", "key", "version_no")],
     "document_versions": [("project_id", "document_id", "content_hash")],
     "dataset_versions": [("project_id", "dataset_id", "content_hash")],
     "release_manifests": [("project_id", "application_id", "content_hash")],
