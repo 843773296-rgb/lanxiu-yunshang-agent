@@ -86,7 +86,7 @@ def main():
         ck("错 revision → 409", c == 409 and 码(b) == "REVISION_CONFLICT", (c, b))
         c, b = 打("POST", 办, {"说明": "已电话联系"}, {"If-Match": str(rev)})
         ck("处理成功", c == 200 and b.get("status") == "已处理", (c, b))
-        c, b = 打("POST", 办, {"说明": "再来一次"}, {"If-Match": str(rev + 1)})
+        c, b = 打("POST", 办, {"说明": "再来一次"}, {"If-Match": str((rev or 0) + 1)})
         ck("再处理 → 409 ALREADY_HANDLED", c == 409 and 码(b) == "ALREADY_HANDLED", (c, b))
 
         print("⑥ 库约束")
@@ -103,8 +103,8 @@ def main():
     finally:
         with 库.begin() as k:
             k.execute(text("delete from chat_handoffs where chat_trace_ref like :t"), {"t": 标 + "%"})
-        if 造的:
-            造的()
+        if 造的:                     # 凭证() 在 CI 现造的那份文件的路径(本机为 None,所以本地测不出这一行)
+            os.remove(造的)
     print(f"\n{len(过)} 过 / {len(挂)} 挂")
     return 1 if 挂 else 0
 
