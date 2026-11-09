@@ -206,6 +206,11 @@ run "产品文档 · MCP 工具表和代码对账(标题的数对过账,表本�
 # 2026-10-23 装进来:这台机器上同一时刻只许一轮门禁 / 冒烟 / 写共享库(6 个工作区共用)。
 # 自测在**临时锁目录**上跑,不碰那把真锁 —— 所以它在门禁里跑不会和持锁的那一轮打架。
 run "共享资源锁 · 陈锁会被抢、活锁不许抢、被打断照样还锁、退出码原样传回" ./tools/gate_lock.sh --selftest
+# 2026-11-09 装进来:全项目快照起跑前,调度器崩在一个 UnicodeDecodeError 上,根因在上面那把锁的
+# 提示行里 —— 不加花括号的变量紧跟中文,shell 把那个字的首字节吃进变量名:路径悄悄变成空,
+# 那段输出也不再是合法 UTF-8(下游按文本捕获当场崩)。只在「等锁超时」这条罕见路径上暴露。
+# ⚠️ 这一行的描述**不许照抄那个坏写法** —— check.sh 自己就会被它扫到。
+run "shell 变量写法 · 不加花括号的变量紧跟中文(路径悄悄变成空 + 那段输出不是合法 UTF-8,下游按文本捕获当场崩)" python3 tools/shell_quote_check.py
 run "README = 入口 + 产品说明全文,两边一致(用户 10-20:产品文档放进 README、去重)" python3 tools/make_readme.py --check
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
@@ -415,6 +420,7 @@ run "RFM 评分 · 自测" python3 knowledge/rfm.py
 run "RFM 评分 · 五条性质" python3 backend/rfm_check.py
 run "聊天站取术语 · 每种「空」各说一句不同的话、404 不告警而连不上要告警、比内容哈希不比版本号、字段缺失≠显式 null、缓存坏掉不崩、匹配只有一份实现" python3 backend/glossary_client_check.py
 run "夜跑评测清单 · 每个套的脚本都在、点名的套没囤积、单跑那晚塞得进窗口、「找不到脚本」不算「跑完了」(夜跑没人看着)" python3 tools/nightly_check.py
+run "全项目快照调度 · 剥后台变量在 import 之前、「剥掉 0 个」说得清为什么、点名的套没囤积、按耗时升序、拿不到锁的退出码真造过一次、先捞结果行再看退出码、五种「没过」各有各的字" python3 tools/snapshot_check.py
 run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --check
 run "intent · 待办都点了名,「做完了」的判据真的在" python3 tools/intent_check.py
 run "运营 SOP · 生成的和现在的口径对得上(下单 / 开裁 / 判责 / 铁律)" python3 tools/make_sop.py --check

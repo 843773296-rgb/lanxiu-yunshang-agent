@@ -16484,5 +16484,89 @@
    }
   ],
   "预期红": "意图:判出的意图交给路由 → 按意图的规则生效"
+ },
+ {
+  "script": "tools/shell_quote_check.py",
+  "改坏": "咬合·把 2026-11-09 修掉的那个 bug 放回去 —— `${LOCK_DIR}` 的花括号去掉,shell 会把中文句号的首字节吃进变量名:提示里的路径变成空,那段 stderr 不再是合法 UTF-8,而全项目快照的调度器拿 text=True 捕获它会当场崩死整夜",
+  "file": [
+   {
+    "path": "tools/gate_lock.sh",
+    "old": "或者手工 rm -rf ${LOCK_DIR}。\" >&2",
+    "new": "或者手工 rm -rf $LOCK_DIR。\" >&2"
+   }
+  ],
+  "预期红": "非注释行有"
+ },
+ {
+  "script": "tools/snapshot_check.py",
+  "改坏": "咬合①·剥后台变量改成只读不删(`pop` → `get`)—— 变量还在 os.environ 里,于是工具服务进程照旧拿得到管理后台地址,评测会读到并行会话 e2e 写进共享 PG 的测试术语",
+  "file": [
+   {
+    "path": "tools/snapshot_all_evals.py",
+    "old": "剥掉了 = {k: os.environ.pop(k) for k in 为了不连后台 if k in os.environ}",
+    "new": "剥掉了 = {k: os.environ.get(k) for k in 为了不连后台 if k in os.environ}"
+   }
+  ],
+  "预期红": "找得到那句剥变量"
+ },
+ {
+  "script": "tools/snapshot_check.py",
+  "改坏": "咬合②·让「剥掉 0 个」和「剥掉 3 个」印同一句话 —— 那个 0 就又会被读成「整夜不连后台」的保证(2026-11-09 我自己先被它骗过一次)",
+  "file": [
+   {
+    "path": "tools/snapshot_all_evals.py",
+    "old": "    if 剥掉了:\n        return (\"剥掉了 %d 个后台变量",
+    "new": "    return \"整夜不连管理后台\"\n    if 剥掉了:\n        return (\"剥掉了 %d 个后台变量"
+   }
+  ],
+  "预期红": "不是同一句话"
+ },
+ {
+  "script": "tools/snapshot_check.py",
+  "改坏": "咬合⑥·把「拿不到锁」的退出码从 3 改成 4,和 `gate_lock.sh` 的约定脱节 —— 真的没抢到锁会被记成「没跑成(调度)」,于是这一遍末尾不重试,那一套整夜没有数",
+  "file": [
+   {
+    "path": "tools/snapshot_all_evals.py",
+    "old": "    if r.returncode == 3:\n        return dict(套=名, 结果=\"没抢到锁\"",
+    "new": "    if r.returncode == 4:\n        return dict(套=名, 结果=\"没抢到锁\""
+   }
+  ],
+  "预期红": "真造一次抢不到锁"
+ },
+ {
+  "script": "tools/snapshot_check.py",
+  "改坏": "咬合⑨·去掉 `errors=\"replace\"` —— 被包的脚本吐一个解不开的字节,整个调度当场抛 UnicodeDecodeError、这一夜全丢,而 traceback 看不出和锁有关",
+  "file": [
+   {
+    "path": "tools/snapshot_all_evals.py",
+    "old": "capture_output=True, text=True, errors=\"replace\",\n                       env=dict(os.environ, LANXIU_LOCK_CAP=\"900\"))",
+    "new": "capture_output=True, text=True,\n                       env=dict(os.environ, LANXIU_LOCK_CAP=\"900\"))"
+   }
+  ],
+  "预期红": "给了 `errors=`"
+ },
+ {
+  "script": "tools/snapshot_check.py",
+  "改坏": "咬合⑧·让「没跑成(调度)」和「没抢到锁」共用一个字 —— 调度自己出的问题会被当成锁冲突无谓重试一遍,而明早的报告上读不出该去查哪一边",
+  "file": [
+   {
+    "path": "tools/snapshot_all_evals.py",
+    "old": "结果=\"没跑成(调度)\"",
+    "new": "结果=\"没抢到锁\""
+   }
+  ],
+  "预期红": "两两不重复"
+ },
+ {
+  "script": "tools/snapshot_check.py",
+  "改坏": "咬合⑦·把「看退出码」挪到「捞结果行」之前 —— `gate_lock.sh` 把被包命令的退出码原样传回,而它拿不到锁时也退 3;顺序反了之后,一套**真跑完了**却恰好退 3 的评测会被记成「没抢到锁」,结果被丢掉、还要再跑一遍",
+  "file": [
+   {
+    "path": "tools/snapshot_all_evals.py",
+    "old": "    for l in r.stdout.splitlines():\n        if l.startswith(\"<<<R>>>\"):\n            return json.loads(l[len(\"<<<R>>>\"):])\n    if r.returncode == 3:\n        return dict(套=名, 结果=\"没抢到锁\", 判定=\"没打\", 退出码=3,\n                    分钟=round((time.time() - t0) / 60, 1),\n                    尾=[\"等锁 15 分钟没等到 —— 并行会话在跑它的门禁,这一遍末尾重试\"])\n",
+    "new": "    if r.returncode == 3:\n        return dict(套=名, 结果=\"没抢到锁\", 判定=\"没打\", 退出码=3,\n                    分钟=round((time.time() - t0) / 60, 1),\n                    尾=[\"等锁 15 分钟没等到 —— 并行会话在跑它的门禁,这一遍末尾重试\"])\n    for l in r.stdout.splitlines():\n        if l.startswith(\"<<<R>>>\"):\n            return json.loads(l[len(\"<<<R>>>\"):])\n"
+   }
+  ],
+  "预期红": "先**捞结果行"
  }
 ]
