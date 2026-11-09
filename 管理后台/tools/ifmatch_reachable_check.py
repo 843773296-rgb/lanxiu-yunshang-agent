@@ -210,6 +210,10 @@ P = f"{基址}/api/v1/projects/{项目}"
         说明="2026-09-29 补的:原来**没有任何接口能列出样本**,"
              "而它的错误提示写着「把样本详情里的 revision 放进 If-Match」——"
              "**指着一个不存在的接口**"),
+    "POST /chat-handoffs/{id}/resolve": dict(
+        取id=("/chat-handoffs", "items[0].id"),
+        读="/chat-handoffs/{id}", 字段="revision", 项目="project_demo_a",
+        说明="2026-11-09 聊天转人工:人工待办页打开详情时拿 revision,处理时带上"),
     "POST /execution-runs/{id}/pause": dict(
         取id=("/execution-runs", "items[0].id"),
         读="/execution-runs/{id}", 字段="revision",

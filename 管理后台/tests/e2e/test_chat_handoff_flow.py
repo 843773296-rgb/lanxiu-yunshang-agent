@@ -71,7 +71,8 @@ def main():
         c, b = 打("GET", 详)
         ck("管理员看得到原话", c == 200 and 标 in str(b.get("question_note")) and b.get("原话看得到吗") is True, (c, b))
         rev = b.get("revision")
-        看不到 = os.environ.get("AIMC_VIEWER", "U003")
+        看不到 = "E2EHOV" + uuid.uuid4().hex[:4]   # 自己建一个 viewer:CI 新库里这个项目没有演示账号
+        打("POST", P + "/memberships", {"工号": 看不到, "角色": "viewer"})
         c, b = 打("GET", 详, 谁=看不到)
         ck("没有受理权限的角色看不到原话", c == 200 and b.get("question_note") is None and b.get("原话看得到吗") is False, (c, b))
 
@@ -95,6 +96,10 @@ def main():
             ck("已处理却没有处理时间 → 库拒绝", False, "写进去了")
         except Exception as e:
             ck("已处理却没有处理时间 → 库拒绝", "ck_chat_handoffs_handled" in str(e), e)
+
+        print("⑦ 演示项目留一条样例(If-Match 可达性检查要从列表里拿一条;正式项目不留)")
+        c, b = 打("POST", "/api/v1/projects/project_demo_a/chat-handoffs", 体("e2e-sample-固定"), 内)
+        ck("演示项目里有一条样例待办(重复跑不会多出来)", c == 201, (c, b))
     finally:
         with 库.begin() as k:
             k.execute(text("delete from chat_handoffs where chat_trace_ref like :t"), {"t": 标 + "%"})

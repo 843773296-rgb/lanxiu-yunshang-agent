@@ -108,7 +108,8 @@ print()
 #  判据自己造出它要验的东西,别指望环境。)
 # 换成遍历还顺带多守一块:**新写的、还没 `git add` 的脚本也会被扫到**。
 跳过 = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache",
-       ".feynman", "venv", ".mypy_cache", ".ruff_cache"}
+       ".feynman", "venv", ".mypy_cache", ".ruff_cache",
+       ".claude"}   # .claude/worktrees 是别的检出的副本,不是这份代码:主检出里跑才会扫到,红的是别人的旧分支
 脚本们 = []
 for 根, 子, 文 in os.walk(ROOT):
     子[:] = [d for d in 子 if d not in 跳过 and not d.startswith(".worktrees")]
