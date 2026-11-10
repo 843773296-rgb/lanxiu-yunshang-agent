@@ -18439,5 +18439,53 @@
    }
   ],
   "预期红": "`误转吗()` 里写明了这个定义的保质期"
+ },
+ {
+  "script": "tools/vocab_check.py",
+  "改坏": "把 must_say 里的 `g.needles = ...` 那行删掉 —— 11-10 收紧「带词表题数」下限(58)后才咬得住:原来判据只要 ≥1 道题带词表,删掉一处 g.needles/g.parts 还剩别的",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "        return [] if tm.says(text, list(needles)) else [f\"内容:没说到「{needles[0]}」—— {why}\"]\n    g.needles = list(needles)          # 给 vocab_check 用\n",
+    "new": "        return [] if tm.says(text, list(needles)) else [f\"内容:没说到「{needles[0]}」—— {why}\"]\n"
+   }
+  ],
+  "预期红": "查得到枚举词表(判据要把自己的词表记下来)"
+ },
+ {
+  "script": "tools/vocab_check.py",
+  "改坏": "把 all_of 里的 `g.parts = ...` 那行删掉 —— 11-10 收紧「带词表题数」下限(58)后才咬得住:原来判据只要 ≥1 道题带词表,删掉一处 g.needles/g.parts 还剩别的",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "        for x in gs: out += x(text, traj, case)\n        return out\n    g.parts = list(gs)\n    return g",
+    "new": "        for x in gs: out += x(text, traj, case)\n        return out\n    return g"
+   }
+  ],
+  "预期红": "查得到枚举词表(判据要把自己的词表记下来)"
+ },
+ {
+  "script": "tools/vocab_check.py",
+  "改坏": "把某道题「用非首选说法答对」的那条对照用例改成含首选词(排班 S01 那条唯一的「未排」备选改成「还没排」)—— 11-10 下限从 27 推到 63 后才咬得住",
+  "file": [
+   {
+    "path": "agent/ops_eval_judgetest.py",
+    "old": "那一周**未排**,7 天都没有记录",
+    "new": "那一周**还没排**,7 天都没有记录"
+   }
+  ],
+  "预期红": "验过备选说法的词表不少于下限"
+ },
+ {
+  "script": "tools/vocab_check.py",
+  "改坏": "把「织造」那条的 why 里「没有备选」四个字删掉",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "\"**专有名词,没有备选说法**\"",
+    "new": "\"**专有名词**\""
+   }
+  ],
+  "预期红": "只有一个词的判据,要说明为什么不需要备选"
  }
 ]

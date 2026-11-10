@@ -44,7 +44,6 @@
   "tools/repo_consistency_check.py": 2,
   "tools/runlog_check.py": 2,
   "tools/shift_e2e.py": 5,
-  "tools/shift_world.py": 4,
-  "tools/vocab_check.py": 3
+  "tools/shift_world.py": 4
  }
 }
