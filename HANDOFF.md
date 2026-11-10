@@ -247,7 +247,7 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 ## ✅ 11-10 10:3x 咬合欠账这一段已推 51aec3e3
 - 271 → 188 处;66 条新规格 + 17 处对齐;锁里 23 个脚本正式重放全过(含要读库的 6 条)、check.sh 退出码 0;5 处检查本身的病已修(见提交信息)。
 - **11-10 10:4x**:51aec3e3 的完备重放 42 条全过(总结行印 28,按各脚本 [N/N] 加起来 42)、CI 三项绿。第二批 7 条(d10 评分 3 / d11 上下文注入 2、截断 2)已推 4a2aa25f(欠账 188 → 181;锁里重放 16 条 + check.sh 绿;完备重放 10 条过;CI 三项绿)。截断那 2 条在简化副本里验不了(要扫整仓),只靠正式重放。上下文注入的「按事整件豁免」那条没补:豁免表现在是空的,攻击无处可落。
-- **第三批(未提交)**:d12 判据点名的工具在架上 5 条(副本验过)+ d13 词表 2 条(要读库,只靠正式重放);已并进规格,欠账 181 → 175 已登记;锁里重放 + check.sh 在跑 → .wip-glossary/bite_drafts/replay_run3.out。绿了 `git commit --only tools/bite_specs.json tools/咬合两份记录欠债.json` → 推 → `bite_replay_touched.py --提交 X --工作区脏也跑` + 看 CI。
+- **第三批已推 a53bc592**:判据点名的工具在架上 5 条过,欠账 181 → 176。**词表检查 2 条正式重放没过、已撤**(草稿改名 x13_vocab_撤回.json):去掉 must_say 的 g.needles 不红(别处还记着),去掉 all_of 的 g.parts 红的是「验过备选的词表不少于下限」—— **vocab_check 脚本里那两条咬合说法本身不准**,要另修(改清单那句或换攻击点)。完备重放 + CI 在后台 → replay_touched3.out。
 - (已过)按改过文件的完备重放 `.wip-glossary/bite_drafts/replay_touched.out`(改过的文件上还钉着别人以前的规格)、CI。红了先看是不是我改的那几行挪了别的规格的锚点。
 - **下一步**:两样都绿 → 继续按 `.wip-glossary/bite_gap.py` 列的剩余 188 处往下补(草稿流程:.wip-glossary/bite_drafts/try_spec.py 验 → merge.py 并 → replay_mine.sh 锁里重放);库型的(chat_order_check / grading_check 等)只能正式重放。
 - **禁区不变**:eureka-fc 的 nightly_* / snapshot_*、agent/nightly/、stash 里的 autostash。意图评测等用户给频率分档(归 eureka-fc 问)。
