@@ -18487,5 +18487,94 @@
    }
   ],
   "预期红": "只有一个词的判据,要说明为什么不需要备选"
+ },
+ {
+  "script": "tools/nightly_check.py",
+  "改坏": "把 `清单()` 自动发现那一支的 `and f not in 永远不跑` 去掉 —— **名单还在、判据还在调它,断的是中间那根线**;独立测试集当晚就会被跑掉,而题面一个字都不会变",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "and f not in 单跑那晚\n                and f not in 永远不跑):",
+    "new": "and f not in 单跑那晚):"
+   }
+  ],
+  "预期红": "七天的 `清单()` 里一次都没出现"
+ },
+ {
+  "script": "tools/nightly_check.py",
+  "改坏": "把「永远不跑」名单里那条的**理由整个清空** —— 没理由的排除,下一个人不敢删也不敢留(11-10 第一版写成 `\"\" if 0 else \"…\"`,**那是空操作**:走 else 分支理由还在,咬合报「改坏了却没红」——CLAUDE.md 列的咬合失效第 ④ 种;**攻击语义没变**)",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "    \"intent_eval.py\": \"意图识别的**独立测试集**(用户 2026-11-08 拍:自动上线门槛只认它)。\"\n                      \"跑一次它就永久降级成验证集,而题面一个字都不会变 —— \"\n                      \"夜跑一晚就能把那唯一的一次用掉。调配置请用老 50 题 skill_eval。\",",
+    "new": "    \"intent_eval.py\": \"\","
+   }
+  ],
+  "预期红": "名单里每一条都写了理由"
+ },
+ {
+  "script": "agent/intent_eval_judgetest.py",
+  "改坏": "让「调用失败」回 `False` 而不是 `None` —— **环境问题被算进分母当成答错**,而它和真答错在「没判对」上长得一模一样",
+  "file": [
+   {
+    "path": "agent/intent_eval.py",
+    "old": "        return None, \"调用失败\"",
+    "new": "        return False, \"调用失败\""
+   }
+  ],
+  "预期红": "调用失败回 None(不是 False)"
+ },
+ {
+  "script": "agent/intent_eval_judgetest.py",
+  "改坏": "把两个门槛改成「任一满足即达标」—— 判不出率超标也能上线",
+  "file": [
+   {
+    "path": "agent/intent_eval.py",
+    "old": "    return (汇总[\"判对率\"] >= 判对线) and (汇总[\"判不出率\"] <= 判不出线)",
+    "new": "    return (汇总[\"判对率\"] >= 判对线) or (汇总[\"判不出率\"] <= 判不出线)"
+   }
+  ],
+  "预期红": "判对够了但判不出超了 → 不达标"
+ },
+ {
+  "script": "agent/intent_eval_judgetest.py",
+  "改坏": "去掉「一道都没跑到就别算率」那道守卫,**顺手加个防除零** —— 这才是会悄悄过审的那种改法(11-10 第一版只去守卫,结果抛 ZeroDivisionError,第三关当场报「红的不是那一条」—— **语法/崩溃式的破坏证明不了判据**;攻击语义没变)。坏了之后它会印「判对率 0.0%」,而**「0%」和「一道都没测到」要触发的动作完全不同**",
+  "file": [
+   {
+    "path": "agent/intent_eval.py",
+    "old": "    if not 真:",
+    "new": "    if False:"
+   },
+   {
+    "path": "agent/intent_eval.py",
+    "old": "    判对率, 判不出率 = len(对) / len(真), len(不出) / len(真)",
+    "new": "    判对率, 判不出率 = len(对) / (len(真) or 1), len(不出) / (len(真) or 1)"
+   }
+  ],
+  "预期红": "一道都没真跑到时不许算率"
+ },
+ {
+  "script": "agent/intent_eval_judgetest.py",
+  "改坏": "把「判不出」算成判对 —— **模型没法决定被当成答对了**,而判不出要调的是分类阈值 / 缺不缺一个意图,和判错要改的东西不同",
+  "file": [
+   {
+    "path": "agent/intent_eval.py",
+    "old": "        return False, \"判不出\"",
+    "new": "        return True, \"判不出\""
+   }
+  ],
+  "预期红": "判不出不算判对"
+ },
+ {
+  "script": "agent/intent_eval_judgetest.py",
+  "改坏": "把「两个门槛都要过」里的判不出线放到 1.0(等于那个门槛不存在)—— 判不出率再高也能上线,而报告上照旧印一个带 ✅ 的判不出率",
+  "file": [
+   {
+    "path": "agent/intent_eval.py",
+    "old": "判对线, 判不出线 = 0.90, 0.05",
+    "new": "判对线, 判不出线 = 0.90, 1.0"
+   }
+  ],
+  "预期红": "判对够了但判不出超了 → 不达标"
  }
 ]

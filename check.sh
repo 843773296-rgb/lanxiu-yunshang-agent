@@ -271,6 +271,7 @@ run "简体闸 · 业务数据一律简体(外来文本进来前先查)" python3
 run "商机判断 · 24 条逐字稿(造的对话·纯规则版·只许升不许降)" python3 backend/opportunity_check.py
 run "商机对象 · 指回通话、和方案互指、两种终态分得开、诉求指得回原话" python3 backend/opportunity_obj_check.py
 run "商机提醒进顾问待办 · 规则只提示、选结论才改、满足了才记偏好、作废的偏好不再推" python3 backend/opportunity_task_check.py
+run "意图判分器 · 26 条对照(判错/判不出/调用失败三类分开、调用失败不进分母、两个门槛都要过且两轮都要过、独立题和老 50 题一句不撞)" python3 agent/intent_eval_judgetest.py
 run "商机研判判分器 · 24 条对照(原话只认客户说的、指向真在库里且归这位客户、不给成单概率)" python3 agent/oppo_eval_judgetest.py
 run "录音接进流程 · 双声道按声道分、单声道模型分(答歪整通标未分)、失败落库、上传核门店" python3 backend/call_flow_check.py
 run "录音同意 · 不能撤回所以界面没有撤回入口、不进 consent 表、每通录音记着依据(业务 D9)" python3 backend/recording_terms_check.py
