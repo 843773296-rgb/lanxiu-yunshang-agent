@@ -17605,5 +17605,65 @@
    }
   ],
   "预期红": "欠债表里的都还欠着"
+ },
+ {
+  "script": "tools/judge_tool_names_check.py",
+  "改坏": "判据 need_tool 点名一个已下架的工具(piece_ratios)",
+  "file": [
+   {
+    "path": "agent/workshop_eval.py",
+    "old": "写工具 = (\"report_production\",)\n",
+    "new": "写工具 = (\"report_production\",)\n_咬合样本 = need_tool(\"piece_ratios\")\n"
+   }
+  ],
+  "预期红": "不在架上 —— 模型看不见它"
+ },
+ {
+  "script": "tools/judge_tool_names_check.py",
+  "改坏": "need_any_tool 的备选全换成已下架的",
+  "file": [
+   {
+    "path": "agent/workshop_eval.py",
+    "old": "写工具 = (\"report_production\",)\n",
+    "new": "写工具 = (\"report_production\",)\n_咬合样本 = need_any_tool(\"piece_ratios\", \"old_ratio_tool\")\n"
+   }
+  ],
+  "预期红": "一个都不在架上"
+ },
+ {
+  "script": "tools/judge_tool_names_check.py",
+  "改坏": "判分器对照的轨迹里写一个已下架的工具",
+  "file": [
+   {
+    "path": "agent/workshop_eval.py",
+    "old": "写工具 = (\"report_production\",)\n",
+    "new": "写工具 = (\"report_production\",)\n_咬合轨迹 = [\"mcp__kb__piece_ratios\"]\n"
+   }
+  ],
+  "预期红": "模型走不出这条轨迹"
+ },
+ {
+  "script": "tools/judge_tool_names_check.py",
+  "改坏": "登记册读空(架上 0 个工具)",
+  "file": [
+   {
+    "path": "tools/judge_tool_names_check.py",
+    "old": "    return {s[\"name\"] for 组 in (api.SHOP_SCHEMAS, api.KB_SCHEMAS, api.SCHEMAS) for s in 组}",
+    "new": "    return set()"
+   }
+  ],
+  "预期红": "登记册没读到"
+ },
+ {
+  "script": "tools/judge_tool_names_check.py",
+  "改坏": "扫描规则失效(一处点名都没扫到)",
+  "file": [
+   {
+    "path": "tools/judge_tool_names_check.py",
+    "old": "扫哪些 = (\"agent/*eval*.py\",)",
+    "new": "扫哪些 = (\"agent/*不存在的目录*/*eval*.py\",)"
+   }
+  ],
+  "预期红": "扫描规则失效"
  }
 ]
