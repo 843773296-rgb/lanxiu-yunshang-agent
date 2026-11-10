@@ -9686,12 +9686,12 @@
  },
  {
   "script": "tools/bite_check.py",
-  "改坏": "把欠债表里 backend/source_check.py 的处数从 4 改小(等于声称已经还了一部分)",
+  "改坏": "把欠债表里一个脚本的处数改小(等于声称已经还了一部分)—— 用 tools/intent_check.py(它的咬合钉在天天改的 HANDOFF 上,11-10 判断过不补,处数短期不会动)。⚠️ 11-11 改:原来钉在 backend/source_check.py 的 4 上,那 4 处一还(4→2)破坏点当场过期 ——**盯着一个会被还掉的数,还账本身就会让它漂**;哪天 intent_check 的处数变了,这条要跟着换",
   "file": [
    {
     "path": "tools/咬合两份记录欠债.json",
-    "old": "\"backend/source_check.py\": 4",
-    "new": "\"backend/source_check.py\": 3"
+    "old": "\"tools/intent_check.py\": 2",
+    "new": "\"tools/intent_check.py\": 1"
    }
   ],
   "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
@@ -18828,5 +18828,29 @@
    }
   ],
   "预期红": "条回传早于下单"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把 kb_lookup 查不到时那句话里的 kb_read 指路整段删掉",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "                        f\"用 `kb_read` 先看目录(比如 `kb_read(\\\"09\\\")` 是养护与售后)。\",\n",
+    "new": "                        f\"\",\n"
+   }
+  ],
+  "预期红": "结构化条目查不到时,那句话要指向正文"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "让 kb_read 的目录里也带上正文",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            \"小节\": [{\"标题\": x[\"标题\"], \"行数\": len(x[\"行\"]),\n",
+    "new": "            \"小节\": [{\"标题\": x[\"标题\"], \"行数\": len(x[\"行\"]), \"正文\": \"\\n\".join(x[\"行\"]),\n"
+   }
+  ],
+  "预期红": "不许一次吐整篇"
  }
 ]
