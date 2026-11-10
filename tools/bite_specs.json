@@ -18074,5 +18074,101 @@
    }
   ],
   "预期红": "一条路径不会同时在「不挂」和「已移交」两张表里"
+ },
+ {
+  "script": "agentsite/scheme_hook_test.py",
+  "改坏": "把 PreCompact 那一路从 make_hooks 的返回里摘掉",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        \"PreCompact\":       [HookMatcher(hooks=[on_compact])],\n",
+    "new": ""
+   }
+  ],
+  "预期红": "⑤ 第五个挂载点"
+ },
+ {
+  "script": "agentsite/scheme_hook_test.py",
+  "改坏": "让锚点不看参数名、只看工具名就记(列清单也记)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "            v = (inp.get(\"tool_input\") or {}).get(k)\n",
+    "new": "            v = (inp.get(\"tool_input\") or {}).get(k) or \"(列清单)\"\n"
+   }
+  ],
+  "预期红": "⑦ 按客户列订单清单"
+ },
+ {
+  "script": "agentsite/scheme_hook_test.py",
+  "改坏": "把 on_prompt 里的 state.pop(\"刚压缩过\") 改成 state.get",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if state.pop(\"刚压缩过\", None):",
+    "new": "        if state.get(\"刚压缩过\", None):"
+   }
+  ],
+  "预期红": "⑨ 只在压缩后的第一轮注"
+ },
+ {
+  "script": "tools/chat_order_cards_check.py",
+  "改坏": "把卡片那头的 where 条件改松(顾问能看到别人的单)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "return \" AND (o.advisor_no=? OR o.cust_advisor_no=?)\", [no, no], 话, no",
+    "new": "return \" AND (o.advisor_no=? OR o.cust_advisor_no=? OR 1=1)\", [no, no], 话, no"
+   }
+  ],
+  "预期红": "每张卡片都通过逐条复核"
+ },
+ {
+  "script": "tools/chat_order_cards_check.py",
+  "改坏": "把「总数」改成 len(卡片)(只给前 20 张却报成 20 单)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "\"范围\": 范围话, \"总数\": 总数, \"卡片数\": len(rs)",
+    "new": "\"范围\": 范围话, \"总数\": len(rs), \"卡片数\": len(rs)"
+   }
+  ],
+  "预期红": "总数不是卡片数"
+ },
+ {
+  "script": "tools/chat_order_cards_check.py",
+  "改坏": "认不出的说法也按「一月」那种读法往下走(猜一个月份,不再报格式错)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "mo = _中文月.get(原) or (int(原) if 原.isdigit() and 1 <= int(原) <= 12 else None)",
+    "new": "mo = _中文月.get(原) or (int(原) if 原.isdigit() and 1 <= int(原) <= 12 else 1)"
+   }
+  ],
+  "预期红": "认不出的说法 → 报格式错,**不是「判不了」**"
+ },
+ {
+  "script": "tools/chat_order_cards_check.py",
+  "改坏": "相对天数那条歧义也一并猜掉(不给方向就默认往前)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if not 绝对 and direction not in (\"往后\", \"往前\", \"future\", \"past\"):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "相对天数不给方向 → 仍然走「判不了」"
+ },
+ {
+  "script": "tools/chat_order_cards_check.py",
+  "改坏": "把绝对区间和相对天数同时给时静默挑一个",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if 绝对 and direction is not None:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "绝对区间和相对天数同时给 → 报错"
  }
 ]
