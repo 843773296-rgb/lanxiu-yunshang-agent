@@ -49,7 +49,7 @@
 所以和来源欠账同一个办法:**只许降不许涨** —— 新加的检查必须带记录,
 旧的慢慢还。
 """
-import ast, os, re, sys
+import ast, contextlib, importlib.util, io, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -380,6 +380,15 @@ def 读两份欠债():
     # 门禁跑不到那一支,所以它靠 `main()` 里那段自测被盯住。
     ("把 `--登记` 那道「只许降」的闸改成永不拦",
      "`--登记` 只许降(涨了要拦、降了放行、第一次放行)"),
+    # ── 2026-11-10 加的两条:重放工具报的样本量不是它真跑的那个数 ──────
+    # 两条**断在不同的地方**,而判据是同一条 —— 刻意的:
+    # 一条断「报数那根线」(重放照旧跑得一条不少),
+    # 一条断「问 `bite_run --list` 要条数」那条线(预告静默变成 None)。
+    # 两种都让那份报数变成假的,而**重放本身一点没变、照旧全过三关**。
+    ("把总结里那行「真跑的不是 N 条,是预计 M 条」改成不印数",
+     "重放工具同时报「撞上几条」和「真跑几条」"),
+    ("把「问 `bite_run --list` 要条数」那条正则改成永远对不上",
+     "重放工具同时报「撞上几条」和「真跑几条」"),
 ]
 
 FAIL = []
@@ -635,6 +644,59 @@ def main():
     if _散文:
         print(f"     \033[33mℹ️ 另一笔账:{len(_散文)} 个脚本只有散文清单、"
               f"没有可执行规格 —— **散文不会在回归时自己变红,规格会**\033[0m")
+
+
+    # ── 重放工具报的样本量,必须是它**真跑的**那个数 ──────────────────
+    #
+    # 2026-11-10 栽的:`tools/bite_replay_touched.py` 总结行印
+    # 「N 条撞上的规格,重放全过三关」,而 `bite_run --only <脚本>` 是**按脚本整套跑**,
+    # 实跑是撞上的**超集**。于是我报「34 条全过」,真跑的是 48 条;
+    # 并行会话同一天报 28,真跑 42 —— **两边都正好差 14,而谁都没看出来**。
+    # 方向是安全的(多跑了没少跑),但报出来的数不是跑出来的数。
+    # > 一份「我报的就是我跑的」,和一份「我报的是另一把尺子的读数」,
+    # > 在那行绿字上长得一模一样。
+    #
+    # ⚠️ 判据**走真入口**:真 import 它、真调 `main()`、真让它去问 `bite_run --list`。
+    # 只验那两个纯函数是不够的 —— 这个项目在「判据有没有验到那段代码真的被调用」
+    # 这一层栽过(CLAUDE.md 第 8 节第 ⑥ 条)。
+    # ⚠️ 输入**自己造**:从 bite_specs 里挑一个真被钉住的文件当「改过的文件」,
+    # 而不是拿 HEAD 碰巧改了什么 —— 后者那条判据红不红取决于环境。
+    _重放 = os.path.join(HERE, "bite_replay_touched.py")
+    _报数 = None
+    try:
+        _spec = importlib.util.spec_from_file_location("_重放模块", _重放)
+        _M = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_M)
+        _被钉的 = sorted({f.get("path") for x in _specs for f in (x.get("file") or [])
+                        if f.get("path")})[:1]
+        _旧改过, _旧argv = _M.改过的文件, sys.argv
+        try:
+            _M.改过的文件 = lambda c: set(_被钉的)
+            sys.argv = ["bite_replay_touched.py", "--只看", "--提交", "HEAD"]
+            _buf = io.StringIO()
+            with contextlib.redirect_stdout(_buf):
+                _rc = _M.main()
+            _出 = _buf.getvalue()
+        finally:
+            _M.改过的文件, sys.argv = _旧改过, _旧argv
+        _撞 = re.search(r"\*\*(\d+) 条钉在这些文件上\*\*", _出)
+        _实 = re.search(r"真跑的不是 \d+ 条,是预计 (\d+) 条", _出)
+        _问不出 = "整套几条问不出来" in _出
+        if _rc != 0:
+            _报数 = f"`--只看` 退了 {_rc},不是 0"
+        elif not _撞 or not _实:
+            _报数 = ("输出里找不到那两个数(撞上 / 实跑)—— "
+                     f"撞上={bool(_撞)} 实跑={bool(_实)}")
+        elif _问不出:
+            _报数 = "有脚本「整套几条问不出来」—— `bite_run --list` 这条线断了"
+        elif int(_实.group(1)) < int(_撞.group(1)):
+            _报数 = (f"实跑 {_实.group(1)} 条 < 撞上 {_撞.group(1)} 条 —— "
+                     "按脚本跑**必然是超集**,小于就是算错了")
+    except Exception as e:
+        _报数 = f"验不了:{type(e).__name__}: {e}"
+    ck("重放工具同时报「撞上几条」和「真跑几条」,而且后者是前者的超集"
+       "(真调它的 `main()`,真让它去问 `bite_run --list`)",
+       _报数 is None, 1, _报数 or "两个数都印出来了,实跑 ≥ 撞上")
 
     print(f"\n  ℹ 有记录的:{', '.join(os.path.basename(x) for x in 有)}")
     print("     **咬合本身也会失效,而且失效时和通过长得一样** —— "
