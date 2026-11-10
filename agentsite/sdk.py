@@ -1451,6 +1451,20 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                     # 而大多数返回值前端用不上。
                     _i = _traj下标.get(getattr(b, "tool_use_id", None))
                     if _i is not None:
+                        # ⚠️⚠️ **「调了」和「调了但失败了」必须分得开**(2026-11-11 加)。
+                        # 上面 traj.append 挂在 `ToolUseBlock` 上 —— 那是**模型发出的请求**,
+                        # 不是执行结果。而所有轨迹类判据判的都是「工具名在不在轨迹里」:
+                        #
+                        # > 「它调了 check_write」和「它要调 check_write 但调用报错 /
+                        # > 被 disallowed 拦下了」,**在轨迹上长得一模一样** ——
+                        # > 而前者该判过、后者该判挂。这个方向偏向**放过**。
+                        #
+                        # `is_error` 本来就拿得到(上一行证据树已经在用它),只是没落到 traj 上。
+                        # ⚠️ **只在出错时写这个键。** 写成 False 会让 11-11 以前的旧轨迹
+                        # (根本没这个字段)和「验过了、没出错」长得一样 —— 键不在
+                        # 表示「这一版还没这个章」,不表示「没出错」。
+                        if getattr(b, "is_error", False):
+                            traj[_i]["出错"] = True
                         _名 = str(traj[_i].get("tool") or "").rsplit("__", 1)[-1]
                         if _名 in 结构化回前端:
                             traj[_i]["result"] = _结构化(
