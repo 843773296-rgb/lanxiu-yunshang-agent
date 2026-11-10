@@ -4,7 +4,6 @@
  "登记于": "2026-10-20",
  "欠着的": {
   "agent/scheme_eval.py": 3,
-  "agent/spans_check.py": 8,
   "agentsite/guards_test.py": 1,
   "agentsite/layout_check.py": 2,
   "agentsite/tool_eval.py": 1,

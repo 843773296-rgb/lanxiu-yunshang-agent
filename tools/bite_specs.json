@@ -16199,19 +16199,19 @@
  },
  {
   "script": "管理后台/tests/orchestration/test_glossary.py",
-  "改坏": "「转人工」冻结时不拦 —— 看起来能用而店长助手根本没接上",
+  "改坏": "把「转人工」放回「还没接上的去向」(11-10 用户点头开转人工之后,这条从「拦住」翻成「不许再拦」;原来的攻击是让冻结时不拦)",
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/术语.py",
-    "old": "        elif 去 in 还没接上的去向:\n",
-    "new": "        elif False:\n"
+    "old": "还没接上的去向 = ()",
+    "new": "还没接上的去向 = (\"转人工\",)"
    }
   ],
-  "预期红": "⑪ 配置检查:转人工这一版拦住 / 提示一句没写提示 / 先调工具没写工具 / 实体没写类别 / 条件和去向不在清单里 → 都阻断"
+  "预期红": "⑪ 转人工已接上:选「转人工」的规则不再被拦"
  },
  {
   "script": "管理后台/tests/e2e/test_route_flow.py",
-  "改坏": "冻结路由前不查配置 —— 缺工具名、选了转人工也照冻",
+  "改坏": "冻结路由前不查配置 —— 缺工具名也照冻(11-10 起转人工放行,这条只剩「缺参数要拦」)",
   "file": [
    {
     "path": "管理后台/services/api/app/routes_api.py",
@@ -16219,7 +16219,7 @@
     "new": "        阻, _ = T.路由配置问题(配)\n        if False:"
    }
   ],
-  "预期红": "② 转人工(还没接上)/ 先调工具没写工具 → 检查点名、冻结 422"
+  "预期红": "② 先调工具没写工具 → 检查点名、冻结 422"
  },
  {
   "script": "管理后台/tests/e2e/test_route_flow.py",
@@ -18295,5 +18295,101 @@
    }
   ],
   "预期红": "套名没从结果文件名推对"
+ },
+ {
+  "script": "agent/spans_check.py",
+  "改坏": "sdk.py 里把落盘那句删掉(开了树但从不写文件)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        _树.落盘()\n",
+    "new": "        pass\n"
+   }
+  ],
+  "预期红": "记录仪接上了(开树 + 落盘)"
+ },
+ {
+  "script": "agent/spans_check.py",
+  "改坏": "把 验一棵() 里数根的那句去掉",
+  "file": [
+   {
+    "path": "agent/spans_check.py",
+    "old": "    if len(根) != 1: 问.append(f\"根有 {len(根)} 个(应当正好 1 个)\")",
+    "new": "    pass"
+   }
+  ],
+  "预期红": "两个根"
+ },
+ {
+  "script": "agent/spans_check.py",
+  "改坏": "把 验一棵() 里查「父在不在同一棵」的那句关掉",
+  "file": [
+   {
+    "path": "agent/spans_check.py",
+    "old": "    if 孤: 问.append(",
+    "new": "    if False: 问.append("
+   }
+  ],
+  "预期红": "父指到别棵去"
+ },
+ {
+  "script": "agent/spans_check.py",
+  "改坏": "工具 span 收了尾却没返回值时不报",
+  "file": [
+   {
+    "path": "agent/spans_check.py",
+    "old": "        if s.get(\"status\") in (\"ok\", \"error\") and \"gen_ai.tool.call.result\" not in a:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "工具收了尾却没返回值"
+ },
+ {
+  "script": "agent/spans_check.py",
+  "改坏": "子 span 比根还久时不报",
+  "file": [
+   {
+    "path": "agent/spans_check.py",
+    "old": "        if 超: 问.append(",
+    "new": "        if False: 问.append("
+   }
+  ],
+  "预期红": "子比根还久"
+ },
+ {
+  "script": "agent/spans_check.py",
+  "改坏": "根上说对不上账时不查分步还留没留输出 token",
+  "file": [
+   {
+    "path": "agent/spans_check.py",
+    "old": "        if 留: 问.append(",
+    "new": "        if False: 问.append("
+   }
+  ],
+  "预期红": "对不上账却还留着分步输出数"
+ },
+ {
+  "script": "agent/spans_check.py",
+  "改坏": "扫凭据() 不再按键名报",
+  "file": [
+   {
+    "path": "agent/spans_check.py",
+    "old": "                if _sp.凭据键.search(str(k)) and v != _sp.抹了:",
+    "new": "                if False:"
+   }
+  ],
+  "预期红": "日志里写了凭据键名"
+ },
+ {
+  "script": "agent/spans_check.py",
+  "改坏": "把凭据词表写宽(tokens 也当凭据)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "secret|token(?!s)|api",
+    "new": "secret|token|api"
+   }
+  ],
+  "预期红": "input_tokens / cache_read_input_tokens 不算凭据"
  }
 ]

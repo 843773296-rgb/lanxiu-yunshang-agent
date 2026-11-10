@@ -26,6 +26,9 @@
     <key>LANXIU_USAGE_URL</key><string>http://127.0.0.1:8801</string>
     <key>LANXIU_BRIDGE_PROJECT</key><string>project_lanxiu</string>
     <key>LANXIU_USAGE_USER</key><string>U001</string>
+    <!-- 转人工(11-10 用户点头开):判不出 / 分类调用失败 / 路由规则点名转人工 → 建人工待办、店长看到待办编号。
+         ⚠️ 和 管理后台 runtime/术语.py 的「还没接上的去向」一起动:那张表放行而这里没开 = 后台能选、聊天站不生效 -->
+    <key>LANXIU_CHAT_HANDOFF</key><string>1</string>
   </dict>
 </dict>
 </plist>

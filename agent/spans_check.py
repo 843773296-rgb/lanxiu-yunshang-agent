@@ -40,13 +40,16 @@ import spans as _sp     # noqa: E402
 # 左边「改坏了什么」,右边「预期红的那一条」。**没红过的检查等于没有。**
 # 下面八条在 `--selftest` 里都是可执行的,`python3 agent/spans_check.py` 会连跑。
 咬合 = [
+    # 11-10 重写:原来左边写的是「日志里塞两个根」这类**造数据**的改法 —— 那是自测内部自己咬的,
+    # 落不成可重放的规格(规格只能改代码);而且右边写的是红行里的半句,和自测那行 ❌ 对不上。
+    # 现在左边改**判据代码**,右边是自测里那条咬合的名字(判据被关掉时,它印 ❌ 名字 → 没红)。
     ("sdk.py 里把落盘那句删掉(开了树但从不写文件)", "记录仪接上了(开树 + 落盘)"),
-    ("日志里塞两个根", "根有 2 个"),
-    ("把某个 span 的父指到别棵树去", "父不在同一棵里"),
-    ("工具 span 收了尾却不带返回值(证据面板会是空的)", "没有返回值"),
-    ("让子 span 的耗时超过根", "子比根还久"),
-    ("根上说对不上账、分步却留着输出 token", "还留着输出 token"),
-    ("往 attr 里写一个「密码」键", "日志里没有凭据类字段"),
+    ("把 验一棵() 里数根的那句去掉", "两个根"),
+    ("把 验一棵() 里查「父在不在同一棵」的那句关掉", "父指到别棵去"),
+    ("工具 span 收了尾却没返回值时不报", "工具收了尾却没返回值"),
+    ("子 span 比根还久时不报", "子比根还久"),
+    ("根上说对不上账时不查分步还留没留输出 token", "对不上账却还留着分步输出数"),
+    ("扫凭据() 不再按键名报", "日志里写了凭据键名"),
     ("把凭据词表写宽(tokens 也当凭据)", "input_tokens / cache_read_input_tokens 不算凭据"),
 ]
 
@@ -138,6 +141,15 @@ def 扫凭据(棵们):
 def 跑(棵们, src=None):
     有 = 接上了吗(src)
     ck("记录仪接上了(开树 + 落盘)", all(有.values()), 有)
+    # 词表写宽的代价和写窄一样大:红的全是好人,于是没人再看这条检查。
+    # 2026-09-24 第一版就栽在这儿 —— `token` 写成光秃秃的,把用量字段全报成凭据。
+    ck("input_tokens / cache_read_input_tokens 不算凭据",
+       not any(_sp.凭据键.search(k) for k in
+               ("gen_ai.usage.input_tokens", "gen_ai.usage.cache_read_input_tokens",
+                "gen_ai.usage.cache_creation_input_tokens"))
+       and all(_sp.凭据键.search(k) for k in ("access_token", "密码", "api_key")))
+    # ⚠️ 11-10 挪到这儿:原来排在下面「日志为空就 return」之后 —— CI 从零建库、日志必然是空的,
+    # 于是**这条只看词表、跟日志无关的检查在 CI 上从没跑过**。
     if not 棵们:
         # ⚠️ **这里不许红。** CI 从零建库、不调模型,日志必然是空的 ——
         # 红在这儿就是这个项目栽过三次的「本地绿、CI 从零红」。
@@ -153,13 +165,6 @@ def 跑(棵们, src=None):
        not 坏, 坏 or f"{len(棵们)} 棵全对")
     中 = 扫凭据(棵们)
     ck("日志里没有凭据类字段", not 中, 中[:3] or "")
-    # 词表写宽的代价和写窄一样大:红的全是好人,于是没人再看这条检查。
-    # 2026-09-24 第一版就栽在这儿 —— `token` 写成光秃秃的,把用量字段全报成凭据。
-    ck("input_tokens / cache_read_input_tokens 不算凭据",
-       not any(_sp.凭据键.search(k) for k in
-               ("gen_ai.usage.input_tokens", "gen_ai.usage.cache_read_input_tokens",
-                "gen_ai.usage.cache_creation_input_tokens"))
-       and all(_sp.凭据键.search(k) for k in ("access_token", "密码", "api_key")))
     # 工具的返回值**必须真的记着** —— 这是这次升级的全部意义所在,
     # 只记了调用没记返回值的话,证据面板还是空的,而树看起来是完整的。
     工具 = [s for v in 棵们.values() for s in v
