@@ -17713,5 +17713,41 @@
    }
   ],
   "预期红": "源头被人动过就不许直接覆盖"
+ },
+ {
+  "script": "tools/impact.py",
+  "改坏": "把找警示段落的正则改窄(只留「千万」)",
+  "file": [
+   {
+    "path": "tools/impact.py",
+    "old": "警示 = re.compile(r\"⚠️?.{0,40}(不许|别在|别去|故意|不要|千万|永远不)\")",
+    "new": "警示 = re.compile(r\"⚠️?.{0,40}(千万)\")"
+   }
+  ],
+  "预期红": "找得到的警示段落"
+ },
+ {
+  "script": "tools/fixture_check.py",
+  "改坏": "把 tool_eval 里的 `前提 = [...]` 整段删掉",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "\n前提 = [\n",
+    "new": "\n_前提已删 = [\n"
+   }
+  ],
+  "预期红": "写死了夹具的,都声明了前提"
+ },
+ {
+  "script": "tools/fixture_check.py",
+  "改坏": "把某条前提改成一个不成立的断言(比如说某客户有多个着装人,而他只有一个)",
+  "file": [
+   {
+    "path": "agent/chat_eval.py",
+    "old": "api.kb_combo(\"妆花\", \"纱\")[\"verdict\"] == \"不可\")]",
+    "new": "api.kb_combo(\"妆花\", \"纱\")[\"verdict\"] == \"可以\")]"
+   }
+  ],
+  "预期红": "声明的前提都还成立"
  }
 ]
