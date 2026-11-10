@@ -37,12 +37,10 @@
   "fakedata/samekind.py": 2,
   "fakedata/stable.py": 2,
   "knowledge/linkage.py": 1,
-  "knowledge/rating.py": 3,
   "tools/backfill_rating.py": 9,
   "tools/case_check.py": 1,
   "tools/chat_order_cards_check.py": 5,
   "tools/clamp_future_done.py": 2,
-  "tools/context_conflict_check.py": 2,
   "tools/cron_health_check.py": 2,
   "tools/delivered_images.py": 4,
   "tools/doc_numbers_check.py": 1,
@@ -57,7 +55,6 @@
   "tools/runlog_check.py": 2,
   "tools/shift_e2e.py": 5,
   "tools/shift_world.py": 4,
-  "tools/truncation_check.py": 2,
   "tools/vocab_check.py": 3
  }
 }

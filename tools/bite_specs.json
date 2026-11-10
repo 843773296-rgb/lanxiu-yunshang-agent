@@ -17521,5 +17521,89 @@
    }
   ],
   "预期红": "队列:N 天还没过完的要标出来"
+ },
+ {
+  "script": "knowledge/rating.py",
+  "改坏": "往 研判能看的服务记录 里加一项「消费总额」(刻意排除的那一类)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "    (\"这个客户历史上的差评\", \"分得清「第一次」和「第三次」—— 补救力度本来就该不同\"),\n)",
+    "new": "    (\"这个客户历史上的差评\", \"分得清「第一次」和「第三次」—— 补救力度本来就该不同\"),\n    (\"这个客户的消费总额 / 会员等级\", \"看看是不是大客户\"),\n)"
+   }
+  ],
+  "预期红": "刻意排除的那几类,一个都不在「能看」清单里"
+ },
+ {
+  "script": "knowledge/rating.py",
+  "改坏": "把「优惠券」加回 处理方式 枚举",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "            \"全额退款\")     # 同上",
+    "new": "            \"全额退款\",     # 同上\n            \"优惠券\")"
+   }
+  ],
+  "预期红": "「优惠券」不在处理方式里"
+ },
+ {
+  "script": "knowledge/rating.py",
+  "改坏": "让 遮住处置痕迹 只按包裹号认(不看它长不长得像评价行)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "    return 带号 and 像评价\n",
+    "new": "    return 带号\n"
+   }
+  ],
+  "预期红": "同一个包裹号的**物流行**没被遮"
+ },
+ {
+  "script": "tools/context_conflict_check.py",
+  "改坏": "再给一条规矩登记 管=('日期',)(制造第三处管日期的)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    \"工作日记\":   (),                 # 只给背景,不定口径",
+    "new": "    \"工作日记\":   (\"日期\",),          # 只给背景,不定口径"
+   }
+  ],
+  "预期红": "同一件事只由一处管着(或写清谁说了算)"
+ },
+ {
+  "script": "tools/context_conflict_check.py",
+  "改坏": "把 guards.注入登记 里「业务今天」那条的主题删掉(不声明)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    \"业务今天\":   (\"日期\",),          # 权威在这里:规矩 TL53 只是复述,改这里必须同时改它\n",
+    "new": ""
+   }
+  ],
+  "预期红": "每一段注入都声明了自己管什么"
+ },
+ {
+  "script": "tools/truncation_check.py",
+  "改坏": "在任意一个检查脚本里新写一处 `\"；\".join(坏[:3])` 且不说还有几条",
+  "file": [
+   {
+    "path": "tools/runlog_check.py",
+    "old": "#!/usr/bin/env python3\n",
+    "new": "#!/usr/bin/env python3\ndef _咬合样本(坏):\n    print(\"；\".join(坏[:3]))\n"
+   }
+  ],
+  "预期红": "没有新增的静默截断"
+ },
+ {
+  "script": "tools/truncation_check.py",
+  "改坏": "把欠债表里某一条指向一个已经改好的位置",
+  "file": [
+   {
+    "path": "tools/截断欠债.json",
+    "old": " \"欠着的\": {\n",
+    "new": " \"欠着的\": {\n  \"tools/runlog_check.py\": [\n   \"坏\"\n  ],\n"
+   }
+  ],
+  "预期红": "欠债表里的都还欠着"
  }
 ]
