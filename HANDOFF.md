@@ -16345,34 +16345,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-10 15:22。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-10 17:39。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | f2004d40 · 2026-11-10 · 重放工具报的样本量,改成报它真跑的那个数(我 34→实跑 48、并行会话 28→实跑 42) |
-| 代码量 | 1026 个 Python 文件 / 187921 行(不含 .venv) |
+| 分支 | `main` |
+| 最新提交 | 5f7d4428 · 2026-11-10 · 咬合欠账第六批:23 条(记录仪自测/评测来路/用量上报/导航),欠账 169→146;顺修两处判据空转 |
+| 代码量 | 1026 个 Python 文件 / 187931 行(不含 .venv) |
 | 验收 | `./check.sh` 共 386 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
-?? .feynman/bite-all-20261016.log
+M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+ M .feynman/tool-eval.json
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/health/
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
 ?? .feynman/nightly-eval.log
-?? ".feynman/\345\205\250\351\241\271\347\233\256\345\277\253\347\205\247-20261109.md"
+?? .feynman/world-shift-launchd.log
+?? .wip-glossary/
+?? .wip-muslin/
+?? .wip-store-report-SKILL.md
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+5f7d4428 咬合欠账第六批:23 条(记录仪自测/评测来路/用量上报/导航),欠账 169→146;顺修两处判据空转
+8ec02626 交接:重放报数已修并真跑过一次(撞上 5 条 / 实跑 12 条,预告 == 实跑)
+80478d26 交接:记下完备重放新报数格式和退出码 3 的含义
 f2004d40 重放工具报的样本量,改成报它真跑的那个数(我 34→实跑 48、并行会话 28→实跑 42)
 6d852359 交接:咬合欠账第五批 CI 绿
-36596072 交接:咬合欠账先停在 169 处(剩下的锚点会漂或要库),改为等意图评测
-34c3e143 交接:咬合欠账第五批已推(169 处)
-5c375c68 咬合欠账 172→169:影响面警示正则、评测夹具前提 3 条补成可重放规格
 ```
 <!--/AUTO-->
 ## 一句话在做什么
