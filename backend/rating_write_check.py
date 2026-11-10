@@ -40,7 +40,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
      "批准人填成处理人自己 → 拒"),
     ("让 customer_edit_rating() 在差评改好评时把工单关掉", "差评改好评 → 工单不撤,还在待处理"),
     ("在 seed_rating 的建表里加一句 ALTER,给 rating 加个 status 列",
-     "rating 表没有 status 列(状态只存 task 上)"),
+     "rating 表没有 status 列"),
     ("把 seed_rating._建() 里的补列去掉", "已有的老表补完列,和从零建的列一致"),
     ("把 worldclock.已发生的时间列 里 rating 那三行去掉",
      "四列时间都登记进了 worldclock.已发生的时间列"),

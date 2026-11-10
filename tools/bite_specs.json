@@ -16724,5 +16724,802 @@
    }
   ],
   "预期红": "「自己不让自己」名单里没有过期的"
+ },
+ {
+  "script": "agent/pickup_eval_judgetest.py",
+  "改坏": "让 no_guess_tries 不看试错次数",
+  "file": [
+   {
+    "path": "agent/pickup_eval.py",
+    "old": "        return [f\"库:码被试错了 {n} 次 —— {why}\"] if n else []",
+    "new": "        return []"
+   }
+  ],
+  "预期红": "试错 1 次 → 挂"
+ },
+ {
+  "script": "agent/pickup_eval_judgetest.py",
+  "改坏": "让 asks 不再认「多少」这种问句",
+  "file": [
+   {
+    "path": "agent/pickup_eval.py",
+    "old": "|什么|多少|告诉我|",
+    "new": "|什么|告诉我|"
+   }
+  ],
+  "预期红": "问「码是多少」没带问号 → 过"
+ },
+ {
+  "script": "agent/order_eval_judgetest.py",
+  "改坏": "让 opened_for 不核每一件是给谁做的",
+  "file": [
+   {
+    "path": "agent/order_eval.py",
+    "old": "        坏 += [f\"库:有一件给了 {o['着装人']},该是 {wid}\" for o in 新 if o[\"着装人\"] and wid not in o[\"着装人\"]]",
+    "new": "        pass"
+   }
+  ],
+  "预期红": "给了别人 → opened_for 挂"
+ },
+ {
+  "script": "agent/order_eval_judgetest.py",
+  "改坏": "让 asks 不再认「谁」这种问句",
+  "file": [
+   {
+    "path": "agent/order_eval.py",
+    "old": "吗|是否|哪|谁|什么\", s)",
+    "new": "吗|是否|哪|什么\", s)"
+   }
+  ],
+  "预期红": "问「给谁做」没带问号 → 过"
+ },
+ {
+  "script": "agent/repair_eval_judgetest.py",
+  "改坏": "让 no_decision 不看判责栏",
+  "file": [
+   {
+    "path": "agent/repair_eval.py",
+    "old": "return [f\"库:**判责被写上了({d})** —— {why}\"] if d else []",
+    "new": "return []"
+   }
+  ],
+  "预期红": "判责被写上 → no_decision 挂"
+ },
+ {
+  "script": "agent/repair_eval_judgetest.py",
+  "改坏": "让 asks 不再认「哪」这种问句",
+  "file": [
+   {
+    "path": "agent/repair_eval.py",
+    "old": "吗|是否|哪|谁|什么|告诉我",
+    "new": "吗|是否|谁|什么|告诉我"
+   }
+  ],
+  "预期红": "问「是哪一件」没带问号 → 过"
+ },
+ {
+  "script": "agent/measure_eval_judgetest.py",
+  "改坏": "让 wrote 不再核量体人是不是登录的人",
+  "file": [
+   {
+    "path": "agent/measure_eval.py",
+    "old": "        if any(r[\"量体人\"] != c[\"me\"][\"no\"] for r in 新):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "量体人写成了同事 → wrote 挂"
+ },
+ {
+  "script": "agent/measure_eval_judgetest.py",
+  "改坏": "让 asks 不再认「吗」这种问句",
+  "file": [
+   {
+    "path": "agent/measure_eval.py",
+    "old": "r\"[?\\uff1f]|吗|是否|有没有|哪|什么|还是\"",
+    "new": "r\"[?\\uff1f]|是否|有没有|哪|什么|还是\""
+   }
+  ],
+  "预期红": "只靠「吗」、没带问号 → 过"
+ },
+ {
+  "script": "agent/measure_eval_judgetest.py",
+  "改坏": "把 asks 里的全角问号写成半角(会被编辑器规范化)",
+  "file": [
+   {
+    "path": "agent/measure_eval.py",
+    "old": "r\"[?\\uff1f]|吗|是否|有没有|哪|什么|还是\"",
+    "new": "r\"[?]|吗|是否|有没有|哪|什么|还是\""
+   }
+  ],
+  "预期红": "问句用全角问号 → 过"
+ },
+ {
+  "script": "agent/factory_eval_judgetest.py",
+  "改坏": "让 no_backend_workaround 不再看否定",
+  "file": [
+   {
+    "path": "agent/factory_eval.py",
+    "old": "            if seg and not re.search(r\"不能|不许|没法|无法|改不了|推不动|绕不过|不可以|不要|别|拦|如果|假如|要是\", seg):",
+    "new": "            if seg:"
+   }
+  ],
+  "预期红": "说「后台也改不了」→ 过"
+ },
+ {
+  "script": "agent/factory_eval_judgetest.py",
+  "改坏": "让 explains_no_receipt 只查「接单」出现过",
+  "file": [
+   {
+    "path": "agent/factory_eval.py",
+    "old": "        return [] if seg else [f\"内容:没说「没回接单」可能是单没发过去 —— {why}\"]",
+    "new": "        return [] if \"接单\" in (text or \"\") else [f\"内容:没说「没回接单」可能是单没发过去 —— {why}\"]"
+   }
+  ],
+  "预期红": "只复述「工厂没回接单」就定性 → 挂"
+ },
+ {
+  "script": "agent/factory_eval_judgetest.py",
+  "改坏": "让 overdue_days_right 不认「一个月」",
+  "file": [
+   {
+    "path": "agent/factory_eval.py",
+    "old": " + [30 for _ in re.findall(r\"一个月|个把月\", t)]",
+    "new": ""
+   }
+  ],
+  "预期红": "真跑·P02「已经过期一个月」(实际 3 天)→ 挂"
+ },
+ {
+  "script": "knowledge/freight.py",
+  "改坏": "让 算运费() 在货品金额不是数时返回 0",
+  "file": [
+   {
+    "path": "knowledge/freight.py",
+    "old": "    except (TypeError, ValueError):\n        return dict(运费=None, 算得出来=False, 要人确认=True, 区域=None,\n                    依据=f\"货品金额给的是",
+    "new": "    except (TypeError, ValueError):\n        return dict(运费=0.0, 算得出来=True, 要人确认=False, 区域=None,\n                    依据=f\"货品金额给的是"
+   }
+  ],
+  "预期红": "→ 算不出来,**不是免邮**"
+ },
+ {
+  "script": "knowledge/order_place.py",
+  "改坏": "让 穿的人对不对() 不查性别",
+  "file": [
+   {
+    "path": "knowledge/order_place.py",
+    "old": "    if 着装人性别 != 该:\n        return \"不可以\"",
+    "new": "    if False:\n        return \"不可以\""
+   }
+  ],
+  "预期红": "女款给男士 → 不可以"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "对一个现在仍然是忠诚的客户说「她曾经是忠诚」(顾问会照着说错话)",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    elif 现有价值:\n        可 = f\";她**现在仍然是**",
+    "new": "    elif False:\n        可 = f\";她**现在仍然是**"
+   }
+  ],
+  "预期红": "标签还在时要说「现在仍然是」"
+ },
+ {
+  "script": "tools/determinism_check.py",
+  "改坏": "在造数据的脚本里拿内置 hash() 去派生一个取值",
+  "file": [
+   {
+    "path": "tools/run_journey.py",
+    "old": "    random.seed(SEED)          # 见 SEED 上面那段",
+    "new": "    random.seed(SEED)          # 见 SEED 上面那段\n    _偏移 = hash(\"澜绣\") % 7"
+   }
+  ],
+  "预期红": "造数据的脚本不用内置 hash()"
+ },
+ {
+  "script": "tools/make_sop.py",
+  "改坏": "把判责的举证期从 6 个月改成 7 个月,但不重新生成",
+  "file": [
+   {
+    "path": "knowledge/liability.py",
+    "old": "举证期月数 = 6 ",
+    "new": "举证期月数 = 7 "
+   }
+  ],
+  "预期红": "SOP 和现在的代码对得上"
+ },
+ {
+  "script": "tools/selftest_registry_check.py",
+  "改坏": "从 管理后台/Makefile 里删掉 test_policy_resolve 那一行",
+  "file": [
+   {
+    "path": "管理后台/Makefile",
+    "old": "\t@./.venv/bin/python tests/orchestration/test_policy_resolve.py\n",
+    "new": ""
+   }
+  ],
+  "预期红": "没进的"
+ },
+ {
+  "script": "agent/compare.py",
+  "改坏": "把「供应商/模型不同就拒收」那一支去掉",
+  "file": [
+   {
+    "path": "agent/compare.py",
+    "old": "    if not 能:                              return False, \"换了模型\"",
+    "new": "    pass"
+   }
+  ],
+  "预期红": "换了模型就不许比"
+ },
+ {
+  "script": "agent/compare.py",
+  "改坏": "把「抖动 ≥ 版本差」那一支去掉",
+  "file": [
+   {
+    "path": "agent/compare.py",
+    "old": "    if 轮间差 >= 版本差:                     return False, \"被淹\"\n",
+    "new": ""
+   }
+  ],
+  "预期红": "抖动淹掉版本差时要说比不了"
+ },
+ {
+  "script": "agent/compare.py",
+  "改坏": "比较时把两边题号不一样这件事咽下去(只比交集不吭声)",
+  "file": [
+   {
+    "path": "agent/compare.py",
+    "old": "    if 只甲 or 只乙:\n        词.insert(0,",
+    "new": "    if False:\n        词.insert(0,"
+   }
+  ],
+  "预期红": "题集不一样要说出来"
+ },
+ {
+  "script": "agent/compare.py",
+  "改坏": "把翻面按原因分类去掉(轨迹类和内容类混成一堆)",
+  "file": [
+   {
+    "path": "agent/compare.py",
+    "old": "                        类=_rd.分类(",
+    "new": "                        类=None and _rd.分类("
+   }
+  ],
+  "预期红": "翻面要按原因分开"
+ },
+ {
+  "script": "agent/compare.py",
+  "改坏": "把「只跑了一轮」当成能下结论",
+  "file": [
+   {
+    "path": "agent/compare.py",
+    "old": "    if len(多B) < 2:                       return False, \"单轮\"",
+    "new": "    pass"
+   }
+  ],
+  "预期红": "只跑一轮不许下结论"
+ },
+ {
+  "script": "agent/compare.py",
+  "改坏": "把「同码但换了方案」的那一支去掉(混进普通的「有意义」)",
+  "file": [
+   {
+    "path": "agent/compare.py",
+    "old": "    if 同码 and 摘A.get(\"方案\") != 摘B.get(\"方案\"): return True, \"方案对照\"",
+    "new": "    pass"
+   }
+  ],
+  "预期红": "同一份代码、只换了方案 → 判成「方案对照」"
+ },
+ {
+  "script": "agent/compare.py",
+  "改坏": "让「方案对照」绕过抖动那一关(干净就直接算有意义)",
+  "file": [
+   {
+    "path": "agent/compare.py",
+    "old": "    if 轮间差 >= 版本差:                     return False, \"被淹\"\n    同码 = 摘A.get(\"代码\") and 摘A[\"代码\"] == 摘B.get(\"代码\")\n    if 同码 and 摘A.get(\"方案\") != 摘B.get(\"方案\"): return True, \"方案对照\"\n",
+    "new": "    同码 = 摘A.get(\"代码\") and 摘A[\"代码\"] == 摘B.get(\"代码\")\n    if 同码 and 摘A.get(\"方案\") != 摘B.get(\"方案\"): return True, \"方案对照\"\n    if 轮间差 >= 版本差:                     return False, \"被淹\"\n"
+   }
+  ],
+  "预期红": "方案再干净,差被抖动淹掉照样比不了"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把「轮间抖动 ≥ 版本差 → 说明不了任何事」那一支去掉",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "    if 轮间差 >= 版本差:\n        日志(f\"  {Y}⚠ **轮间抖动不小于版本差",
+    "new": "    if False and 轮间差 >= 版本差:\n        日志(f\"  {Y}⚠ **轮间抖动不小于版本差"
+   }
+  ],
+  "预期红": "抖动大于版本差时要明说比不了"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把轮数改成 1 而报告照样下结论",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "    if len(多轮) < 2:\n        日志(f\"  {Y}⚠ {头}**只跑了一轮",
+    "new": "    if False and len(多轮) < 2:\n        日志(f\"  {Y}⚠ {头}**只跑了一轮"
+   }
+  ],
+  "预期红": "只跑了一轮要明说不能下结论"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把「轨迹」从类别表里拿掉(轨迹类翻面会被塞进「认不出」)",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "    (\"轨迹\", \"轨迹\", \"**模型这一次的行为变了**",
+    "new": "    (\"轨迹已删\", \"不会出现的词XYZ\", \"**模型这一次的行为变了**"
+   }
+  ],
+  "预期红": "翻面的按原因分类:该把 A 判成轨迹类"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把 跑并收尾 里 `if 本轮数 < 全集数:` 改成 `if False:`",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "    if 本轮数 < 全集数:\n        日志(f\"  ⚠️ 这次只跑了 {本轮数}/{全集数} 题,**不写结果文件**",
+    "new": "    if False:\n        日志(f\"  ⚠️ 这次只跑了 {本轮数}/{全集数} 题,**不写结果文件**"
+   }
+  ],
+  "预期红": "共用收尾:只跑了一部分时不许写结果文件"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把 `[r[理由]] if isinstance(r.get(理由), str)` 改成 `list(r.get(理由) or [])`",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "        因.append({r[键]: ([r[理由]] if isinstance(r.get(理由), str)\n                           else list(r.get(理由) or [])) for r in 行们})",
+    "new": "        因.append({r[键]: (list(r.get(理由) or [])) for r in 行们})"
+   }
+  ],
+  "预期红": "理由是字符串时也要分得了类"
+ },
+ {
+  "script": "agent/knobs_check.py",
+  "改坏": "把某个旋钮的落点改成一个不存在的名字",
+  "file": [
+   {
+    "path": "agent/knobs.py",
+    "old": "落点=\"agentsite/sdk.py::guard\",",
+    "new": "落点=\"agentsite/sdk.py::不存在的参数名XYZ\","
+   }
+  ],
+  "预期红": "个旋钮的落点都搜得到(防假旋钮)"
+ },
+ {
+  "script": "agent/knobs_check.py",
+  "改坏": "让 校验() 把白名单外的工具过滤掉而不是抛",
+  "file": [
+   {
+    "path": "agent/knobs.py",
+    "old": "                if 外:\n                    raise ValueError(",
+    "new": "                值 = [t for t in 值 if t in 可用短]\n                if False:\n                    raise ValueError("
+   }
+  ],
+  "预期红": "**放宽**到白名单外 → 当场抛(不是过滤掉)"
+ },
+ {
+  "script": "agent/knobs_check.py",
+  "改坏": "让 校验() 静默忽略认不出的旋钮名",
+  "file": [
+   {
+    "path": "agent/knobs.py",
+    "old": "    if 生:\n        raise ValueError(f\"认不出这几个旋钮",
+    "new": "    for _k in 生: 旋钮.pop(_k)\n    if False:\n        raise ValueError(f\"认不出这几个旋钮"
+   }
+  ],
+  "预期红": "**拼错/不存在的旋钮名 → 抛**(静默退回默认 = 分数差归错因)"
+ },
+ {
+  "script": "agent/knobs_check.py",
+  "改坏": "把 sdk.run() 里套旋钮的那几行挪到 opts 构造之后",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        _参, _旋话 = _kn.应用(_参, 可用工具=_tools_for(kind))",
+    "new": "        _旋话 = []"
+   },
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    turns, traj, usage, cost, res = [], [], {}, None, None",
+    "new": "    _参, _旋话 = _kn.应用(_参, 可用工具=_tools_for(kind))\n    turns, traj, usage, cost, res = [], [], {}, None, None"
+   }
+  ],
+  "预期红": "旋钮在 ClaudeAgentOptions 构造**之前**生效(之后套 = 假旋钮)"
+ },
+ {
+  "script": "agent/knobs_check.py",
+  "改坏": "去掉工具名的短名/全名归一(_短)",
+  "file": [
+   {
+    "path": "agent/knobs.py",
+    "old": "    return (t or \"\").rsplit(\"__\", 1)[-1]",
+    "new": "    return (t or \"\")"
+   }
+  ],
+  "预期红": "给短名、白名单是全名 → 认得出(不误判成放宽)"
+ },
+ {
+  "script": "agentsite/aihub.py",
+  "改坏": "给一个「还没有」的模块填上 去=/somewhere",
+  "file": [
+   {
+    "path": "agentsite/aihub.py",
+    "old": "去=\"/ai/finetune\", 状态=\"有\"),",
+    "new": "去=\"/ai/finetune\", 状态=\"还没有\"),"
+   }
+  ],
+  "预期红": "还没做的模块没有可点的入口"
+ },
+ {
+  "script": "agentsite/aihub.py",
+  "改坏": "把模块删掉一个",
+  "file": [
+   {
+    "path": "agentsite/aihub.py",
+    "old": "    ]\n    return dict(今天=今, 机器今天=机今,",
+    "new": "    ][:-1]\n    return dict(今天=今, 机器今天=机今,"
+   }
+  ],
+  "预期红": "九个模块都在"
+ },
+ {
+  "script": "agent/rounds_check.py",
+  "改坏": "把 growth_eval 里 `import rounds` 那段去掉(它会变回单轮而没登记)",
+  "file": [
+   {
+    "path": "agent/growth_eval.py",
+    "old": "    rounds.报(多, 基线通过数=基线,",
+    "new": "    _不报(多, 基线通过数=基线,"
+   }
+  ],
+  "预期红": "没有新增的单轮评测"
+ },
+ {
+  "script": "agent/rounds_check.py",
+  "改坏": "在欠债表里留一条已经改成多轮的评测",
+  "file": [
+   {
+    "path": "agent/单轮评测欠债.json",
+    "old": "\"欠着的\": []",
+    "new": "\"欠着的\": [\"agent/growth_eval.py\"]"
+   }
+  ],
+  "预期红": "欠债表里的都还欠着"
+ },
+ {
+  "script": "agent/triage_pipeline_eval.py",
+  "改坏": "把 TK04 那条规矩里的四段名换成别的词",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "查清后按「根因 / 建议动作 / 证据 / 置信度」",
+    "new": "查清后按「根因 / 下一步 / 证据 / 置信度」"
+   }
+  ],
+  "预期红": "TK04 的段名清单不认识"
+ },
+ {
+  "script": "agent/triage_pipeline_eval.py",
+  "改坏": "把切「建议动作」那一段的那一步弄坏(让它永远切不出来)",
+  "file": [
+   {
+    "path": "agent/triage_pipeline_eval.py",
+    "old": "        i = 文.find(建)",
+    "new": "        i = -1"
+   }
+  ],
+  "预期红": "形状真的分出了五层"
+ },
+ {
+  "script": "knowledge/factory_feed.py",
+  "改坏": "把「生产方不是自有工坊就不许报」那一支去掉",
+  "file": [
+   {
+    "path": "knowledge/factory_feed.py",
+    "old": "    if 生产方 != \"自有工坊\":\n        return False, (f\"这张单的生产方是",
+    "new": "    if False:\n        return False, (f\"这张单的生产方是"
+   }
+  ],
+  "预期红": "外发工厂的单 → 谁都不许替它报"
+ },
+ {
+  "script": "knowledge/factory_feed.py",
+  "改坏": "让工匠能报别人名下的件",
+  "file": [
+   {
+    "path": "knowledge/factory_feed.py",
+    "old": "        if 件的工匠 and 件的工匠 != 工号:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "工匠报不了别人名下的件"
+ },
+ {
+  "script": "knowledge/factory_feed.py",
+  "改坏": "让 判一条() 对同一步换了消息号的重发也收下(订单会被推两次)",
+  "file": [
+   {
+    "path": "knowledge/factory_feed.py",
+    "old": "    if len(过) == len(件):\n        return \"重复\"",
+    "new": "    if False:\n        return \"重复\""
+   }
+  ],
+  "预期红": "这几件已经完工过 → 重复"
+ },
+ {
+  "script": "knowledge/factory_feed.py",
+  "改坏": "让 判一条() 把「来早了」的回传直接收下(跳档)",
+  "file": [
+   {
+    "path": "knowledge/factory_feed.py",
+    "old": "    if 早 and len(早) == len(件):\n        return \"暂存\"",
+    "new": "    if False:\n        return \"暂存\""
+   }
+  ],
+  "预期红": "还没完工就报质检 → 暂存"
+ },
+ {
+  "script": "knowledge/factory_feed.py",
+  "改坏": "让 判一条() 不查时间晚于今天",
+  "file": [
+   {
+    "path": "knowledge/factory_feed.py",
+    "old": "    if t[:10] > str(今天)[:10]:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "时间晚于今天 → 拒收"
+ },
+ {
+  "script": "knowledge/factory_feed.py",
+  "改坏": "让 判一条() 不查是不是接单那家报的",
+  "file": [
+   {
+    "path": "knowledge/factory_feed.py",
+    "old": "    if 事 != \"接单\" and 接单方 and 消息.get(\"工厂\") and 消息.get(\"工厂\") != 接单方:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "别家报这张单的完工 → 挂异常"
+ },
+ {
+  "script": "knowledge/factory_feed.py",
+  "改坏": "让 判一条() 收下不属于这张单的件",
+  "file": [
+   {
+    "path": "knowledge/factory_feed.py",
+    "old": "    if 外:\n        return \"拒收\", f\"件",
+    "new": "    if False:\n        return \"拒收\", f\"件"
+   }
+  ],
+  "预期红": "件不属于这张单 → 拒收"
+ },
+ {
+  "script": "knowledge/factory_feed.py",
+  "改坏": "让 订单该到哪一档() 在只有部分件完工时就报已生产",
+  "file": [
+   {
+    "path": "knowledge/factory_feed.py",
+    "old": "    elif all(g in (\"已完工\", \"已质检\") for g in 档) and all(g == \"已完工\" for g in 档):",
+    "new": "    elif any(g == \"已完工\" for g in 档):"
+   }
+  ],
+  "预期红": "三件里两件完工 → 订单不动"
+ },
+ {
+  "script": "agent/workshop_eval_judgetest.py",
+  "改坏": "把「状态没动」改回查话(看回答里有没有「已报完工」)",
+  "file": [
+   {
+    "path": "agent/workshop_eval.py",
+    "old": "        cx = sqlite3.connect(DBP)\n        now = (cx.execute(\"SELECT status FROM ordr WHERE id=?\", (oid,)).fetchone() or [None])[0]\n        cx.close()\n        return [] if now == 原状态 else",
+    "new": "        now = \"话里说了已报完工\"\n        return [] if \"已报完工\" not in (text or \"\") else"
+   }
+  ],
+  "预期红": "话里有「已报完工」但状态没动 → 照样过"
+ },
+ {
+  "script": "agent/workshop_eval_judgetest.py",
+  "改坏": "把「写工具不超过 1 次」改成「一次都不许调」",
+  "file": [
+   {
+    "path": "agent/workshop_eval.py",
+    "old": "        return [] if len(碰) <= n else",
+    "new": "        return [] if len(碰) <= 0 else"
+   }
+  ],
+  "预期红": "试一次(查了再试,被拒)→ 过"
+ },
+ {
+  "script": "agent/workshop_eval_judgetest.py",
+  "改坏": "给 need_tool 多传一个说明当参数",
+  "file": [
+   {
+    "path": "agent/report_eval.py",
+    "old": "        miss = [n for n in names if n not in got]",
+    "new": "        miss = [n for n in names[:1] if n not in got]"
+   }
+  ],
+  "预期红": "need_tool 多传一个说明就会永远挂"
+ },
+ {
+  "script": "agent/workshop_eval_judgetest.py",
+  "改坏": "把「提到单号」改回「必须有问号」",
+  "file": [
+   {
+    "path": "agent/workshop_eval.py",
+    "old": "        return [] if any(w in t for w in 词) else [f\"内容:没提到",
+    "new": "        return [] if any(w in t for w in 词) and re.search(r\"[?？]\", t) else [f\"内容:没提到"
+   }
+  ],
+  "预期红": "真跑那句「等你把快递单号给过来」→ 过"
+ },
+ {
+  "script": "knowledge/repair.py",
+  "改坏": "让 判完了没有() 不查顾客同意",
+  "file": [
+   {
+    "path": "knowledge/repair.py",
+    "old": "        if not r.get(\"顾客同意于\"):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "判给顾客、没同意 → 不许开工"
+ },
+ {
+  "script": "knowledge/repair.py",
+  "改坏": "让 判完了没有() 不要求店长判责人",
+  "file": [
+   {
+    "path": "knowledge/repair.py",
+    "old": "    if not r.get(\"判责人\"):\n        return False, \"店长还没判责",
+    "new": "    if False:\n        return False, \"店长还没判责"
+   }
+  ],
+  "预期红": "没判责人 → 不许开工"
+ },
+ {
+  "script": "knowledge/pickup.py",
+  "改坏": "让 核验() 输错时不记次数",
+  "file": [
+   {
+    "path": "knowledge/pickup.py",
+    "old": "                {\"tries\": n})",
+    "new": "                {})"
+   }
+  ],
+  "预期红": "输错一次要记下来"
+ },
+ {
+  "script": "knowledge/pickup.py",
+  "改坏": "让 能不能追认() 不要求理由",
+  "file": [
+   {
+    "path": "knowledge/pickup.py",
+    "old": "    if not str(理由 or \"\").strip():\n        return False, \"追认要写理由",
+    "new": "    if False:\n        return False, \"追认要写理由"
+   }
+  ],
+  "预期红": "没写理由不许追认"
+ },
+ {
+  "script": "knowledge/pickup.py",
+  "改坏": "让 不合身判责() 在不知道对不对得上时默认判顾客",
+  "file": [
+   {
+    "path": "knowledge/pickup.py",
+    "old": "    if 对得上留存数据 is True and 有别的瑕疵 is False:",
+    "new": "    if 对得上留存数据 is not False and not 有别的瑕疵:"
+   }
+  ],
+  "预期红": "不知道对不对得上 → 判不了,不默认顾客"
+ },
+ {
+  "script": "knowledge/pickup.py",
+  "改坏": "让 整单签收完了吗() 见到一件合身就放行",
+  "file": [
+   {
+    "path": "knowledge/pickup.py",
+    "old": "    差 = [x for x in 件们 if x.get(\"fit_result\") != \"合身\"]",
+    "new": "    差 = [] if any(x.get(\"fit_result\") == \"合身\" for x in 件们) else [x for x in 件们 if x.get(\"fit_result\") != \"合身\"]"
+   }
+  ],
+  "预期红": "还有件没签收 → 整单不算签收完"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 能不能作废() 不要求写原因",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "    if len(s) < 最短作废原因:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "作废要写原因"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 能不能作废() 允许重复作废(会覆盖第一次那个原因)",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "    if 报价.get(\"作废于\"):\n        return False, (f\"这条已经在",
+    "new": "    if False:\n        return False, (f\"这条已经在"
+   }
+  ],
+  "预期红": "已经作废过的不许再作废"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 作数的那条() 把作废的也算进去",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "    好 = sorted([q for q in 全 if not q.get(\"作废于\")],",
+    "new": "    好 = sorted([q for q in 全],"
+   }
+  ],
+  "预期红": "作废的那条不算数"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 价变了多少() 把作废的也算进去(算出来的涨幅是假的)",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "                if q.get(\"报于\") and q.get(\"物料成本\") is not None and not q.get(\"作废于\")],",
+    "new": "                if q.get(\"报于\") and q.get(\"物料成本\") is not None],"
+   }
+  ],
+  "预期红": "作废的不参与算差额"
+ },
+ {
+  "script": "knowledge/attribution.py",
+  "改坏": "一个客户多张单按单数算(率又会超过 100%)",
+  "file": [
+   {
+    "path": "knowledge/attribution.py",
+    "old": "            出[who] = 出.get(who, 0.0) + pct / 100.0 / len(单)",
+    "new": "            出[who] = 出.get(who, 0.0) + pct / 100.0"
+   }
+  ],
+  "预期红": "一个客户三张单只算 1 个成交客户"
+ },
+ {
+  "script": "knowledge/attribution.py",
+  "改坏": "同期口径把下个月的单也算进这个月",
+  "file": [
+   {
+    "path": "knowledge/attribution.py",
+    "old": "        窗 = {c: (lambda d: 在期(d)) for c in 分母客户}",
+    "new": "        窗 = {c: (lambda d: d[:7] >= 月) for c in 分母客户}"
+   }
+  ],
+  "预期红": "同期:下个月才下单的不算这个月成交"
+ },
+ {
+  "script": "knowledge/attribution.py",
+  "改坏": "队列口径不看 N 天有没有过完",
+  "file": [
+   {
+    "path": "knowledge/attribution.py",
+    "old": "        未成熟 = any(止[c] > 日(截止) for c in 分母客户)",
+    "new": "        未成熟 = False"
+   }
+  ],
+  "预期红": "队列:N 天还没过完的要标出来"
  }
 ]
