@@ -516,6 +516,7 @@ run "评测轮次 · 调模型的评测不许只跑一轮(只许少不许多)" p
 run "部分覆盖 · 跑一部分题不许覆盖完整基线(只许少不许多)" python3 agent/partial_write_check.py
 run "轮次报告 · 单轮/抖动/可比四种情形都说对话,外加按频率层报分(罕见层门槛是 None 不是 0、样本量不够不判达标、没打标的套要出声)" python3 agent/rounds.py
 run "仓库自洽 · 工作区绿不等于仓库里那一版绿" python3 tools/repo_consistency_check.py
+run "写死的模型 id · 「模型」字段里装的是 id 不是说明、没有新写死一个这台机器调不通的模型(本机才验得到那一半,CI 上明说不适用)" python3 tools/model_align_check.py
 run "评测集分层 · 每套题都打了频率标、分层表没过期条目、题数只许涨(改标签凑 60/30/10 要红)、「这份频率还没拿流量对过账」那句话不许删" python3 tools/eval_tier_check.py
 run "评测题面 · 有指代就得有编号,或写明是故意的" python3 tools/case_check.py
 run "改动影响面 · 警示段落找不着就是正则漏了" python3 tools/impact.py --selftest

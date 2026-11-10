@@ -116,6 +116,55 @@ def 题们():
     return sorted(出)
 
 
+def 源码里有而没跑过的():
+    """`{套: [没跑过的题号]}` —— 源码里写了、而结果文件里一次都没出现的题。
+
+    ⚠️⚠️ **`{...}` 字面量和 `dict(...)` 调用都要认。** 2026-11-10 第一版只扫了
+    `ast.Dict`,而 `pattern_eval.py` 的题是 `dict(id="P01", …)` 写的 ——
+    于是它扫出 **0 道**然后报「没问题」,而那一套明明欠着 9 道。
+    > 一条「全都跑过了」和一条「一处都没扫到」,**在那句绿字上长得一模一样。**
+    (这是我同一天第三次被「扫不到东西却报没问题」咬到,
+     每次救回来的都是那句「样本量 0 —— 这不叫通过,这叫没扫到东西」。)
+    """
+    import ast as _ast
+    import glob as _glob
+    键 = ("id", "题号", "case", "题")
+    出 = {}
+    for p in sorted(_glob.glob(os.path.join(ROOT, "agent", "*_eval.py"))):
+        套 = os.path.basename(p)[:-len("_eval.py")]
+        try:
+            t = _ast.parse(io.open(p, encoding="utf-8", errors="replace").read(), p)
+        except SyntaxError:
+            continue
+        源 = set()
+        for x in _ast.walk(t):
+            if isinstance(x, _ast.Dict):
+                for k, v in zip(x.keys, x.values):
+                    if (isinstance(k, _ast.Constant) and k.value in 键
+                            and isinstance(v, _ast.Constant)
+                            and isinstance(v.value, str)):
+                        源.add(v.value)
+            elif isinstance(x, _ast.Call):
+                for kw in x.keywords:
+                    if (kw.arg in 键 and isinstance(kw.value, _ast.Constant)
+                            and isinstance(kw.value.value, str)):
+                        源.add(kw.value.value)
+        if not 源:
+            continue
+        跑 = None
+        for f in (f"{套}-eval-results.jsonl", f"{套}-results.jsonl"):
+            fp = os.path.join(ROOT, "agent", f)
+            if os.path.exists(fp):
+                跑 = {i for s, i in 题们() if s == re.sub(r"-eval$", "", 套)}
+                break
+        if 跑 is None:
+            continue              # 这套还没跑过任何一轮 —— 另一件事,不在这条判据里
+        缺 = sorted(源 - 跑)
+        if 缺:
+            出[套] = 缺
+    return 出
+
+
 def main():
     print("评测集频率分层 · 判据")
     print("=" * 96)
@@ -202,6 +251,27 @@ def main():
     ck("不设门槛的层,口径里写明了为什么(而不是悄悄不判)",
        all(f"**{k}" in T._读() or k in T._读() for k in 无门槛), len(无门槛) or 1,
        f"{无门槛} 不参与放行判定 —— 口径里写着「样本量不够当门槛」")
+
+    # ── ⑤b 源码里写了题,而那道题从没真跑过 ────────────────────────────
+    #
+    # 并行会话 2026-11-10 查实:`pattern_eval.py` 源码 21 道,结果文件只有 12 道 ——
+    # 后加的 9 道**从 10-07 起一次都没真跑过**。而分层只数结果文件,
+    # 所以那 9 道从来没进过任何分层数。
+    # > **「源码里写了题」和「那道题真跑过」在分层表上长得一模一样** ——
+    # > 这和项目里「我写了检查 ≠ 检查在跑」是同一件事,只是换成了题。
+    # 而它更隐蔽:加了题的人会以为覆盖变好了,而那 9 道一分都没贡献。
+    #
+    # ⚠️ 全项目量过:只有 pattern 一套有这个问题(9 道),其余 14 套源码和结果**完全对得上**。
+    # 数字小,所以**直接判红,不走棘轮** —— 棘轮是给「红在一堆既存合法事实上」的那种判据用的。
+    _缺跑 = 源码里有而没跑过的()
+    ck("源码里写了的题都真跑过(**加了题没跑 = 覆盖一分没涨,而分层表上看不出来**)",
+       not _缺跑, sum(len(v) for v in _缺跑.values()) + len(全) and max(1, len(套们)),
+       "；".join(f"{k} 欠 {len(v)} 道({'、'.join(v[:4])}"
+                 + (f" ……还有 {len(v) - 4} 道" if len(v) > 4 else "") + ")"
+                 for k, v in _缺跑.items())
+       + " —— 跑一遍那一套就绿(**但别把「跑起来」记成「补题」**:"
+       "两件事在题数上都表现为涨,而意义完全不同)" if _缺跑
+       else f"{len(套们)} 套的源码题号都在结果文件里出现过")
 
     # ── ⑥ 诚实声明:这份频率还没拿流量对过账 ──────────────────────────
     文 = T._读()
