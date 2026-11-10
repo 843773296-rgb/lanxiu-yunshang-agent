@@ -18391,5 +18391,53 @@
    }
   ],
   "预期红": "input_tokens / cache_read_input_tokens 不算凭据"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把 `误转吗()` 里判「有没有转」改成用真假值(`if 转人工的args:`)—— **一条 args 为空的转人工记录是真的转了,而空 dict 是假值**,于是它被当成没转",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "    if 转人工的args is None:\n        return False",
+    "new": "    if not 转人工的args:\n        return False"
+   }
+  ],
+  "预期红": "args 为空的转人工记录,照样算「转了」"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "给 `定真值()` 加一个轨迹参数(让**发生的事去改写期望值**)—— 这就是同源谬误:它转了人工,真值就变成「期望不触发」,**误转被判成答对**",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "def 定真值(写着的, 接管中, 挂了):",
+    "new": "def 定真值(写着的, 接管中, 挂了, 轨迹=None):"
+   }
+  ],
+  "预期红": "`定真值()` 的入参里没有轨迹 / 转人工"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把 `转人工了吗()` 认的工具名改成别的 —— **它再也认不出转人工**,于是误转全部混进「漏触发」",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "x.get(\"tool\") == \"handoff.human\"",
+    "new": "x.get(\"tool\") == \"handoff.human.改名了\""
+   }
+  ],
+  "预期红": "认得出转人工(返回那条记录的 args)"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把 `误转吗()` 里那段「这个定义有保质期、到期要改」的说明删掉 —— **意图上线后这个定义就不成立了,而没有任何东西提醒下一个人**",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "    **到那天别忘了改它**",
+    "new": "    (以后再说)"
+   }
+  ],
+  "预期红": "`误转吗()` 里写明了这个定义的保质期"
  }
 ]
