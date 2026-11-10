@@ -18660,5 +18660,53 @@
    }
   ],
   "预期红": "豁免指向的文件都还在"
+ },
+ {
+  "script": "backend/advisor_name_check.py",
+  "改坏": "让顾问那一栏变成空字符串(名字列 09-16 已删,页面上的名字由 server.填顾问名() 按工号现填 —— 攻击点落在那一句;原清单写的 customer_list SELECT 已不再取名字列)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            r[名列] = f\"{短} {名}\" if 短 else 名\n",
+    "new": "            r[名列] = \"\"\n"
+   }
+  ],
+  "预期红": "每个页面的顾问那一栏都有名字"
+ },
+ {
+  "script": "backend/advisor_name_check.py",
+  "改坏": "把某一行的顾问名字改成一个 staff 里没有的人(挖出来的名字都多一个字)",
+  "file": [
+   {
+    "path": "backend/advisor_name_check.py",
+    "old": "                    out.append((f\"{路}/{k}\", v))\n",
+    "new": "                    out.append((f\"{路}/{k}\", v + \"某\"))\n"
+   }
+  ],
+  "预期红": "页面上的顾问名字都在员工表里"
+ },
+ {
+  "script": "backend/advisor_name_check.py",
+  "改坏": "把页面函数列表写死成 0 个",
+  "file": [
+   {
+    "path": "backend/advisor_name_check.py",
+    "old": "    for n, f in sorted(vars(server).items()):\n",
+    "new": "    for n, f in []:\n"
+   }
+  ],
+  "预期红": "扫得到吐顾问名字的页面"
+ },
+ {
+  "script": "backend/advisor_name_check.py",
+  "改坏": "把「顾问」这个中文 key 也当成名字栏(误伤权限矩阵)",
+  "file": [
+   {
+    "path": "backend/advisor_name_check.py",
+    "old": "名字栏 = (\"advisor\", \"measured_by\")",
+    "new": "名字栏 = (\"advisor\", \"measured_by\", \"顾问\")"
+   }
+  ],
+  "预期红": "页面上的顾问名字都在员工表里"
  }
 ]

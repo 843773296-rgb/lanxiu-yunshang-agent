@@ -7,7 +7,6 @@
   "agentsite/guards_test.py": 1,
   "agentsite/layout_check.py": 2,
   "agentsite/tool_eval.py": 1,
-  "backend/advisor_name_check.py": 3,
   "backend/channel_check.py": 6,
   "backend/chat_order_check.py": 9,
   "backend/draft_check.py": 1,
