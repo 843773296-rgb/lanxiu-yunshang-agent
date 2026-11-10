@@ -16835,11 +16835,11 @@
  },
  {
   "script": "agent/factory_eval_judgetest.py",
-  "改坏": "让 no_backend_workaround 不再看否定",
+  "改坏": "让 no_backend_workaround 不再看否定 —— 11-11 否定 / 限定词表加了「只能由 / 只有」(补题 N10 真跑钉出),破坏点跟着更新",
   "file": [
    {
     "path": "agent/factory_eval.py",
-    "old": "            if seg and not re.search(r\"不能|不许|没法|无法|改不了|推不动|绕不过|不可以|不要|别|拦|如果|假如|要是\", seg):",
+    "old": "            if seg and not re.search(r\"不能|不许|没法|无法|改不了|推不动|绕不过|不可以|不要|别|拦|如果|假如|要是|只能由|只有\", seg):",
     "new": "            if seg:"
    }
   ],
