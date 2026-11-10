@@ -304,7 +304,86 @@ def 还原(前):
     cx.commit(); cx.close()
 
 
+# 保险单放在**真库旁边**,不放检出目录:backend/lanxiu.db 是两个检出共享的软链,
+# 保险单按检出放的话,另一个检出启动时查不到上一次的残留,报「干净」而真库里那张单还改着
+# (并行会话 11-10 指出)。⚠️ 用 realpath 跟着软链走 —— abspath 不跟,拿到的还是本检出那条路径。
+_造的记录 = os.path.join(os.path.dirname(os.path.realpath(DBP)), ".factory_eval_造的过期单.json")
+
+
+def _撤遗留():
+    """上一次跑到一半被杀(SIGKILL / 断电)留下的改动 —— 启动先改回去。
+    一张被改过承诺日的真订单,和一张真过期的订单**长得一模一样**,会接着喂给延期告警、工期计算、别的评测。"""
+    if not os.path.exists(_造的记录):
+        return
+    import json
+    造 = json.load(open(_造的记录, encoding="utf-8"))
+    print(f"  ⚠️ 发现上一次没改回的造单记录:订单 {造['订单']} 承诺日 {造['改后']} → 改回 {造['原值']}")
+    撤造(造)
+
+
+def 造过期单():
+    """**库里没有「过了承诺完工日还在生产中」的单时,自己造一张**,跑完由 `撤造()` 原样改回。→ 撤造要的信息 或 None。
+
+    ⚠️ 11-10 查实:这套题从某天起**一直挑不到题、退 0**(夜跑报告里印成「过」+ 0.0 分钟)。
+    根因不在代码:每日世界平移把日期整体往前推、模拟进度把过期单推着完工 ——
+    338 张生产中的单,最早的承诺日都在业务今天之后。**题要不要跑,取决于库里碰巧有没有过期单。**
+    > 一条判据红不红取决于环境里碰巧有什么数据,那它不是在验代码(CLAUDE.md 第 8 节)。
+    修法不是放宽挑题条件(那会改掉这套题在测什么),是**自己造它要的那个形状**:
+    挑一张生产中、已接单、没延期过的单,把它那条接单回传的承诺日改成业务今天减 3 天。
+    考的东西不变 —— 照样是「一张过了承诺日的单,助手要说出承诺日、按业务今天算晚几天」。
+
+    写的是真库(这套评测本来就在真库上开单再还原),所以三样保险缺一不可(并行会话 11-10 提醒):
+    ① **原值先落盘**(真库旁边的 .factory_eval_造的过期单.json)再改 —— 进程被杀了下次启动 `_撤遗留()` 还原;
+    ② **改回后读回来断言等于原值** —— 「写了」和「写进去了」是两件事;
+    ③ **单号 + 原值 + 改后值印在输出里** —— 出事的人一眼看得到该把哪一行改回什么。
+    ⚠️ 要拿锁跑(写真库),别和门禁 / 05:00 世界平移撞上。"""
+    import factory_inbox as fi, json
+    from seed import TODAY
+    import datetime as _d
+    if any("承诺" in x["为什么"] for x in fi.该催清单(TODAY)):
+        return None                                  # 库里本来就有,不造
+    c = sqlite3.connect(DBP)
+    r = c.execute("""SELECT f.rowid, f.promise_date, o.id FROM ordr o JOIN factory_msg f ON f.order_id=o.id
+                     WHERE o.kind='定制品订单' AND o.status='生产中' AND f.event='接单' AND f.result='收下'
+                       AND f.void_at IS NULL AND f.promise_date IS NOT NULL
+                       AND NOT EXISTS(SELECT 1 FROM factory_delay d WHERE d.order_id=o.id)
+                     ORDER BY f.promise_date, o.id LIMIT 1""").fetchone()
+    if not r:
+        c.close(); return None
+    造 = dict(行=r[0], 原值=r[1], 订单=r[2],
+             改后=(_d.date.fromisoformat(TODAY) - _d.timedelta(days=3)).isoformat())
+    json.dump(造, open(_造的记录, "w", encoding="utf-8"), ensure_ascii=False)       # ① 先落盘再改
+    c.execute("UPDATE factory_msg SET promise_date=? WHERE rowid=?", (造["改后"], 造["行"]))
+    c.commit(); c.close()
+    print(f"  (库里没有过期单 —— 造了一张:订单 {造['订单']} 接单回传的承诺日 {造['原值']} → {造['改后']},"
+          f"跑完改回;没改回的话记录在 {os.path.relpath(_造的记录, ROOT)})")
+    return 造
+
+
+def 撤造(造):
+    if not 造: return
+    c = sqlite3.connect(DBP)
+    c.execute("UPDATE factory_msg SET promise_date=? WHERE rowid=?", (造["原值"], 造["行"]))
+    c.commit()
+    回 = c.execute("SELECT promise_date FROM factory_msg WHERE rowid=?", (造["行"],)).fetchone()
+    c.close()
+    if not 回 or 回[0] != 造["原值"]:                 # ② 读回来核
+        raise SystemExit(f"❌ 造的过期单没改回去:订单 {造['订单']} 现在是 {回 and 回[0]},应当是 {造['原值']} —— "
+                         f"记录留在 {_造的记录},手动改回")
+    os.remove(_造的记录)
+    print(f"  (造的那张过期单已改回:订单 {造['订单']} 承诺日 {造['原值']},读回核过)")
+
+
 def main():
+    _撤遗留()
+    造 = 造过期单()
+    try:
+        _main()
+    finally:
+        撤造(造)
+
+
+def _main():
     only = sys.argv[1] if len(sys.argv) > 1 else None
     x = 挑()
     if not x:

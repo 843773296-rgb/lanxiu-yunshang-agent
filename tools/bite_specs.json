@@ -18576,5 +18576,17 @@
    }
   ],
   "预期红": "判对够了但判不出超了 → 不达标"
+ },
+ {
+  "script": "agent/scheme_eval_judgetest.py",
+  "改坏": "把「失效 / 草稿那一条的方案号被说成能下单」这条关掉(11-10 从「整段有没有『可以下单』」改成按那一条判)",
+  "file": [
+   {
+    "path": "agent/scheme_eval.py",
+    "old": "            if seg and any(w in seg and not tm.negated(seg, seg.find(w), both_sides=True) for w in 推进词):",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "草稿那条被说成能下单(哪怕同句提了草稿)"
  }
 ]

@@ -149,3 +149,6 @@ backend/.route_last.json
 backend/.intent_last.json
 # 聊天助手配置最后一次拉成功的那份(assistant_client,10-28)—— 运行时状态,不进库
 backend/.assistant_*_last.json
+
+# 工厂评测造的过期单的还原记录(放在真库旁边;正常跑完会删;留着说明上次没改回,factory_eval 启动会先还原)
+backend/.factory_eval_造的过期单.json

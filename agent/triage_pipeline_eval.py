@@ -581,8 +581,21 @@ def 跑(n, me, 轮数=3, 看=False):
         return 1
     os.environ["LANXIU_DB"] = 快照库
     sys.path.insert(0, os.path.join(ROOT, "mcp"))
+    sys.path.insert(0, os.path.join(ROOT, "backend"))
+    # ⚠️ 11-10 修:**切库前先把这条路上会读库的模块 import 进来**。
+    # `指到副本()` 只改**已经加载**的模块的 DB;`rating_triage` 在函数里才 `import ops`(拼研判提示词),
+    # 于是 ops 是切库**之后**才加载的 —— 它的 DB 还是真库。真库每天从零重建、包裹号被重新分配,
+    # 第一道就报「包裹 … 没有评价」、一道都没跑完(夜跑一直只跑 --看 退 0,所以没人见过这一红)。
+    # 和 CLAUDE.md / 记忆里「检查切库前先 import 写口」是同一个坑。
+    import ops as _ops0, api as _api0                # noqa: F401  —— 只为让它们赶在切库前加载
     import protocol as _proto0
     print(f"工具层改读题集快照:{_proto0.指到副本()} 个模块 · {快照库}")
+    # 切完**断言**:路上那几个模块真指到快照了 —— 「切了」和「切到了」是两件事
+    _没切 = [m.__name__ for m in (_ops0, _api0)
+             if os.path.realpath(getattr(m, "DB", "")) != os.path.realpath(快照库)]
+    if _没切:
+        print(f"{Rd}❌ 这几个模块还指着真库,不跑:{_没切} —— 读到的会是另一个世界的评价{D}")
+        return 1
     题们 = 挑题(n)
     # 核题面:题面和快照是一起冻的,对不上说明有人只改了一边 —— **一道都不跑**。
     # ⚠️ **比的是快照,不是真库。** 第一版我写成了比真库,而它今天恰好绿
