@@ -430,13 +430,36 @@ def 撤造(造):
     print(f"  (造的那张过期单已改回:订单 {造['订单']} 承诺日 {造['原值']},读回核过)")
 
 
+def _全库行数():
+    """每张表的行数 —— 跑前跑后各拍一次,**核整库,不维护表清单**(11-11 并行会话建议):
+    只核列出来的几张表的话,哪天报工多写一张表,还原又漏一张,而「行号一致」照旧绿。
+    ⚠️ **它只保证没漏删,不保证没改错值** —— 改了某一行的值而没改回,行数不变,这里照旧绿。
+    那一半只能靠各题自己的还原;哪天新加一道会改值的题,别以为「整库核过」就万无一失。"""
+    c = sqlite3.connect(DBP)
+    try:
+        return {t: c.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+                for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+    finally:
+        c.close()
+
+
 def main():
     _撤遗留()
+    跑前 = _全库行数()
     造 = 造过期单()
     try:
         _main()
     finally:
         撤造(造)
+        跑后 = _全库行数()
+        变 = {t: (跑前.get(t), 跑后.get(t)) for t in set(跑前) | set(跑后) if 跑前.get(t) != 跑后.get(t)}
+        if 变:
+            # ⚠️ 只报不判红:聊天站等常驻服务也会写库(会话 / 记录),锁拦不住它们 —— 判红会冤枉评测
+            print(f"  ⚠️ 跑完全库有 {len(变)} 张表行数变了(跑前→跑后):"
+                  + "、".join(f"{t} {a}→{b}" for t, (a, b) in sorted(变.items())[:8])
+                  + " —— 先看是不是评测的还原漏了这张表,再看是不是常驻服务写的")
+        else:
+            print(f"  ✅ 跑完全库 {len(跑后)} 张表行数和跑前一模一样(还原没漏表)")
 
 
 def _main():
