@@ -11,7 +11,7 @@
   "backend/chat_order_check.py": 9,
   "backend/draft_check.py": 1,
   "backend/factory_inbox_check.py": 8,
-  "backend/grading_check.py": 7,
+  "backend/grading_check.py": 6,
   "backend/initpath_check.py": 1,
   "backend/muslin_check.py": 8,
   "backend/order_write_check.py": 4,

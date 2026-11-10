@@ -18912,5 +18912,17 @@
    }
   ],
   "预期红": "activity_roi 的共线警告和现算结果一致"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "把 grading.序号() 改回 .get(x, 0)",
+  "file": [
+   {
+    "path": "knowledge/grading.py",
+    "old": "    return 尺码序号.get(str(尺码).strip())\n",
+    "new": "    return 尺码序号.get(str(尺码).strip(), 0)\n"
+   }
+  ],
+  "预期红": "`序号()` 认不出来时返回 None 而不是 0"
  }
 ]
