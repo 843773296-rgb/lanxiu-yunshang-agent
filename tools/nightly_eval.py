@@ -131,9 +131,28 @@ def 第一次拿谁当上一版(runs):
 # 而每晚的报告都把它算成跑完了。
 # 已拿 AST 扫过全部 27 套(找 `add_argument` 里的 store_true 动作开关、再比 `_参数()`),
 # **只有这一套漏配**;`tools/nightly_check.py` 加了一条反向判据钉住它,免得下次新套再漏。
+#
+# ⚠️⚠️⚠️ 2026-11-09 晚(快照第 1 遍跑到第 20 套时)又抓到第二套,而**上面那条 AST 判据没抓到它**:
+# `triage_shadow.py` 不用 argparse,是手工 `sys.argv` 解析的(`agent/triage_shadow.py:697`),
+# 于是「扫 `add_argument(action="store_true")`」这条判据的**视野压根不覆盖它**。
+# 它不带 `--跑 N` 走的是 `if "--报" in 参 or not 参:` 那一支 —— **印一份库况报表的 JSON 然后退 0**。
+# 快照里的表现是「过 / 0.0 分钟 / 挪 0 份 / 最后一行 `}`」。
+#
+# > 它甚至不是「跑空了」—— 它**跑的是另一件事**(报库况),而报告那一栏只认退出码。
+#
+# ⚠️ 真正该让人发疑的是:下面 `单独上限分钟_补` **早就给它留了 15 分钟**,
+#    注释还写着「影子跑一晚最多三条、每条一两分钟」。
+#    **一边写着「给你 15 分钟跑三条」,一边它每晚 0 秒就回来** —— 两份配置互相矛盾了很久,
+#    而矛盾的双方各自都是合法的,所以谁都没红。这条矛盾现在被 `nightly_check` 钉成判据了:
+#    **凡在 `单独上限分钟_补` 里被特意放宽限时的套,必须真的配了让它干活的参数** ——
+#    否则那条放宽本身就是一句假话。
 额外参数 = {"scheme_eval.py": ["--run"], "skill_eval.py": 技能触发的参数,
             # -n 5 题 × --轮 3 取众数(都用它自己的默认值)
-            "triage_pipeline_eval.py": ["--做"]}
+            "triage_pipeline_eval.py": ["--做"],
+            # ⚠️ 影子跑**真调模型、真落账**到影子表(父进程写真库,见 triage_shadow.py:46)。
+            # 落的是评测自己的账、不动业务表结构 → 库章不变,快照整夜钉同一个章仍成立。
+            # 3 条是它文档里的示例量,和下面 15 分钟的限时对得上。
+            "triage_shadow.py": ["--跑", "3"]}
 # 影子跑一晚最多三条、每条一两分钟 —— 给 15 分钟够宽,又不至于占住一晚
 单独上限分钟_补 = {"triage_shadow.py": 15}
 
@@ -156,6 +175,21 @@ def 说(*a):
 PID目录 = os.path.dirname(os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db")))
 夜跑PID = os.path.join(PID目录, ".nightly-eval.pid")
 重放PID = os.path.join(PID目录, ".bite-run.pid")
+# ⚠️⚠️ **2026-11-10 加:全项目快照(`tools/snapshot_all_evals.py`)。**
+# 11-09 那一夜它 16:38 起跑、03:56 收工,而夜跑窗口 0 点起 ——
+# **00:00–03:56 这将近 4 小时,两套评测同时在跑**:抢库、抢锁、抢同一个 Claude 配额,
+# 还都在往 `agent/nightly/` 写结果(第二天 rebase 时 18 个文件冲突,那就是证据)。
+#
+# 下面 `有人在用()` 的注释里 2026-10-19 就写明了这个风险,写的正是这件事:
+# > 一个「跑过了但数被别的活拖慢了」的评测结果,和一个干净的结果,
+# > **在那个 jsonl 里长得一模一样**。
+# 当时登记的是咬合重放。**快照是 11-08 才写的新东西,没人回来往这个名单里加它** ——
+# 而这个名单漏一个的代价,不是报错,是一整夜看起来正常的假数。
+#
+# ⚠️ 所以 `tools/nightly_check.py` 加了一条反向判据:
+#    **这个文件里每一个 `…PID` 常量,都必须被 `有人在用()` 真的读到**。
+#    新加一个长任务就必须登记,漏登记当场红 —— 靠记是记不住的,这一次就是证据。
+快照PID = os.path.join(PID目录, ".snapshot-all-evals.pid")
 
 
 def 活着(pid文件):
@@ -172,7 +206,7 @@ def 有人在用():
     if os.path.exists(os.path.join(ROOT, "backend", ".rebuilding")):
         return "有重建在跑(backend/.rebuilding)"
     # 门禁:只认**真正在跑 check.sh 的那个 bash 进程**(命令行以它开头),提到这个词的别的命令不算
-    r = subprocess.run(["pgrep", "-f", r"^(/bin/)?(ba)?sh \./check\.sh"], capture_output=True, text=True)
+    r = subprocess.run(["pgrep", "-f", r"^(/bin/)?(ba)?sh \./check\.sh"], capture_output=True, text=True, errors="replace")
     if r.stdout.strip():
         return "有门禁在跑(check.sh)"
     # ⚠️ **咬合重放也算有人在用**(2026-10-19 加)。它每条规格都要拷一份库、
@@ -188,6 +222,11 @@ def 有人在用():
     #    不让开的代价是一份看起来正常的假数。**两种代价不对等。**
     if 活着(重放PID):
         return f"有咬合重放在跑({os.path.basename(重放PID)})"
+    # **全项目快照也算有人在用**(2026-11-10 加,理由见 `快照PID` 上面那一段)。
+    # 它一夜要跑 27 套 × 2 遍、10 小时,每套都拿锁挪基线、都往 agent/nightly/ 写 ——
+    # 夜跑挤进去的结果是**两份都不干净**,而两份都看起来正常。
+    if 活着(快照PID):
+        return f"有全项目快照在跑({os.path.basename(快照PID)})"
     return None
 
 
@@ -231,7 +270,7 @@ def 清单(星期=None):
 def _系统代理():
     """读 macOS 系统代理(`scutil --proxy`)—— 只取地址和端口,不带账号密码,仓库里不留任何密钥。"""
     try:
-        t = subprocess.run(["/usr/sbin/scutil", "--proxy"], capture_output=True, text=True, timeout=10).stdout
+        t = subprocess.run(["/usr/sbin/scutil", "--proxy"], capture_output=True, text=True, errors="replace", timeout=10).stdout
     except Exception:                                                        # noqa: BLE001
         return None
     值 = dict(re.findall(r"^\s*(\w+)\s*:\s*(\S+)", t, re.M))
@@ -267,7 +306,7 @@ def 真问一句():
           "r=asyncio.run(sdk.run('kb','只回复两个字:正常')); print('回答:'+(r.get('text') or ''))")
     try:
         r = subprocess.run([PY, "-c", 码], cwd=ROOT, env=评测环境(),
-                           capture_output=True, text=True, timeout=180)
+                           capture_output=True, text=True, errors="replace", timeout=180)
     except Exception as e:                                                   # noqa: BLE001
         return False, f"{type(e).__name__}: {e}"[:160]
     出 = (r.stdout + r.stderr).strip()
@@ -280,7 +319,7 @@ def 走的哪条路():
     """用**评测同一个环境**真问一次 v1.provider() —— 返回 (id, 模型) 或报错文本。"""
     r = subprocess.run([PY, "-c", "import sys; sys.path.insert(0,'agent'); import v1; p=v1.provider();"
                         " print(p['id'], p['model'])"], cwd=ROOT, env=评测环境(),
-                       capture_output=True, text=True, timeout=60)
+                       capture_output=True, text=True, errors="replace", timeout=60)
     return tuple(r.stdout.split()) if r.returncode == 0 else ("出错", (r.stderr or r.stdout).strip()[-120:])
 
 
@@ -339,7 +378,7 @@ def 挪走夜跑的(快, 名):
 
 def _管理后台在():
     r = subprocess.run(["curl", "-s", "-o", "/dev/null", "-m", "5", "-w", "%{http_code}", 管理后台地址 + "/api/healthz"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, errors="replace")
     return r.stdout.strip() == "200"
 
 
@@ -411,13 +450,13 @@ def 入库清单(根):
 def 提交夜跑结果(报告):
     路径 = [os.path.relpath(报告, ROOT)] + 入库清单(ROOT)
     def git(*a):
-        return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True, timeout=300)
+        return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True, errors="replace", timeout=300)
     try:
         if not git("status", "--porcelain", "--", *路径).stdout.strip():
             return "没有新结果要提交"
         if git("add", "--", *路径).returncode:
             return "git add 失败"
-        扫 = subprocess.run([os.path.join(ROOT, "tools", "scan_secrets.sh")], cwd=ROOT, capture_output=True, text=True)
+        扫 = subprocess.run([os.path.join(ROOT, "tools", "scan_secrets.sh")], cwd=ROOT, capture_output=True, text=True, errors="replace")
         if 扫.returncode:
             return "扫密钥不过 —— 没提交,等人看(" + (扫.stdout + 扫.stderr).strip()[-120:] + ")"
         r = git("commit", "--only", "-m", f"夜跑评测结果 {os.path.basename(报告)[:-3]}(自动提交:评测结果、报告、压缩过的运行日志)\n\n"
@@ -445,9 +484,41 @@ def 提交夜跑结果(报告):
 
 判定行 = re.compile(r"判定:(退步|持平|进步|没结论)")
 
+# ⚠️ **哪几套「0 秒跑完」是正常的** —— 豁免名单,只许少不许多(`nightly_check` 有反向判据)。
+#
+# 2026-11-09 晚从快照第 1 遍里认出来的那条物理约束:
+#
+# > **一套真的跑了哪怕一道题的评测,不可能在 6 秒内回来** —— 它至少要调一次模型。
+#
+# 所以「退 0 + 0.0 分钟」= 它**什么都没干**,而报告那一栏印的是「过」。
+# 这一夜抓到三套 0.0 分钟的「过」,三个**完全不同的原因**:
+#   · `triage_shadow.py`   —— 少配了 `--跑 N`,走进「印一份库况报表」那一支
+#   · `factory_eval.py`    —— 库里挑不到题要的单和人,自己印了 ❌「挑不到就不跑」**然后退 0**
+#   · `select_eval.py`     —— 真的跑完了(纯离线第一层,不调模型),**这个是真过**
+#
+# 三个原因不一样,而**在「过 / 0.0 分钟」这两栏上三套长得一模一样**。
+# 一条一条去追原因是追不完的(下一套会用第四种方式跑空);
+# 盯住那条物理约束就只剩一件事要维护:**谁有资格 0 秒跑完。**
+#
+# ⚠️ 名单里只许放「**结构上就不调模型**」的套。
+#    「它今天碰巧很快」不是理由 —— 那种套明天变慢就该被这条判据保护着。
+秒退正常 = {
+    # 套名: 为什么它 0 秒跑完是正常的(必须是结构性理由,不是「它一向很快」)
+    "select_eval.py": "工具选择评测的**第一层**:只比候选集和真值(召回),"
+                      "按定义不调模型、不花钱 —— 第二层才真跑,而第二层还没做",
+}
+# 真评测至少要调一次模型。0.1 分钟 = 6 秒,比任何一次真实调用都短得多,
+# 又比「解释器起来 + import + 读库」宽松 —— 不会把真跑了一道题的套误判。
+秒退线_分钟 = 0.1
 
-def 归类(退出码, 输出):
+
+def 归类(退出码, 输出, 分钟=None, 套=None):
     """一套评测跑完 → 结果。抽出来是为了让检查真调它(tools/eval_env_check.py)。
+
+    ⚠️ `分钟` / `套` 带默认值 **不是**图方便:`tools/eval_env_check.py` 有 8 处
+    两参数的真调,它们验的是退出码和认证失败那几条,和时间无关。
+    给默认值让那 8 条照旧成立,**而新的那条判据另有自己的用例去验**。
+
     · 输出里有认证失败 → 没跑成(开跑前那一问只证明开跑那一刻通;10-16 那晚 17 套就是这么「过」的)
     · 75 = 只有「环境没验成」的题没过(比如管理后台没起、kb_rag 查不了)—— 和「判红」分开报,
       不然模型老老实实说「查不了」和真答错长得一样(10-20 夜跑 tool_eval 就是这么红的)
@@ -469,6 +540,15 @@ def 归类(退出码, 输出):
         return "没跑成(认证失败)"
     if 退出码 == 75:
         return "部分没验成(环境)"
+    # ⚠️ **放在「退步」之前。** 0 秒跑完的那一轮,连「退步」都不可信 ——
+    # 那是拿 0/0 和上一版比出来的。这一条说的是「这一轮整个不算数」,
+    # 而「退步」是在「这一轮算数」的前提下才有的结论,所以它更根本,得先判。
+    # ⚠️ 只收紧「退 0 而 0 秒」这一处。退非 0 的照旧归「判红」——
+    # 把它们也摘出来是**放宽**,而放宽要单独拍(项目里那条「先摘出来就等于
+    # 只要了放宽那一半」的教训,就在这个函数的 docstring 里)。
+    if (退出码 == 0 and 分钟 is not None and 分钟 < 秒退线_分钟
+            and 套 not in 秒退正常):
+        return "没跑成(0 秒就回来)"
     m = 判定行.search(输出 or "")
     if m and m.group(1) == "退步":
         return "退步"
@@ -494,14 +574,27 @@ def 跑一套(名, 参数, 截止):
         return dict(套=名, 结果="没跑成(环境)", 判定="没打", 退出码=None, 分钟=0,
                     尾=[f"找不到解释器 {os.path.relpath(PY, ROOT)} —— 这套要 agentsite/.venv"])
     try:
-        r = subprocess.run([PY, 脚本, *参数], cwd=ROOT, env=env,
-                           capture_output=True, text=True, timeout=限)
+        # ⚠️ **`errors="replace"` 不许去掉。** 2026-11-09 全项目快照起跑前实测过同形的一次:
+        # `tools/gate_lock.sh` 在「等锁超时」那条路径上吐出的 stderr **不是合法 UTF-8**
+        # (一个 `$VAR。` 把中文句号的首字节吃进了变量名),于是**按 `text=True` 捕获它的
+        # 那一方当场 UnicodeDecodeError**。这里捕的是 26 套评测的 stdout,里面有模型原话、
+        # 有各脚本自己拼的提示 —— 只要有一处吐出半个多字节字符,夜跑就崩在**解码**上,
+        # 而 traceback 指向的是这一行,看不出和哪一套、哪一行输出有关。
+        # 崩在这里的代价是**那一晚从这一套起全丢**,而第二天留下的是一份缺了一半的报告。
+        r = subprocess.run([PY, 脚本, *参数], cwd=ROOT, env=env, capture_output=True,
+                           text=True, errors="replace", timeout=限)
         尾 = [x for x in (r.stdout + r.stderr).strip().splitlines() if x.strip()][-3:]
+        # ⚠️ **分钟只算一次,判据和报告用同一个数。**
+        # 原来这里是 `归类(...)` 先跑、`分钟=round(...)` 在 return 里另算一次。
+        # 现在归类要看时间了,两边各算一次就会出现**报告印 0.0、判据看到 0.100001**
+        # 这种对不上的情况 —— 而那正是这一类 bug 最难查的形状:
+        # 报告上明明写着 0.0,判据却说它不是秒退。
+        _分 = round((time.time() - t0) / 60, 1)
         # 跑到一半登录掉了也算(开跑前那一问只证明开跑那一刻通)—— 输出里有认证失败就是**没跑成**,
         # 不记「过」:那套题一道都没真答,退出码 0 只说明脚本没崩(10-16 那晚 17 套就是这么「过」的)
-        结 = 归类(r.returncode, r.stdout + r.stderr)
+        结 = 归类(r.returncode, r.stdout + r.stderr, 分钟=_分, 套=名)
         return dict(套=名, 结果=结, 判定=判定(r.stdout + r.stderr),
-                    退出码=r.returncode, 分钟=round((time.time() - t0) / 60, 1), 尾=尾)
+                    退出码=r.returncode, 分钟=_分, 尾=尾)
     except subprocess.TimeoutExpired:
         return dict(套=名, 结果="超时", 退出码=None, 分钟=round((time.time() - t0) / 60, 1), 尾=[f"超过 {限 // 60} 分钟被停"])
     except Exception as e:                                                   # noqa: BLE001

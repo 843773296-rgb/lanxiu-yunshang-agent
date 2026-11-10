@@ -33,7 +33,9 @@ import datetime as dt
 import importlib.util as _u
 import io
 import os
+import shutil
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -60,6 +62,39 @@ def 几条(xs, 上限=4):
 
 # 咬合 —— 改坏的是什么、该红的是哪一条。(可执行的在 tools/bite_specs.json)
 咬合 = [
+    # ── 2026-11-09 晚加的六条(快照第 1 遍抓到三套 0.0 分钟的「过」)──────────
+    # ⚠️ 第 5 条是这一批里最要紧的,它验的是**接线**,不是函数本身:
+    #    `归类()` 自己认得「0 秒就回来」✅、判据真的在调它 ✅ ——
+    #    漏的是 `跑一套()` 到底有没有把分钟传进去。把那个关键字删掉之后,
+    #    第 2 条(「夜跑认得这件事」)**照旧是绿的**,只有第 5 条会红。
+    #    项目里 2026-11-04 给 `tools/impact.py` 加判据时栽的就是这一层。
+    ("把 `triage_shadow.py` 的 `--跑 3` 从 `额外参数` 里删掉 —— 它就又回到"
+     "「印一份库况报表然后退 0」那一支,而报告上写「过」",
+     "手工解析命令行的套也配了参数"),
+    ("把 `nightly_eval.秒退正常` 整个删掉(或把 `秒退线_分钟` 删掉)——"
+     "「0 秒就回来」这条判据等于被撤了,而撤掉之后报告照旧印「过」,看不出区别",
+     "夜跑认得「0 秒就回来」这件事"),
+    ("往 `秒退正常` 里加一条指着不存在的套的豁免(比如 `早就改过名的_eval.py`)——"
+     "它既不报错也不生效,而会让下一个人以为这套 0 秒跑完有人想过",
+     "「秒退正常」名单里没有过期的"),
+    ("把 `秒退正常` 里那条豁免的理由改成空字符串 ——"
+     "「写了个名字」和「想过为什么」在名单里长得一模一样",
+     "「秒退正常」每条豁免都写了为什么"),
+    ("把 `跑一套()` 里 `归类(..., 分钟=_分, 套=名)` 的 `分钟=_分` 删掉 ——"
+     "**函数照旧认得秒退、判据照旧在调它,断的是中间那根线**;"
+     "⚠️ 这一刀下去「夜跑认得这件事」那条仍然是绿的,所以红的必须是走真入口那条",
+     "`跑一套()` 真把分钟传给了 `归类()`"),
+    ("把 `跑一套()` 里 `subprocess.run` 的 `errors=\"replace\"` 去掉 ——"
+     "碰上半个多字节字符就 UnicodeDecodeError,那一晚从这一套起全丢,"
+     "而 traceback 指不出是哪一套的哪一行输出",
+     "夜跑捕获子进程输出都给了 `errors=`"),
+    ("把 `有人在用()` 里读 `快照PID` 那两行删掉 —— 夜跑就又看不见全项目快照了,"
+     "0 点照常起跑,两套评测同时抢库抢配额,**而两份结果都看起来正常**"
+     "(2026-11-09 那一夜就是这么丢的)",
+     "`有人在用()` 读到了每一个长任务的 PID"),
+    ("往 `自己不让自己` 里加一条指着不存在的 PID 常量的豁免 —— 它既不报错也不生效",
+     "「自己不让自己」名单里没有过期的"),
+    # ──────────────────────────────────────────────────────────────────
     ("把 `别处的套` 里技能触发那一条的路径改成 agent/ 下的(夜里会去跑一个不存在的文件)",
      "每个套的脚本都找得到"),
     ("往 `单跑那晚` 里加一个早就改过名的套(囤积的登记:既不报错也不生效)",
@@ -150,6 +185,190 @@ _陈 = [f for f in 不用配参数 if f not in 全部套 or not _带开关.get(f
 ck("「不用配参数」名单里没有过期的(套没了、或它已经不带开关了)",
    几条(f"{f} —— {'不在任何一晚的清单里' if f not in 全部套 else '已经不带动作开关了'}"
        for f in _陈) or "没有过期的", "没有过期的")
+
+
+# ── 手工 `sys.argv` 解析的套,也要配参数 ──────────────────────────────
+# ⚠️⚠️ **上面那条判据的视野漏了一半,而漏掉的那一半当晚就咬人了。**
+# 2026-11-09 晚(快照第 1 遍跑到第 20 套)抓到 `triage_shadow.py`:
+# 它**不用 argparse**,是手工 `参 = sys.argv[1:]` 然后 `if "--报" in 参 or not 参:`
+# (`agent/triage_shadow.py:697`)。于是「扫 `add_argument(action="store_true")`」
+# 这条判据**压根看不见它** —— 它不带参数走的是「印一份库况报表」那一支,退 0。
+#
+# > 它甚至不是「跑空了」—— 它**跑的是另一件事**,而报告那一栏只认退出码。
+#
+# ⚠️ 这正是项目里那条「注入没进检查的视野」(CLAUDE.md 第 8 节咬合失效第 ① 条):
+#    判据读的是 `SHOP_TOOLS = [...]` 字面量,而代码写的是 `SHOP_TOOLS += [...]`。
+#    **同一个形状,相隔一天,在同一条判据上犯了两次** ——
+#    第一次是 argparse 之外的解析法,第二次是 argparse 之内的另一种写法。
+#    所以这一条查的仍是**结构**,只是换了一个结构:
+#    「一个 `--xxx` 字符串字面量,被拿去和什么东西做 `in` 比较」。
+#    不枚举旗标名(`--做 / --跑 / --run` 是生成式的,词表永远追不上)。
+def _手工旗标(套):
+    """这个套在 AST 里拿哪些 `--xxx` 做过 `in` 比较(手工解析命令行的痕迹)。
+
+    只认「字面量在 `in` 左边」这个结构。它比 argparse 那条宽 ——
+    宽是故意的:**宁可多问一句「这套默认跑的是哪一支」,也别再漏一套。**
+    真的不需要配参数就写进 `不用配参数`,连理由一起写。
+    """
+    q = os.path.join(ROOT, 路径(套))
+    if not os.path.exists(q):
+        return []
+    try:
+        t = ast.parse(io.open(q, encoding="utf-8").read(), q)
+    except SyntaxError:
+        return []
+    if not any(isinstance(x, ast.Attribute) and x.attr == "argv" for x in ast.walk(t)):
+        return []                      # 压根不读 sys.argv → 没有手工解析
+    出 = []
+    for x in ast.walk(t):
+        if (isinstance(x, ast.Compare) and len(x.ops) == 1
+                and isinstance(x.ops[0], ast.In)
+                and isinstance(x.left, ast.Constant)
+                and isinstance(x.left.value, str) and x.left.value.startswith("--")):
+            出.append(x.left.value)
+    return sorted(set(出))
+
+
+_手工 = {f: _手工旗标(f) for f in 全部套}
+# 只问「一个旗标都没配」的套。配了任意一个就说明有人想过它该走哪一支。
+_手工漏 = [(f, k) for f, k in _手工.items()
+           if k and not M._参数(f) and f not in 不用配参数 and not _带开关.get(f)]
+print(f"     (手工 sys.argv 解析的套:{sum(1 for k in _手工.values() if k)} 个;"
+      f"argparse 那条已另算)")
+ck("手工解析命令行的套也配了参数(没配 = 它走默认那一支,而默认那一支是什么没人验过)",
+   几条(f"{f} 会按 {'、'.join(k)} 分支,而 `额外参数` 里一个都没配 —— "
+       f"它每晚跑的是默认那一支" for f, k in _手工漏) or "都配了", "都配了")
+
+
+# ── 「0 秒就回来」那条判据:豁免名单 + 接线 ────────────────────────────
+# 为什么要这条判据,见 `tools/nightly_eval.py` 里 `秒退正常` 上面那一段。
+# 一句话:**一套真跑了哪怕一道题的评测,不可能 6 秒内回来**,所以
+# 「退 0 + 0.0 分钟」= 它什么都没干,而报告那一栏印的是「过」。
+_秒退豁免 = getattr(M, "秒退正常", None)
+ck("夜跑认得「0 秒就回来」这件事(有 `秒退正常` 名单和线)",
+   "有" if _秒退豁免 is not None and getattr(M, "秒退线_分钟", None) else "没有 —— 这条判据被撤了",
+   "有")
+
+# 反向检查:豁免不许囤积。一条指着已经不在清单里的套的豁免,**既不报错也不生效**,
+# 而它会让下一个人以为「这套 0 秒跑完有人想过」。
+_秒退陈 = [f for f in (_秒退豁免 or {}) if f not in 全部套]
+ck("「秒退正常」名单里没有过期的(套已经不在任何一晚的清单里)",
+   几条(f"{f} —— 不在任何一晚的清单里,这条豁免不生效" for f in _秒退陈) or "没有过期的",
+   "没有过期的")
+# 豁免的理由不许空着 —— 「写了个名字」和「想过为什么」在名单里长得一模一样。
+_秒退无理由 = [f for f, why in (_秒退豁免 or {}).items() if not (why or "").strip()]
+ck("「秒退正常」每条豁免都写了为什么(结构性理由,不是「它一向很快」)",
+   几条(f"{f} 的豁免没写理由" for f in _秒退无理由) or "都写了", "都写了")
+
+# ⚠️⚠️ **走真入口的那一条** —— 这是 CLAUDE.md 第 8 节咬合失效第 ⑥ 条点名的那个坑:
+#   「用例全打在纯函数上,而破坏点在接线上」。2026-11-04 给 `tools/impact.py` 加判据时,
+#   四条用例直接调纯函数全对,而把入口里**调用它那一支**关掉,四条照旧全对。
+#
+# 所以这里不止验 `归类()` 自己认得秒退(上面那条),还要验
+# **`跑一套()` 真的把分钟和套名传了进去** —— 不传就等于这条判据根本没接上,
+# 而「函数支持」和「入口真传」在绿勾上一模一样。
+#
+# 做法:真造一个 0 秒退 0 的套,真调 `跑一套()`,看它返回什么。
+# ⚠️ 判据**自己造**它要验的东西:临时脚本写在 scratchpad、`PY` 换成当前解释器、
+#    套名靠 `别处的套` 映射进去。**不依赖 agentsite/.venv 在不在** ——
+#    那条路在 CI 上不存在,靠它的判据会红在一个和代码无关的理由上
+#    (项目里 `queue_view_check` 在 CI 上连红四次就是这个形状)。
+_接线 = "没验"
+_假套 = "_只打印就退出的假套_nightly_check.py"
+_旧PY, _旧映射 = M.PY, dict(M.别处的套)
+try:
+    _d = tempfile.mkdtemp(prefix="nightly-check-接线-")
+    _p = os.path.join(_d, _假套)
+    io.open(_p, "w", encoding="utf-8").write(
+        "print('我一道题都没跑,但我退 0')\n")
+    M.PY = sys.executable                      # 不碰 agentsite/.venv
+    M.别处的套[_假套] = os.path.relpath(_p, ROOT)
+    _r = M.跑一套(_假套, [], dt.datetime.now() + dt.timedelta(minutes=5))
+    _接线 = _r.get("结果")
+except Exception as e:                                                   # noqa: BLE001
+    _接线 = f"验不了:{type(e).__name__}: {e}"
+finally:
+    M.PY, M.别处的套 = _旧PY, _旧映射
+    shutil.rmtree(_d, ignore_errors=True)
+ck("`跑一套()` 真把分钟传给了 `归类()`(真造一个 0 秒退 0 的套跑一遍,不是只验纯函数)",
+   _接线, "没跑成(0 秒就回来)")
+
+# 捕获子进程输出必须带 `errors=`,而且不能是 strict ——
+# `text=True` 裸捕获碰上半个多字节字符会当场 UnicodeDecodeError,
+# 而这里捕的是 26 套评测的 stdout(里面有模型原话)。崩在解码上的代价是
+# **那一晚从这一套起全丢**,留下一份缺了一半的报告和一个指不出哪一套的 traceback。
+# (2026-11-09 实测同形的一次:`gate_lock.sh` 等锁超时那行吐的 stderr 不是合法 UTF-8。)
+# ⚠️ **变量名别叫 `_源` / `_树`** —— 这个脚本第 42 行的 `_源` 是**那个文件的路径**,
+# 而我第一版在这里把它重新赋成了**文件的内容**,于是下面第 338 行
+# `io.open(_源)` 拿着一整份源码去开文件,崩在 `File name too long`。
+# > 一个装路径的名字和一个装内容的名字,**在赋值语句上长得一模一样** ——
+# > 而撞上之后报的错(文件名太长)和真正的原因(两个意思共用一个名字)差得很远。
+# 今晚查的就是这一类事,而它当场在我自己的改动里复发了一次。
+_夜源文 = io.open(os.path.join(HERE, "nightly_eval.py"), encoding="utf-8").read()
+_夜树 = ast.parse(_夜源文, "nightly_eval.py")
+_裸捕 = []
+for x in ast.walk(_夜树):
+    if (isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute)
+            and x.func.attr == "run"
+            and any(k.arg == "capture_output" for k in x.keywords)):
+        _e = {k.arg: k.value for k in x.keywords}.get("errors")
+        _v = getattr(_e, "value", None) if _e is not None else None
+        if _e is None or _v in (None, "strict"):
+            _裸捕.append(f"第 {x.lineno} 行:capture_output 却"
+                         + ("没给 `errors=`" if _e is None else f"给了 `errors={_v!r}`"))
+_捕获处数 = sum(1 for x in ast.walk(_夜树)
+              if isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute)
+              and x.func.attr == "run"
+              and any(k.arg == "capture_output" for k in x.keywords))
+# **先报样本量** —— 空集合上「一处裸捕获都没有」自动成立,而那和「扫过了」不是一件事。
+print(f"     (夜跑里 capture_output 的调用:{_捕获处数} 处)")
+ck("扫到了捕获子进程输出的地方(0 处 = 判据失效了,不是都通过)",
+   "扫到了" if _捕获处数 else "一处都没扫到 —— 判据的视野断了", "扫到了")
+ck("夜跑捕获子进程输出都给了 `errors=`(裸捕获碰上半个汉字会崩掉整晚)",
+   几条(_裸捕) or "都给了", "都给了")
+
+
+# ── 「谁在用库」的名单不许漏登记 ────────────────────────────────────────
+# ⚠️⚠️ **这一条是 2026-11-09 那一夜的直接产物,而且那一夜的代价是整夜的数据。**
+#
+# 快照 16:38 起跑、03:56 收工,夜跑窗口 0 点起 —— **00:00–03:56 两套评测同时在跑**:
+# 抢库、抢锁、抢同一个 Claude 配额,还都往 `agent/nightly/` 写
+# (第二天 rebase 时 18 个结果文件冲突,那就是证据)。
+#
+# `有人在用()` 当时认得三样:重建 / 门禁 / 咬合重放。**快照是 11-08 才写的新东西,
+# 没人回来往这个名单里加它。** 而那段代码的注释里 2026-10-19 就写明了这个风险:
+#
+# > 一个「跑过了但数被别的活拖慢了」的评测结果,和一个干净的结果,
+# > **在那个 jsonl 里长得一模一样**。
+#
+# 想到了、写下来了、**然后下一个长任务照旧漏登记** ——
+# 这正是 CLAUDE.md 里反复说的那件事:**教训记在一个地方,而下一次踩它的人不在那个地方。**
+# 所以这条判据把「记住要登记」换成「漏登记当场红」:
+#
+#     这个文件里每一个 `…PID` 常量,都必须被 `有人在用()` 真的读到。
+#
+# 判据查**结构**(AST 里那个函数体引用了哪些名字),不是查注释写没写。
+_PID名 = [t.id for x in ast.walk(_夜树) if isinstance(x, ast.Assign)
+          for t in x.targets if isinstance(t, ast.Name) and t.id.endswith("PID")]
+_有人在用体 = next((x for x in ast.walk(_夜树)
+                   if isinstance(x, ast.FunctionDef) and x.name == "有人在用"), None)
+_读到的 = ({n.id for n in ast.walk(_有人在用体) if isinstance(n, ast.Name)}
+          if _有人在用体 is not None else set())
+# 豁免:夜跑自己的 PID —— 它不需要让开自己。**只许少不许多**,下面有反向检查。
+自己不让自己 = {
+    "夜跑PID": "这是夜跑自己写的 PID(给咬合重放和快照读的)—— 它不需要让开自己",
+}
+print(f"     (长任务 PID 常量:{len(_PID名)} 个 —— {'、'.join(_PID名) or '一个都没扫到'})")
+ck("扫到了长任务的 PID 常量(0 个 = 判据失效了,不是都登记了)",
+   "扫到了" if _PID名 else "一个都没扫到 —— 判据的视野断了", "扫到了")
+ck("`有人在用()` 读到了每一个长任务的 PID(漏一个 = 那个活和评测会同时跑,两份数据都脏)",
+   几条(f"{n} 没被 `有人在用()` 读到 —— 它在跑的时候夜跑不会让开" 
+       for n in _PID名 if n not in _读到的 and n not in 自己不让自己) or "都读到了",
+   "都读到了")
+_PID陈 = [n for n in 自己不让自己 if n not in _PID名]
+ck("「自己不让自己」名单里没有过期的(那个 PID 常量已经不存在了)",
+   几条(f"{n} —— 这个 PID 常量已经没了,这条豁免不生效" for n in _PID陈) or "没有过期的",
+   "没有过期的")
 
 # 把「靠映射才找得到的」单独印出来 —— 它们是最容易在搬文件时断掉的那几个
 _映射的 = sorted(M.别处的套)
