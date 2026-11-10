@@ -18792,5 +18792,41 @@
    }
   ],
   "预期红": "叫「模型」的字段里装的是模型 id,不是一句说明"
+ },
+ {
+  "script": "backend/tool_schema_check.py",
+  "改坏": "给某个工具的 Python 函数加一个参数而 schema 里不加(close_bad_rating 那个形状)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "def close_bad_rating(pkg, note, way, approved_by=None, amount=None):",
+    "new": "def close_bad_rating(pkg, note, way, approved_by=None, amount=None, 漏进schema的参数=None):"
+   }
+  ],
+  "预期红": "函数有而 schema 里没有"
+ },
+ {
+  "script": "backend/tool_schema_check.py",
+  "改坏": "往某个 schema 里加一个函数不认的参数名(close_bad_rating 的 schema 多一个 coupon)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "\"amount\":{\"type\":\"number\",\"description\":\"**这次退了多少钱**。",
+    "new": "\"coupon\":{\"type\":\"string\",\"description\":\"函数不认的参数\"},\"amount\":{\"type\":\"number\",\"description\":\"**这次退了多少钱**。"
+   }
+  ],
+  "预期红": "schema 有而函数没有"
+ },
+ {
+  "script": "tools/clamp_future_done.py --selftest",
+  "改坏": "去掉分钟粒度那道底线(按天挪、保留原时刻,回传会落在同一天但时刻早于下单)",
+  "file": [
+   {
+    "path": "tools/clamp_future_done.py",
+    "old": "                    if 下单 and 新 < str(下单)[:16]:\n",
+    "new": "                    if False:\n"
+   }
+  ],
+  "预期红": "条回传早于下单"
  }
 ]

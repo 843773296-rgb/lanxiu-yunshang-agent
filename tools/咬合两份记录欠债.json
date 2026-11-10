@@ -23,7 +23,6 @@
   "backend/source_check.py": 4,
   "backend/supplier_check.py": 1,
   "backend/syscode_check.py": 1,
-  "backend/tool_schema_check.py": 2,
   "fakedata/agree.py": 3,
   "fakedata/anchor.py": 3,
   "fakedata/repro.py": 4,
