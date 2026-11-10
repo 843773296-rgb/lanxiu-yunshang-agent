@@ -164,7 +164,13 @@ def _自测():
     过 = []
     def 咬(名, 跑法, 应红):
         FAIL.clear(); N[0] = 0
-        跑法()
+        # ⚠️ 11-10:自测造坏数据时,ck 照常印 ❌ —— 于是**干净跑一遍,输出里也有一排带 ❌ 的同名行**。
+        # 咬合重放判「红的是不是点名那一条」靠的就是找 ❌ + 那条名字,
+        # 这些假红行让第三关变成恒真:任何地方红一下(rc≠0)都会被认成「咬中了」。
+        # 自测里的明细收起来,结论照旧印在下面那行(红了哪几条一条不少)。
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()):
+            跑法()
         中 = any(应红 in f for f in FAIL)
         过.append(中)
         print(f"  {'✅' if 中 else '❌'} 咬合「{名}」→ {FAIL or '全绿'}")

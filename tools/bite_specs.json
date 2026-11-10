@@ -17773,5 +17773,306 @@
    }
   ],
   "预期红": "重放工具同时报「撞上几条」和「真跑几条」"
+ },
+ {
+  "script": "agent/spans.py",
+  "改坏": "把凭据词表里的「密码」删掉",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "凭据键 = re.compile(r\"(密码|口令|",
+    "new": "凭据键 = re.compile(r\"(口令|"
+   }
+  ],
+  "预期红": "凭据按键名抹掉(参数)"
+ },
+ {
+  "script": "agent/spans.py",
+  "改坏": "把 token 写成光秃秃的(用量字段会被当成凭据)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "secret|token(?!s)|api",
+    "new": "secret|token|api"
+   }
+  ],
+  "预期红": "input_tokens / cache_read_input_tokens 不算凭据"
+ },
+ {
+  "script": "agent/spans.py",
+  "改坏": "排树时把父找不到的 span 丢掉(页面上表现为「这一步没发生过」)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "子.setdefault(p if p in 有 else None, []).append(s)",
+    "new": "子.setdefault(p, []).append(s)"
+   }
+  ],
+  "预期红": "父找不到的 span 不会被吃掉"
+ },
+ {
+  "script": "agent/spans.py",
+  "改坏": "算账时把根的汇总和分步的值一起加(每个数都算两遍)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "return v if v is not None else sum(s[\"attr\"].get(键) or 0 for s in 步) or 兜底",
+    "new": "return (v or 0) + sum(s[\"attr\"].get(键) or 0 for s in 步) or 兜底"
+   }
+  ],
+  "预期红": "有根汇总时以根为准,不和分步相加"
+ },
+ {
+  "script": "agent/spans.py",
+  "改坏": "落盘时把没收尾的 span 当成正常结束",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "if s[\"status\"] == \"unset\": s[\"status\"] = \"未收尾\"",
+    "new": "if s[\"status\"] == \"unset\": s[\"status\"] = \"ok\""
+   }
+  ],
+  "预期红": "没收尾的 span 标成「未收尾」"
+ },
+ {
+  "script": "tools/eval_provenance_check.py",
+  "改坏": "把 eval_compare 里读 evalrec 的那两行改回自己存一份 2",
+  "file": [
+   {
+    "path": "tools/eval_compare.py",
+    "old": "同版波动_下限 = _er.同版波动_下限",
+    "new": "同版波动_下限 = 2"
+   }
+  ],
+  "预期红": "对比工具是**取**这份口径,不是自己另存一份"
+ },
+ {
+  "script": "tools/eval_provenance_check.py",
+  "改坏": "让 能不能当结论() 在模型不同时也返回可比",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "    变 = [k for k in (\"供应商\", \"模型\", \"代码\")",
+    "new": "    变 = [k for k in (\"供应商\", \"代码\")"
+   }
+  ],
+  "预期红": "模型变了就不可比"
+ },
+ {
+  "script": "tools/eval_provenance_check.py",
+  "改坏": "让 能不能当结论() 一律返回不可比",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "    变 = [k for k in (\"供应商\", \"模型\", \"代码\")",
+    "new": "    return False, \"一律不可比\"\n    变 = [k for k in (\"供应商\", \"模型\", \"代码\")"
+   }
+  ],
+  "预期红": "三样都一样、分差够大,才能当结论"
+ },
+ {
+  "script": "tools/eval_provenance_check.py",
+  "改坏": "把口径里「claude-haiku-4-5」那个默认值删掉(只留一个)",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "走钥匙串登录态(月租)→ **claude-haiku-4-5**。",
+    "new": "走钥匙串登录态(月租)→ 同上。"
+   }
+  ],
+  "预期红": "口径里说的默认模型和代码里的分支对得上"
+ },
+ {
+  "script": "tools/eval_provenance_check.py",
+  "改坏": "让 能不能当结论() 在只有方案不同时也说「条件一样」",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "    if 方A != 方B:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "只有方案不同 → 说出来它是**最干净的对照**"
+ },
+ {
+  "script": "tools/eval_provenance_check.py",
+  "改坏": "把某份结果文件里一条记录的供应商改成 deepseek(制造混跑)",
+  "file": [
+   {
+    "path": "agent/liability-eval-results.jsonl",
+    "old": "\"供应商\": \"claude\"",
+    "new": "\"供应商\": \"deepseek\""
+   }
+  ],
+  "预期红": "一份文件里不混两家"
+ },
+ {
+  "script": "tools/eval_provenance_check.py",
+  "改坏": "把整份结果文件的供应商都改成 deepseek(看图那份 6 条全改 —— 不混跑,只有「基线是谁」这条能抓到。⚠️ 那份文件条数变了这条要跟着改)",
+  "file": [
+   {
+    "path": "agent/vision-eval-results.jsonl",
+    "old": "\"供应商\": \"claude\"",
+    "new": "\"供应商\": \"deepseek\""
+   },
+   {
+    "path": "agent/vision-eval-results.jsonl",
+    "old": "\"供应商\": \"claude\"",
+    "new": "\"供应商\": \"deepseek\""
+   },
+   {
+    "path": "agent/vision-eval-results.jsonl",
+    "old": "\"供应商\": \"claude\"",
+    "new": "\"供应商\": \"deepseek\""
+   },
+   {
+    "path": "agent/vision-eval-results.jsonl",
+    "old": "\"供应商\": \"claude\"",
+    "new": "\"供应商\": \"deepseek\""
+   },
+   {
+    "path": "agent/vision-eval-results.jsonl",
+    "old": "\"供应商\": \"claude\"",
+    "new": "\"供应商\": \"deepseek\""
+   },
+   {
+    "path": "agent/vision-eval-results.jsonl",
+    "old": "\"供应商\": \"claude\"",
+    "new": "\"供应商\": \"deepseek\""
+   }
+  ],
+  "预期红": "基线是 claude 跑的"
+ },
+ {
+  "script": "agent/usage_report_check.py",
+  "改坏": "把 供应商别名 里 claude→anthropic 那条删掉(V1 那条路又发不出去了)",
+  "file": [
+   {
+    "path": "agent/usage_report.py",
+    "old": "供应商别名 = {\"claude\": \"anthropic\", \"claude-oauth\": \"anthropic\"}",
+    "new": "供应商别名 = {\"claude-oauth\": \"anthropic\"}"
+   }
+  ],
+  "预期红": "每个调用点传的供应商都能归一到接收端的词表"
+ },
+ {
+  "script": "agent/usage_report_check.py",
+  "改坏": "让 _供应商() 认不出时返回 None(「认不出」又混进「没传」)",
+  "file": [
+   {
+    "path": "agent/usage_report.py",
+    "old": "    return 供应商别名.get(v, v)",
+    "new": "    return 供应商别名.get(v)"
+   }
+  ],
+  "预期红": "这两种说的"
+ },
+ {
+  "script": "agent/usage_report_check.py",
+  "改坏": "让 缺什么() 在 是mock 缺失时不报(默认当成 False)",
+  "file": [
+   {
+    "path": "agent/usage_report.py",
+    "old": "    if 载荷.get(\"是mock\") is None:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "忘传 是mock"
+ },
+ {
+  "script": "agent/usage_report_check.py",
+  "改坏": "把 排队() 里那层 try 去掉(写不进去就抛,业务跟着挂)—— 等价写法:except 只接一种碰不到的异常",
+  "file": [
+   {
+    "path": "agent/usage_report.py",
+    "old": "    except Exception as e:\n        # ⚠️ **连留痕都失败了才走到这里。**",
+    "new": "    except ZeroDivisionError as e:\n        # ⚠️ **连留痕都失败了才走到这里。**"
+   }
+  ],
+  "预期红": "投递箱写不进去时"
+ },
+ {
+  "script": "agent/usage_report_check.py",
+  "改坏": "让 排队() 用记录内容做幂等键(同一条排两次拿到同一个键)",
+  "file": [
+   {
+    "path": "agent/usage_report.py",
+    "old": "键 = \"lxys-\" + uuid.uuid4().hex",
+    "new": "键 = \"lxys-\" + __import__(\"hashlib\").md5(json.dumps(row, sort_keys=True, default=str).encode()).hexdigest()"
+   }
+  ],
+  "预期红": "同一条记录排两次"
+ },
+ {
+  "script": "agent/usage_report_check.py",
+  "改坏": "让 扫出所有调用点传的供应商() 不扫 v1.py 的 dict(id=...)(v1.py 的那几个值就漏了)",
+  "file": [
+   {
+    "path": "agent/usage_report_check.py",
+    "old": "re.finditer(r'\\bdict\\(\\s*id\\s*=\\s*\"([^\"]+)\"', t)",
+    "new": "re.finditer(r'\\bdict\\(\\s*idx\\s*=\\s*\"([^\"]+)\"', t)"
+   }
+  ],
+  "预期红": "扫到了调用点传的供应商值"
+ },
+ {
+  "script": "agentsite/nav_check.py",
+  "改坏": "在 PAGES 里加一个页面但不登记进 nav",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "PAGES = {\"/\": \"station.html\",",
+    "new": "PAGES = {\"/\": \"station.html\", \"/zzz\": \"zzz.html\","
+   }
+  ],
+  "预期红": "每个页面要么挂顶栏、要么写明为什么不挂"
+ },
+ {
+  "script": "agentsite/nav_check.py",
+  "改坏": "在某个页面里手写一份导航项(data-p)",
+  "file": [
+   {
+    "path": "agentsite/web/tasks.html",
+    "old": "<nav class=\"sitenav\"><!--NAV--></nav>",
+    "new": "<nav class=\"sitenav\"><!--NAV--></nav>\n<a href=\"/\" data-p=\"/\">对话</a>"
+   }
+  ],
+  "预期红": "导航只有一个来源"
+ },
+ {
+  "script": "agentsite/nav_check.py",
+  "改坏": "给一个已经有顶栏的页面再加一条 <nav class=\"sitenav\">",
+  "file": [
+   {
+    "path": "agentsite/web/tasks.html",
+    "old": "<nav class=\"sitenav\"><!--NAV--></nav>",
+    "new": "<nav class=\"sitenav\"><!--NAV--></nav>\n<nav class=\"sitenav\"></nav>"
+   }
+  ],
+  "预期红": "每个页面最多一条顶栏"
+ },
+ {
+  "script": "agentsite/nav_check.py",
+  "改坏": "把已经删掉的 /debug 加回顶栏(已移交表清空之后,这条判据差点变成空跑)",
+  "file": [
+   {
+    "path": "agentsite/nav.py",
+    "old": "顶栏 = [\n",
+    "new": "顶栏 = [\n    (\"/debug\",       \"调试\",       \"回流的调试页\"),\n"
+   }
+  ],
+  "预期红": "工作台顶栏里没有 AI 调控页"
+ },
+ {
+  "script": "agentsite/nav_check.py",
+  "改坏": "把一条还在 PAGES 里的路径同时登记进「不挂」和「已移交」",
+  "file": [
+   {
+    "path": "agentsite/nav.py",
+    "old": "已移交管理后台 = {}",
+    "new": "已移交管理后台 = {\"/tasks\": \"任务列表 —— 假装它也移交了\"}"
+   }
+  ],
+  "预期红": "一条路径不会同时在「不挂」和「已移交」两张表里"
  }
 ]
