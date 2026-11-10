@@ -18612,5 +18612,53 @@
    }
   ],
   "预期红": "N22·真跑原话:打算把 PT06 的数改到 PT07"
+ },
+ {
+  "script": "backend/worldclock_check.py",
+  "改坏": "把 booking.py 的 _now() 改回 datetime.datetime.now()",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "    import worldclock\n    return worldclock.当下()\n",
+    "new": "    import datetime\n    return datetime.datetime.now()\n"
+   }
+  ],
+  "预期红": "写「已发生的事」那几列时用世界时钟"
+ },
+ {
+  "script": "backend/worldclock_check.py",
+  "改坏": "往豁免里多加一条",
+  "file": [
+   {
+    "path": "backend/worldclock_check.py",
+    "old": "豁免 = {\n",
+    "new": "豁免 = {\n    \"booking.py\": \"临时多加的一条豁免 —— 理由写够十个字也照样算囤积\",\n"
+   }
+  ],
+  "预期红": "豁免不许囤积"
+ },
+ {
+  "script": "backend/worldclock_check.py",
+  "改坏": "把豁免的理由清空",
+  "file": [
+   {
+    "path": "backend/worldclock_check.py",
+    "old": "    \"auth.py\": \"会话创建/过期记的是**真实世界**的事:一个演示世界里「昨天」登录的会话,\"\n               \"在真实时间里已经过期了。用世界时钟反而会让会话永不过期\",",
+    "new": "    \"auth.py\": \"\","
+   }
+  ],
+  "预期红": "每条豁免都写了理由"
+ },
+ {
+  "script": "backend/worldclock_check.py",
+  "改坏": "往豁免里写一个不存在的文件名(把 auth.py 那条的文件名改成一个不存在的)",
+  "file": [
+   {
+    "path": "backend/worldclock_check.py",
+    "old": "    \"auth.py\": \"会话创建",
+    "new": "    \"auth_已删.py\": \"会话创建"
+   }
+  ],
+  "预期红": "豁免指向的文件都还在"
  }
 ]
