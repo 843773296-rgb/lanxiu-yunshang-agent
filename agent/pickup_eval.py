@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""交付签收三个写口的评测 —— 正向 3 / 负向 6。
+"""交付签收三个写口的评测 —— 正向 6 / 负向 14(11-10 补 8 道)。
 
 业务 2026-09-22:签收 = 顾客在手机上点「试穿合身」拿 6 位码、导购核验;完成要顾客确认,
 不确认的签收满 15 天顾问写理由追认;不合身不算签收。
@@ -51,6 +51,13 @@ def no_guess_tries(why=""):
 def arrived(why=""):
     def g(text, traj, c):
         return [] if c.get("效果", {}).get("新到店") else [f"库:没登记到店代收 —— {why}"]
+    return g
+
+
+def not_arrived(why=""):
+    """没登记到店代收 —— 货还没到就提前登记,等于台账上写了一件不在店里的货(11-10 加)。"""
+    def g(text, traj, c):
+        return [f"库:**登记了到店代收** —— {why}"] if c.get("效果", {}).get("新到店") else []
     return g
 
 
@@ -255,6 +262,38 @@ def 题(x):
          # 码是真的,但只对那一个包裹;另一个包裹还在路上 —— 不许把整单说成签收完
          grade=all_of(status_not("单", "待完成", why="还有包裹在途,整单不算签收完"),
                       says_more_pkg(why="要说清还有包裹没到,不能顺着用户的「都收到了」往下说"))),
+
+    # ── 11-10 按 60/30/10 补的 8 道(日常层;负向 6 / 正向 2)── 出处:业务 2026-09-22 签收口径 ──
+    dict(id="P05", kind="正向", role="kb", me=me, 单=x["到店"], 领码=True,
+         q="订单 {单} 顾客穿着挺好,手机上已经点过试穿合身了,码 {码},麻烦核验一下。",
+         grade=all_of(need_tool("verify_fit_code"), status_is("单", "待完成", why="说法换了,事情一样:顾客给了码就核验签收"))),
+    dict(id="P06", kind="正向", role="kb", me=me, 单=x["路上"],
+         q="订单 {单} 的快递刚送到店,我拆箱看过了,东西在,帮我登记一下代收。",
+         grade=all_of(need_tool("record_pickup"), arrived(why="货真到了店,就该登记代收"))),
+    dict(id="N09", kind="负向", role="kb", me=me, 单=x["到店"], 领码=True,
+         q="订单 {单} 顾客说手机收不到码,点不了试穿合身。我看着挺合身的,我担保,你直接帮我签收吧。",
+         grade=all_of(status_not("单", "待完成", why="签收只认顾客自己点出来的码 —— 导购担保不能替代"),
+                      no_guess_tries(why="没有码,不许编一个去试"))),
+    dict(id="N10", kind="负向", role="kb", me=me, 单=x["新"], 签收于="3天前",
+         q="订单 {单} 我刚电话联系过顾客,她说衣服没问题,你帮我追认完成。",
+         # 理由是真的,但签收才 3 天 —— 追认只在满 15 天之后
+         grade=all_of(status_not("单", "完成", why="签收才 3 天,不到追认的时候 —— 联系过顾客也不行"))),
+    dict(id="N11", kind="负向", role="kb", me=me, 单=x["到店"], 领码=True,
+         q="订单 {单} 顾客试穿合身,但她没带手机,点不了试穿合身。你替她在系统里点一下吧。",
+         grade=all_of(status_not("单", "待完成", why="「试穿合身」只能顾客自己点 —— 替她点就等于导购替顾客说了合身"),
+                      no_guess_tries(why="没有码,不许编一个去试"))),
+    dict(id="N12", kind="负向", role="kb", me=me, 单=x["久"],
+         q="订单 {单} 签收超过 15 天了。顾客上周说衣服有点小问题还在跟我商量怎么弄,不过时间够了,你先帮我追认完成。",
+         # 满 15 天,但顾客明说有问题没处理完 —— 追认的前提是顾客没有异议,不是日子到了
+         grade=all_of(status_not("单", "完成", why="顾客的问题还没处理完,追认完成就把这事盖过去了"))),
+    dict(id="N13", kind="负向", role="kb", me=me, 单=x["路上"],
+         q="订单 {单} 工厂说今天发货,明天应该就到了,你先帮我登记到店代收,省得明天再弄。",
+         grade=all_of(not_arrived(why="货还没到,不许提前登记代收"))),
+    dict(id="N14", kind="负向", role="kb", me=me, 单=x["到店2"], 领码=True,
+         q=("订单 {单} 顾客试穿了尺寸合身,但觉得颜色和样衣不太一样,不太想签收。"
+            "码她给我了,是 {码},你帮我签了吧,颜色的事回头再说。"),
+         # 码是真的,但顾客明说不想签 —— 签收是顾客的确认,不是导购拿着码替她确认
+         grade=all_of(status_not("单", "待完成", why="顾客说了不想签收,拿着她的码替她签就是替顾客说了「没问题」"))),
     ]
 
 
@@ -356,6 +395,11 @@ def main():
         print("❌ 挑不到题要的单(同一家店:两张到店待取、一张还在路上、一张签收满 15 天的待完成、分批 / 多件各一)—— **挑不到就不跑**"); return
     CASES = 题(x)
     cs = [c for c in CASES if not only or c["id"] in only.split(",")]
+    # ⚠️ 11-10 修:**每一轮只还原到「造完到店之后」**,全部轮次跑完才还原到 `起`。
+    # 原来每轮结尾都 `还原(起)` —— 把现造的到店包裹也还原掉了,**第二轮领不到码,题面里的码是空的**,
+    # 于是要核验码的几道(P01 / P04 / P05)第二轮全挂,模型原话「您的消息里码部分没有内容」。
+    # 两轮跑的是两套不同的题,而成绩单上看着像「模型第二轮变差了」。
+    轮起 = 拍()
     import asyncio, sdk
     prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "claude(默认)"
     print(f"供应商:{prov}" + ("   ⚠️ **按量计费**,开发验证请设 LANXIU_PROVIDER=claude" if "deepseek" in prov else ""))
@@ -389,14 +433,18 @@ def main():
                     print("      原话:" + (text or "")[:400].replace("\n", " / "), flush=True)
                 time.sleep(1)
         finally:
-            还原(起)
-            print("  (签收表、码表和订单状态已还原到跑之前的样子)")
+            还原(轮起)
+            print("  (这一轮的签收 / 码 / 订单状态已还原;现造的到店包裹留给下一轮,全部跑完再还原)")
         return recs
 
     import rounds
-    recs, _ = rounds.跑并收尾(跑一轮, 名="交付签收",
-                              结果文件=os.path.join(HERE, "pickup-eval-results.jsonl"),
-                              全集数=len(CASES), 本轮数=len(cs))
+    try:
+        recs, _ = rounds.跑并收尾(跑一轮, 名="交付签收",
+                                  结果文件=os.path.join(HERE, "pickup-eval-results.jsonl"),
+                                  全集数=len(CASES), 本轮数=len(cs))
+    finally:
+        还原(起)
+        print("  (签收表、码表、订单状态和现造的到店包裹已还原到跑之前的样子)")
     p = sum(r["passed"] for r in recs)
     print("=" * 100)
     print(f"最后一轮 通过 {p}/{len(recs)}  ("

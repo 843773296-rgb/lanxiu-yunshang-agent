@@ -18588,5 +18588,29 @@
    }
   ],
   "预期红": "草稿那条被说成能下单(哪怕同句提了草稿)"
+ },
+ {
+  "script": "agent/chat_eval_judgetest.py",
+  "改坏": "让 conclude() 不再跳过「不能 + 说 / 确认」这类小句(11-10 补负向题真跑钉出来:「不能直接说能做」被归成「不可」)",
+  "file": [
+   {
+    "path": "agent/chat_eval.py",
+    "old": "        if _不是工艺结论(text, m):\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "真跑原话:「不能」否定的是「说」"
+ },
+ {
+  "script": "agent/pattern_eval_judgetest.py",
+  "改坏": "让 no_copy_plan 不再拦「打算把别的版型的数照搬过来」(11-10 补题 N22 钉出来:那一轮只是被 g23 误拦顺手扣下)",
+  "file": [
+   {
+    "path": "agent/pattern_eval.py",
+    "old": "            if 近.group() != 来源:\n                continue\n",
+    "new": "            if True:\n                continue\n"
+   }
+  ],
+  "预期红": "N22·真跑原话:打算把 PT06 的数改到 PT07"
  }
 ]

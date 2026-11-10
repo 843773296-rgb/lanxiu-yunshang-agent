@@ -437,11 +437,26 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
  A. [x] ✅ 收尾词表检查那笔 —— b905e393 完备重放 18 条 + CI 三项绿
  B. [x] ✅ 清理转人工临时库和工作副本(③)—— 查实早已清掉:worktree、handoff-human 分支、aimc_handoff 库都不在了,不用动手
  C. [x] ✅ **工厂评测**:根因是库里碰巧没有过期单(每日平移推着完工)→ 评测自造一张、跑完改回(保险单放真库旁边、读回核过),11/11 · 11/11 和基线一致。**研判流水线**:rating_triage 在函数里才 import ops,切到快照之后才加载 → ops 读真库、包裹号已重分配 →「没有评价」;改成切库前先 import + 切完断言,训练集 5×3 跑通(15/15 取材料、扣下 1 轮)
- D. [ ] **分工已定(eureka-fc 21:xx)**:我写日常 58 道 —— chat_eval +12、pattern_eval +8、pickup_eval +8、measure_eval +8、order_eval +8、talk_eval +8、scheme_eval +6;它写 workshop/factory +10、ops +31、罕见 +32。**新题号前缀必须已在 knowledge/17 分层表里登记**(开新场景先加一行);加题后分母变了、**不许和老基线比高低**;每套补完跑 `tools/eval_tier_check.py --登记` 推棘轮;负向占大头、判据查结构不枚举、期望值现读、日期用现算;先过人造对照,真跑后把真实说法钉回对照。→ 写我那份 → 门禁 → 推(**别碰独立题、别碰 tool_eval / select_eval**)
- E. [~] **意图已挂生产(11-10 21:3x)**:独立题 82 道两轮 判对 95.1% / 91.5%、判不出 1.2% / 1.2%(门槛 90 / 5)→ 店长助手 v7(意图 itv_82e0d5587b78 v1,指纹 06b90f2c0366;以 v6 为底补回拆句词典 —— 草稿原来停在 v5)、8770 已重启、同步验过 19 个意图来自后台。跑之前修了 intent_eval 三处(二元组恒真拒跑 / v1.call 签名错 → 改调 glossary_client.判意图 / 加测全线 95%)和**分类模型 haiku-5-5 → haiku-4-5**(这台机器 5.5 一代直接打接口全 rate_limit,聊天站实际一直是 4.5;照原样挂 = 每句分类失败 + 转人工开着 = 全转人工)。**还差**:飞书报告、盯转人工有没有异常多(chat_handoffs 表)。⚠️ 后台助手配置「模型」一栏写 claude-haiku-5-5 但聊天站不读(note 写着「默认模型还没接」)—— 声明没接上,已告诉 eureka-fc
+ D. [x] ✅ **补题完成(11-11 00:1x 推)**:新写 57 道(scheme 6 / talk 8 / measure 8 / order 8 / pickup 8 / chat 11 / pattern 8;目标 58,chat 少 1),另有 10 道老题首跑(pattern 9 / chat 1)—— 两件分开报。日常层 143 → 211(棘轮已登记)。日常层现在印「没达标」是**新题照出缺口**,不是退步,和老基线不可比。顺手修:pickup 轮间还原(第二轮码是空的)、chat conclude 言说/双重否定小句、pattern no_copy_plan(最近先行词)+ 夹具前提、chat 自测失败行 ❗→❌(咬合认得出是哪一条)。
+ D-旧2. **进度(11-10 22:4x)**:order +8 两轮 15/15 ✓;measure +8 两轮 15/16 · 12/16(N07/N12 线上漏洞照实留);chat +11 修判据后两轮 32/33 · 30/33(conclude 把「不能直接说能做」「不是不能做」当「不可」→ 整句跳过言说/双重否定小句,真跑原话钉回 4 条;P20 题面改「真丝素罗」;N10 是模型被前提带偏,照实留);pattern 现有 21 道两轮 14/21 · 16/21(9 道老题首跑,多道「没调工具就答」是模型错)+ **新写 8 道 N19–N24 / P10 / P11**(第一次撞了老题编号 N13/N14,判分器自测当场红,已改),29 道锁里排队;pickup 锁里跑。**全跑完 → eval_tier_check --登记 → 门禁(锁 + 后台 e2e)→ 提交**;d25(chat 新判据咬合,副本里缺模块跑不了)要正式重放。
+ D-旧. **进度(11-10 22:0x)**:scheme +6、talk +8 已推 55716974(棘轮 143→157 已登记);measure +8、order +8 补丁已打在工作区(.wip-glossary/patch_*_eval.py),锁里真跑中(measure_eval_run1.out / order_eval_run1.out),看完 → 判分器错就修+钉回、模型错照留 → --登记 → 门禁 → 推。chat +11(源码 22→33)已加在工作区、真跑中;pickup +8 锁里跑;**pattern:源码 21 道 / 结果文件 12 道,后加的 9 道从 10-07 起没跑过 —— 锁里在把现有 21 道跑起来(12→21),但 eureka-fc 指出:那是「把早就写好的题跑起来」不是「补新题」,两件在棘轮上长得一样、意义不同 → **pattern 仍欠 8 道新题**,这一跑完再写、再单独跑。**报数时两件分开说。**measure N07/N12 是线上漏洞(模型自己填「平静呼气」):eureka-fc 已在 knowledge/measure.条件有据吗() + guard 修(分「矛盾 / 没说 / 取值不对」,矛盾优先报),未推。
+    **分工已定(eureka-fc 21:xx)**:我写日常 58 道 —— chat_eval +12、pattern_eval +8、pickup_eval +8、measure_eval +8、order_eval +8、talk_eval +8、scheme_eval +6;它写 workshop/factory +10、ops +31、罕见 +32。**新题号前缀必须已在 knowledge/17 分层表里登记**(开新场景先加一行);加题后分母变了、**不许和老基线比高低**;每套补完跑 `tools/eval_tier_check.py --登记` 推棘轮;负向占大头、判据查结构不枚举、期望值现读、日期用现算;先过人造对照,真跑后把真实说法钉回对照。→ 写我那份 → 门禁 → 推(**别碰独立题、别碰 tool_eval / select_eval**)
+ E. [x] ✅ **意图已挂生产(11-10 21:3x,已推 55716974,飞书报告 https://aqvi2xbk5kd.feishu.cn/docx/CWT0dXOnsoyYbnxhhzyczVJTnVf)**:独立题 82 道两轮 判对 95.1% / 91.5%、判不出 1.2% / 1.2%(门槛 90 / 5)→ 店长助手 v7(意图 itv_82e0d5587b78 v1,指纹 06b90f2c0366;以 v6 为底补回拆句词典 —— 草稿原来停在 v5)、8770 已重启、同步验过 19 个意图来自后台。跑之前修了 intent_eval 三处(二元组恒真拒跑 / v1.call 签名错 → 改调 glossary_client.判意图 / 加测全线 95%)和**分类模型 haiku-5-5 → haiku-4-5**(这台机器 5.5 一代直接打接口全 rate_limit,聊天站实际一直是 4.5;照原样挂 = 每句分类失败 + 转人工开着 = 全转人工)。**还差**:盯转人工有没有异常多(chat_handoffs 表;21:4x 基线 1 条、最近一小时 0 条)。⚠️ 后台助手配置「模型」一栏写 claude-haiku-5-5 但聊天站不读(note 写着「默认模型还没接」)—— 声明没接上,已告诉 eureka-fc
  F. [ ] 空档补检查欠账(.wip-glossary/bite_gap.py;草稿 try_spec → merge → replay_mine)
  G. [ ] 每做完两项刷交接;全部做完发飞书总结、停循环
-**仍要用户亲手做的**:rounds_check 那行补丁(放宽守卫)。
+**仍要用户亲手做的**:① rounds_check 那行补丁(放宽守卫)② **eureka-fc 写的 g23 补丁**(放宽守卫,被安全检查拦下转给用户):让价词表那支「数字+折」要求数字前面不是字母数字、排除「折合 / 折扣后 / 折射…」—— 版型号 PT07 + 「折合」被读成「7 折」,版师补题 N22、话术 T13 都被误拦;另一处是「不要说的话」小标题只罩两行,按连续列表项截断。**用户执行前这两类误拦照旧会出**,补题碰到先看是不是编号尾数撞「折」。
+
+#### 📍 11-10 23:2x 进度(压缩前写,覆盖下面 21:3x 那段里过时的)
+- **已推**:55716974(意图上生产 + 三套评测修 + scheme/talk 补 14 道)完备重放 57 条 + CI 三项绿。
+- **工作区未提交(都是我的,等签收重跑完一起门禁)**:agent/measure_eval.py(+8)、order_eval.py(+8)、pickup_eval.py(+8 + **轮间还原修复**)、chat_eval.py(+11 + conclude 跳过「不能+说/确认」「不是不能」小句)、chat_eval_judgetest.py(+4 真跑钉回)、pattern_eval.py(+8 新题 N19–N24/P10/P11 + no_copy_plan 判据)、pattern_eval_judgetest.py(+3)、各套 *-results.jsonl、HANDOFF.md;草稿规格 d25(chat)、d26(pattern)未 merge(都要库,只能正式重放)。
+- **后台在跑**:签收重跑(锁里,.wip-glossary/pickup_eval_run2.out)。跑完 → `tools/eval_tier_check.py --登记` → merge d25/d26 → 锁里 run_night 那套(规格重放 + check.sh + 后台 e2e)→ 提交推送 → 完备重放 + CI。
+- **各套结果(照实)**:order 15/15·15/15;measure 15/16·12/16(N07/N12 线上漏洞:模型自己填「平静呼气」—— eureka-fc 修好未推,推后要拿 N07/N12 真跑验);chat 32/33·30/33(N10 模型被前提带偏);pattern 现有 21 → 14/21·16/21,加新题后 29 → 23/29·22/29(P10 只报百分比不报米数是模型错;N22 有一轮被 g23 误拦);pickup 第一次 18/20·16/20 **作废**(第二轮码是空的,见下)。
+- **作废的结果**:pickup 第一次真跑的第二轮 —— 每轮结尾 `还原(起)` 把现造的到店包裹也还原了,第二轮领不到码、题面里码是空白,P01/P04/P05 冤枉挂;已改成每轮还原到「造完到店之后」、全部跑完才还原到起点。
+- **判据(为什么这么判)**:pattern 那 9 道是「把早就写好的题跑起来」不是补题(eureka-fc 指出),pattern 另写了 8 道新题,报数要分开;no_copy_plan 判「这个数指谁」(同句点名来源 / 上一句在要来源的数且没否定),不判「改成这个数」这句本身 —— 等版师给了自己的数再登记也会这么说。
+- **未验证的预判**:① pickup 修复后第二轮能领到码 —— 没看到结果前不算 ② no_copy_plan 只在人造 + 1 句真跑原话上验过 ③ 意图上线后还没有一条真实店长流量,转人工 0 条不说明什么。
+- **禁区**:guards.py 归 eureka-fc(g23 两处放宽要用户执行);独立题已用掉不许再跑来调;ops / tool_eval / select_eval 不碰;写库的评测必须拿锁。
+- **下一步第一个动作**:看 .wip-glossary/pickup_eval_run2.out(第二轮 P01/P04/P05 题面里有没有码)。
+- **悬而未决**:measure 修复何时推(eureka-fc);g23 补丁和 rounds_check 补丁等用户;意图边界题(查记录 ↔ 问一个数)要不要拿老 50 题调说明、要不要新写独立题 —— 等用户回来定。
 
 #### 📍 11-10 21:3x 进度(压缩前写)
 - A ✅ 词表检查那笔 b905e393 完备重放 18 条 + CI 三项绿。B ✅(早已清掉)。
@@ -16418,14 +16433,14 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-10 21:06。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-10 23:20。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | b905e393 · 2026-11-10 · 词表检查两个下限钉到实际数(58 / 63)并装上推它的手;4 条咬合,欠账 130→127 |
-| 代码量 | 1028 个 Python 文件 / 188934 行(不含 .venv) |
-| 验收 | `./check.sh` 共 387 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 55716974 · 2026-11-10 · 意图识别上生产(独立题两轮达标)+ 修三套评测 + 补 14 道日常题 |
+| 代码量 | 1030 个 Python 文件 / 189712 行(不含 .venv) |
+| 验收 | `./check.sh` 共 388 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
@@ -16433,35 +16448,35 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ```
 M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
  M .feynman/tool-eval.json
- M .gitignore
  M HANDOFF.md
- M agent/factory_eval.py
- M agent/scheme-eval-results.jsonl
- M agent/scheme_eval.py
- M agent/scheme_eval_judgetest.py
- M agent/talk_eval.py
+ M agent/chat-eval-results.jsonl
+ M agent/chat_eval.py
+ M agent/chat_eval_judgetest.py
+ M agent/measure-eval-results.jsonl
+ M agent/measure_eval.py
+ M agent/order-eval-results.jsonl
+ M agent/order_eval.py
+ M agent/pattern-eval-results.jsonl
+ M agent/pattern_eval.py
+ M agent/pattern_eval_judgetest.py
+ M agent/pickup-eval-results.jsonl
+ M agent/pickup_eval.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? .feynman/authprobe.log
-?? .feynman/authprobe.sh
-?? .feynman/health/
-?? .feynman/multi-date/
-?? .feynman/nightly-aimc.log
-?? .feynman/nightly-eval-launchd.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+55716974 意图识别上生产(独立题两轮达标)+ 修三套评测 + 补 14 道日常题
+13de4e20 意图识别独立测试集 82 道 + 判分器,并拦住「夜跑今晚就会把它跑掉」
 b905e393 词表检查两个下限钉到实际数(58 / 63)并装上推它的手;4 条咬合,欠账 130→127
 15359bd2 技能评测分得出「误转人工」和「选错技能」了 —— 并行会话今天开了转人工
 f8ab3c3a 开转人工(用户 11-10 点头)+ 树状记录仪结构检查补 8 条咬合,欠账 138→130
-24864f8d 评测集按出现频率分三层(日常/偶发/罕见),按层分别报分和分母 —— 用户 2026-11-10 拍的四件
-5aecfbbd 咬合欠账第七批:8 条(页面挂钩 3 / 聊天查订单卡片 5),欠账 146→138
 ```
 <!--/AUTO-->
 ## 一句话在做什么
