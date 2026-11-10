@@ -18852,5 +18852,65 @@
    }
   ],
   "预期红": "不许一次吐整篇"
+ },
+ {
+  "script": "backend/channel_check.py",
+  "改坏": "把「这张表不能用来比渠道」那一栏从工具出口去掉",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        \"⚠️ 这张表不能用来比渠道\": _ch.不能比_为什么,\n",
+    "new": ""
+   }
+  ],
+  "预期红": "工具出口必须自己说「这张表不能用来比渠道」"
+ },
+ {
+  "script": "backend/channel_check.py",
+  "改坏": "把共线改成背一句话(写死「是」,不现算)—— 写死 True 过不了:判据只验它是现算出来的布尔值",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        \"是不是一一对应\": 一对一,",
+    "new": "        \"是不是一一对应\": \"是\","
+   }
+  ],
+  "预期红": "共线是现算出来的,不是背的"
+ },
+ {
+  "script": "backend/channel_check.py",
+  "改坏": "把「客服代下单」从「不是渠道」里拿掉,并进四个渠道",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        if 能: 渠道[名] = d\n",
+    "new": "        if True: 渠道[名] = d\n"
+   }
+  ],
+  "预期红": "客服代下单不许和另外三个并列"
+ },
+ {
+  "script": "backend/channel_check.py",
+  "改坏": "让 比率() 不再附「一单值多少个百分点」",
+  "file": [
+   {
+    "path": "knowledge/channel.py",
+    "old": "            f\"**一单就值 {一单} 个百分点**)\"), 值",
+    "new": "            f\")\"), 值"
+   }
+  ],
+  "预期红": "每个比率都要带着「一单值多少个百分点」"
+ },
+ {
+  "script": "backend/channel_check.py",
+  "改坏": "让 activity_roi 在不共线时也报警告(11-11 这批数据已经不共线,所以咬得到)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if not 一对一: return None\n",
+    "new": "    pass\n"
+   }
+  ],
+  "预期红": "activity_roi 的共线警告和现算结果一致"
  }
 ]
