@@ -238,7 +238,19 @@ def _自测():
         挂了 = "源头被人动过就不许直接覆盖" in str(e)
     ck("源头被人动过就不许直接覆盖", 挂了)
 
-    for f in ("_自测.json", "_自测2.json"):
+    # ⑥ 带「松」旋钮的方案不许采纳(2026-11-10 补:咬合清单早就声称了这一条,自测里却一个用例都没有 ——
+    #    那条咬合打下去,没有任何一行会红)。验证记录给齐、源头一致,只留「松」这一个拦的理由。
+    _写("_自测3", dict(号="_自测3", 建于="x", 改={"TL53": "新正文"},
+                      拷自={"TL53": prompts.DATE_RULE.text}, 旋钮={"体检": False},
+                      验证=[dict(时间="x", 结果文件="y", 题数=1, 过=1)]))
+    挂了 = False
+    try:
+        with contextlib.redirect_stdout(io.StringIO()): 采纳("_自测3")
+    except SystemExit as e:
+        挂了 = "放松约束" in str(e)
+    ck("有**放松约束**的旋钮,不许采纳", 挂了)
+
+    for f in ("_自测.json", "_自测2.json", "_自测3.json"):
         try: os.remove(os.path.join(目录, f))
         except OSError: pass
     print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")

@@ -17665,5 +17665,53 @@
    }
   ],
   "预期红": "扫描规则失效"
+ },
+ {
+  "script": "tools/prompt_candidate.py",
+  "改坏": "把「采纳前必须有验证记录」那一支去掉",
+  "file": [
+   {
+    "path": "tools/prompt_candidate.py",
+    "old": "    if not (d.get(\"验证\") or []) and not 硬来:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "没跑过验证集不许采纳"
+ },
+ {
+  "script": "tools/prompt_candidate.py",
+  "改坏": "让带「松」旋钮的方案也能采纳",
+  "file": [
+   {
+    "path": "tools/prompt_candidate.py",
+    "old": "        if 松 and not 硬来:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "有**放松约束**的旋钮,不许采纳"
+ },
+ {
+  "script": "tools/prompt_candidate.py",
+  "改坏": "让候选在没设环境变量时也生效",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "    if not 号: return {}",
+    "new": "    if not 号: return {\"TL53\": \"没指定也生效的候选\"}"
+   }
+  ],
+  "预期红": "不指定就用源头那一份"
+ },
+ {
+  "script": "tools/prompt_candidate.py",
+  "改坏": "采纳时不核对源头是不是当初那一版",
+  "file": [
+   {
+    "path": "tools/prompt_candidate.py",
+    "old": "        if 现[rid].text.strip() != 旧.strip():",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "源头被人动过就不许直接覆盖"
  }
 ]

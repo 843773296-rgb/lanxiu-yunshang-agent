@@ -49,7 +49,6 @@
   "tools/hook_sync_check.py": 1,
   "tools/impact.py": 2,
   "tools/intent_check.py": 2,
-  "tools/prompt_candidate.py": 4,
   "tools/repo_consistency_check.py": 2,
   "tools/runlog_check.py": 2,
   "tools/shift_e2e.py": 5,
