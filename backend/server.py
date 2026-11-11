@@ -62,6 +62,7 @@ def _wtoday():
     "/api/fit-customers", "/api/schemes", "/api/oplog", "/api/appts2", "/api/appts", "/api/orders",
     "/api/aftersales", "/api/maintains", "/api/guide-perf", "/api/approvals", "/api/approval-list",
     "/api/schedule", "/api/staff", "/api/factory-feed",
+    "/api/roster",      # 店长排班(11-11 夜):员工排班表也是员工信息,不登录不给
     "/api/scheme-customers", "/api/scheme-wearers",   # 方案页搜客户 / 列着装人(复审第 4 节 B,10-23)
     # 研判队列(2026-10-25 补)。10-23 收那 26 个时**故意漏了它**,理由是运维平台服务端
     # 不带 cookie 来取队列、加闸会让自动研判悄悄坏掉。那个理由现在不成立:取队列改成
@@ -3983,6 +3984,16 @@ class H(BaseHTTPRequestHandler):
         # 按门店划范围(用户 10-23 拍;11-11 补齐)
         if p=="/api/staff": return self._send(staff_list(Q, _店范围(self)))
         if p=="/api/schedule": return self._send(schedule_list(Q, _店范围(self)))
+        if p=="/api/roster":
+            # 店长排班(用户 11-11 夜拍):本店一周;店长额外带发布预览(违规 / 受影响的单)。范围只从登录身份来
+            import roster_write as _rw
+            _u = _me(self)
+            if not _u: return self._send({"error": "请先登录", "code": "NO_AUTH"}, 401)
+            _周 = (Q.get("week") or [_wtoday()])[0] or _wtoday()
+            _r = _rw.周表(_u["no"], _周, db=backend.DB)
+            if _r.get("能排吗"):
+                _r["预览"] = _rw.发布预览(_u["no"], _周, db=backend.DB)
+            return self._send(_r, 400 if "error" in _r else 200)
         if p=="/api/orders": return self._send(order_list(Q, _店范围(self)))
         # ⚠️ 聊天里点开卡片用的那条 —— **它带身份**,而 `/api/orders` 不带
         #    (那条是后台列表页在用的,返回全部订单)。两条路名字只差一点,
@@ -4092,6 +4103,17 @@ class H(BaseHTTPRequestHandler):
             return self._send(transit(body.get("machine"),body.get("target"),
                                       body.get("to"),body.get("ctx") or {},
                                       actor=_ut.get("name") or "?", me=_ut))
+        if p in ("/api/roster/draft", "/api/roster/publish"):
+            # 店长排班写入口(用户 11-11 夜拍):身份只从 Cookie 换;权限(只有店长)在 roster_write 里判,和聊天工具同一份
+            import roster_write as _rw
+            _u = _me(self)
+            if not _u: return self._send({"error": "请先登录", "code": "NO_AUTH"}, 401)
+            if p == "/api/roster/draft":
+                _r = _rw.写草稿(_u["no"], body.get("items") or [], _wtoday(), db=backend.DB)
+            else:
+                _r = _rw.发布(_u["no"], body.get("week") or _wtoday(), _wtoday(),
+                             确认受影响=bool(body.get("confirm")), db=backend.DB)
+            return self._send(_r, 200 if _r.get("ok") or _r.get("需要确认") else 400)
         if p=="/api/call-fix":
             out, code = call_fix(_me(self), body)
             return self._send(out, code)

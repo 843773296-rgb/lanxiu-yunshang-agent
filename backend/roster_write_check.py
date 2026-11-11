@@ -14,6 +14,7 @@
 """
 import os
 import sqlite3
+from contextlib import closing
 import sys
 import tempfile
 
@@ -56,7 +57,7 @@ def main():
     ck("「待改派」任务类型登记了", "待改派" in 名们)
 
     真库 = os.path.join(HERE, "lanxiu.db")
-    with sqlite3.connect(真库) as c0:
+    with closing(sqlite3.connect(真库)) as c0, c0:
         真前 = (c0.execute("SELECT COUNT(*) FROM roster").fetchone()[0],
                c0.execute("SELECT COUNT(*) FROM schedule").fetchone()[0],
                c0.execute("SELECT COUNT(*) FROM op_log WHERE code='ROSTER_PUBLISH'").fetchone()[0])
@@ -65,7 +66,7 @@ def main():
         src, dst = sqlite3.connect(真库), sqlite3.connect(db)
         src.backup(dst); src.close(); dst.close()
         _跑(db)      # 写口的日志带 db 参数写副本(oplog.log_op 的 db=);真库没动由 ⑥ 验
-    with sqlite3.connect(真库) as c0:
+    with closing(sqlite3.connect(真库)) as c0, c0:
         真后 = (c0.execute("SELECT COUNT(*) FROM roster").fetchone()[0],
                c0.execute("SELECT COUNT(*) FROM schedule").fetchone()[0],
                c0.execute("SELECT COUNT(*) FROM op_log WHERE code='ROSTER_PUBLISH'").fetchone()[0])
@@ -83,7 +84,7 @@ def _跑(db):
     店长, 顾问, 别店 = "60000001", "60000002", "60000005"     # 张静静(SH001)/ 林岚(SH001)/ 沈砚(SH002)
     今天 = "2026-11-11"
     周 = ["2026-11-30", "2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04", "2026-12-05", "2026-12-06"]
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.execute("DELETE FROM roster WHERE d >= '2026-11-30'")      # 副本上清场,别被以后铺的数据干扰
         人们 = [r[0] for r in c.execute(
             "SELECT no FROM staff WHERE role='顾问' AND status='启用' AND shop LIKE 'SH001%' ORDER BY no")]
@@ -119,7 +120,7 @@ def _跑(db):
     ck("③   早班时段照样可派", roster.时段在班(林, f"{周[2]} 11:00", f"{周[2]} 12:00", db)[0])
 
     # ④ 改班撞单
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.execute("INSERT INTO schedule(id,type,advisor_no,start_ts,end_ts,status,shop,assignee_no,note) "
                   "VALUES('SCRWX1','预约到店',?,?,?,'有效','SH001 静安旗舰店',?,'试衣')",
                   (林, f"{周[2]} 11:00", f"{周[2]} 12:00", 林))
@@ -137,7 +138,7 @@ def _跑(db):
     ck("④ 确认后照发", r.get("ok") and r.get("发布了") == 1, r)
     派 = r.get("待改派任务") or []
     ck("④   给店长建了一条待改派", len(派) == 1 and 派[0]["为了"] == "SCRWX1", 派)
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         t = c.execute("SELECT type, assignee_no, note FROM schedule WHERE id=?", ((派 or [{}])[0].get("任务号"),)).fetchone()
         日志 = c.execute("SELECT COUNT(*) FROM op_log WHERE code='ROSTER_PUBLISH'").fetchone()[0] \
             if c.execute("SELECT 1 FROM sqlite_master WHERE name='op_log'").fetchone() else None
@@ -154,7 +155,7 @@ def _跑(db):
     # 跨周连上:上周休在周一(11-30 是 人们[0]),周二起上 6 天;这周周日才休 → 12-01 到 12-12 连上 12 天
     r = RW.写草稿(店长, [dict(工号=林, 日期=d, 班次=("S0" if i == 6 else "S1")) for i, d in enumerate(下)], 今天, db)
     预 = RW.发布预览(店长, 下[0], db)
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         林名 = c.execute("SELECT name FROM staff WHERE no=?", (林,)).fetchone()[0]
     连 = [v for v in 预.get("违规", []) if v.startswith(林名) and "连上" in v]
     ck("⑤ 跨周连上超过 6 天 → 违规(每周休一天那条是满足的)", bool(连), 预.get("违规"))
