@@ -19500,5 +19500,41 @@
    }
   ],
   "预期红": "聊天里写操作要店员点确认卡才执行"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "把 `顾客要` 的窗口里的全角改回半角两遍(回到 11-11 之前那个状态)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "(顾客|客户|对方|他|她)[^。;；!！?？\\n]{0,8}?",
+    "new": "(顾客|客户|对方|他|她)[^。;;!!?\\n]{0,8}?"
+   }
+  ],
+  "预期红": "全角分号 U+FF1B"
+ },
+ {
+  "script": "tools/charset_fullwidth_check.py",
+  "改坏": "去掉「集合里本来就有 CJK 标点」那个前置过滤(纯 ASCII 正则也要求成对)",
+  "file": [
+   {
+    "path": "tools/charset_fullwidth_check.py",
+    "old": "                    if not any(ord(c) > 0x2000 and unicodedata.category(c)[0] in (\"P\", \"S\")\n                               for c in 字们):\n                        continue",
+    "new": "                    if False:\n                        continue"
+   }
+  ],
+  "预期红": "新代码又犯了同一个"
+ },
+ {
+  "script": "tools/charset_fullwidth_check.py",
+  "改坏": "把 `正则函数` 集合清空(一个正则模式都扫不到)",
+  "file": [
+   {
+    "path": "tools/charset_fullwidth_check.py",
+    "old": "正则函数 = {\"compile\", \"split\", \"findall\", \"finditer\", \"search\",\n            \"match\", \"fullmatch\", \"sub\", \"subn\"}",
+    "new": "正则函数 = set()"
+   }
+  ],
+  "预期红": "这不叫通过,这叫没测到东西"
  }
 ]

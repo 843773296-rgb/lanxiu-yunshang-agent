@@ -740,6 +740,7 @@ run "聊天站接术语 · 只带这句话提到的、段由后台纯函数拼�
 run "中文否定与子串(十次踩过的坑;含全角标点那四条 —— 否定不许跨中文逗号)" python3 agent/textmatch.py
 run "标点不变量派生器 · 咬合(全角化只动中文句子 / 判定返回 bool 要拒收 / 样本量 0 算不过 / 截断说总数)" python3 agent/punct_invariant.py
 run "判分器对照接上标点不变量了没(棘轮:已接的不许变少;还剩几份要看得见;只 import 不调不算接)" python3 tools/punct_coverage_check.py
+run "正则字符集里有半角标点却缺对应全角(NFKC 反查派生,该要求哪些全角由本仓数据决定;棘轮:只许少不许多)" python3 tools/charset_fullwidth_check.py
 run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judgetest.py
 run "工具选择判分器 · 20 条对照(「全部必需都在」不是「至少一个」)" python3 agent/select_eval_judgetest.py
 run "工具筛选准入线 · 23 条(线随走不走缓存漂 8 倍,所以不许写死)" python3 agent/tool_select_judgetest.py
