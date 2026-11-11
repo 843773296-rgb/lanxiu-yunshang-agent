@@ -122,6 +122,7 @@ class 前提不成立(Exception):
     ('ToolSearch 的点名例外写成按前缀放行(Bash 也一并放了)', '按需加载只取回自己名单里的工具'),
     ('全能助手顺手挂上了版师那一包(ToolSearch 搜得到版师写口)', '按需加载只取回自己名单里的工具'),
     ('聊天站 /run 没登录也照样往下跑', '没登录调不动聊天站的智能体'),
+    ('写工具闸被关掉(带卡库也直接执行)', '聊天里写操作要店员点确认卡才执行'),
     ('store_report 不再拿掉被模板隐藏的指标(_藏 恒为空)',
      '报告模板隐藏的指标,写报告的 AI 拿不到它的数'),
     ('隐藏了销量,环比里销量那一行照旧留着',
@@ -1158,6 +1159,39 @@ print(json.dumps(out, ensure_ascii=False))
     raise PermissionError("名单外的写口搜不出、调不动,钩子按白名单拦;Bash 照拦;换身份不串;研判收窄还在;只开给全能助手")
 
 
+def a_confirm_card():
+    """写操作确认卡(用户 11-11 拍):聊天站开着卡库时,模型调写工具**不执行** —— 不带指纹、带错指纹都不行。
+    攻击:真起 mcp/protocol.Server(写工具名用 api.WRITE_TOOLS 里真有的),带卡库 env 调一次;
+    再把 LANXIU_CONFIRMED 设成另一份参数的指纹调一次。工具函数被执行了 = 破。"""
+    import json as _j, os as _o, sys as _s, tempfile as _t
+    _s.path.insert(0, _o.path.join(ROOT, "mcp"))
+    import protocol, pending_actions as PA
+    调了 = []
+    写 = ("assign_task", "派任务", {"type": "object"}, lambda **kw: 调了.append(kw) or {"ok": True})
+    旧 = {k: _o.environ.get(k) for k in ("LANXIU_CONFIRM_STORE", "LANXIU_CONFIRMED", "LANXIU_ME", "LANXIU_TRACE")}
+    try:
+        with _t.TemporaryDirectory() as d:
+            _o.environ["LANXIU_CONFIRM_STORE"] = _o.path.join(d, "a.db")
+            _o.environ["LANXIU_ME"] = _j.dumps({"no": "60000001", "name": "审计", "role": "店长"}, ensure_ascii=False)
+            _o.environ["LANXIU_TRACE"] = "audit-confirm"
+            _o.environ.pop("LANXIU_CONFIRMED", None)
+            参 = {"type": "日常运维", "assignee": "林岚", "note": "审计攻击", "end": "2026-12-31 18:00"}
+            def 调():
+                s = protocol.Server("t", "1", [写])
+                return s.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "assign_task", "arguments": 参}})
+            调()
+            _o.environ["LANXIU_CONFIRMED"] = PA.参数指纹("assign_task", dict(参, assignee="周叙"))
+            调()
+            卡 = PA.本轮的(_o.environ["LANXIU_CONFIRM_STORE"], "audit-confirm")
+    finally:
+        for k, v in 旧.items():
+            if v is None: _o.environ.pop(k, None)
+            else: _o.environ[k] = v
+    if 调了:
+        return f"写工具被执行了 {len(调了)} 次(没指纹 / 错指纹也放行)"
+    raise PermissionError(f"没指纹、错指纹都没执行;建了 {len(卡)} 张待确认卡")
+
+
 def a_run_no_login():
     """没登录直接 POST 聊天站 /run,智能体调不调得动(用户 10-23 拍「先修复」)。
 
@@ -1821,6 +1855,10 @@ STRUCT = [
   "录音的客户和单子上的客户对不上就拒;执行表只有取转写 / 写跟进两项;"
   "核对人没绑定澜绣员工就不写(10-24 账号绑定,不以服务身份顶替)。"
   "「写之前必须有人批过」在管理后台执行侧(runtime/桥闸.py,只认人工节点的批准),由它那边的夹具和端到端守"),
+ ("聊天里写操作要店员点确认卡才执行", "mcp/protocol.py 写工具闸 + backend/pending_actions.py(用户 11-11 拍)",
+  a_confirm_card, "开着卡库:不带参数指纹调写工具;带另一份参数的指纹调写工具",
+  "**靠结构**:闸在工具服务进程里,身份和卡库从 env 进去(模型改得了参数改不了 env);执行只认 env 里那份参数指纹,"
+  "指纹由店员点卡时聊天站从卡上原样取。评测进程不设卡库,行为不变;「跑验证集」起评测剥掉开关"),
  ("没登录调不动聊天站的智能体", "agentsite/app.py /run(用户 10-23 拍「先修复」)",
   a_run_no_login, "不带登录身份直接 POST /run 问客户手机号",
   "**靠结构**:身份只从后台会话换(_who),换不出就在调 sdk.run 之前回 401。"
