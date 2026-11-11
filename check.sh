@@ -522,6 +522,7 @@ run "仓库自洽 · 工作区绿不等于仓库里那一版绿" python3 tools/r
 run "写死的模型 id · 「模型」字段里装的是 id 不是说明、没有新写死一个这台机器调不通的模型(本机才验得到那一半,CI 上明说不适用)" python3 tools/model_align_check.py
 run "评测集分层 · 每套题都打了频率标、分层表没过期条目、题数只许涨(改标签凑 60/30/10 要红)、「这份频率还没拿流量对过账」那句话不许删" python3 tools/eval_tier_check.py
 run "评测题面 · 有指代就得有编号,或写明是故意的" python3 tools/case_check.py
+run "判据点名要的工具,那个角色手上真有吗(kb 没有 check_write,要求它调=那道题永久挂、而成绩单上读起来像模型不谨慎;工具集取不到要红不要跳过)" ./agentsite/.venv/bin/python tools/case_tool_reachable_check.py
 run "改动影响面 · 警示段落找不着就是正则漏了" python3 tools/impact.py --selftest
 run "评测夹具 · 写死了对象就得声明前提,而前提得成立" python3 tools/fixture_check.py
 run "状态流转引擎 · 17 个用例" python3 backend/fsm.py
@@ -731,7 +732,12 @@ run "每一份候选答案都检查 · 修正后通过 / 未通过 / 未检查 /
 run "会话的业务状态跨请求恢复 · 只恢复跨轮的、先核归属和权限、方案被删不带回、并发不覆盖(外部审阅 4.2)" ./agentsite/.venv/bin/python agentsite/session_state_check.py
 run "聊天转人工 · 开关默认关、判不出和规则点名才转、建待办失败不短路、机器调用不转" ./agentsite/.venv/bin/python agentsite/chat_handoff_check.py
 run "聊天站接术语 · 只带这句话提到的、段由后台纯函数拼、没同步到就不带但来源照记、启动时只同步一次、只在店长助手那条路上" ./agentsite/.venv/bin/python agentsite/glossary_inject_check.py
-run "中文否定与子串 · 29 条(十次踩过的坑)" python3 agent/textmatch.py
+# ⚠️ 这一行原来写着「29 条」,而实际早就是 45 条 —— **条数写进话里就会漂**
+#    (项目自己那条规矩:`rounds.py` 自测写着「条数刻意不写在话里」)。
+#    所以这里不写数,让脚本自己报它验了几条。
+run "中文否定与子串(十次踩过的坑;含全角标点那四条 —— 否定不许跨中文逗号)" python3 agent/textmatch.py
+run "标点不变量派生器 · 咬合(全角化只动中文句子 / 判定返回 bool 要拒收 / 样本量 0 算不过 / 截断说总数)" python3 agent/punct_invariant.py
+run "判分器对照接上标点不变量了没(棘轮:已接的不许变少;还剩几份要看得见;只 import 不调不算接)" python3 tools/punct_coverage_check.py
 run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judgetest.py
 run "工具选择判分器 · 20 条对照(「全部必需都在」不是「至少一个」)" python3 agent/select_eval_judgetest.py
 run "工具筛选准入线 · 23 条(线随走不走缓存漂 8 倍,所以不许写死)" python3 agent/tool_select_judgetest.py

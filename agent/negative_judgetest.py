@@ -109,6 +109,57 @@ def 纯函数():
     return len(挂)
 
 
+def _那几段中文(u):
+    """这条用例里**模型回答的那几段中文** —— `text`,外加 `finding` 里的每个字符串值。
+
+    ⚠️ 顺序必须和 `_塞回去` 一致,所以 `finding` 的键**排序**取,不靠 dict 顺序。
+    """
+    r = u[2]
+    f = r.get("finding") or {}
+    键 = sorted(k for k, v in f.items() if isinstance(v, str))
+    return (r.get("text") or "",) + tuple(f[k] for k in 键)
+
+
+def _塞回去(u, t):
+    """把换过标点的那几段塞回原来的位置,再调**真的** `judge`。
+
+    ⚠️ 不能只换 `text`:这一套的回答大半在 `finding` 的
+    `suggested_action` / `evidence` / `note` 里 —— 只换 `text` 的话
+    **大多数用例一个字都没被换到**,而那会表现成「样本量很小但过了」。
+    """
+    r = dict(u[2])
+    r["text"] = t[0]
+    f = r.get("finding")
+    if f:
+        f = dict(f)
+        for i, k in enumerate(sorted(k for k, v in f.items() if isinstance(v, str))):
+            f[k] = t[1 + i]
+        r["finding"] = f
+    return N.judge(按题[u[0]], r)
+
+
+def 标点不变量():
+    """半角逗号换成全角,`judge` 的两栏和那句话都不许变。
+
+    ## 为什么这一套要优先接(2026-11-11)
+
+    `textmatch.STOP`(小句边界表)里原来**没有全角逗号**,于是**否定的作用域跨过逗号**,
+    把前一小句的否定算到后一小句上 —— 线上守卫因此漏拦了 6 类。
+    而**这一套判的正是「否定/拒绝」**:越权有没有拒、假流水号有没有否认、
+    根因有没有被否掉。**出事的那个判断,就是这一套守的那个判断。**
+
+    ⚠️ 判定返回的是 `(内容对, 协议走, 一句话)` 三样 —— **不是「通过没通过」**。
+    派生器会拒收 `bool`,理由见 `agent/punct_invariant.py` 开头:
+    「一条用例通过了」和「它要验的每一闸都还在」是两件事。
+    """
+    import punct_invariant as _pi
+    return _pi.查(用例, 取文本=_那几段中文, 判定=_塞回去,
+                   名="标点不变量(负向判分器 judge)",
+                   # 实测 7 条。⚠️ 这一套的回答大半在 `finding` 的几个字段里 ——
+                   #    只换 `text` 会掉到 3,**而那也是绿的**
+                   最少=7)
+
+
 def 接线():
     """把 `v1.run_case` 换成假的,**真跑一遍 `跑一轮()`**。
 
@@ -156,7 +207,7 @@ def 接线():
 
 def main():
     print("负向评测判分器 · 人造对照")
-    坏 = 纯函数() + 接线()
+    坏 = 纯函数() + 接线() + 标点不变量()
     if 坏:
         print(f"{R}❌ 负向判分对照 {坏} 条不过{D}")
         return 1

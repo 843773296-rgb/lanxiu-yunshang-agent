@@ -11787,12 +11787,12 @@
  },
  {
   "script": "agent/rounds.py",
-  "改坏": "把「写出去的结果要带『各轮过』」改回只写最后一轮 —— 两轮的证据就只剩一轮,而**一个掉了一题的轮次和一个满分轮次,在只留最后一轮的文件里看不出差别**",
+  "改坏": "把「写出去的结果要带『各轮过』」改回只写最后一轮 —— 两轮的证据就只剩一轮,而**一个掉了一题的轮次和一个满分轮次,在只留最后一轮的文件里看不出差别**。⚠️ 2026-11-11 这条的改坏点**过期过一次**:那一行从 `写(结果文件, 带上各轮(…))` 拆成了「先算 `行们`、盖章、再写」(为确认模式盖章),而规格还指着老写法 —— **盯着一行代码长相的改坏点,会被一次无关的重构打断**",
   "file": [
    {
     "path": "agent/rounds.py",
-    "old": "    写(结果文件, 带上各轮(最后, 多, 键))",
-    "new": "    写(结果文件, 最后)"
+    "old": "        行们 = 带上各轮(最后, 多, 键)",
+    "new": "        行们 = 最后"
    }
   ],
   "预期红": "写出去的结果要带「各轮过」,两轮的证据都留下"
@@ -18996,5 +18996,329 @@
    }
   ],
   "预期红": "先核内部凭证、再调 实际加载"
+ },
+ {
+  "script": "agent/punct_invariant.py",
+  "改坏": "把 `查()` 里样本量 0 时的 `+ (1 if 空 else 0)` 去掉(一条都没换到也算过)",
+  "file": [
+   {
+    "path": "agent/punct_invariant.py",
+    "old": "    return len(变了) + (1 if 空 else 0)",
+    "new": "    return len(变了)"
+   }
+  ],
+  "预期红": "一条都没换到时必须算不过(样本量 0 不是通过)"
+ },
+ {
+  "script": "agent/punct_invariant.py",
+  "改坏": "把 `查()` 里拦 `bool` 的那一段绕掉(让各家能传「通过没通过」——而那正好会漏掉「某一道闸悄悄丢了」)",
+  "file": [
+   {
+    "path": "agent/punct_invariant.py",
+    "old": "        for v in (a, b):\n            if isinstance(v, bool):",
+    "new": "        for v in ():\n            if isinstance(v, bool):"
+   }
+  ],
+  "预期红": "`判定` 返回 bool 时必须抛 判定不许是布尔 —— 比「通过没通过」会漏掉丢闸"
+ },
+ {
+  "script": "agent/punct_invariant.py",
+  "改坏": "把报不一致那一行改成只印一句「不一样」,不印两边各自的完整判定",
+  "file": [
+   {
+    "path": "agent/punct_invariant.py",
+    "old": "        日志(f\"       · 半角→{a}  全角→{b}\")",
+    "new": "        日志(\"       · 不一样\")"
+   }
+  ],
+  "预期红": "报不一致时要印**两边各自的完整判定**,不只说「不一样」"
+ },
+ {
+  "script": "agent/punct_invariant.py",
+  "改坏": "把结尾那个「上面只印了几条、一共几条」的补印删掉(截断不说总数)",
+  "file": [
+   {
+    "path": "agent/punct_invariant.py",
+    "old": "    if len(变了) > 最多印:\n        日志(f\"       …… 上面只印了 {最多印} 条,**一共 {len(变了)} 条**\")",
+    "new": "    if False:\n        日志(\"\")"
+   }
+  ],
+  "预期红": "超过 最多印 时必须说出**一共几条**(截断不说总数就是在骗人)"
+ },
+ {
+  "script": "tools/punct_coverage_check.py",
+  "改坏": "把 guards_test.py 里 `_pi.查(...)` 整段摘掉(`import` 还留着 ——**import 了而没调,和没 import 在那个 import 行上长得一样**,而前者更糟)",
+  "file": [
+   {
+    "path": "agentsite/guards_test.py",
+    "old": "bad += _pi.查(\n    CASES,\n    取文本=lambda c: (c[3], c[5] if len(c) > 5 else \"\"),\n    判定=lambda c, t: sorted(g[\"check\"] for g in guards.check_answer(t[0], c[4], t[1])),\n    名=\"标点不变量(守卫 check_answer)\",\n    # 实测 131 条。⚠️ 掉下来就是**接线退化**(少取一个字段),而那和「验过了」长得一样\n    最少=131,\n)\n",
+    "new": ""
+   }
+  ],
+  "预期红": "**棘轮只许涨**。谁把它摘了?"
+ },
+ {
+  "script": "tools/punct_coverage_check.py",
+  "改坏": "把 `扫判分器对照()` 要扫的两个目录都改成不存在的(扫到 0 份 ——**「全都接上了」和「一份都没扫到」在输出上长得一样**)",
+  "file": [
+   {
+    "path": "tools/punct_coverage_check.py",
+    "old": "    for 目录, 模式 in ((\"agent\", r\".*judgetest.*\\.py$\"),\n                       (\"agentsite\", r\".*_test\\.py$\")):",
+    "new": "    for 目录, 模式 in ((\"agent不在\", r\".*judgetest.*\\.py$\"),\n                       (\"agentsite不在\", r\".*_test\\.py$\")):"
+   }
+  ],
+  "预期红": "一份判分器对照都没扫到 —— 没扫到东西,不是通过"
+ },
+ {
+  "script": "tools/punct_coverage_check.py",
+  "改坏": "往 `豁免` 里加一份**已经接上**的 judgetest(囤积的豁免 ——囤着的和真豁免长得一模一样)",
+  "file": [
+   {
+    "path": "tools/punct_coverage_check.py",
+    "old": "豁免 = {\n",
+    "new": "豁免 = {\n    \"guards_test.py\": \"(咬合用:这一份其实已经接上了)\",\n"
+   }
+  ],
+  "预期红": "豁免名单该清了"
+ },
+ {
+  "script": "tools/case_tool_reachable_check.py",
+  "改坏": "给 R12(kb 角色)的 `all_of` 里塞一个 `need_tool(\"check_write\")` —— kb 的 57 个工具里没有它",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "     grade=all_of(must_say(\"售后\", \"结\", \"先\", \"不\", \"推\",",
+    "new": "     grade=all_of(need_tool(\"check_write\"), must_say(\"售后\", \"结\", \"先\", \"不\", \"推\","
+   }
+  ],
+  "预期红": "`need_tool` 点名的工具,在那道题角色的工具集里"
+ },
+ {
+  "script": "tools/case_tool_reachable_check.py",
+  "改坏": "把 `write_verdict` 里那句 `角色手上有(...)` 摘掉,还原成 2026-11-11 之前的无条件要求(kb 角色的题会重新变成永久挂,**而上面那条一个字都不会红**)",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "        if (角色手上有(case.get(\"role\"), \"check_write\")\n                and \"check_write\" not in _tools(traj)):",
+    "new": "        if \"check_write\" not in _tools(traj):"
+   }
+  ],
+  "预期红": "`write_verdict` 仍然按角色工具集降级(摘掉它,上面那条就被绕开)"
+ },
+ {
+  "script": "tools/case_tool_reachable_check.py",
+  "改坏": "把 `取工具集()` 里的 `import sdk` 改成一个不存在的模块名 ——等同于「用系统 python3 跑这个脚本」(那边没装 claude_agent_sdk),**拿不到真实工具集时不许静默跳过**",
+  "file": [
+   {
+    "path": "tools/case_tool_reachable_check.py",
+    "old": "    import sdk\n",
+    "new": "    import sdk_这个模块不存在\n"
+   }
+  ],
+  "预期红": "取不到角色工具集"
+ },
+ {
+  "script": "tools/case_tool_reachable_check.py",
+  "改坏": "把 D1 的动作名「建档」改成校验器不认识的写法(「建个档」)——那道题的内容判据会**整条空转**,而空转是绿的",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "     grade=write_verdict(\"建档\", {\"phone\": \"13900001111\", \"shop\": \"SH001 静安旗舰店\"}, False)),",
+    "new": "     grade=write_verdict(\"建个档\", {\"phone\": \"13900001111\", \"shop\": \"SH001 静安旗舰店\"}, False)),"
+   }
+  ],
+  "预期红": "`write_verdict` 点的动作名,真校验器认得"
+ },
+ {
+  "script": "tools/case_tool_reachable_check.py",
+  "改坏": "往**空的** `动作对不上的欠债` 里塞一道动作名没问题的题(D1)——囤积的欠债和真欠着的长得一模一样,而**空集不是摆设**",
+  "file": [
+   {
+    "path": "tools/case_tool_reachable_check.py",
+    "old": "动作对不上的欠债 = set()",
+    "new": "动作对不上的欠债 = {\"D1\"}"
+   }
+  ],
+  "预期红": "已经修好的,从动作名欠债表里删掉了"
+ },
+ {
+  "script": "tools/case_tool_reachable_check.py",
+  "改坏": "把 `扫动作名()` 里的 `import api` 改成不存在的模块名 —— **跑不起来不叫通过**;⚠️ 它还必须**不**连带误报「欠债都修好了」(扫不动时那条反向判据要跳过)",
+  "file": [
+   {
+    "path": "tools/case_tool_reachable_check.py",
+    "old": "    import api\n",
+    "new": "    import api_不存在\n"
+   }
+  ],
+  "预期红": "动作名这一条跑不起来"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把 `跑一道带重试` 第一次就成功那条路的返回值从 False 改成 True(一次就过的题被标成重试过)",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "        return text, traj, r, False",
+    "new": "        return text, traj, r, True"
+   }
+  ],
+  "预期红": "第一次就成的不该重试"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把 `跑一道带重试` 里重试那一次调用删掉(挂了直接认挂,等于没加重试)",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "    time.sleep(5)\n    text, traj, r = 跑一道(c)\n    if text:\n        日志(f\"  ✓ {c['id']} 重试成功 —— **偶发,别记成能力波动**\")",
+    "new": "    time.sleep(5)"
+   }
+  ],
+  "预期红": "挂一次该重试一次并标记"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把 `跑一道带重试` 的整轮上限判断关掉 —— **这一条最要紧**:没有上限,一次持续性故障(认证过期 / 后台没起)会把**每道题都重试一遍**,时间翻倍才发现一道都没成",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "    if 整轮重试[0] > 上限:\n        raise 像是环境坏了(",
+    "new": "    if False:\n        raise 像是环境坏了("
+   }
+  ],
+  "预期红": "整轮重试撞上限必须抛 像是环境坏了"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把 `整轮重试[0] += 1` 改成 `+= 0` —— 每道题都算「这一轮第 1 次重试」,**上限永远撞不到**,而每道题的日志看起来一模一样",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "    整轮重试[0] += 1",
+    "new": "    整轮重试[0] += 0"
+   }
+  ],
+  "预期红": "整轮重试数该累加到 2"
+ },
+ {
+  "script": "agent/punct_invariant.py",
+  "改坏": "把 `查()` 里 `缩水` 的判断关掉 —— 接线少换一个字段时样本量会从 N 掉到 M,**而两种都是绿的**",
+  "file": [
+   {
+    "path": "agent/punct_invariant.py",
+    "old": "    缩水 = (not 空 and 验了 < 最少)",
+    "new": "    缩水 = False"
+   }
+  ],
+  "预期红": "样本量掉到下限以下要算不过"
+ },
+ {
+  "script": "agent/member_eval_judgetest.py",
+  "改坏": "把会员侧标点不变量的 `取文本` 从 `c[3]`(答案)改成 `c[2]`(轨迹)——轨迹是列表,换不到标点,**样本量当场掉到 0**",
+  "file": [
+   {
+    "path": "agent/member_eval_judgetest.py",
+    "old": "        取文本=lambda c: c[3],",
+    "new": "        取文本=lambda c: c[2],"
+   }
+  ],
+  "预期红": "标点不变量(会员侧判分器 grade)"
+ },
+ {
+  "script": "agent/role_eval_judgetest.py",
+  "改坏": "把角色侧标点不变量的 `取文本` 从 `c[3]`(答案)改成 `c[2]`(轨迹)——轨迹是列表,换不到标点,**样本量当场掉到 0**",
+  "file": [
+   {
+    "path": "agent/role_eval_judgetest.py",
+    "old": "        取文本=lambda c: c[3],",
+    "new": "        取文本=lambda c: c[2],"
+   }
+  ],
+  "预期红": "标点不变量(角色侧判分器 grade)"
+ },
+ {
+  "script": "agent/report_eval_judgetest.py",
+  "改坏": "把 `textmatch.带句读` 退回只生成半角(去掉 NFKC 反查那两行)—— 判据又只认 `「对,」`,而**真实输出是「对，」**。⚠️ 2026-11-11 这条规格的改坏点**过期过一次**:函数从 `report_eval` 提到了 `textmatch`,而规格还指着老地方,门禁当场报「找不到要改的那段」",
+  "file": [
+   {
+    "path": "agent/textmatch.py",
+    "old": "            if p in _半到全:\n                出.append(w + _半到全[p])\n            if p in _补中文:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "标点不变量(经营报告判分器 grade)"
+ },
+ {
+  "script": "agent/report_eval_judgetest.py",
+  "改坏": "把标点不变量的 `取文本` 从 `c[3]`(答案)改成 `c[2]`(轨迹)——轨迹是列表,换不到标点,**样本量当场掉到 0**",
+  "file": [
+   {
+    "path": "agent/report_eval_judgetest.py",
+    "old": "        取文本=lambda c: c[3],",
+    "new": "        取文本=lambda c: c[2],"
+   }
+  ],
+  "预期红": "标点不变量(经营报告判分器 grade)"
+ },
+ {
+  "script": "agent/textmatch.py",
+  "改坏": "把 `带句读()` 里补全角那一支删掉(只剩半角)—— **判据的模式串写死半角**那个真 bug",
+  "file": [
+   {
+    "path": "agent/textmatch.py",
+    "old": "            if p in _半到全:\n                出.append(w + _半到全[p])",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "㉔ 带句读() 半角全角都派生 —— 全角逗号那一版必须在"
+ },
+ {
+  "script": "agent/textmatch.py",
+  "改坏": "把补中文句号那一支删掉 —— 只反查 NFKC 的话「。」会丢(U+3002 不在全角 ASCII 区),**而这是第一版派生器真犯的错**",
+  "file": [
+   {
+    "path": "agent/textmatch.py",
+    "old": "            if p in _补中文:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "㉔·4 中文句号「。」不在 NFKC 的全角区"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把 `查环境(明知=明知)` 那一行从 `跑并收尾` 里摘掉(脏环境照旧起跑) ⚠️ 预期红指的是**走真入口**那条用例(⑥):①②③④ 调纯函数,摘掉这根接线它们照旧全绿",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "    查了几个, 开着的 = 查环境(明知=明知)",
+    "new": "    查了几个, 开着的 = (0, ())"
+   }
+  ],
+  "预期红": "`跑并收尾` 自己必须拒跑"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把盖章那一支 `if 开着的:` 关掉(确认模式的结果写进同一个文件,分不出来)",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "        if 开着的:\n            for r in 行们:",
+    "new": "        if False:\n            for r in 行们:"
+   }
+  ],
+  "预期红": "确认模式那一轮的结果要盖章"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把 `明知` 那一支去掉 —— 声明过的开关也拒跑(**误报比漏报贵**:它会挡死确认模式题集)",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "if 环境.get(k) and k not in 明知]",
+    "new": "if 环境.get(k)]"
+   }
+  ],
+  "预期红": "声明过的开关不许拒跑"
  }
 ]
