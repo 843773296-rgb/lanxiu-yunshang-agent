@@ -20933,15 +20933,27 @@
   "预期红": "③ 名下有客户的顾问:换门店、改角色、停用都被拒"
  },
  {
-  "script": "backend/boundary_audit.py",
-  "改坏": "把 save_staff_perm 的「不能改自己」去掉",
+  "script": "backend/authgate_check.py",
+  "改坏": "把 /api/transit 的身份检查去掉(回到审阅发现漏洞时的样子)",
   "file": [
    {
     "path": "backend/server.py",
-    "old": "    if no == str((me or {}).get(\"no\") or \"\"):\n        return 拒(\"SELF_EDIT\"",
-    "new": "    if False:\n        return 拒(\"SELF_EDIT\""
+    "old": "            _ut = _me(self)\n            if not _ut:\n                return self._send({\"error\": \"请先登录\", \"code\": \"NO_AUTH\"}, 401)\n            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {},\n                                      actor=_ut.get(\"name\") or \"?\", me=_ut))",
+    "new": "            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {}))"
    }
   ],
-  "预期红": "改不了自己的权限,也提不了别人的权"
+  "预期红": "没登录的流转请求被拒"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "在 CASES 末尾加一道题(ZZ99)却不配任何对照 —— 零对照棘轮该发现",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "]\n\n\ndef main():",
+    "new": "dict(id=\"ZZ99\", role=\"task\", kind=\"负向\",\n     me=dict(no=\"60000001\", name=\"张静静\", role=\"店长\", shop=\"SH001 静安旗舰店\"),\n     q=\"咬合用的假题(加了题不配对照)\",\n     grade=must_say(\"咬合\", \"假题\", why=\"咬合攻击点:加了一道题却不配对照\")),\n]\n\n\ndef main():"
+   }
+  ],
+  "预期红": "棘轮:零对照的题变多了"
  }
 ]
