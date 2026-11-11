@@ -79,6 +79,9 @@ def main():
     ck("店长 task 这次没挂(工具由后台生产版本决定;挂上了要另出一版并改这条)",
        "get_product_images" not in 名单("TASK_ONLY_TOOLS") and "get_product_images" not in 名单("SHOP_TOOLS"))
 
+    import sdk as _sdk
+    ck("两个工具的返回值真的送到页面(结构化回前端白名单里有)—— 不在的话卡一张都画不出来",
+       {"get_product_images", "draft_capability_request"} <= set(_sdk.结构化回前端), sorted(_sdk.结构化回前端))
     print("▸ ⑤ 页面")
     页 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()
     m = re.search(r"const 申请栏 = \[(.*?)\];", 页)
