@@ -874,7 +874,15 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
-#### 📍 11-11 上午 · 用户说「先做功能,测试晚上做」(最新)
+#### 📍 11-11 10:4x · 写操作确认卡(做到一半,等 eureka-fc 12:25 放 mcp/protocol.py)(最新)
+- **用户拍(卡)**:29 个写操作(api.WRITE_TOOLS)**全部出卡**;审批类也出卡、点卡就算本人那一步;**30 分钟**过期;只回文字**不算**,必须点卡。来源:用户读了 `~/Documents/ChatGPT/澜绣云裳agent-辅助/…应用编排配置与生效版本及操作确认_详细方案_V1.0_20261108.md`,让我「按你的顺序做」(① 确认卡 ② 目标/实际版本并排 ③ 默认模型接上)。
+- **结构**:拦在工具服务(mcp/protocol tools/call):env 有 `LANXIU_CONFIRM_STORE` 且是写工具 → 不执行、`pending_actions.建` 一张卡、回「⏸ 还没有执行…」;点卡 → `action_confirm.确认` 原子领取 → 用 `sdk.mcp_config(me, 名单=[全名])` 起同一个服务、env 加 `LANXIU_CONFIRMED=参数指纹` 再调一次。30 分钟内同人同参数成功过 → 回「已经办过了」不建卡(代替「下一轮注入结果」:注入会进意图分类,可能判不出 → 转人工,所以没做)。
+- **⚠️ 现在的状态**:`mcp/protocol.py`、`agentsite/sdk.py` **已恢复 HEAD**(eureka-fc 的 ops 全量 2 轮在读 protocol.py,约 12:25 完,它会喊)。我的改动存在 `.wip-glossary/confirm_card/protocol.diff`、`sdk.diff` → **12:25 后 `git apply` 这两份**。eureka-fc 验过窗口期(10:1x–10:28)那几道有效、不用重跑。教训(它记的):开关放在 `and` 最左边、import 放 if 里。
+- **已写未提交**:`backend/pending_actions.py`(新)、`agentsite/action_confirm.py`(新)、`agentsite/action_confirm_check.py`(新,29 条;现在红 5 条 = protocol/sdk 没放回去,正好是咬合)、`agentsite/app.py`(/api/action/confirm|cancel + 回答带 `待确认卡`)、`agentsite/web/station.html`(actCards + 29 个中文名)。
+- **放回后要做**:跑 action_confirm_check 全绿 → 挂进 check.sh(新检查同提交挂门禁)→ plist 加 `LANXIU_CONFIRM_STORE=…/agentsite/state/actions.db` 并 .gitignore `agentsite/state/` → 重启 8770 → 真跑一句派任务看卡、点确认看执行 → 提交推送 → 把工具返回的确切文案发 eureka-fc(它要写「确认模式」评测:拿到「等人确认」后不许说已办好)→ boundary_audit 加一条结构性保证(晚上)。
+- **未做 / 风险**:review_motif 等不在 WRITE_TOOLS 里的写口不会被拦(「没登记就禁止」靠 WRITE_TOOLS 完整,isolation_check 盯着,要核);批量 / 链式写(开单后立刻确认下单)现在要分两次点卡。
+
+#### 📍 11-11 上午 · 用户说「先做功能,测试晚上做」
 - **用户拍(两张卡 + 两句原话)**:「转人工,应该是内部业务流程需要沟通留下的后路,而不是针对客户问题留下的后路」→ **投诉不转人工**、**不加「要找人拍板」意图**,改成「这里可以留一个转人工的按钮」;判不出 → 转人工**维持**;13 个技能意图 → 交给技能;日常类不配。
 - **已上线**:店长助手 v8(路由 rtv_8d9fb1ba1e6b = store-routes v2,10 条「X交技能」),8770 已重启,`glossary_client.同步路由('task')` 带 plist 环境变量核过 = 有 / v2 / 10 条。脚本 `.wip-glossary/route_v1_skills.py`(在 管理后台/ 下用 .venv 跑)。
 - **已推 9860dd2d**:聊天页每条回答「转人工」按钮 → `/api/handoff` → `answer_feedback.能手动转吗` → `建转人工`(原因前缀「店员手动转人工:」,原话取执行记录 lanxiu.prompt)。answer_feedback_check ⑩ 七条;咬合手动做过;**全量门禁没跑(用户:测试晚上做)**,也还没写进 bite_specs。
