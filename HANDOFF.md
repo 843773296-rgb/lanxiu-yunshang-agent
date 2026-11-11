@@ -1401,7 +1401,12 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
-#### 📍 11-11 17:3x · 归属转移已上线(07b8bfcd),进入「补测试和收尾」(最新)
+#### 📍 11-11 18:xx · 收尾进度(最新)
+- ✅ ① stale_sweep --做:186 条推到终态(锁里),钉住 0 过。
+- ✅ ④ 部分:签收 9 / 工厂 16 / 版师 60 / 方案 15 接标点不变量(a8c4c101、571cddf8)。**接的时候抓到真 bug**:pattern_eval / chat_eval 切小句的字符集 `[,,。;;!!??\n]` 全是半角(码点核过 0x2c 0x2c),全角「，；！？」没有 —— 已修 4 处;member_eval.py:152、guards.py:563/783 同形状,是 eureka-fc 的,已告知没动。
+- 还没做:工坊 judgetest(ck 只收布尔,要先改造成记录 grader 调用)、chat_eval_judgetest 也该接(它的切句我刚修过)、③ 确认卡进 boundary_audit、② admin-e2e runctl 时序红(思路:用带人工审批节点的流程造运行,它会停在等人,不会被 CI worker 秒跑成 failed;要先查 CI 新库里有哪条带人工节点的流程)。
+
+#### 📍 11-11 17:3x · 归属转移已上线(07b8bfcd),进入「补测试和收尾」
 - 07b8bfcd 已推、8760 / 8770 已重启;1bc3d672 PRD 记 A-293 + 改正 A-292 过期说法。第二遍门禁唯一红 = booking_check 那条咬合(932)的破坏点被我改的 tasktypes 行弄过期,已改写、重放 4/4。
 - **收尾清单(用户开会前拍的顺序,逐个做)**:① 管理后台 stale_sweep --做(180 条测试残留,写 PG,拿锁)② admin-e2e test_runctl_page_actions.js 时序红(模拟运行被 worker 秒跑成 failed → 测试自造不会秒完的运行)③ 确认卡进 boundary_audit(结构类 + 真攻击:不带指纹的写调用必须不执行)④ 5 份判分自测(factory / pattern / pickup / scheme / workshop)接标点派生器 agent/punct_invariant.py,用 tm.带句读,判定传原始理由列表、写实测条数进 最少=。
 
