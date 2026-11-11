@@ -483,6 +483,8 @@ SHOP_TOOLS = [
 # 所以 skills_check.py 加了结构检查:**白名单必须和 MCP 暴露的完全一致**,
 # 靠人记得同步是不行的。
 KB_ONLY_TOOLS = [
+    # 看商品图 / 起草能力申请(用户 11-11 拍:「都加」)—— 规矩 TL79。只读:图由页面照返回画,申请由用户点卡提交
+    "mcp__commerce__get_product_images", "mcp__commerce__draft_capability_request",
     # 门店顾问要看得到客户档位(用户 10-23 拍「补上」)—— 召回名单真跑时顾问入口拿不到档位,只能写「档位未知」。
     # ⚠️ 写在**名单字面量里**,别写进 _ROLE_TOOLS 的 lambda:规矩检查(P3/P6)从源码读字面量,
     # 写在 lambda 里它看不见 —— 顾问挂上了而 P6 一声不响(10-23 第一版就是这么写的)。
@@ -533,6 +535,8 @@ WORKSHOP_TOOLS = [
 # 而且写工具**必须**在 shop:`gate_test` 要求 `WRITE_TOOLS` 里每一个
 # 都以 `mcp__shop__` 出现在这份白名单里。
 PATTERN_TOOLS = [
+    # 看商品图 / 起草能力申请(用户 11-11:版师截图里助手说「找管理员确认能不能接进来」)—— 规矩 TL79
+    "mcp__commerce__get_product_images", "mcp__commerce__draft_capability_request",
     # **进来第一句话就该调它。** 没有这个入口的时候,版师只能问某一个版型的
     # 某一件事,而「我手上到底有多少活、哪一件最该先做」系统一个字都没说 ——
     # **没有入口的能力等于没做。**
