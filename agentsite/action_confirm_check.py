@@ -149,7 +149,10 @@ def 接线():
     确认码 = open(os.path.join(HERE, "action_confirm.py"), encoding="utf-8").read()
     领取的地方 = []
     for d, _, fs in os.walk(ROOT):
-        if any(x in d for x in (".venv", "node_modules", ".claude", "__pycache__", ".git")):
+        # 只按**仓库内的相对路径**跳目录 —— 整条路径里找 ".claude" 的话,在 .claude/worktrees/工 这种检出里
+        # 整棵树都会被跳过、一个文件都扫不到,判据红在「扫不到」上(eureka-fc 11-11 在它的检出里撞到)
+        段 = os.path.relpath(d, ROOT).split(os.sep)
+        if any(x in 段 for x in (".venv", "node_modules", ".claude", "__pycache__", ".git")):
             continue
         for f in fs:
             if f.endswith(".py") and f not in ("pending_actions.py", "action_confirm_check.py"):

@@ -288,6 +288,9 @@ def main():
         "pattern_queue": lambda: api.pattern_queue(),
         "grading_audit": lambda: api.grading_audit("PT04"),
         "summarize_products": lambda: api.summarize_products(keyword="马面裙", limit=10),
+        # 看商品图 / 起草能力申请(11-11)。款号从库里现取一款,不写死(造数会变)
+        "get_product_images": lambda: api.get_product_images(api._rows("SELECT spu FROM product ORDER BY spu LIMIT 1")[0]["spu"]),
+        "draft_capability_request": lambda: api.draft_capability_request(who="版师", want="按款号看商品图"),
         # 受欢迎与易损(2026-10-22)。⚠️ **月份要给一个真有订单的** ——
         # 不给就走世界当月,而世界的日子每天在挪,**某天挪到一个空月份上
         # 这条判据会突然开始扫一个「没扫到东西」的返回**,而那和扫过了长得一样。
