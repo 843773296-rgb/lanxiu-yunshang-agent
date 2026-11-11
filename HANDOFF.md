@@ -1478,7 +1478,13 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
-#### 📍 11-11 16:5x(世界时钟)· 推送让窗口中(最新)
+#### 📍 11-11 17:1x(世界时钟)· 压缩前最后一刷(最新)
+- **正在跑**:后台任务 b5m2u2o2w = 锁内 `fetch → main 没动才跑 → ./check.sh → git push`,推的是 4ca62d99(chat 钉切句用例 N10)+ 080a85e0(交接)。日志 /tmp/gate_chat.log;看「被包的命令退出码」+ `git status -sb` 是否和 origin 同步。
+- **下一步顺序(用户问「下一步做什么」时给的)**:① 等上面推完 ② 确认卡进 boundary_audit —— **草稿在 `.wip-glossary/confirm_card/ba_confirm_draft.py`**(攻击函数 a_confirm_card + 表一行 + 咬合一行 + bite_specs 一条,注释里写全了),放进去 → bite_run → 锁内门禁 + 推 ③ 工坊 judgetest 接标点不变量(ck 只收布尔,先改成记录 grader 调用)④ admin-e2e runctl 时序红(带人工节点的流程造运行)⑤ 今天的汇总发飞书(文件名带「澜绣云裳agent」)⑥ 之后回欠账清单:店长排班。
+- **推送规矩**:锁内一条命令做完 fetch 判没动 / check.sh / push(eureka-fc 给的写法,见上面);推前 `git checkout -- agentsite/evals/`(门禁会改写那两个滚动 jsonl,rebase 会被拦)。
+- **等用户亲手做**:eureka-fc 交的 guards.py:783 放宽补丁;11-08 / 11-10 那两条放宽检查补丁。
+
+#### 📍 11-11 16:5x(世界时钟)· 推送让窗口中
 - 已推:8cdb6a6c(talk_eval 冒号,锁内门禁 + 推送成功)。**本地未推**:0cf44cd6 chat_eval_judgetest 钉切句用例 N10(咬合做过:改回全半角 → 红在这条、判成未表态)。
 - eureka-fc 请我让推送窗口(它上一轮 14 分钟被我 8cdb6a6c 挤成 non-fast-forward)—— 我停了自己那一轮、放了锁;**它推完会喊我**,然后我:rebase → 锁内 `./check.sh && git push`。
 - 它的提醒:改 `*_eval.py` 要重跑对应 `*_eval_judgetest.py` 看写死的 `最少=N` 动没动;新增 intent 卡要 `python3 tools/make_todo.py`,必填标题按字面(「明确不做什么」不是「明确不做的」);受影响面按动了哪些文件算。
