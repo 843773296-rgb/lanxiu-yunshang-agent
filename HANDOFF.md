@@ -1362,7 +1362,14 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
-#### 📍 11-11 14:xx · 版师「没有权限执行 draft.py」(最新)
+#### 📍 11-11 13:5x · 一批全推上去了(最新)
+- **已推 c0d70938**(全量门禁锁里第二遍退出码 0 之后):/pattern/ 反代 + 打版图技能只给链接 + draft_check 两条(bite_run 11 条过)· 聊天页 / 业务后台当前页看大图弹窗(用户:「都不要跳新标签页,给个弹窗就好」)· 访问 API 按后台模型 · 两个新接口登契约 + openapi/TS 重生成 · 待办清单 · 警示地板 384。8770 已重启,`/pattern/PT03-M.svg` 经 8770 200 image/svg+xml。CI:d7d6cb87、cfd3e0a3 绿;c0d70938 在跑。
+- **合并 bite_specs 的坑**:按整条内容去重时,我这边 eureka-fc 改过的旧条目(rounds.py「写出去的结果要带各轮过」)会被当成新的加回去 = 撤销它的修改。只追加自己真新加的。
+- **未验证**:两个弹窗没在浏览器里点过(只过了 js_check / ui_audit / js_smoke);确认卡 / 商品图卡 / 申请单卡同样没点过。
+- **欠账(我的)**:admin-e2e `test_runctl_page_actions.js` 时序红(模拟运行被 CI worker 秒跑成 failed,第③组找不到可做动作)—— 测试要自己造不会秒完的运行(带人工节点)。
+- **下一步**:欠账清单 ④ 读接口按门店划范围 → ⑤ 店长排班;晚上:确认卡进边界审计、清 180 条测试残留、5 份判分自测接 tm.带句读。
+
+#### 📍 11-11 14:xx · 版师「没有权限执行 draft.py」
 - 用户截图:版师要 PT03 M 打版图,助手照 pattern-draft 技能第一行去跑 `python3 tools/patterndraw/draft.py`,被「模型碰不到执行命令」那道闸拦(**这是红线,不改**)。而给地址那条路 `/pattern/PT03-M.svg` **聊天站不转发(8770 上 404,8760 上 200)**。
 - **已改未提交**:app.py 反代加 `/pattern/`;SKILL.md 出图只给站内链接、写明助手不能跑脚本;draft_check 加两条 + bite_specs 一条(待锁里 bite_run 重放)。要重启 8770 才生效(全量门禁第二遍 bhkfibhxj 在跑,跑完再重启)。
 - 门禁第二遍跑完要做:看 /tmp/gate_mine2.log 退出码 → 绿了提交(app.py、chat_assistants_api.py、workflows_api.py、contract/endpoints.py、openapi.json、api.ts、待办清单.md、SKILL.md、draft_check.py、bite_specs.json)→ bite_run --only draft_check → 重启 8770 → 推。
