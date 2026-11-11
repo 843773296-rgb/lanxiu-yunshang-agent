@@ -146,8 +146,15 @@ def run(T):
                      (f"%{码}%",)).fetchone()
     ck("fit_code 里只存哈希、不存明文", not _哈,
        f"撞到:order_id={_哈[0]!r} code_hash={_哈[1]!r}(码 {码})" if _哈 else "")
-    _台 = c.execute("SELECT id, reason, ctx FROM op_log WHERE reason LIKE ? OR ctx LIKE ?",
-                     (f"%{码}%", f"%{码}%")).fetchone()
+    # 11-11 夜:CI 真红过一次 —— 码撞上了 19 位订单号的子串(op_log 880,派单日志里挂的订单号)。
+    # 改成 LIKE 粗筛 + 「前后都不是数字」精判:**独立出现的 6 位数**才算明文码。
+    # 保证不缩:码写进台账时一定是独立的一串(「码 123456」「code=123456」),不会贴在别的数字上;
+    # 而贴在别的数字上的那种,本来就不是这个码,是另一个数里恰好含这 6 位。
+    import re as _re
+    _独立 = _re.compile(rf"(?<!\d){码}(?!\d)")
+    _台 = next((r for r in c.execute("SELECT id, reason, ctx FROM op_log WHERE reason LIKE ? OR ctx LIKE ?",
+                                     (f"%{码}%", f"%{码}%")).fetchall()
+               if _独立.search(str(r[1] or "")) or _独立.search(str(r[2] or ""))), None)
     ck("操作台账里不留明文码", not _台,
        (f"撞到 op_log id={_台[0]} · reason={str(_台[1])[:80]!r} · ctx={str(_台[2])[:120]!r}"
         f" —— 码是 {码};**先看这一行是真写了码,还是某个长数字里恰好含这 6 位**")
