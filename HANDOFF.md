@@ -1401,7 +1401,11 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
-#### 📍 11-11 17:xx · 归属转移:第一遍门禁红 4 处已修,第二遍在跑(最新)
+#### 📍 11-11 17:3x · 归属转移已上线(07b8bfcd),进入「补测试和收尾」(最新)
+- 07b8bfcd 已推、8760 / 8770 已重启;1bc3d672 PRD 记 A-293 + 改正 A-292 过期说法。第二遍门禁唯一红 = booking_check 那条咬合(932)的破坏点被我改的 tasktypes 行弄过期,已改写、重放 4/4。
+- **收尾清单(用户开会前拍的顺序,逐个做)**:① 管理后台 stale_sweep --做(180 条测试残留,写 PG,拿锁)② admin-e2e test_runctl_page_actions.js 时序红(模拟运行被 worker 秒跑成 failed → 测试自造不会秒完的运行)③ 确认卡进 boundary_audit(结构类 + 真攻击:不带指纹的写调用必须不执行)④ 5 份判分自测(factory / pattern / pickup / scheme / workshop)接标点派生器 agent/punct_invariant.py,用 tm.带句读,判定传原始理由列表、写实测条数进 最少=。
+
+#### 📍 11-11 17:xx · 归属转移:第一遍门禁红 4 处已修,第二遍在跑
 - 修:db_build「不算」登记 backend/ownership_transfer.py(knowledge/ownership_protection.py 建库走不到,登记反而红);README 重生成;tasktypes「归属转移」route 改 auto_or_agent、归进「客户预约」大类;booking_check 客户类型数 5→6(带注释)。
 - 第二遍门禁日志 /tmp/gate_own2.log;绿了提交(加上 backend/db_build.py、backend/booking_check.py、README.md)→ 推 → 重启 8760 / 8770 → PRD 附录 A 记算法 → 补测试和收尾。用户外出中。
 
