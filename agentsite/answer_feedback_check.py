@@ -132,6 +132,27 @@ def main():
     码, d = AF.转给后台(体, 凭证="")
     ck("⑤ 没有内部凭证 → 不发请求、照实说通道没开", 码 is None and "没开" in str(d.get("error")), (码, d))
 
+    # ⑩ 手动转人工(用户 11-11 拍:内部流程要找人沟通时的后路,留一个按钮)
+    因, 码, why = AF.能手动转吗(店长, "t1", {"no": 顾问["no"]}, "要总部审批")
+    ck("⑩ 手动转人工:别人的那一轮 → 404(店长转顾问那一轮也不行)", 因 is None and 码 == 404, (码, why))
+    因, 码, why = AF.能手动转吗(顾问, "t1", None, "要总部审批")
+    ck("⑩ 手动转人工:查不到是谁问的 → 404,不猜", 因 is None and 码 == 404 and "不猜" in why, (码, why))
+    因, 码, why = AF.能手动转吗(顾问, "t1", {"no": 顾问["no"]}, "   ")
+    ck("⑩ 手动转人工:说明只有空白 → 422(处理的人要知道找谁、什么事)", 因 is None and 码 == 422, (码, why))
+    因, 码, why = AF.能手动转吗(顾问, "t1", {"no": 顾问["no"]}, "x" * (AF.手动说明最长 + 1))
+    ck("⑩ 手动转人工:说明超长 → 422", 因 is None and 码 == 422, (码, why))
+    因, 码, why = AF.能手动转吗(顾问, "t1", {"no": 顾问["no"]}, " 客户要改手机号,要总部审批 ")
+    ck("⑩ 手动转人工:自己的那一轮 → 原因带「店员手动转人工」前缀、去了首尾空白(和自动转的分得开)",
+       码 == 200 and 因 == AF.手动前缀 + "客户要改手机号,要总部审批", (码, 因, why))
+    # 接线:聊天站真有这个口、真调的是这个判定;页面真有按钮、真发到这个口(只验纯函数会漏掉「没人调它」)
+    应用 = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+    ck("⑩ 手动转人工:聊天站 /api/handoff 调的是 能手动转吗 再 建转人工",
+       '"/api/handoff"' in 应用 and "能手动转吗(" in 应用.split('"/api/handoff"', 1)[1].split("if p ", 1)[0]
+       and "建转人工(" in 应用.split('"/api/handoff"', 1)[1].split("if p ", 1)[0])
+    页0 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()
+    ck("⑩ 手动转人工:聊天页有按钮、点了发到 /api/handoff、按钮绑了点击",
+       "data-hov=\"开\"" in 页0 and 'fetch("/api/handoff"' in 页0 and 'querySelectorAll("[data-ho]")' in 页0)
+
     import json, re
     后台 = os.path.join(os.path.dirname(HERE), "管理后台", "services", "api", "app", "opinions_api.py")
     页 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()

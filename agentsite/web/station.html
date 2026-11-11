@@ -1118,7 +1118,7 @@ function fbBar(m, i){
   const 失败 = !!m.error, 已 = m.反馈;
   if(已 && !FB_OPEN[i]){
     return `<div class="rate fb"><span class="done">已提「${esc(已.评价)}${已.问题类型 ? "·" + esc(已.问题类型) : ""}」`
-      + ` —— 进了管理后台「意见」待受理</span><button data-fb="${i}" data-fbv="改">改</button></div>`;
+      + ` —— 进了管理后台「意见」待受理</span><button data-fb="${i}" data-fbv="改">改</button>${hoBtn(m, i)}</div>${hoBar(m, i)}`;
   }
   if(FB_OPEN[i]){
     const 默认类 = (已 && 已.问题类型) || (失败 ? "太慢或失败" : "");
@@ -1131,9 +1131,38 @@ function fbBar(m, i){
       + 影响们.map(t => `<option${已 && 已.影响 === t ? " selected" : ""}>${esc(t)}</option>`).join("") + `</select>`
       + `<button data-fb="${i}" data-fbv="提交问题">提交</button><button data-fb="${i}" data-fbv="取消">取消</button></div>`;
   }
-  if(失败) return `<div class="rate fb"><button data-fb="${i}" data-fbv="反馈问题">报告执行问题</button></div>`;
+  if(失败) return `<div class="rate fb"><button data-fb="${i}" data-fbv="反馈问题">报告执行问题</button>${hoBtn(m, i)}</div>${hoBar(m, i)}`;
   return `<div class="rate fb"><span>这条回答怎么样?</span>`
-    + `<button data-fb="${i}" data-fbv="有帮助">👍 有帮助</button><button data-fb="${i}" data-fbv="反馈问题">反馈问题</button></div>`;
+    + `<button data-fb="${i}" data-fbv="有帮助">👍 有帮助</button><button data-fb="${i}" data-fbv="反馈问题">反馈问题</button>${hoBtn(m, i)}</div>${hoBar(m, i)}`;
+}
+/* ── 手动转人工(用户 11-11 拍)──────────────────────────────────────────
+ * 「转人工,应该是内部业务流程需要沟通留下的后路」—— 系统办不了、要找同事 / 店长 / 总部拍板时,店员自己点。
+ * 要写一句找谁、什么事;转了以后这条消息上记着待办编号(刷新还在)。同一轮再点拿回同一个编号,不会多建。
+ * 是谁转的不从页面传 —— 聊天站从登录会话取、只认这一轮的提问人(agentsite/answer_feedback.能手动转吗)。 */
+const HO_OPEN = {};      // 消息序号 → 「转人工」面板展开着
+function hoBtn(m, i){
+  if(m.转人工 && m.转人工.待办编号) return `<span class="done">已转人工 · 待办 ${esc(m.转人工.待办编号)}</span>`;
+  return HO_OPEN[i] ? "" : `<button data-ho="${i}" data-hov="开" title="系统办不了、要找人沟通拍板时用">转人工</button>`;
+}
+function hoBar(m, i){
+  if(!HO_OPEN[i] || (m.转人工 && m.转人工.待办编号)) return "";
+  return `<div class="rate fb"><span>要找谁、什么事?</span>`
+    + `<input data-honote="${i}" maxlength="200" placeholder="比如:客户要改手机号,要总部审批(必填)" style="min-width:260px">`
+    + `<button data-ho="${i}" data-hov="提交">转给人工</button><button data-ho="${i}" data-hov="取消">取消</button></div>`;
+}
+async function 点转人工(b){
+  const i = +b.dataset.ho, v = b.dataset.hov, c = cur(), m = c && c.msgs[i];
+  if(!m) return;
+  if(v === "开"){ HO_OPEN[i] = true; drawStream(); return; }
+  if(v === "取消"){ delete HO_OPEN[i]; drawStream(); return; }
+  const 说明 = (([...document.querySelectorAll("[data-honote]")].find(e => e.dataset.honote === String(i)) || {}).value || "").trim();
+  if(!说明){ alert("写一句要找谁、为什么事 —— 处理的人照着这句去办"); return; }
+  b.disabled = true;
+  const r = await fetch("/api/handoff", {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({trace: m.trace_id, 说明})}).then(x => x.json()).catch(e => ({error: String(e)}));
+  if(r.ok){ m.转人工 = {待办编号: r.待办编号, 说明}; delete HO_OPEN[i]; save(); drawStream(); return; }
+  b.disabled = false;
+  alert((r.error || "没转上") + (r.怎么办 ? "\n\n" + r.怎么办 : ""));   // 失败不装作成功
 }
 /* ── 意见与建议(独立建议 + 我的意见,PRD §3.1 / §3.3)──────────────
  * 提交键:打开面板时生成一个,网断了重提带同一个(管理后台只记一条);提交成功才换新的。 */
@@ -1392,6 +1421,9 @@ function drawStream(){
   });
   s.querySelectorAll("[data-fb]").forEach(b => {
     b.onclick = () => 点反馈(b);
+  });
+  s.querySelectorAll("[data-ho]").forEach(b => {
+    b.onclick = () => 点转人工(b);
   });
   s.querySelectorAll("[data-fbstop]").forEach(b => {
     b.onclick = () => {

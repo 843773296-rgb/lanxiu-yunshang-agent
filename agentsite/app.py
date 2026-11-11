@@ -611,6 +611,28 @@ class H(BaseHTTPRequestHandler):
                                # 字段错误直接说出来 —— 页面只弹 error / 怎么办,「见字段错误」四个字对提问人没有信息量
                                "怎么办": ";".join(str(v) for v in 字段.values()) or d.get("advice") or d.get("怎么办") or "",
                                "字段": 字段 or None}, code=(码 if 码 in (409, 422) else 502))
+        if p == "/api/handoff":
+            # 手动转人工(用户 11-11 拍:内部流程要找人沟通时的后路,留一个按钮):只认这一轮的提问人,待办进管理后台「人工待办」
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            import answer_feedback as _af
+            import sessions as _ss
+            sys.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+            import spans as _sp
+            tid = str(body.get("trace") or "").strip()
+            me = _who(self)
+            rows = _sp.读().get(tid) or [] if tid else []
+            根 = next((x for x in rows if not x.get("parent_span_id")), {})
+            会话号 = 根.get("会话号")
+            原因, 码, 因 = _af.能手动转吗(me, tid, _ss.这一轮是谁的(tid, 会话号) if tid else None, body.get("说明"))
+            if not 原因:
+                return self._send({"error": 因}, code=码)
+            # 原话从执行记录取(页面传的不信):处理的人要看到店员当时问的是什么
+            原话 = str((根.get("attr") or {}).get("lanxiu.prompt") or "").strip()[:4000] or "(执行记录里没有原话)"
+            号, 错 = _af.建转人工(me, 原话, tid, 会话号, None, 原因)
+            if 号:
+                return self._send({"ok": True, "待办编号": 号})
+            return self._send({"error": f"没转上:{错}", "怎么办": "稍后再点一次;同一轮只会建一条,不会重复"}, code=502)
         if p.startswith("/api/review-sample/"):
             # 店长复核一条样本:通过 / 退回。复核人从登录会话取,管理后台那边再核一遍「是不是店长、门店对不对得上、是不是本人」
             try: body = json.loads(raw or b"{}")
