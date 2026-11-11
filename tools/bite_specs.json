@@ -19680,5 +19680,17 @@
    }
   ],
   "预期红": "⑦ 那周一格没排 → 不推荐(不当成「人人有空」)"
+ },
+ {
+  "script": "backend/server_shadow_check.py",
+  "改坏": "在 do_GET 里把局部变量起名成 `_u`(和路径解析函数同名)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            _排班人 = _me(self)\n            if not _排班人: return self._send({\"error\": \"请先登录\", \"code\": \"NO_AUTH\"}, 401)\n            _周 =",
+    "new": "            _u = _me(self)\n            if not _u: return self._send({\"error\": \"请先登录\", \"code\": \"NO_AUTH\"}, 401)\n            _周 ="
+   }
+  ],
+  "预期红": "请求处理函数里没有局部变量和模块级名字同名"
  }
 ]

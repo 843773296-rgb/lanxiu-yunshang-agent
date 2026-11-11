@@ -3987,12 +3987,12 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/roster":
             # 店长排班(用户 11-11 夜拍):本店一周;店长额外带发布预览(违规 / 受影响的单)。范围只从登录身份来
             import roster_write as _rw
-            _u = _me(self)
-            if not _u: return self._send({"error": "请先登录", "code": "NO_AUTH"}, 401)
+            _排班人 = _me(self)
+            if not _排班人: return self._send({"error": "请先登录", "code": "NO_AUTH"}, 401)
             _周 = (Q.get("week") or [_wtoday()])[0] or _wtoday()
-            _r = _rw.周表(_u["no"], _周, db=backend.DB)
+            _r = _rw.周表(_排班人["no"], _周, db=backend.DB)
             if _r.get("能排吗"):
-                _r["预览"] = _rw.发布预览(_u["no"], _周, db=backend.DB)
+                _r["预览"] = _rw.发布预览(_排班人["no"], _周, db=backend.DB)
             return self._send(_r, 400 if "error" in _r else 200)
         if p=="/api/orders": return self._send(order_list(Q, _店范围(self)))
         # ⚠️ 聊天里点开卡片用的那条 —— **它带身份**,而 `/api/orders` 不带
@@ -4106,12 +4106,12 @@ class H(BaseHTTPRequestHandler):
         if p in ("/api/roster/draft", "/api/roster/publish"):
             # 店长排班写入口(用户 11-11 夜拍):身份只从 Cookie 换;权限(只有店长)在 roster_write 里判,和聊天工具同一份
             import roster_write as _rw
-            _u = _me(self)
-            if not _u: return self._send({"error": "请先登录", "code": "NO_AUTH"}, 401)
+            _排班人 = _me(self)
+            if not _排班人: return self._send({"error": "请先登录", "code": "NO_AUTH"}, 401)
             if p == "/api/roster/draft":
-                _r = _rw.写草稿(_u["no"], body.get("items") or [], _wtoday(), db=backend.DB)
+                _r = _rw.写草稿(_排班人["no"], body.get("items") or [], _wtoday(), db=backend.DB)
             else:
-                _r = _rw.发布(_u["no"], body.get("week") or _wtoday(), _wtoday(),
+                _r = _rw.发布(_排班人["no"], body.get("week") or _wtoday(), _wtoday(),
                              确认受影响=bool(body.get("confirm")), db=backend.DB)
             return self._send(_r, 200 if _r.get("ok") or _r.get("需要确认") else 400)
         if p=="/api/call-fix":
