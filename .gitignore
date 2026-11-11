@@ -152,3 +152,6 @@ backend/.assistant_*_last.json
 
 # 工厂评测造的过期单的还原记录(放在真库旁边;正常跑完会删;留着说明上次没改回,factory_eval 启动会先还原)
 backend/.factory_eval_造的过期单.json
+
+# 写操作确认卡的库(11-11):运行数据,不进版本库
+agentsite/state/

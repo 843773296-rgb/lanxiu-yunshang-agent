@@ -337,7 +337,9 @@ def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None, �
         env = {**env, "LANXIU_TRACE": trace}
     # 工作流接管(10-24):start_workflow 在服务进程里调管理后台,地址 / 项目 / 服务账号从这里带过去 ——
     # env 是显式拼的,不带就到不了服务进程,而那时它只会说「没配管理后台地址」
-    for _k in ("LANXIU_USAGE_URL", "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER"):
+    # LANXIU_CONFIRM_STORE(11-11):写操作确认卡的库 —— 只有聊天站进程设了它,工具服务才把写操作改成「出卡」
+    # (mcp/protocol 那一段;评测进程不设,行为不变)。和上面同理要显式带过去,不指望继承
+    for _k in ("LANXIU_USAGE_URL", "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER", "LANXIU_CONFIRM_STORE"):
         if os.environ.get(_k):
             env = {**env, _k: os.environ[_k]}
     if os.environ.get("LANXIU_DB"):

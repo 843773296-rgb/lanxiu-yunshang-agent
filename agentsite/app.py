@@ -611,6 +611,19 @@ class H(BaseHTTPRequestHandler):
                                # 字段错误直接说出来 —— 页面只弹 error / 怎么办,「见字段错误」四个字对提问人没有信息量
                                "怎么办": ";".join(str(v) for v in 字段.values()) or d.get("advice") or d.get("怎么办") or "",
                                "字段": 字段 or None}, code=(码 if 码 in (409, 422) else 502))
+        if p in ("/api/action/confirm", "/api/action/cancel"):
+            # 写操作确认卡(用户 11-11 拍):点「确认」才执行、「暂不执行」作废。是谁点的只从登录会话取,只认发起人本人
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            import action_confirm as _ac
+            me = _who(self)
+            if not me:
+                return self._send({"error": "没登录 —— 确认要记是谁点的"}, code=401)
+            aid = str(body.get("id") or "").strip()
+            if not aid:
+                return self._send({"error": "缺确认卡编号"}, code=400)
+            码, d = (_ac.确认 if p.endswith("confirm") else _ac.取消)(aid, me)
+            return self._send(d, code=码)
         if p == "/api/handoff":
             # 手动转人工(用户 11-11 拍:内部流程要找人沟通时的后路,留一个按钮):只认这一轮的提问人,待办进管理后台「人工待办」
             try: body = json.loads(raw or b"{}")
@@ -803,6 +816,17 @@ class H(BaseHTTPRequestHandler):
                         r["上报"] = {**报, "给谁": "平台管理员", "说明": "系统出了问题,已上报平台管理员处理"}
                     except Exception as e:
                         r["上报"] = {**报, "给谁": "平台管理员", "说明": f"系统出了问题,但上报没记上({type(e).__name__})"}
+                # 写操作确认卡(11-11):这一轮工具服务拦下的写操作 → 页面画卡;换模型重答的,先试那一遍的卡作废
+                try:
+                    import action_confirm as _ac
+                    if _ac.卡库():
+                        路 = r.get("路由") or {}
+                        if 路.get("升级") and 路.get("先试trace"):
+                            _ac.PA.作废本轮(_ac.卡库(), 路["先试trace"])
+                        r["待确认卡"] = _ac.本轮卡(r.get("trace_id"))
+                except Exception as e:
+                    # 取不到卡**要说出来**:页面上没有卡,而写操作也没执行 —— 不说的话店员以为什么都不用做
+                    r["待确认卡错误"] = f"确认卡没取到({type(e).__name__}: {e})—— 这一轮的写操作**没有执行**"[:300]
                 sessions.own(r.get("session_id"), me)
                 sessions.记这一轮(r.get("trace_id"), me)     # 这一轮是谁问的(反馈只认提问人;失败的那支也记)
                 _记知识检索(r, self.headers.get("cookie"))
@@ -907,7 +931,9 @@ class H(BaseHTTPRequestHandler):
                                                "**跑完看的是差异,不是分数。**"})
                 if 动 == "跑验证集":
                     套 = body.get("套") or "agent/factory_eval.py"
-                    环 = dict(os.environ, LANXIU_PROMPT_CANDIDATE=号, LANXIU_PROVIDER="claude")
+                    # 剥掉确认卡开关(11-11):不剥的话评测里的写操作全变成「已建卡」,分数骤降而看着像模型退步
+                    import action_confirm as _ac评
+                    环 = _ac评.评测环境(LANXIU_PROMPT_CANDIDATE=号, LANXIU_PROVIDER="claude")
                     日 = os.path.join(os.path.dirname(HERE), ".feynman", f"验证-{号}.log")
                     os.makedirs(os.path.dirname(日), exist_ok=True)
                     f = open(日, "w", encoding="utf-8")

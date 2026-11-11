@@ -404,6 +404,7 @@ run "工作流接管 · 聊天站这一半(被接管的技能调不动 / 拉不�
 run "URL 查询参数名 · 不许中文字面量(11-03:中文参数名原样发出,管理后台回 400;试纸是出事那一行)" python3 tools/url_ascii_check.py
 run "聊天站内部口 · 凭证 / 只收本机 / 身份现查 / 会话归密钥 / 访问 API 那一轮写工具不挂(11-03)" ./agentsite/.venv/bin/python agentsite/internal_call_check.py
 run "意见 · 只认这一轮的提问人(失败的也认得出)/ 提问人从登录身份取 / 没凭证不发 / 三份分类一致(11-04)" ./agentsite/.venv/bin/python agentsite/answer_feedback_check.py
+run "写操作确认卡 · 没点不执行 / 指纹对不上不执行 / 别人点不了 / 双击只执行一次 / 30 分钟过期 / 评测路径不变 / 每个写操作页面有名(用户 11-11 拍)" python3 agentsite/action_confirm_check.py
 run "执行记录(/spans)谁能看 · 没登录 401、只看自己会话的、列全部只给总部运营(10-24 实测原来不登录就给 200)" ./agentsite/.venv/bin/python agentsite/spans_access_check.py
 run "证据面板 · 工具返回值按调用号对位(没记到的不错位、不拿别人的顶上;老对话按顺序并标出)" python3 agentsite/evidence_pair_check.py
 run "技能三态 · 能用 / 请求 / 加载 / 被拦 / 失败 / 没回执分得开,不重判历史(证据中心 P1)" python3 agentsite/skill_states_check.py

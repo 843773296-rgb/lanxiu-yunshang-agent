@@ -690,6 +690,50 @@ const SUG = [
    ⚠️ 这件事值钱在:模型可以把金额、客户、状态全说错,而卡片不会跟着错。
       两份数不一致时你**看得见** —— 而让模型吐 markdown 的话,
       一张编出来的卡片和一张真数据的,在屏幕上长得一模一样。 */
+/* ── 商品图卡 / 能力申请单卡(用户 11-11 拍)────────────────────────────────
+ * 两张卡都**由页面照工具返回画**,不靠模型在回答里转述(转述会抄错图址、会把没问清的栏编上)。 */
+const 看图工具 = "get_product_images", 申请单工具 = "draft_capability_request";
+// 六栏的名字和 backend/capability_request.py 的「栏」是同一组(action_confirm_check / 页面检查盯着)
+const 申请栏 = ["场景", "谁用", "现在卡在哪", "想让它做什么", "给它什么", "希望得到什么"];
+function imgCards(t){
+  const r = t && t.result;
+  if(!r || typeof r !== "object") return "";
+  if(r.error) return `<div class="note">取图没成功:${esc(r.error)}</div>`;
+  return `<div class="card" style="margin:8px 0"><b>${esc(r.款号 || "")} 的商品图</b> <small>真图 ${esc(String(r.真图数 || 0))} 张</small>`
+    + `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">`
+    + (r.图 || []).map(g => `<figure style="margin:0;width:150px"><a href="${esc(g.地址)}" target="_blank"><img src="${esc(g.地址)}" alt="${esc(g.名称)}" style="width:150px;height:150px;object-fit:cover;border-radius:6px;border:1px solid var(--line,#ddd)"></a>`
+      + `<figcaption style="font-size:12px">${esc(g.名称)} · ${g.真图 ? "真图" : "<span style='color:var(--warn,#b54708)'>示意图(不能当实物核料)</span>"}</figcaption></figure>`).join("")
+    + `</div><div class="note">${esc(r.说明 || "")}</div></div>`;
+}
+const 申请已提交 = {};      // 卡的键 → 管理后台回的结果(这一页内记着;刷新后看「意见与建议 → 我的意见」)
+const 申请键 = {};
+function reqCard(t, 键){
+  const r = t && t.result;
+  if(!r || typeof r !== "object" || !r.申请单) return "";
+  const 单 = r.申请单, 缺 = r.还缺 || [];
+  const 交 = 申请已提交[键];
+  return `<div class="card" style="border:1px solid var(--line,#ddd);border-radius:8px;padding:10px;margin:8px 0">`
+    + `<b>能力申请单(助手代写,要你确认):${esc(单.标题 || "")}</b>`
+    + 申请栏.map(n => `<div class="kv"><span>${esc(n)}</span><span>${单[n] ? esc(单[n]) : `<span style="color:var(--warn,#b54708)">没问清${缺.includes(n) ? "(必填)" : ""}</span>`}</span></div>`).join("")
+    + (交 ? `<div class="done">✅ 已提交到管理后台「意见」待受理 —— 进度在「意见与建议 → 我的意见」看</div>`
+          : `<div class="note">${缺.length ? `还缺 ${esc(缺.join("、"))};可以先补给助手再起草一次,也可以就这样提交。` : "核对每一栏,没问题就提交。"}提交人记的是你自己。</div>`
+            + `<button data-req="${esc(键)}">确认提交申请</button>`)
+    + `</div>`;
+}
+async function 提申请(b){
+  const 键 = b.dataset.req, t = REQ_T[键];
+  if(!t) return;
+  b.disabled = true;
+  申请键[键] = 申请键[键] || 新键();      // 网断了重点带同一个键 → 管理后台只记一条
+  const 载 = (t.result || {}).提交载荷 || {};
+  const r = await fetch("/api/opinion", {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({提交键: 申请键[键], 问题类型: "新增能力", 说明: 载.说明 || "", 期望结果: 载.期望结果 || ""})})
+    .then(x => x.json()).catch(e => ({error: "网络断了:" + e + " —— 再点一次,不会重复记"}));
+  if(r.ok){ 申请已提交[键] = r; drawStream(); return; }
+  b.disabled = false;
+  alert((r.error || "没提上") + (r.怎么办 ? "\n\n" + r.怎么办 : ""));   // 失败不装作成功
+}
+const REQ_T = {};
 const 订单工具 = "orders_by_date";
 
 function ordCards(t){
@@ -1135,6 +1179,47 @@ function fbBar(m, i){
   return `<div class="rate fb"><span>这条回答怎么样?</span>`
     + `<button data-fb="${i}" data-fbv="有帮助">👍 有帮助</button><button data-fb="${i}" data-fbv="反馈问题">反馈问题</button>${hoBtn(m, i)}</div>${hoBar(m, i)}`;
 }
+/* ── 写操作确认卡(用户 11-11 拍)──────────────────────────────────────────
+ * 聊天里 29 个写操作全部出卡:模型调写工具时工具服务**不执行**,只建一张卡;店员核对后点「确认」才执行。
+ * 卡 30 分钟过期;只回一句「好」不算 —— 必须点卡。卡上的参数就是会被执行的那一份(服务端按参数指纹核对)。
+ * 是谁点的不从页面传 —— 聊天站从登录会话取,只认发起人本人(agentsite/action_confirm.py)。 */
+const 写操作名 = {apply_adjust: "提交审批", decide_approval: "审批决定", assign_task: "分派任务", dispatch_task: "派任务",
+  reassign_task: "改派任务", finish_task: "完成任务", dispatch_batch: "批量派任务", assign_batch: "批量分派",
+  mark_delay_told: "记已告知延期", open_order: "开单", confirm_order: "确认下单", rollback_order: "回滚订单",
+  record_measure: "登记量体", record_fitting: "登记白坯试衣", start_cutting: "开裁", report_production: "报工",
+  record_pickup: "登记到店代收", verify_fit_code: "核验试穿合身码", ratify_complete: "追认完成",
+  create_repair: "新建返修单", decide_repair: "返修判责", advance_repair: "推进返修", verify_repair_return: "返修件回店签收",
+  close_bad_rating: "关差评", save_report: "保存经营报告", confirm_report: "确认经营报告",
+  set_piece_ratio: "核裁片占比", set_grade_diff: "改档差", start_workflow: "启动流程"};
+function actCards(m, i){
+  const 错 = m.待确认卡错误 ? `<div class="note" style="color:var(--bad,#b42318)">⚠ ${esc(m.待确认卡错误)}</div>` : "";
+  return 错 + (m.待确认卡 || []).map((k, j) => {
+    const 参 = Object.entries(k.参数 || {}).map(([a, b]) => `<div class="kv"><span>${esc(a)}</span><span>${esc(typeof b === "object" ? JSON.stringify(b) : String(b))}</span></div>`).join("");
+    const 至 = k.有效至 ? new Date(k.有效至 * 1000).toTimeString().slice(0, 5) : "";
+    const 态 = k.状态 === "待确认" && k.有效至 && Date.now() / 1000 >= k.有效至 ? "已过期" : k.状态;
+    let 尾 = "";
+    if(态 === "待确认") 尾 = `<div class="note">核对上面每一项,确认无误再点 · 有效至 ${esc(至)}(30 分钟)· 只回一句「好」不算</div>`
+      + `<button data-act="${i}" data-actj="${j}" data-actv="confirm">确认执行</button> <button data-act="${i}" data-actj="${j}" data-actv="cancel">暂不执行</button>`;
+    else if(态 === "已成功") 尾 = `<div class="done">✅ 已执行</div><details><summary>执行结果</summary><pre style="white-space:pre-wrap">${esc(JSON.stringify(k.结果, null, 1).slice(0, 2000))}</pre></details>`;
+    else if(态 === "已失败") 尾 = `<div style="color:var(--bad,#b42318)">❌ 执行失败:${esc(String((k.结果 || {}).error || JSON.stringify(k.结果 || {})).slice(0, 300))}</div>`;
+    else if(态 === "已过期") 尾 = `<div class="note">已过期,没有执行 —— 要做的话让助手重新查一遍、重新生成</div>`;
+    else if(态 === "已取消") 尾 = `<div class="note">已选择暂不执行,没有执行</div>`;
+    else 尾 = `<div class="note">${esc(态 || "")}</div>`;
+    return `<div class="card" style="border:1px solid var(--line,#ddd);border-radius:8px;padding:10px;margin:8px 0">`
+      + `<b>请确认:${esc(写操作名[k.工具] || k.工具)}</b> <small style="color:var(--ink3,#888)">${esc(k.工具)} · ${esc(k.id)}</small>`
+      + `${参}${尾}</div>`;
+  }).join("");
+}
+async function 点确认卡(b){
+  const c = cur(), m = c && c.msgs[+b.dataset.act], k = m && (m.待确认卡 || [])[+b.dataset.actj];
+  if(!k) return;
+  b.disabled = true;      // 前端禁用只是体验;防双击靠服务端原子领取
+  const r = await fetch("/api/action/" + b.dataset.actv, {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({id: k.id})}).then(x => x.json()).catch(e => ({error: String(e)}));
+  if(r.卡){ m.待确认卡[+b.dataset.actj] = r.卡; save(); drawStream(); return; }
+  b.disabled = false;
+  alert(r.error || "没处理成");   // 失败不装作成功
+}
 /* ── 手动转人工(用户 11-11 拍)──────────────────────────────────────────
  * 「转人工,应该是内部业务流程需要沟通留下的后路」—— 系统办不了、要找同事 / 店长 / 总部拍板时,店员自己点。
  * 要写一句找谁、什么事;转了以后这条消息上记着待办编号(刷新还在)。同一轮再点拿回同一个编号,不会多建。
@@ -1178,6 +1263,10 @@ async function openOpinions(预填){
     <div class="apvact">
       <select id="op-type"><option value="">哪一类…</option>${反馈类型们.map(t => `<option>${esc(t)}</option>`).join("")}</select>
       <textarea id="op-note" rows="3" placeholder="想要什么 / 现在哪里不方便(必填)"></textarea>
+      <div id="op-cap" style="display:none">
+        <div class="sub">新增能力按下面几栏写,处理的人照着做;不会写的栏可以空着。<b>也可以在聊天里跟助手说「帮我写一份能力申请」</b>,它会一问一答帮你写好。</div>
+        ${申请栏.map(n => `<input data-cap="${esc(n)}" placeholder="${esc(n)}${n === "想让它做什么" ? "(必填)" : ""}" style="width:100%">`).join("")}
+      </div>
       <input id="op-want" placeholder="期望是什么样(选填)" style="width:100%">
       <select id="op-impact"><option value="">影响(选填)</option>${影响们.map(t => `<option>${esc(t)}</option>`).join("")}</select>
       <div class="row"><button class="ok" id="op-send">提交</button><span class="sub" id="op-why"></span></div>
@@ -1186,12 +1275,24 @@ async function openOpinions(预填){
     <h4>我的意见</h4><div id="op-mine" class="sub">在取…</div>`;
   $("#odclose").onclick = closeOrder;
   $("#op-send").onclick = 提建议;
+  // 选了「新增能力」→ 换成六栏(和助手代写的申请单同一组栏)
+  $("#op-type").onchange = () => { const 是 = $("#op-type").value === "新增能力";
+    $("#op-cap").style.display = 是 ? "" : "none"; $("#op-note").style.display = 是 ? "none" : ""; };
   if(预填){ $("#op-type").value = 预填.类 || ""; $("#op-note").value = 预填.说明 || ""; }
   画我的意见();
   if(ME.role === "店长") 画待复核();
 }
 async function 提建议(){
-  const 类 = $("#op-type").value, 说明 = ($("#op-note").value || "").trim();
+  const 类 = $("#op-type").value;
+  let 说明 = ($("#op-note").value || "").trim();
+  if(类 === "新增能力"){
+    const 值 = n => (([...document.querySelectorAll("[data-cap]")].find(e => e.dataset.cap === n) || {}).value || "").trim();
+    if(!值("想让它做什么")){ $("#op-why").textContent = "至少写一句想让它做什么"; return; }
+    // 和 backend/capability_request.起草 拼出来的格式一样:处理的人看到的两种来源长得一致
+    说明 = [`【能力申请】${值("想让它做什么").slice(0, 30)}`].concat(申请栏.filter(n => n !== "希望得到什么")
+      .map(n => `· ${n}:${值(n) || "(没写)"}`)).join("\n");
+    if(!$("#op-want").value.trim()) $("#op-want").value = 值("希望得到什么");
+  }
   if(!类){ $("#op-why").textContent = "先选是哪一类"; return; }
   if(!说明){ $("#op-why").textContent = "写一句想要什么 / 哪里不方便"; return; }
   $("#op-send").disabled = true; $("#op-why").textContent = "在提交…";
@@ -1399,11 +1500,22 @@ function drawStream(){
       .filter(t => String(t.tool || "").split("__").pop() === 审批工具)
       .map(apvCard).join("")
       + (m.trajectory || [])
-      .map((t, j) => String(t.tool || "").split("__").pop() === 录音工具 ? callCard(t, c.id + "-" + i + "-" + j, m, j) : "").join("");
+      .map((t, j) => String(t.tool || "").split("__").pop() === 录音工具 ? callCard(t, c.id + "-" + i + "-" + j, m, j) : "").join("")
+      + (m.trajectory || [])
+      .filter(t => String(t.tool || "").split("__").pop() === 看图工具)
+      .map(imgCards).join("")
+      // 申请单只画**最后一次**起草的那张(前面几次是没问清时的草稿,画出来会让人以为要提好几份)
+      + (() => {
+        const 草 = (m.trajectory || []).map((t, j) => [t, j]).filter(([t]) => String(t.tool || "").split("__").pop() === 申请单工具);
+        if(!草.length) return "";
+        const [t, j] = 草[草.length - 1], 键 = c.id + "-" + i + "-" + j;
+        REQ_T[键] = t;
+        return reqCard(t, 键);
+      })();
     return `<div class="msg a"><div class="wrap">
       ${(m.trajectory || []).map(toolChip).join("")}
       ${卡}
-      <div class="body">${md(m.text)}</div>${gv}
+      <div class="body">${md(m.text)}</div>${actCards(m, i)}${gv}
       <div class="meta">${esc(metaLine(m))} · <a href="#" class="evlink" data-i="${i}">执行记录</a></div>
       ${rateBar(m, i)}${fbBar(m, i)}</div></div>`;
   }).join("");
@@ -1424,6 +1536,12 @@ function drawStream(){
   });
   s.querySelectorAll("[data-ho]").forEach(b => {
     b.onclick = () => 点转人工(b);
+  });
+  s.querySelectorAll("[data-act]").forEach(b => {
+    b.onclick = () => 点确认卡(b);
+  });
+  s.querySelectorAll("[data-req]").forEach(b => {
+    b.onclick = () => 提申请(b);
   });
   s.querySelectorAll("[data-fbstop]").forEach(b => {
     b.onclick = () => {

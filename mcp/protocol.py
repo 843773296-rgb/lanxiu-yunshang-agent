@@ -253,6 +253,23 @@ class Server:
                         "text": f"工具 {nm} 一分钟内已经调了 {len(q)} 次,到了后台设的上限 —— 先用已经拿到的结果"}],
                         "isError": True})
                 q.append(_t.time())
+            # ── 写操作确认卡(用户 2026-11-11 拍:聊天里 29 个写操作全部出卡,点了才执行)──
+            # 只有聊天站带了 LANXIU_CONFIRM_STORE 才生效(评测 / V1 / V2 / 自测不带,行为不变)。
+            # 写工具这一次**不执行**,只建一张待确认卡;店员点卡后聊天站用同一个服务、同一份参数再调,
+            # env 里带着那份参数的指纹 —— 对得上才放行。模型改得了参数,改不了 env(见 backend/pending_actions.py)
+            卡库 = os.environ.get("LANXIU_CONFIRM_STORE")
+            if 卡库 and _是写(nm):
+                import pending_actions as _pa
+                if os.environ.get("LANXIU_CONFIRMED") != _pa.参数指纹(nm, args):
+                    try:
+                        import domains as _dm
+                        me = json.loads(os.environ.get("LANXIU_ME") or "null")
+                        卡 = _pa.建(卡库, nm, _dm.归属.get(nm, ""), args, me, trace=os.environ.get("LANXIU_TRACE"))
+                    except Exception as e:      # 建不了卡就**不执行**(拦住是安全的那一边)
+                        return self._ok(rid, {"content": [{"type": "text",
+                            "text": f"这一步没有执行:生成确认卡失败({type(e).__name__}: {e})。照实告诉用户,不要说已经办好"}],
+                            "isError": True})
+                    return self._ok(rid, {"content": [{"type": "text", "text": _pa.给模型的话(卡)}], "isError": False})
             import contextlib as _cl
             观 = self._观测.一次调用(nm, args) if self._观测 else _cl.nullcontext()
             with 观:
