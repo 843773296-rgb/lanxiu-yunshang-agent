@@ -81,6 +81,11 @@ for 判 in (ce.g_combo("不存在的工艺", "MT01"), ce.g_combo_disclose("不�
     ok = (got is False) and ("取不到期望值" in why)
     if not ok: bad += 1
     print(f"{'✅' if ok else '❌'} 工具报错 → 判挂且理由是「判据取不到期望值」" + ("" if ok else f"   ← 实判 {got}:{why}"))
+# 标点不变量(11-11):半角逗号换全角,grade 的(判没判对, 理由)必须不变;理由里引了原文,逗号先归一
+import punct_invariant as _pi
+bad += _pi.查(CASES, 取文本=lambda r: r[2] or "",
+              判定=lambda r, t: (lambda g, w: (g, str(w or "").replace("，", ",")))(*by[r[0]]["grade"](dict(answer=t[0], trajectory=r[3]))),
+              名="标点不变量(工艺问答判分器)", 最少=25)   # 实测 25 条(11-11);⚠️ 它没钉住 chat_eval 切句那处修复(改回半角也不红),要补专门用例
 print("=" * 84)
 if bad:
     print(f"❌ 判分器有 {bad} 处不符预期 —— 判分器本身不可信,评测结果不作数")
