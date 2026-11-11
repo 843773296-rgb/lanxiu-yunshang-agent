@@ -337,7 +337,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"ok": True, **d})
             return self._send({"error": d.get("message") or d.get("error") or f"取不到({码})",
                                "怎么办": d.get("advice") or d.get("怎么办") or ""}, code=502)
-        if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
+        # /pattern/<版型>-<号型>.svg(打版图,后台现画)也转 —— 11-11 版师撞到:技能给出这个地址,
+        # 而聊天站不转,点开是 404;助手又照技能说明去「跑脚本出图」,被「模型不能执行命令」那道闸拦下
+        if p.startswith("/api/") or p.startswith("/img/") or p.startswith("/pattern/"): return self._proxy("GET")
         if p == "/report.pdf":
             # 报告导出 PDF(用户 10-10)。**先拿店长自己的 cookie 向后台取这一份** ——
             # 范围规则还是 report_doc.取 那一个函数,取不到(没登录 / 别店的)就到此为止,不出 PDF
@@ -713,7 +715,15 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"error": why_s, "code": "SESSION_NOT_YOURS"}, code=403)
             try:
                 with RUNLOCK:
-                    r = asyncio.run(sdk.run(kind, prompt, resume=sid_in, me=me, 后台配置=True, 只读=True))
+                    # 模型和网页同一处定(11-11 补:原来 API 这条路没读后台选的模型,网页读了 —— 同一个助手两个入口两个模型)
+                    _pv = _md = None
+                    if kind == "task":
+                        import assistant_client as _ac模
+                        _mid, _ = _ac模.默认模型("task", sdk.网站默认模型(), [m["id"] for m in sdk.models()])
+                        if _mid and ":" in _mid:
+                            _pv, _md = _mid.split(":", 1)
+                    r = asyncio.run(sdk.run(kind, prompt, resume=sid_in, me=me, 后台配置=True, 只读=True,
+                                            provider=_pv, model_name=_md))
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)
             sessions.own(r.get("session_id"), 主)

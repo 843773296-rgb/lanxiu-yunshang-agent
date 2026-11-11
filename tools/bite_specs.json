@@ -19320,5 +19320,17 @@
    }
   ],
   "预期红": "声明过的开关不许拒跑"
+ },
+ {
+  "script": "backend/draft_check.py",
+  "改坏": "聊天站不转发 /pattern/ —— 技能给出的打版图地址在聊天页点开 404(11-11 版师撞到)",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "or p.startswith(\"/pattern/\"): return self._proxy(\"GET\")",
+    "new": ": return self._proxy(\"GET\")"
+   }
+  ],
+  "预期红": "聊天站转发打版图地址"
  }
 ]

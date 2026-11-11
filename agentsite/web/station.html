@@ -701,7 +701,7 @@ function imgCards(t){
   if(r.error) return `<div class="note">取图没成功:${esc(r.error)}</div>`;
   return `<div class="card" style="margin:8px 0"><b>${esc(r.款号 || "")} 的商品图</b> <small>真图 ${esc(String(r.真图数 || 0))} 张</small>`
     + `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">`
-    + (r.图 || []).map(g => `<figure style="margin:0;width:150px"><a href="${esc(g.地址)}" target="_blank"><img src="${esc(g.地址)}" alt="${esc(g.名称)}" style="width:150px;height:150px;object-fit:cover;border-radius:6px;border:1px solid var(--line,#ddd)"></a>`
+    + (r.图 || []).map(g => `<figure style="margin:0;width:150px"><a href="${esc(g.地址)}" data-zoom="${esc((r.款号 || "") + " · " + g.名称 + (g.真图 ? "" : "(示意图)"))}"><img src="${esc(g.地址)}" alt="${esc(g.名称)}" style="width:150px;height:150px;object-fit:cover;border-radius:6px;border:1px solid var(--line,#ddd)"></a>`
       + `<figcaption style="font-size:12px">${esc(g.名称)} · ${g.真图 ? "真图" : "<span style='color:var(--warn,#b54708)'>示意图(不能当实物核料)</span>"}</figcaption></figure>`).join("")
     + `</div><div class="note">${esc(r.说明 || "")}</div></div>`;
 }
@@ -2313,6 +2313,41 @@ document.addEventListener("click", async e => {
 { const 原流 = drawStream, 原证 = drawEv;
   drawStream = function(){ 留住输入($("#stream"), 原流); };
   drawEv = function(){ 留住输入($("#evbody"), 原证); }; }
+/* ── 看大图:商品图、打版图都在当前页弹窗看,不跳新标签页(用户 11-11)──────────────
+ * 统一用事件委托拦:商品图卡里的图(data-zoom)、回答里指向 /pattern/ 或 /img/ 的站内链接(md 渲染成 target=_blank 的 <a>)。
+ * 点图在「适应窗口 / 原尺寸」之间切换(打版图上的公式字小,要能放大看);Esc、点背景、点关闭都退出。 */
+function 看大图(地址, 标题){
+  let ov = document.getElementById("zoomov");
+  if(!ov){
+    ov = document.createElement("div"); ov.id = "zoomov";
+    ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px";
+    ov.innerHTML = `<div style="display:flex;gap:8px;align-items:center;max-width:95vw;width:100%;justify-content:space-between;color:#fff;margin-bottom:8px">
+        <b id="zoomt" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>
+        <span><small style="opacity:.8">点图放大 / 还原 · Esc 关闭</small> <button id="zoomx" type="button">关闭</button></span></div>
+      <div id="zoomwrap" style="overflow:auto;max-width:95vw;max-height:85vh;background:#fff;border-radius:8px"><img id="zoomimg" alt="" style="display:block;max-width:95vw;max-height:85vh;cursor:zoom-in"></div>`;
+    document.body.appendChild(ov);
+    const 关 = () => { ov.style.display = "none"; $("#zoomimg").src = ""; };
+    ov.addEventListener("click", e => { if(e.target === ov) 关(); });
+    $("#zoomx").onclick = 关;
+    document.addEventListener("keydown", e => { if(e.key === "Escape" && ov.style.display !== "none") 关(); });
+    $("#zoomimg").onclick = () => { const im = $("#zoomimg"), 大 = im.dataset.big === "1";
+      im.dataset.big = 大 ? "0" : "1";
+      im.style.maxWidth = 大 ? "95vw" : "none"; im.style.maxHeight = 大 ? "85vh" : "none"; im.style.cursor = 大 ? "zoom-in" : "zoom-out"; };
+  }
+  const im = $("#zoomimg");
+  im.dataset.big = "0"; im.style.maxWidth = "95vw"; im.style.maxHeight = "85vh"; im.style.cursor = "zoom-in";
+  im.src = 地址; $("#zoomt").textContent = 标题 || 地址;
+  ov.style.display = "flex";
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest("a[href]");
+  if(!a) return;
+  const h = a.getAttribute("href") || "";
+  if(a.dataset.zoom !== undefined || /^\/(pattern|img)\//.test(h)){
+    e.preventDefault();
+    看大图(h, a.dataset.zoom || a.textContent.trim() || h);
+  }
+});
 </script>
 <div id="arrival" hidden><div class="box">
   <div class="hd"><b>上新待办</b><small class="n"></small><button class="x" data-act="close-arrival">关闭</button></div>

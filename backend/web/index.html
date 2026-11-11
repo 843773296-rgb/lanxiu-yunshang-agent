@@ -2021,7 +2021,7 @@ async function productDetail(spu){
     <div style="padding:10px 24px 4px">
       <div class="l" style="margin-bottom:6px">按号型出图 —— <b style="color:var(--ink)">点开即现画</b></div>
       ${d.draft.sizes.map(z=>`<a class="pill p-blue" style="margin-right:6px;text-decoration:none"
-         href="${esc(d.draft.url[z])}" target="_blank">${esc(z)} 码</a>`).join("")}
+         href="${esc(d.draft.url[z])}" data-zoom="${esc(d.draft.pattern + " · " + z + " 码打版图")}">${esc(z)} 码</a>`).join("")}
       <div style="margin-top:10px">${d.draft.pieces.map(x=>
         `<span class="pill p-mut" style="margin-right:6px">${esc(x)}</span>`).join("")}</div>
       <div class="note2" style="margin:10px 0 0"><b style="color:var(--ink)">图是现画的,不存盘</b> ——
@@ -4019,4 +4019,41 @@ document.getElementById("roleSw").onclick=()=>{
 renderNav();
 认人().then(()=>{const h=(location.hash||"").slice(1).split("/");
  if(h[0]&&h[0]!=="workbench") view(h[0],h[1]); else view("workbench");});
+
+/* ── 看大图:商品图、打版图都在当前页弹窗看,不跳新标签页(用户 11-11)──────────────
+ * 事件委托:点 /img/ 的图(商品主图、详情图、颜色图)或打版图链接(data-zoom / /pattern/)→ 当前页弹窗;
+ * 点图在「适应窗口 / 原尺寸」间切换(打版图上的公式字小);Esc、点背景、点关闭都退出。和聊天页那份同一个交互。 */
+function 看大图(地址, 标题){
+  let ov = document.getElementById("zoomov");
+  if(!ov){
+    ov = document.createElement("div"); ov.id = "zoomov";
+    ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px";
+    ov.innerHTML = `<div style="display:flex;gap:8px;align-items:center;max-width:95vw;width:100%;justify-content:space-between;color:#fff;margin-bottom:8px">
+        <b id="zoomt" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>
+        <span><small style="opacity:.8">点图放大 / 还原 · Esc 关闭</small> <button id="zoomx" type="button" class="btn">关闭</button></span></div>
+      <div style="overflow:auto;max-width:95vw;max-height:85vh;background:#fff;border-radius:8px"><img id="zoomimg" alt="" style="display:block;max-width:95vw;max-height:85vh;cursor:zoom-in"></div>`;
+    document.body.appendChild(ov);
+    const 关 = () => { ov.style.display = "none"; document.getElementById("zoomimg").src = ""; };
+    ov.addEventListener("click", e => { if(e.target === ov) 关(); });
+    document.getElementById("zoomx").onclick = 关;
+    document.addEventListener("keydown", e => { if(e.key === "Escape" && ov.style.display !== "none") 关(); });
+    const im0 = document.getElementById("zoomimg");
+    im0.onclick = () => { const 大 = im0.dataset.big === "1"; im0.dataset.big = 大 ? "0" : "1";
+      im0.style.maxWidth = 大 ? "95vw" : "none"; im0.style.maxHeight = 大 ? "85vh" : "none"; im0.style.cursor = 大 ? "zoom-in" : "zoom-out"; };
+  }
+  const im = document.getElementById("zoomimg");
+  im.dataset.big = "0"; im.style.maxWidth = "95vw"; im.style.maxHeight = "85vh"; im.style.cursor = "zoom-in";
+  im.src = 地址; document.getElementById("zoomt").textContent = 标题 || 地址;
+  ov.style.display = "flex";
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest("a[href]");
+  if(a){ const h = a.getAttribute("href") || "";
+    if(a.dataset.zoom !== undefined || /^\/(pattern|img)\//.test(h)){ e.preventDefault(); 看大图(h, a.dataset.zoom || a.textContent.trim() || h); }
+    return; }
+  const img = e.target.closest && e.target.closest("img");
+  if(img && /^\/img\//.test(img.getAttribute("src") || "") && !img.closest("#zoomov")){
+    看大图(img.getAttribute("src"), img.getAttribute("alt") || "商品图");
+  }
+});
 </script></body></html>

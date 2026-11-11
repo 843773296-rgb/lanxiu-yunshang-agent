@@ -23,6 +23,7 @@ DB = os.path.join(HERE, "lanxiu.db")
 # 咬合记录:左边「改坏了什么」,右边「该红的是哪一条」。可重放的规格在 tools/bite_specs.json。
 # 三处都打**结构**不打数值 —— 数值会随数据漂,漂了之后咬合失效的样子和通过一模一样。
 咬合 = [
+    ("聊天站不转发 /pattern/(打版图地址在聊天页点开 404)", "聊天站转发打版图地址"),
     ("商品页的打版图写死一个版型(不跟着这件商品自己的版型走)", "商品页指的是自己的版型"),
     ("查不到的版型不明说查不到(dict(None) 抛 TypeError)", "查不到的版型要报错"),
     ("标题栏不印规格(图上看不到这一号型到底是多少)", "图上印的规格就是库里的数"),
@@ -334,6 +335,15 @@ def main():
     except Exception as e:
         报("查不到的版型要报错", False, f"报的是 {type(e).__name__},没说清是版型不存在")
 
+    # 11-11 版师撞到:「没有权限执行 python3 tools/patterndraw/draft.py PT03 M」——
+    # 技能说明第一行写着跑脚本(模型碰不到执行命令的工具,被安全闸拦下),而给地址那条路聊天站又不转 /pattern/(点开 404)
+    _根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _应用 = open(os.path.join(_根, "agentsite", "app.py"), encoding="utf-8").read()
+    报("聊天站转发打版图地址(/pattern/ 和 /api/、/img/ 一起反代到后台)",
+       'p.startswith("/pattern/"): return self._proxy("GET")' in _应用, "聊天站点开打版图会 404")
+    _技 = open(os.path.join(_根, "agentsite", ".claude", "skills", "pattern-draft", "SKILL.md"), encoding="utf-8").read()
+    报("打版图技能:出图只给站内链接,不叫助手跑脚本",
+       "](/pattern/" in _技 and "\n    python3 tools/patterndraw/draft.py" not in _技, "技能说明还在叫助手跑脚本 / 没给链接写法")
     print(("❌ 打版库 %d 条不过" % len(失败)) if 失败 else "✅ 打版库全过")
     return 1 if 失败 else 0
 

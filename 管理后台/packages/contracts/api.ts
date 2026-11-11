@@ -270,7 +270,9 @@ export const ENDPOINTS = [
   { method: "GET", path: "/chat-assistants", summary: "聊天助手列表(澜绣聊天站上的角色助手)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/chat-assistants/import", summary: "从代码导入基线版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/chat-assistants/by-role/{role}/production", summary: "按角色取生产那一版(给聊天站拉)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/chat-assistants/by-role/{role}/adoption", summary: "生效状态:目标版本(生产指着的)/ 实际版本(聊天站进程里加载的)并排", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/chat-assistants/{id}", summary: "聊天助手详情(草稿 / 推算出的规矩 / 版本)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/chat-assistants/{id}/skills-sync", summary: "只同步草稿的技能清单(别的配置不碰)", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/chat-assistants/{id}/draft", summary: "改草稿(开头 / 结尾 / 模型 / 工具开关)", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/chat-assistants/{id}/versions", summary: "出版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflows/{id}/access-keys", summary: "这条工作流的访问密钥(列表 + 今天花了多少 + 最近 20 次调用)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -327,4 +329,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 239 条接口 · 24 条异步 · 32 条要幂等键 · 29 条要 If-Match */
+/** 共 241 条接口 · 24 条异步 · 32 条要幂等键 · 29 条要 If-Match */
