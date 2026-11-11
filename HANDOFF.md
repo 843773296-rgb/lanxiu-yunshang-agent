@@ -91,15 +91,9 @@
 **我自己定的两条(用户没拍,写进总结让他知道)**:① 撞单只算「要人在场」的四类(预约到店 / 上门沟通 / 接待任务 / 团建培训)落在班外;改成休息则当天全算 —— 否则系统 09–18 的知会任务每次改班都冒假改派 ② 排班只排本店在职顾问(店长不进表,和现有 280 行一致)。
 **更正过用户一次**:聊天里现有 roster 技能排的是**任务 / 日程**(assign_batch),不是**班次** —— 第 5 项要新加排班次工具并在技能里分清两件事。
 **派单改法(第 4 项,未动手)**:booking.suggest 加排班硬过滤(时段在班 + 没预留;那周没发布 → 返回 None);另给 `suggest_why(task)` → (建议, 提不出的原因),四处调用方(api.dispatch_task / dispatch_pool、tasks.py 两处)「没有在职顾问」的提示改用原因。待分配池现在是空的,真实数据不受影响。
-**🔴 下一步第一个动作(11-11 夜 第三遍门禁时刷)**:门禁+推任务 bffejc9bt,日志 /tmp/gate_1111n3.log —— 只认「被包的命令退出码」。
-  前两遍红过 7 项 / 3 项,都已修:库路径默认参数、连库没 closing、咬合 [932] 过期、待办清单(**每加一份检查脚本都要 make_todo 重生成**)、
-  写口得有门(已接 /api/roster 三个接口)、冒烟两份要登记 _wtoday 豁免。
-  绿了推完:② 第 5 项聊天工具 ③ 第 6 项后台排班页 —— **页面代码已写好在 scratchpad/roster_page.js**
-  (插到 index.html scheduleList 之后;nav subs 加 ["roster","排班"]、TAB_TITLE roster、view() 加 `if(v==="roster") return rosterPage();`、
-  菜单名映射 "排班":"roster")。scratchpad 会被清 —— 丢了就照 rosterPage 的说明重写。
-  ⚠️ **改 server.py 重启后第一件事 curl --noproxy '*' http://127.0.0.1:8760/ 看 200** —— 今晚一个 `_u` 局部变量让所有请求挂了约 10 分钟
-  (ef05b7fd 修,server_shadow_check 钉住;那时代码没推)。curl 本机必须 --noproxy '*',localhost 会走 IPv6 连不上。
-  已在真服务上验过排班接口(只读 + 被拒的写,真库没多一行)。
+**🔴 下一步第一个动作(11-11 深夜)**:第 8 项 —— 发飞书总结:草稿在 scratchpad/澜绣云裳agent-11月11日工作总结.md
+  (用 tools/feishu_publish.py;文件名带「澜绣云裳agent」)。发完给清单第 8 项打 ✅,停循环。
+  CI:35eafa35 绿;之后两次推送(第 5、6 项)看 gh run list。
 **禁区补充**:`.wip-glossary/patch_pickup_eval.py.已应用` 是我改的后缀(并行会话的 charset 检查原来扫未跟踪文件);
   它已改成只扫 git ls-files 但**还没推** —— 推了之后再改回原名。CI 偶发红(签收码撞订单号)已修 6e8c27e3 并补咬合。
 **作废 / 别重做**:roster 技能(agentsite/.claude/skills/roster)排的是任务不是班次 —— 别当成「已有排班技能只缺写口」。
@@ -111,9 +105,9 @@
 | 2 | 后台端到端 runctl 那条时有时无的红 | ✅ 7f8b46d5(本地):夹具改「音频整理」流程停在 waiting_external,逐页找复用(列表 limit 上限 100);CI 版端到端 48+10 全绿(锁内,被包命令退出码 0)|
 | 3 | 排班写入口 | ✅ 2b6e264f(本地):knowledge/shift.py 连上超限 / 一周休够吗 / 撞了吗(自测 31,咬合 8/8);backend/roster_write.py 周表 / 写草稿 / 发布预览 / 发布(草稿另存一行、已发布优先);tasktypes +待改派(booking_check 运营类型数 7→8、企业任务大类 +1);roster_write_check 挂 check.sh |
 | 4 | 派单接排班 | ✅ 6b90973f(本地):booking.suggest_why + _排班过滤(没发布周不推荐 / 不在班 / 预留出局),四处调用方提示改用真实原因;手动指定带「排班提醒」;roster_write_check 33 条 + 咬合 5/5 |
-| 5 | 聊天写工具(排班草稿 / 发布)进确认卡;排班技能接上 | |
-| 6 | 后台按周排班页 | |
-| 7 | 评测 / 咬合 / 门禁 + 推;决策清单与 PRD 附录记这四条 | |
+| 5 | 聊天写工具 | ✅ 已推:shift_preview(读)/ shift_draft / shift_publish(写 → WRITE_TOOLS 确认卡,页面中文名),挂 TASK_ONLY_TOOLS;规矩 TL80(铁律:排班次 ≠ 排任务);roster 技能加一节;文档工具数 104 / 写 31 / shop 88 / 规矩 101;SOP 重生成 |
+| 6 | 后台按周排班页 | ✅ 已推:index.html「导购 → 排班」rosterPage;node 喂真接口数据渲染 8 项对(**没开浏览器**) |
+| 7 | 评测 / 咬合 / 门禁 + 推;决策清单与 PRD 附录记这四条 | ✅ PRD A-294 / A-295、决策清单 D10–D13、intent/manager-roster 做完了。**评测题没加**(要整套重跑花钱,没授权)—— 写进飞书总结请用户拍 |
 | 8 | 今日 + 今晚总结发飞书(文件名带「澜绣云裳agent」)→ 停 | |
 
 ### 🟢 11-11 夜 · 用户拍的第二、四件都落地了(失效闸 + 两轴并联),外加一条新待办
