@@ -677,6 +677,8 @@ class as_user:
 # 它们都从会话取身份、都走 tasks.py 那一套判定,不会因为「是智能体调的」而放宽。
 WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task", "reassign_task", "finish_task",
                "assign_batch", "dispatch_batch",
+               # 店长排班(用户 11-11 夜拍「后台页面 + 聊天都能排」):写草稿 / 发布。规则在 roster_write,和后台页面同一份
+               "shift_draft", "shift_publish",
                # 版师核裁片用料占比。**登记在这儿不是形式** —— 进了这张表才会被
                # `isolation_check`(从会话取身份、入参里没有身份字段)、
                # `guards.pre_tool_verdict`(一轮只写一次、同参数不许重试)、
@@ -6959,6 +6961,9 @@ SHOP_SCHEMAS=[
         "activity_code":{"type":"string","description":"绑定活动,可不填"}},
         "required":["type","assignee","note","start","end"]}}},
    "required":["items"]}},
+ {"name":"shift_preview","description":"**(只读)本店一周的排班 + 发布预览** —— 排的是**班次**(谁哪天上早班 10–16 / 晚班 16–22 / 全天 / 休息),**不是任务**(任务用 week_grid / assign_batch)。返回每人每天的「已发布 / 草稿 / 请假」,店长还会拿到「发布预览」:违规(拦发布:每人每周至少休一天、最多连上 6 天,跨周也算)、提示(谁哪几天没排)、受影响(发布后那天做不了的已派单)。⚠️ 排班 / 发布之前**先调它**,把表和这三样念给店长。week 给那一周里任意一天 `YYYY-MM-DD`,不给 = 本周。","input_schema":{"type":"object","properties":{"week":{"type":"string","description":"那一周里任意一天 YYYY-MM-DD;不给 = 本周"}}}},
+ {"name":"shift_draft","description":"**(写)排班次 → 写成草稿**:员工看不到、派单不用,店长发布才生效。items 是列表,每条 {工号 或 姓名, 日期 YYYY-MM-DD, 班次 S1 早班 / S2 晚班 / S3 全天 / S0 休息(写中文名也认)}。**全过才写,一条不过整批不写**;只排本店在职顾问;过去的日子不改。⚠️ **休息要排出来** —— 没排的日子不算休息,发布时会拦「每周至少休一天」。⚠️ 先 shift_preview 看现状、把要排的整张表念给店长,他说「就这么排」再调。只有店长能排。","input_schema":{"type":"object","properties":{"items":{"type":"array","items":{"type":"object"},"description":"[{工号或姓名, 日期, 班次}…]"}},"required":["items"]}},
+ {"name":"shift_publish","description":"**(写)发布本店一周的排班草稿**,发布后才生效(员工看得到、派单按它)。有违规(每周没休 / 连上超过 6 天)**不发布**,把违规原话给店长。发布后有已派的单那天做不了时:confirm_affected 不给或 false → **只回那张清单、不写**;**先把清单念给店长、他说确认后**才带 confirm_affected=true 再调 —— 那样会照发,并给店长逐条建「待改派」任务。⚠️ 不要替店长确认。只有店长能发布。","input_schema":{"type":"object","properties":{"week":{"type":"string","description":"那一周里任意一天 YYYY-MM-DD"},"confirm_affected":{"type":"boolean","description":"店长看过受影响清单并确认后才给 true"}},"required":["week"]}},
  {"name":"bad_ratings","description":"**差评清单**:签收后顾客给了 ≤3 星、还要人跟的那些(工单、包裹、订单、几星、顾客原话、有没有处理过)。status 可给「待处理」「已关闭」「全部」,不给就是待处理。**店长和售后看得到**(业务 2026-09-27:差评归店长跟、不进顾问考核;2026-10-11:售后确认结案 —— **跟客户和结案是两件事,两句并存**)。售后不属于某一家店,看全量。⚠️ 关掉一条用 `close_bad_rating`,**必须写处理记录**(「看过了」不算处理完)**而且必须给处理方式**;出钱的那几种(" + _出钱表 + ")还要批准人、**退款还要给金额** —— 见 TK14。⚠️ 这儿原来写的是「出钱的**三种**」,而出钱的只有两种 —— 和 TK14 那句「后三种」同一个病:**手抄的数字跟不上枚举**,「优惠券」被拍掉那天它没跟上。⚠️ 顾客把差评改成好评的,**清单里那条不撤** —— 撤掉就看不出「差评被处理好了」和「从来没有差评」的区别,返回里会标「顾客改过」。",
   "input_schema":{"type":"object","properties":{
     "status":{"type":"string","description":"待处理 / 已关闭 / 全部,默认待处理"}},"required":[]}},
@@ -7786,6 +7791,48 @@ def on_shift(staff=None, date=None, at=None, days=7):
     }
 
 
+# ── 店长排班(用户 11-11 夜拍:后台页面 + 聊天都能排)────────────────────────
+# 排的是**班次**(谁哪天上早班 / 晚班 / 全天 / 休息),**不是任务**(assign_batch 排的是任务 / 日程)。
+# 规则全在 backend/roster_write.py(和后台页面同一份):草稿另存、发布才生效;发布拦「每周休一天」
+# 「最多连上 6 天」;撞上已派的单要先给店长看清单,确认了才照发并建「待改派」。
+def _排班今天():
+    import worldclock
+    return worldclock.今天().isoformat()
+
+
+def shift_preview(week=None):
+    """(只读)本店一周排班 + 发布预览:每人每天 已发布 / 草稿 / 请假;违规(拦发布)、提示、发布后做不了的已派单。"""
+    import roster_write as RW
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在看 —— 请先登录")
+    d = RW.周表(me["no"], week or _排班今天(), db=DB)
+    if d.get("error"):
+        return d
+    if d.get("能排吗"):
+        d["发布预览"] = RW.发布预览(me["no"], d["周一"], db=DB)
+    return d
+
+
+def shift_draft(items):
+    """(写)把班次写成**草稿**:员工看不到、派单不用,发布才生效。全过才写。只有店长能排。"""
+    import roster_write as RW
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在排 —— 请先登录")
+    r = RW.写草稿(me["no"], items or [], _排班今天(), db=DB)
+    if r.get("ok"): _agent_log(me, "SHIFT_DRAFT", f"写了 {r.get('写了')} 格排班草稿")
+    return r
+
+
+def shift_publish(week, confirm_affected=False):
+    """(写)发布本店这一周的排班草稿。有违规不发;有撞单而 confirm_affected 不是 true 时只回清单不写。"""
+    import roster_write as RW
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在发布 —— 请先登录")
+    r = RW.发布(me["no"], week or _排班今天(), _排班今天(), 确认受影响=bool(confirm_affected), db=DB)
+    if r.get("ok"): _agent_log(me, "SHIFT_PUBLISH", f"发布了 {r.get('周一')} 那一周排班 {r.get('发布了')} 格")
+    return r
+
+
 def revive_list(customer=None, limit=20):
     """**这些客户现在该不该联系,以及联系他说什么。**
 
@@ -8273,7 +8320,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"get_product_images":get_product_images,"draft_capability_request":draft_capability_request,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"get_product_images":get_product_images,"draft_capability_request":draft_capability_request,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"shift_preview":shift_preview,"shift_draft":shift_draft,"shift_publish":shift_publish,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

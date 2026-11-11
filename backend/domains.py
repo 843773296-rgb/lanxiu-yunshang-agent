@@ -53,6 +53,7 @@
     ),
     "work": (        # 任务与研判:派单、转派、完成、排班格子、写入规则自检
         "list_tasks", "get_tasks", "task_types", "week_grid", "on_shift",
+        "shift_preview", "shift_draft", "shift_publish",   # 店长排班(11-11 夜):排的是班次,不是任务
         "assign_task", "assign_batch", "dispatch_task", "dispatch_batch",
         "reassign_task", "finish_task", "check_write", "monthly_review",
         "start_workflow",   # 发起被接管的工作流(10-24):派活的一种,归任务

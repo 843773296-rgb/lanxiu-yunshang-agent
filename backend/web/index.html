@@ -453,7 +453,7 @@ const MENU=[
  {k:"customer",i:"customer",t:"客户管理",subs:[["customers","客户档案"],["merge","客户合并确认"],
    ["appts","客户预约"],["lifecycle","客户生命周期类型"],["levels","会员等级"],["tags","客户标签管理"]]},
  {k:"shop",i:"shop",t:"店铺配置",subs:[["shops","店铺管理"],["off","店铺日程(原稿标注:本期不做)"]]},
- {k:"guide",i:"guide",t:"导购",subs:[["schedule","个人日程"],["perf","导购业绩"]]},
+ {k:"guide",i:"guide",t:"导购",subs:[["schedule","个人日程"],["roster","排班"],["perf","导购业绩"]]},   // 排班:11-11 夜(用户拍「后台页面 + 聊天都能排」)
  {k:"page",i:"page",t:"页面",subs:[["pages","页面配置"]]},
  {k:"mkt",i:"mkt",t:"营销",subs:[["activities","营销活动"],["invites","邀请码管理"]]},
  {k:"goods",i:"goods",t:"商品",subs:[["products","商品库"],["categories","品类管理"],
@@ -480,7 +480,7 @@ function renderNav(){
 }
 /* 面包屑:每一级可点回上级。crumbs 支持 "标签" 或 ["标签","路由","参数"] */
 const CRUMB_ROUTE={"首页":"workbench","客户管理":"customers","客户档案":"customers",
-  "店铺配置":"shops","店铺管理":"shops","导购":"schedule","个人日程":"schedule","权限管理":"staff",
+  "店铺配置":"shops","店铺管理":"shops","导购":"schedule","个人日程":"schedule","排班":"roster","权限管理":"staff",
   "交易查询":"orders","商品":"products","商品库":"products","品类管理":"categories","库存查询":"stock",
   "业务内容":"mtpls","量体配置":"mitems","量体模版":"mtpls","内容管理":"contents","运费表":"freight",
   "营销":"activities","营销活动":"activities","邀请码管理":"invites",
@@ -548,7 +548,7 @@ async function post(u,b){
 
 const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合并确认",finance:"押金退款异常",
   appts:"客户预约",lifecycle:"客户生命周期类型",oplog:"操作日志",
-  shops:"店铺管理",staff:"权限管理",schedule:"个人日程",orders:"交易查询",
+  shops:"店铺管理",staff:"权限管理",schedule:"个人日程",roster:"排班",orders:"交易查询",
   products:"商品库",categories:"品类管理",stock:"库存查询",
   mitems:"量体配置",mtpls:"量体模版",contents:"内容管理",freight:"运费表",
   activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
@@ -597,6 +597,7 @@ async function route(v,arg){
   if(v==="shop")     return shopDetail(arg);
   if(v==="staff")    return staffList();
   if(v==="schedule") return scheduleList();
+  if(v==="roster")   return rosterPage();
   if(v==="orders")   return orderList();
   if(v==="products") return productList();
   if(v==="product")  return productDetail(arg);
@@ -1789,6 +1790,86 @@ async function scheduleList(){
     modal("取消日程任务",[{k:"reason",type:"text",req:1,label:"取消原因(必填)",ph:"例如:客户改期"}],
       v=>doTransit("bk-task",e.dataset.cxl,"取消",{reason:v.reason},scheduleList)));
   bindTable(st,scheduleList);
+}
+
+// ── 店长排班(用户 11-11 夜拍:后台页面 + 聊天都能排)────────────────────────────
+// 按周看本店顾问每天的班;店长点格子改班(写的是草稿,员工看不到、派单不用),点「发布」才生效。
+// 发布先走服务端预览:违规(每周没休、连上超过 6 天)拦住;撞上已派的单先弹清单,确认后照发并给店长建「待改派」。
+// 判定全在服务端(backend/roster_write.py),页面只照返回画 —— 不在这里另写一份规则。
+Q.rst={week:""};
+const 班色={S1:"p-blue",S2:"p-warn",S3:"p-ok",S0:"p-mut"};
+function 挪周(d,n){ const x=new Date(d+"T00:00:00"); x.setDate(x.getDate()+n);
+  return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0"); }
+async function rosterPage(){
+  const st=Q.rst, d=await get("/api/roster?week="+encodeURIComponent(st.week||""));
+  if(d.error){ M.innerHTML=chrome([["首页","workbench"],"导购","排班"],
+    `<div class="card"><div class="bd" style="padding:20px 24px">${esc(d.error)}</div></div>`); return; }
+  st.week=d.周一;
+  const 名={}; (d.班次||[]).forEach(b=>名[b.码]=b.名+(b.起?`(${b.起}–${b.止})`:""));
+  const 短={}; (d.班次||[]).forEach(b=>短[b.码]=b.名);
+  const 周名=["一","二","三","四","五","六","日"];
+  const 预=d.预览||{};
+  const 格=(p,t)=>{
+    const cur=t.草稿!=null?t.草稿:t.已发布, 改=t.草稿!=null;
+    return `<td ${d.能排吗?`data-cell="${esc(p.工号)}|${esc(t.日期)}" style="cursor:pointer" title="点一下改这一天的班(改的是草稿)"`:""}>
+      ${t.请假?`<span class="pill p-bad" title="已批准的请假,盖在排班上">请假 · ${esc(t.请假)}</span><br>`:""}
+      ${cur?`<span class="pill ${班色[cur]||"p-mut"}">${esc(短[cur]||cur)}</span>`:`<span style="color:var(--ink4)">没排</span>`}
+      ${改?`<div style="font-size:11.5px;color:var(--warn);margin-top:2px">未发布${t.已发布?" · 原"+esc(短[t.已发布]||t.已发布):""}</div>`:""}</td>`;
+  };
+  M.innerHTML=chrome([["首页","workbench"],"导购","排班"],`
+   <div class="card">
+    <div class="form" style="align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn gray" data-wk="-7">‹ 上一周</button>
+      <b class="mono">${esc(d.周一)} — ${esc(d.周日)}</b><span style="color:var(--ink2)">${esc(d.门店||"")}</span>
+      <button class="btn gray" data-wk="7">下一周 ›</button>
+      <span class="pill ${d.这周发布了吗?"p-ok":"p-warn"}">${d.这周发布了吗?"这周已发布":"这周还没发布 —— 派单不出推荐"}</span>
+      ${d.没发布的改动?`<span class="pill p-warn">${d.没发布的改动} 格改了没发布</span>`:""}
+    </div>
+    ${d.能排吗?`<div class="ops"><button class="btn sol" data-pub ${d.没发布的改动?"":"disabled title=\"没有没发布的改动\""}>发布这一周</button></div>`
+      :`<div style="padding:8px 24px;color:var(--ink3);font-size:12.5px">只有店长能排班,你这里只能看</div>`}
+    <table class="tb" style="margin-top:14px"><thead><tr><th style="width:110px">顾问</th>
+      ${(d.日期||[]).map((x,i)=>`<th>周${周名[i]}<br><span class="mono" style="font-weight:400;color:var(--ink3)">${esc(x.slice(5))}</span></th>`).join("")}
+    </tr></thead><tbody>
+      ${(d.人||[]).map(p=>`<tr><td>${esc(p.姓名)}</td>${p.天.map(t=>格(p,t)).join("")}</tr>`).join("")
+        || `<tr><td colspan="8" style="color:var(--ink3)">本店没有在职顾问</td></tr>`}
+    </tbody></table></div>
+   ${d.能排吗&&((预.违规||[]).length||(预.提示||[]).length||(预.受影响||[]).length)?`
+   <div class="card"><div class="hd"><h3>发布前要看的</h3><span class="n">服务端按规则算的</span></div>
+    <div class="bd" style="padding:14px 24px 20px"><ul class="ev" style="padding-left:20px">
+     ${(预.违规||[]).map(v=>`<li style="color:var(--bad)"><b>拦住发布:</b>${esc(v)}</li>`).join("")}
+     ${(预.受影响||[]).map(x=>`<li><b>发布后做不了:</b>${esc(x.谁)} ${esc(x.日期)} ${esc(x.时段)} ${esc(x.类型)}(${esc(x.任务号)})—— ${esc(x.为什么)}</li>`).join("")}
+     ${(预.提示||[]).map(v=>`<li style="color:var(--ink2)">${esc(v)}</li>`).join("")}
+    </ul></div></div>`:""}
+   <div class="card"><div class="hd"><h3>规则</h3><span class="n">业务 09-20 / 09-22;用户 11-11 夜</span></div>
+    <div class="bd" style="padding:14px 24px 20px"><ul class="ev" style="padding-left:20px">
+     <li>按天排:早班 10:00–16:00 / 晚班 16:00–22:00 / 全天 / 休息。<b>休息要排出来</b> —— 没排的日子不算休息,派单会说「还没排班」</li>
+     <li>改的是<b>草稿</b>:员工看不到、派单不用;点「发布这一周」才生效</li>
+     <li>发布时拦:每人每周至少休一天;<b>最多连上 6 天</b>(跨周也算)</li>
+     <li>改班撞上已派的单:先列出来给你看,确认后照发,并给你建「待改派」任务</li>
+     <li>这一周没发布时,派单不出推荐(可以手动指定)</li>
+    </ul></div></div>`);
+  M.querySelectorAll("[data-wk]").forEach(e=>e.onclick=()=>{ st.week=挪周(d.周一,+e.dataset.wk); rosterPage(); });
+  M.querySelectorAll("[data-cell]").forEach(e=>e.onclick=()=>{
+    const [no,day]=e.dataset.cell.split("|"), p=(d.人||[]).find(x=>x.工号===no);
+    modal(`${p?p.姓名:no} · ${day} 排什么班`,[{k:"shift",type:"select",label:"班次",
+      opts:(d.班次||[]).map(b=>名[b.码])}],
+      async v=>{ const b=(d.班次||[]).find(x=>名[x.码]===v.shift);
+        const r=await post("/api/roster/draft",{items:[{工号:no,日期:day,班次:b?b.码:v.shift}]});
+        res(!!r.ok, r.ok?"OK":"ERR", r.ok?"已改成草稿 —— 点「发布这一周」才生效":(r.error+((r.不对的||[]).length?":"+r.不对的.join(";"):"")));
+        if(r.ok) rosterPage(); return r; });
+  });
+  const 发=M.querySelector("[data-pub]");
+  if(发) 发.onclick=async()=>{
+    let r=await post("/api/roster/publish",{week:d.周一});
+    if(r.需要确认){
+      const 单=(r.受影响||[]).map(x=>`${x.谁} ${x.日期} ${x.时段} ${x.类型}(${x.任务号})`).join(";");
+      if(!await sure("发布后这些单那天做不了",`${单}。确认发布的话,会给你逐条建「待改派」任务。`,"确认发布")) return;
+      r=await post("/api/roster/publish",{week:d.周一,confirm:true});
+    }
+    res(!!r.ok, r.ok?"OK":"ERR", r.ok?`已发布 ${r.发布了} 格`+((r.待改派任务||[]).length?`,建了 ${r.待改派任务.length} 条待改派`:"")
+        :(r.error+((r.违规||[]).length?":"+r.违规.join(";"):"")));
+    if(r.ok) rosterPage();
+  };
 }
 
 Q.ord={page:1,per:10,tab:"全部"};

@@ -724,6 +724,8 @@ TASK_ONLY_TOOLS = [
     "mcp__work__task_types",
     "mcp__work__assign_task", "mcp__work__dispatch_task",
     "mcp__work__reassign_task", "mcp__work__finish_task",
+    # 店长排班(用户 11-11 夜拍「后台页面 + 聊天都能排」):排**班次**,不是任务。写的两个走确认卡 —— 规矩 TL80
+    "mcp__work__shift_preview", "mcp__work__shift_draft", "mcp__work__shift_publish",
     # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。
     # 原来没给:get_maintain 的描述明写「判定标准要另外查 kb_tables」,
     # liability_eval 的提示词也明写「再用 kb_tables 取售后争议判定」——

@@ -553,6 +553,24 @@ SHIFT_RULE = Rule("TL36", ("on_shift",), """
   而该做的是去修档案或者找总部。
 """, scope="工具")
 
+# ── TL80:店长排班(用户 2026-11-11 夜拍「后台页面 + 聊天都能排」)──────────────
+# 缘起:聊天里原有的「排班」技能排的是**任务**(assign_batch),而店长说「排下周的班」要的是**班次** ——
+# 两件事在模型眼里长得一样(09-21 真跑就撞过一次:拿日程占用去答「班排了吗」)。
+ROSTER_WRITE_RULE = Rule("TL80", ("shift_preview", "shift_draft", "shift_publish"), """
+**排班次(谁哪天上早班 / 晚班 / 全天 / 休息)和排任务(谁哪个时段做什么活)是两件事。**
+店长说「排下周的班」「谁哪天休息」「把班发了」→ 用 `shift_preview` / `shift_draft` / `shift_publish`;
+要排的是一批活(试衣、回访、盘点)→ 用 `week_grid` / `assign_batch`。拿不准就问一句是哪一种。
+
+- **先看再排。** 动手前先 `shift_preview`,把整周的表念给店长(谁哪天什么班、哪几格没排、哪些是没发布的草稿)。
+- **休息要排出来。** 没排的日子不算休息 —— 一周七天里没有一格「休息」,发布会被拦。别替店长挑谁哪天休,
+  缺的就问;他说的排完了,把没排到的格子照实念出来。
+- **写的是草稿。** `shift_draft` 之后要说清「还没生效,发布才生效」—— 不要说成「排好了」。
+- **发布前把三样念给店长**:违规(拦住,原话照念:每周至少休一天、最多连上 6 天,跨周也算)、
+  提示、**发布后那天做不了的已派单**。有已派单受影响时,**店长说确认之后**才带 `confirm_affected=true` 发布,
+  并告诉他会给他建「待改派」任务;**不要替他确认**。
+- **违规时不要自己改班绕过去**(比如悄悄把某人某天改成休息凑合规)—— 把违规念给店长,由他决定改哪一格。
+""")   # 铁律不是工具级:跨三个工具,讲的是「排班次 ≠ 排任务」这条分界(P5:工具级只许依赖一个工具)
+
 ORDERS_RANGE_RULE = Rule("TL62", ("orders_by_date",), """
 **按时间段列订单(含「一月全部订单」这类问法)。五条不许错:**
 
@@ -986,6 +1004,7 @@ SAVE_REPORT_RULE,
 CONFIRM_REPORT_RULE,
 LIST_REPORTS_RULE,
 SHIFT_RULE,
+ROSTER_WRITE_RULE,
 CREDIT_RULE,
 HISTORY_RULE,
 CONVERSION_RULE,
@@ -1624,6 +1643,7 @@ SAVE_REPORT_RULE,
 CONFIRM_REPORT_RULE,
 LIST_REPORTS_RULE,
 SHIFT_RULE,
+ROSTER_WRITE_RULE,
 CREDIT_RULE,
 HISTORY_RULE,
 CONVERSION_RULE,
