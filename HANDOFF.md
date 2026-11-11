@@ -1401,7 +1401,11 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
-#### 📍 11-11 16:5x · 归属转移写完(未提交),全量门禁在跑(最新)
+#### 📍 11-11 17:xx · 归属转移:第一遍门禁红 4 处已修,第二遍在跑(最新)
+- 修:db_build「不算」登记 backend/ownership_transfer.py(knowledge/ownership_protection.py 建库走不到,登记反而红);README 重生成;tasktypes「归属转移」route 改 auto_or_agent、归进「客户预约」大类;booking_check 客户类型数 5→6(带注释)。
+- 第二遍门禁日志 /tmp/gate_own2.log;绿了提交(加上 backend/db_build.py、backend/booking_check.py、README.md)→ 推 → 重启 8760 / 8770 → PRD 附录 A 记算法 → 补测试和收尾。用户外出中。
+
+#### 📍 11-11 16:5x · 归属转移写完(未提交),全量门禁在跑
 - 新:knowledge/ownership_protection.py(纯函数,180 含端;判不出 → 不转)、backend/ownership_transfer.py(判定 / 成交后 / 记日志;改导购复用 account_owner;知会任务类型「归属转移」登记在 tasktypes.py)、backend/ownership_transfer_check.py(14 条 + 咬合 2 条三关过,挂 check.sh)。接线:order_write 确认下单之后、server.transition 订单从「待付款」流转出去之后(都在事务外;日志在提交后记)。标品那条路不打 paid_at → 成交日用今天。文档口径模块数 56→57。
 - 只读看分布:现有 136 张跨店已付款单按新规则 27 张会转(**历史不管,不补转**);库副本真转一次 OK(整户改 + 三条知会)。
 - 门禁后台(锁里),日志 /tmp/gate_own.log;绿了提交:knowledge/ownership_protection.py backend/ownership_transfer.py backend/ownership_transfer_check.py backend/order_write.py backend/server.py backend/tasktypes.py check.sh tools/bite_specs.json 产品需求文档.md(口径模块数)+ 生成物若有;推;重启 8760。之后:PRD 附录 A 记这条算法;再「补测试和收尾」。
