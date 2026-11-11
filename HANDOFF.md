@@ -874,6 +874,11 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
+#### 📍 11-11 11:5x · 确认卡已放回、在真跑
+- ops 11:35 正常跑完(eureka-fc worktree;85/99 · 88/99,重试 0、跑挂 0;日常 85% 没达标、偶发 97% 达标;**和老基线不可比**)。它说可以放 → **protocol.diff / sdk.diff 已 git apply**,action_confirm_check **29 条全过**,已挂 check.sh;两份 plist 加了 LANXIU_CONFIRM_STORE(agentsite/state/actions.db,.gitignore 了);8770 已 bootout + bootstrap(kickstart 不重读 plist),`launchctl print` 核过 env 在。**全部未提交。**
+- 真跑脚本 `.wip-glossary/confirm_card/live_test.py`(锁里,临时卡库;会写一条 schedule「确认卡实测,可删」):第一次指令太含糊,模型先反问没调写工具(任务数不变,对);第二次在后台 bxzdgi5mo 跑,**超过 400 秒没结束 —— 要看是模型慢还是 `_调一次` 起子进程卡住**(120 秒超时应该会回来)。staff 在职状态是「启用」不是「在职」;派任务池里没有待分配单,所以用 assign_task(日常运维)测。
+- eureka-fc:`textmatch.带句读()` 已提出来(中文句号 U+3002 NFKC 不认,派生器补了那一支)—— 我接 5 份判分自测时**用它,别手写「对,/对。」词表**。
+
 #### 📍 11-11 11:3x · 六项速记(压缩前)
 - **下一步第一个动作**:看后台 bi1kuyglj(CI 40c17974 是否转绿)→ 等 eureka-fc 喊「ops 跑完」(约 12:25;我的后台 bh70mhme6 等门禁结束会自动重启 8770)→ `git apply .wip-glossary/confirm_card/protocol.diff sdk.diff` → `python3 agentsite/action_confirm_check.py` 全绿 → 挂 check.sh → plist 加 LANXIU_CONFIRM_STORE → 重启 8770 → 真跑派任务看卡 → 提交 → 再接商品图 / 申请单。
 - **未验证**:确认卡整条链只有纯函数和假工具验过,**真聊天里模型拿到「还没执行」会不会照实说**没跑过;`action_confirm._调一次` 起子进程执行那条路一次都没真跑;商品图卡 / 申请单卡页面只过了语法检查,没在浏览器里看过;Haiku 5.5 今天在聊天站答出来了(用户截图),「这台机器调 5.5 被限流」可能已过时 —— 没复测。
