@@ -878,8 +878,17 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - **用户拍(两张卡 + 两句原话)**:「转人工,应该是内部业务流程需要沟通留下的后路,而不是针对客户问题留下的后路」→ **投诉不转人工**、**不加「要找人拍板」意图**,改成「这里可以留一个转人工的按钮」;判不出 → 转人工**维持**;13 个技能意图 → 交给技能;日常类不配。
 - **已上线**:店长助手 v8(路由 rtv_8d9fb1ba1e6b = store-routes v2,10 条「X交技能」),8770 已重启,`glossary_client.同步路由('task')` 带 plist 环境变量核过 = 有 / v2 / 10 条。脚本 `.wip-glossary/route_v1_skills.py`(在 管理后台/ 下用 .venv 跑)。
 - **已推 9860dd2d**:聊天页每条回答「转人工」按钮 → `/api/handoff` → `answer_feedback.能手动转吗` → `建转人工`(原因前缀「店员手动转人工:」,原话取执行记录 lanxiu.prompt)。answer_feedback_check ⑩ 七条;咬合手动做过;**全量门禁没跑(用户:测试晚上做)**,也还没写进 bite_specs。
-- **没挂的三条**:库存巡检 / 活动复盘 / 经营数诊断 —— 后台 skill_snapshot 只有 10 个技能,聊天站运行时有这三个;已问 eureka-fc 归谁。补齐后出 v9。
-- **晚上要做**:全量门禁 + 把 ⑩ 的咬合写进 bite_specs;判分器自测补中文逗号版(等 eureka-fc 推 punct_invariant)。
+- **(已解决)三条补上了 → 店长助手 v9 上生产**(路由 rtv_15556a5df97e = store-routes v1,13 条;v8 那版 rtv_8d9fb1ba1e6b 是 10 条)。eureka-fc 回:技能清单归我;v8/v9 不影响 ops 基线(ops 走 sdk._tools_for 静态名单,不读后台配置;ops 轨迹里的 `Skill` 是 CLI 的 Skill 工具,不是后台路由 —— 两种「技能触发」别合成一个基线);没有判据按 reason_note 计数。
+- **未提交(工作区,管理后台常驻进程已经在跑它们!)**:
+  · `管理后台/services/api/app/chat_assistants_api.py`:新口 `POST /chat-assistants/{cid}/skills-sync`(只换草稿技能清单,别的不碰,留审计)+ 纯函数 `技能清单问题` + 按角色取生产多带 `"技能"`(skill_snapshot)+ **内容哈希加进技能清单**(不加则「只同步技能」出不了版本,--核对技能 永远红;代价:老版本哈希没算它,下次从代码导入会多出一版)。
+  · `管理后台/tools/import_chat_assistant.py`:`--只同步技能` / `--核对技能`(venv 跑:`./agentsite/.venv/bin/python 管理后台/tools/import_chat_assistant.py --核对技能`;现在 13 vs 13 一致)。
+  · `管理后台/tests/e2e/test_chat_assistant_flow.py`:⑩ 7 条,本地真服务 52 过 0 挂。
+  · `.wip-glossary/route_v1_skills.py`(不提交)。
+- **下一步第一个动作**:看后台 baev8i6r1(锁里 `make test` + `make test-e2e-ci`)→ 绿了 scan_secrets(单独一步)→ `git commit --only` 上面三个文件 → 推;再看 bh70mhme6(等 eureka-fc 门禁完自动重启 8770)→ 带 plist 环境变量跑 `glossary_client.同步路由('task')` 核 13 条。
+- **为什么这么判**:没重跑导入来补技能 —— 导入会把草稿整份换成代码那份,挑好的术语 / 意图 / 路由版本会丢(11-10 草稿停在 v5 就是这个形状);拦「路由点名助手没有的技能」那道闸**是对的,别放宽**(错的是快照过期)。
+- **禁区**:别放宽那道拦;eureka-fc 的 rounds.py / sdk.py / textmatch.py 别碰;8770 重启前先看有没有门禁在跑。
+- **未验证**:技能路由在真实对话里有没有让模型更常走对应技能 —— 没量过(只验了配置被聊天站拉到)。
+- **晚上要做**:全量门禁 + 把转人工按钮 ⑩ 和技能同步的咬合写进 bite_specs;`--核对技能` 要不要进门禁(它要后台在跑 → 照 js_smoke 那样「没起明说不适用」);判分器自测补中文逗号版(等 eureka-fc 推 punct_invariant)。
 
 #### 📍 11-11 03:4x 补记(压缩前写)
 - **已推**:c14df5f3(工厂评测跑前跑后核全库行数,只报不判红)—— CI 绿。之前 b3ef43e9 也绿。
