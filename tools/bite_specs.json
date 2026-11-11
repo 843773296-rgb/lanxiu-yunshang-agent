@@ -9387,8 +9387,8 @@
   "file": [
    {
     "path": "backend/server.py",
-    "old": "FROM refund_trace WHERE resp_code!='SUCCESS' GROUP BY c",
-    "new": "FROM refund_trace GROUP BY c"
+    "old": "WHERE t.resp_code!='SUCCESS' AND {片c} GROUP BY 1",
+    "new": "WHERE {片c} GROUP BY 1"
    }
   ],
   "预期红": "「失败原因」不含成功的那条"
@@ -19368,5 +19368,41 @@
    }
   ],
   "预期红": "标点不变量(识图判分器 judge)"
+ },
+ {
+  "script": "backend/shop_scope_check.py",
+  "改坏": "店长也当成跨店角色 —— 读接口又回到不按门店划,店长看得到全公司客户",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if u.get(\"role\") in backend.读跨店角色:      # 用户 11-11 拍「财务也看全部门店」",
+    "new": "    if u.get(\"role\") in backend.读跨店角色 + (\"店长\",):      # 用户 11-11 拍「财务也看全部门店」"
+   }
+  ],
+  "预期红": "店长打列表接口:返回里没有别家门店"
+ },
+ {
+  "script": "backend/shop_scope_check.py",
+  "改坏": "财务没进读跨店角色 —— 财务工作台上线就是空的(用户 11-11 拍财务看全部)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "读跨店角色 = 跨店角色 + (\"财务\",)",
+    "new": "读跨店角色 = 跨店角色"
+   }
+  ],
+  "预期红": "财务看全部门店"
+ },
+ {
+  "script": "backend/shop_scope_check.py",
+  "改坏": "跨店到访的预约结束后本店还看得到 —— 已完成也算进行中",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "预约状态_进行中 = (\"待确认\", \"已预约\", \"已到店\")",
+    "new": "预约状态_进行中 = (\"待确认\", \"已预约\", \"已到店\", \"已完成\")"
+   }
+  ],
+  "预期红": "跨店到访的预约结束后:本店列表里没有、详情 403"
  }
 ]

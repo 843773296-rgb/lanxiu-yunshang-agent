@@ -58,6 +58,11 @@ def _门店条件(值, 别名="", c=None, 列="shop"):
 # 差评、退押金、管理后台客户读接口都用这一个 —— 「本店」两处各写一套,迟早对不上。
 跨店角色 = ("总部运营", "售后")
 
+# 只给「读」划范围用的跨店角色(管理后台那批读接口,server._店范围)。
+# 用户 11-11 拍「财务也看全部门店」。⚠️ **别改上面那个 `跨店角色`** —— 差评、退押金这些写操作也在用它,
+# 财务能看全部 ≠ 财务能跨店处理差评。读和写分两份,读这份只许比写那份宽。
+读跨店角色 = 跨店角色 + ("财务",)
+
 def _rows(sql,*a):
     if _CRED.search(sql): raise PermissionError(_CRED_MSG)
     if _TRUTH.search(sql):
@@ -4447,8 +4452,17 @@ def kb_bom(pattern, size, material, crafts=None, scope="局部"):
     return dp.estimate(p[0]["code"], size, m["code"], kcs, scope, craft_names=_names())
 
 
-def fit_customers():
-    """量过体的客户 —— 只有这些人能算推荐尺码。"""
+def fit_customers(本店=None):
+    """量过体的客户 —— 只有这些人能算推荐尺码。
+
+    `本店`:按门店划范围(用户 10-23 拍;11-11 补齐)。None = 不限(跨店角色 / 内部调用);
+    否则只列这家店的客户 —— 由 HTTP 口按登录身份给,不收前端传的门店。"""
+    片, 参 = "1=1", []
+    if 本店 is not None:
+        import shop_key as _SK, contextlib as _cl
+        with _cl.closing(_c()) as _x:
+            片, 参 = _SK.门店条件(_x, 本店, "c")
+        片 = 片 or "0"
     return {"rows": _rows(
         "SELECT c.id,c.name,MAX(r.method) method,COUNT(DISTINCT r.item) items,"
         " MIN(r.tpl) tpl_code,"
@@ -4457,7 +4471,8 @@ def fit_customers():
         " (SELECT GROUP_CONCAT(feature,'、') FROM body_feature b"
         "  JOIN wearer w ON w.id=b.wearer_id WHERE w.customer_id=c.id) feature"
         " FROM customer c JOIN measure_rec r ON r.customer_id=c.id"
-        " GROUP BY c.id,c.name ORDER BY c.name")}
+        f" WHERE {片}"
+        " GROUP BY c.id,c.name ORDER BY c.name", *参)}
 
 
 def 本店范围(me):
@@ -6765,7 +6780,12 @@ def plan_for_event(wearer_id, event_date, pattern, material,
     import growth
     from datetime import date, timedelta
     today = date.fromisoformat(today) if today else _wc.今天()  # 世界的今天(world_meta),不写死 —— 2026-10-01 写死的 08-31 让量体过期判反了
-    ev = date.fromisoformat(event_date)
+    # 日子没给 / 写错格式:原来直接 TypeError / ValueError 崩掉(/api/wearer-plan 不带参数就 500)。
+    # 说清楚要什么格式,不崩(11-11 按门店划范围那一轮顺手查出)
+    try:
+        ev = date.fromisoformat(event_date)
+    except (TypeError, ValueError):
+        return {"error": f"用件日期要写成 YYYY-MM-DD,现在是「{event_date}」" if event_date else "要给用件日期(YYYY-MM-DD)"}
     if ev <= today: return {"error": "用件日期已经过了"}
 
     w = _wearer(wearer_id)

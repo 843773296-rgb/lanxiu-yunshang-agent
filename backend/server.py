@@ -98,6 +98,99 @@ def _me(handler):
     return auth.who(tok)
 
 
+# ── 按门店划范围(用户 10-23 拍;11-11 补齐)───────────────────────────────
+# 10-23 只收了客户档案那三个口;订单 / 预约 / 售后 / 工作台……这一批照旧给全公司的数。
+# 口径:读跨店角色(总部运营 / 售后 / 财务)看全部,其余只看本店。
+# 财务那一个是用户 11-11 拍的「财务也看全部门店」—— 只放宽读,写操作照旧认 `backend.跨店角色`。
+# **范围只从登录身份来,不从请求参数来** —— 店长在 URL 里写别家店也会被本店覆盖。
+# ⚠️ 没挂门店的非跨店角色(版师 / 工匠)给一个**谁也对不上**的值 → 一行都看不到。
+#    用户 11-11 确认就该这样:「可以,他们不用看客户资料」。
+# 不能让「没挂门店」落成空串:`门店条件(空串)` 返回「不加条件」,那就成了看全部 —— fail-open。
+没挂门店 = "(没挂门店)"
+
+
+def _店范围(handler):
+    """None = 跨店(看全部);否则是这个人那家店的显示串(没挂门店的给 `没挂门店`)。"""
+    u = _me(handler) or {}
+    if u.get("role") in backend.读跨店角色:      # 用户 11-11 拍「财务也看全部门店」
+        return None
+    return u.get("shop") or 没挂门店
+
+
+def _店片(本店, 别名=""):
+    """按门店筛的 WHERE 片段 + 参数。跨店给 ("1=1", []),拼进 AND 里不改语义。
+    按门店码筛(shop_key.门店条件)—— 门店改过名之后按串筛会一行都查不到,而且不报错。"""
+    if 本店 is None:
+        return "1=1", []
+    import shop_key as _SK, contextlib as _cl
+    with _cl.closing(_conn()) as c:
+        片, 参 = _SK.门店条件(c, 本店, 别名)
+    return (片 or "1=1"), 参
+
+
+# ── 跨店到访:记录在本店、客户档案在别家店(用户 11-11 拍)────────────────────
+# 原话:「如果归属发生改变那么他就是你的客户,就可以看;如果归属不改变,则保留到店记录,
+#       且预约-到店完成,或者预约-预约失效期间可看。」
+# 落法:客户档案已经归本店 → 照常全可见;档案还在别家店 → 预约 / 到店类记录只在「进行中」可见,
+# 结束了(到店完成 / 取消 / 失效 / 爽约)本店就看不到 —— **记录不删**,只是不给本店看。
+# 状态出处:预约 = fsm.SM["bk-appt"] 六个状态(已预约→已到店→已完成 / 已取消 / 已过期 / 爽约)
+#          + booking.py 新建预约写的「待确认」(库里实有 31 条,状态机没登记它);
+#          任务 = 库里 schedule.status 实有的值(有效 / 完结 / 已完成 / 取消 / 无效,11-11 实测)。
+# ⚠️ 「已到店」算进行中:人在店里、这次到访还没完成 —— 用户说的是「到店完成」才结束。
+# ⚠️ 两组之外冒出来的新状态:按**已结束**处置(看不到)—— 宁可少看一条,不放别家店的客户出来。
+预约状态_进行中 = ("待确认", "已预约", "已到店")
+预约状态_已结束 = ("已完成", "已取消", "已过期", "爽约")
+任务状态_进行中 = ("有效",)
+任务状态_已结束 = ("完结", "已完成", "取消", "无效")
+# 哪几类任务算「预约 / 到店」记录(schedule.type 实有值里挑的)。订单跟踪、电话回电这些不算 ——
+# 用户那句话没说到它们,现状不动,等用户拍
+到店类任务 = ("预约到店", "到店", "接待任务")
+
+
+def _到访片(本店, 状态列, 客户别名, 进行中):
+    """跨店到访那条规矩的 WHERE 片段:档案归本店,或者这条记录还在进行中。跨店角色给 1=1。"""
+    if 本店 is None:
+        return "1=1", []
+    片, 参 = _店片(本店, 客户别名)
+    return f"({片} OR {状态列} IN ({','.join('?' * len(进行中))}))", [*参, *进行中]
+
+
+def _是本店(本店, 店串):
+    """单条记录的门店是不是本店。跨店恒真;比码不比串(改名后串对不上),对不上码再比串。"""
+    if 本店 is None:
+        return True
+    if not 店串:
+        return False
+    if 店串 == 本店:
+        return True
+    import shop_key as _SK, contextlib as _cl
+    with _cl.closing(_conn()) as c:
+        a, b = _SK.码(c, 店串), _SK.码(c, 本店)
+    return a is not None and a == b
+
+
+def _不是本店(本店, 什么="这条记录"):
+    """看别家店的单 → 403。措辞和客户详情那条一样。"""
+    return {"error": f"{什么}不是本店的(你是 {本店}),看不了", "code": "NOT_YOUR_SHOP"}
+
+
+def _日志片(本店):
+    """操作日志按「谁做的」划门店:只看本店员工留下的那几条(op_log 没有门店列,
+    target 又是十几种单据号混着,按 target 反查要逐类型写一遍)。
+    认人:actor 等于本店员工的名字,或 actor 里带本店员工的工号(「自有工坊报工·600000xx」那种)。"""
+    if 本店 is None:
+        return "1=1", []
+    片, 参 = _店片(本店)
+    人 = rows(f"SELECT no, name FROM staff WHERE {片}", *参)
+    if not 人:
+        return "0", []
+    名 = [x["name"] for x in 人 if x["name"]]
+    号 = [x["no"] for x in 人 if x["no"]]
+    条 = [f"actor IN ({','.join('?' * len(名))})"] if 名 else []
+    条 += ["actor LIKE ?"] * len(号)
+    return "(" + " OR ".join(条) + ")", 名 + [f"%{n}%" for n in 号]
+
+
 def _role_of(handler, fallback="顾问"):
     """当前角色。**登录了就用登录身份,没登录就用最低权限** ——
     绝不读请求体里的 role(那是自称)。"""
@@ -111,10 +204,15 @@ def _actor_of(handler, fallback="魏欣新"):
 
 HERE=os.path.dirname(os.path.abspath(__file__))
 
-def scheme_list():
+def scheme_list(本店=None):
     """已有方案清单。写成模块级函数而不是在路由里直接查 ——
     do_GET 内部有个局部变量也叫 rows,会把模块级的 rows() 函数整段遮蔽掉。"""
-    return dict(rows=rows("SELECT * FROM scheme ORDER BY updated DESC"))
+    if 本店 is None:
+        return dict(rows=rows("SELECT * FROM scheme ORDER BY updated DESC"))
+    # 按门店划范围(用户 10-23 拍;11-11 补齐):方案按客户归店
+    片, 参 = _店片(本店, "c")
+    return dict(rows=rows(f"SELECT s.* FROM scheme s JOIN customer c ON c.id=s.customer_id "
+                          f"WHERE {片} ORDER BY s.updated DESC", *参))
 
 def scheme_status(sid):
     r=rows("SELECT status FROM scheme WHERE id=?",sid)
@@ -143,11 +241,18 @@ def load_drafts():
     except Exception: return {}
 def save_drafts(d): json.dump(d,open(DRAFTS,"w"),ensure_ascii=False,indent=1)
 
-def workbench():
+def workbench(本店=None):
+    # 按门店划范围(用户 10-23 拍;11-11 补齐):`本店` 为 None 是跨店(看全部),否则每个数都只算本店
+    片c, 参c = _店片(本店, "c2")
+    片, 参 = _店片(本店)
+    日片, 日参 = _日志片(本店)
+    片a, 参a = _店片(本店, "a"); 访, 访参 = _到访片(本店, "a.status", "c", 预约状态_进行中)
     # 待处理 = 研判队列里**还没结束**的那些 —— 「结束」用 ops.queue 的 done(业务 09-28 拍的两个权威来源),
     # 不在首页另写一套。原来按类型全量取(10-19 外部复审 3.2):26 件财务任务里 23 件早已处理,首页照样报 26。
     import ops as _ops
     开着 = [x for x in _ops.queue() if not x["done"]]
+    _看 = _ops.看得到的工单(本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐)
+    if _看 is not None: 开着 = [x for x in 开着 if x["task_id"] in _看]
     def _开(类型):
         ids = [x["task_id"] for x in 开着 if x["type"] == 类型]
         return rows(f"SELECT * FROM task WHERE id IN ({','.join('?'*len(ids))}) ORDER BY id", *ids) if ids else []
@@ -156,19 +261,25 @@ def workbench():
     待复核 = {类型: sum(1 for x in 开着 if x["type"] == 类型 and x["state"] == "待复核") for 类型 in ("财务人工任务", "客户合并确认")}
     已升级 = {类型: sum(1 for x in 开着 if x["type"] == 类型 and x["state"] == "已升级") for 类型 in ("财务人工任务", "客户合并确认")}
     dr=load_drafts()
-    amt=rows("SELECT SUM(amount) s FROM deposit WHERE status IN ('退款失败','退款审批中')")[0]["s"] or 0
-    fail=rows("SELECT COUNT(*) c FROM deposit WHERE status='退款失败'")[0]["c"]
-    appr=rows("SELECT COUNT(*) c FROM deposit WHERE status='退款审批中'")[0]["c"]
-    retry=rows("SELECT AVG(n) a FROM (SELECT COUNT(*) n FROM refund_trace GROUP BY deposit_id)")[0]["a"] or 0
+    if _看 is not None: dr={k:v for k,v in dr.items() if k in _看}   # 按门店划范围(用户 10-23 拍;11-11 补齐)
+    # 押金 / 退款轨迹按押金的客户归店(按门店划范围,用户 10-23 拍;11-11 补齐)
+    # ⚠️ LEFT JOIN 不是 JOIN:跨店(片 = 1=1)时要和原来一样,押金单 / 客户对不上的轨迹也照算
+    #    (workbench_check 自造的那几条轨迹就挂在一个不存在的押金号上);本店时 c2 那一侧的条件自然把它们筛掉
+    _押="deposit d LEFT JOIN customer c2 ON c2.id=d.customer_id"
+    _轨="refund_trace t LEFT JOIN deposit d ON d.id=t.deposit_id LEFT JOIN customer c2 ON c2.id=d.customer_id"
+    amt=rows(f"SELECT SUM(d.amount) s FROM {_押} WHERE d.status IN ('退款失败','退款审批中') AND {片c}",*参c)[0]["s"] or 0
+    fail=rows(f"SELECT COUNT(*) c FROM {_押} WHERE d.status='退款失败' AND {片c}",*参c)[0]["c"]
+    appr=rows(f"SELECT COUNT(*) c FROM {_押} WHERE d.status='退款审批中' AND {片c}",*参c)[0]["c"]
+    retry=rows(f"SELECT AVG(n) a FROM (SELECT COUNT(*) n FROM {_轨} WHERE {片c} GROUP BY t.deposit_id)",*参c)[0]["a"] or 0
     adopted=sum(1 for v in dr.values() if v.get("status","").find("采纳")>=0)
     rate="—" if not dr else f"{adopted*100//len(dr)}%"
 
-    trend=rows("""SELECT substr(ts,1,10) d, COUNT(*) n, SUM(req_amount) amt
-                  FROM refund_trace GROUP BY d ORDER BY d""")
+    trend=rows(f"""SELECT substr(t.ts,1,10) d, COUNT(*) n, SUM(t.req_amount) amt
+                  FROM {_轨} WHERE {片c} GROUP BY 1 ORDER BY 1""",*参c)
     # 「失败原因」只数失败:原来对全部返回码分组,SUCCESS 也排进了「Top 失败原因」(10-19 外部复审 3.2)
-    codes=rows("""SELECT resp_code c, COUNT(*) n, SUM(req_amount) amt
-                  FROM refund_trace WHERE resp_code!='SUCCESS' GROUP BY c ORDER BY amt DESC""")
-    lifec=rows(f"SELECT lifecycle l, COUNT(*) n FROM customer WHERE {_人头()} GROUP BY l ORDER BY n DESC")   # 按人(10-14)
+    codes=rows(f"""SELECT t.resp_code c, COUNT(*) n, SUM(t.req_amount) amt
+                  FROM {_轨} WHERE t.resp_code!='SUCCESS' AND {片c} GROUP BY 1 ORDER BY amt DESC""",*参c)
+    lifec=rows(f"SELECT lifecycle l, COUNT(*) n FROM customer WHERE {_人头()} AND {片} GROUP BY l ORDER BY n DESC",*参)   # 按人(10-14);按门店划范围(11-11)
     # 「当日 / 较昨日」按**世界的今天和昨天**取(10-19 外部复审 3.2):原来取最后两个有记录的日子 ——
     # 昨天没记录时,「较昨日」比的其实是更早的某一天。今天没记录就是 0;昨天没记录(或为 0)就不给「较昨日」
     import worldclock as _wc, datetime as _d
@@ -181,8 +292,9 @@ def workbench():
 
     # `shop` 那一列留着给页面显示;**筛和比一律用 shop_code**。
     # 门店串:分组出来的是显示名,页面要拿它当标题 —— 这一处按串分组是对的。
-    shops=rows("""SELECT shop, shop_code, COUNT(*) cust, SUM(order_cnt) orders, SUM(paid_amount) amt
-                  FROM customer WHERE shop!='' GROUP BY shop, shop_code ORDER BY shop""")   # 门店串:看板按门店显示名分组,`shop!=''` 是「非空」不是门店筛
+    # 按门店划范围(用户 10-23 拍;11-11 补齐):店里的人只看到自己那一家
+    shops=rows(f"""SELECT shop, shop_code, COUNT(*) cust, SUM(order_cnt) orders, SUM(paid_amount) amt
+                  FROM customer WHERE {片} AND shop!='' GROUP BY shop, shop_code ORDER BY shop""",*参)   # 门店串:看板按门店显示名分组,`shop!=''` 是「非空」不是门店筛
     for sh in shops:
         sh["deposit"]=rows("""SELECT COUNT(*) c FROM deposit d JOIN customer c2
                               ON d.customer_id=c2.id WHERE c2.shop_code=?""",sh["shop_code"])[0]["c"]
@@ -194,10 +306,12 @@ def workbench():
     return dict(
       trend=trend, codes=codes, lifecycle=lifec, dod=dict(n=dod("n"),amt=dod("amt")),
       shops=shops, finance=fin, merge=mrg,
-      appt=dict(total=rows("SELECT COUNT(*) c FROM appointment")[0]["c"],
-                **{k:rows("SELECT COUNT(*) c FROM appointment WHERE status=?",v)[0]["c"]
+      # 按门店划范围(用户 10-23 拍;11-11 补齐):预约按预约的门店,操作留痕按「谁做的」
+      # 跨店到访(用户 11-11 拍):已结束的、档案在别家店的预约不算进本店的数,和预约列表一致
+      appt=dict(total=rows(f"SELECT COUNT(*) c FROM appointment a LEFT JOIN customer c ON c.id=a.customer_id WHERE {片a} AND {访}",*参a,*访参)[0]["c"],
+                **{k:rows(f"SELECT COUNT(*) c FROM appointment a LEFT JOIN customer c ON c.id=a.customer_id WHERE a.status=? AND {片a} AND {访}",v,*参a,*访参)[0]["c"]
                    for k,v in [("booked","已预约"),("arrived","已到店"),("noshow","爽约")]}),
-      oplog=dict(**{k:rows("SELECT COUNT(*) c FROM op_log WHERE allowed=?",v)[0]["c"]
+      oplog=dict(**{k:rows(f"SELECT COUNT(*) c FROM op_log WHERE allowed=? AND {日片}",v,*日参)[0]["c"]
                     for k,v in [("allow",1),("deny",0)]}),
       drafts={k:v.get("status") for k,v in dr.items()},
       # 待处理卡片的细项 —— 原来「等待复核 4」「已核验 0」「已合并 0」「规则数 14」写死在页面里(10-19 外部复审 3.2)
@@ -217,7 +331,7 @@ def workbench():
         dict(label="退款失败",value=str(fail),unit="笔",sub="已达重试上限"),
         dict(label="平均重试次数",value=f"{retry:.1f}",unit="次",sub="上限 3 次"),
         # 10-14 起按人数:并入别人的档案不另算(用户拍「一律按人」);没合并掉的疑似重复仍在里面
-        dict(label="客户",value=str(rows(f"SELECT COUNT(*) c FROM customer WHERE {_人头()}")[0]["c"]),unit="人",sub="按人数;未确认的疑似重复仍各算一个"),
+        dict(label="客户",value=str(rows(f"SELECT COUNT(*) c FROM customer WHERE {_人头()} AND {片}",*参)[0]["c"]),unit="人",sub="按人数;未确认的疑似重复仍各算一个"),
       ])
 
 def task_detail(tid):
@@ -660,10 +774,11 @@ def shop_detail(code):
     s["logs"]=rows("SELECT * FROM op_log WHERE target=? ORDER BY id DESC LIMIT 20",code)
     return s
 
-def staff_list(q):
+def staff_list(q, 本店=None):
     kw=(q.get("q") or [""])[0].strip()
     ro=(q.get("role") or [""])[0]
-    rs=rows("SELECT no,name,role,shop,status,hired_at,updated_by,updated,login_name,fail_count,locked_until,last_login,adv_code,shop_code FROM staff ORDER BY no")  # 列名写死:staff 带 pwd_*,星号会把哈希和盐带出来(backend/staff_cred_check.py 盯着)
+    片, 参 = _店片(本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐):店里的人只看到本店员工
+    rs=rows(f"SELECT no,name,role,shop,status,hired_at,updated_by,updated,login_name,fail_count,locked_until,last_login,adv_code,shop_code FROM staff WHERE {片} ORDER BY no",*参)  # 列名写死:staff 带 pwd_*,星号会把哈希和盐带出来(backend/staff_cred_check.py 盯着)
     if kw: rs=[r for r in rs if kw in r["no"] or kw in r["name"]]
     if ro: rs=[r for r in rs if r["role"]==ro]
     d=_page(rs,q)
@@ -675,11 +790,21 @@ def staff_list(q):
                  "总部运营":["店长全部权限","审批客户合并","等级与积分人工调整","批量导出审批"]}
     return d
 
-def schedule_list(q):
+def schedule_list(q, 本店=None):
     kw=(q.get("q") or [""])[0].strip()
     stt=(q.get("status") or [""])[0]; ty=(q.get("type") or [""])[0]
-    rs=填顾问名(rows("""SELECT s.*, c.name cname FROM schedule s
-               LEFT JOIN customer c ON s.customer_id=c.id ORDER BY s.start_ts DESC"""))
+    # 按门店划范围(用户 10-23 拍;11-11 补齐)。⚠️ 「到店」那一类 1.4 万条 shop 是空的(实测 11-11),
+    # 只按 s.shop 筛会把它们全丢掉 —— 空着的按**经手顾问所在的店**归(到店是在顾问那家店发生的)
+    片, 参 = _店片(本店, "s"); 片st, 参st = _店片(本店, "st")
+    条 = "1=1" if 本店 is None else f"({片} OR (COALESCE(s.shop,'')='' AND {片st}))"
+    # 跨店到访(用户 11-11 拍):到店类任务、客户档案在别家店的,只在任务还「有效」时可见;别的类型不动
+    访, 访参 = _到访片(本店, "s.status", "c", 任务状态_进行中)
+    访 = "1=1" if 本店 is None else (f"(s.customer_id IS NULL OR s.type NOT IN ({','.join('?' * len(到店类任务))}) OR {访})")
+    访参 = [] if 本店 is None else [*到店类任务, *访参]
+    rs=填顾问名(rows(f"""SELECT s.*, c.name cname FROM schedule s
+               LEFT JOIN customer c ON s.customer_id=c.id
+               LEFT JOIN staff st ON st.no=s.advisor_no WHERE {条} AND {访} ORDER BY s.start_ts DESC""",
+               *([] if 本店 is None else 参 + 参st), *访参))
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["cname"] or "")]
     if stt: rs=[r for r in rs if r["status"]==stt]
     if ty:  rs=[r for r in rs if r["type"]==ty]
@@ -897,12 +1022,14 @@ def chat_order_detail(oid, handler):
     }
 
 
-def order_list(q):
+def order_list(q, 本店=None):
     kw=(q.get("q") or [""])[0].strip()
     tab=(q.get("tab") or ["全部"])[0]
     kind=(q.get("kind") or [""])[0]; src=(q.get("source") or [""])[0]
-    rs=rows("""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
-               ON o.customer_id=c.id ORDER BY o.created DESC""")
+    片, 参 = _店片(本店, "o")   # 按门店划范围(用户 10-23 拍;11-11 补齐):列表和下面的页签计数都只算本店
+    片0, 参0 = _店片(本店)
+    rs=rows(f"""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
+               ON o.customer_id=c.id WHERE {片} ORDER BY o.created DESC""",*参)
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["cname"] or "")]
     if kind: rs=[r for r in rs if r["kind"]==kind]
     if src:  rs=[r for r in rs if r["source"]==src]
@@ -923,11 +1050,11 @@ def order_list(q):
     d["facets"]=dict(kind=[r["v"] for r in rows("SELECT DISTINCT kind v FROM ordr")],
                      source=[r["v"] for r in rows("SELECT DISTINCT source v FROM ordr ORDER BY v")])
     d["prd_states"]=["待付款","方案确认中","待发货","待收货","已完成","已关闭"]
-    d["counts"]={s:rows("SELECT COUNT(*) c FROM ordr WHERE prd_status=?",s)[0]["c"] for s in d["prd_states"]}
+    d["counts"]={s:rows(f"SELECT COUNT(*) c FROM ordr WHERE prd_status=? AND {片0}",s,*参0)[0]["c"] for s in d["prd_states"]}
     # 每个设计稿页签下有多少单 —— 用来证明「多对一」而不是「筛不出数据」
-    d["tab_counts"]={t:rows("SELECT COUNT(*) c FROM ordr WHERE status=?",t)[0]["c"]
+    d["tab_counts"]={t:rows(f"SELECT COUNT(*) c FROM ordr WHERE status=? AND {片0}",t,*参0)[0]["c"]
                      for t in DESIGN_TABS if t!="全部"}
-    d["tab_counts"]["全部"]=rows("SELECT COUNT(*) c FROM ordr")[0]["c"]
+    d["tab_counts"]["全部"]=rows(f"SELECT COUNT(*) c FROM ordr WHERE {片0}",*参0)[0]["c"]
     return d
 
 def cat_paths():
@@ -1678,18 +1805,22 @@ def 填顾问名(rs):
             r[名列] = f"{短} {名}" if 短 else 名
     return rs
 
-def _simple(table,q,key,sortable,facet_cols,order=None):
+def _simple(table,q,key,sortable,facet_cols,order=None,本店=None,只留=None):
     kw=(q.get("q") or [""])[0].strip()
+    # 按门店划范围(用户 10-23 拍;11-11 补齐):带了 `本店` 就只取这家店的行(表要有 shop 列),
+    # facets 里的 shop 下拉也只给本店。不带(None)和原来一样 —— 别的列表页不受影响
+    片, 参 = _店片(本店)
     # **统一在这里填顾问名** —— `_simple` 是七八个列表页的共同入口,
     # 在这儿填一次,比每个页面各填一次少七处漏掉的机会。
-    rs=填顾问名(rows(f"SELECT * FROM {table}" + (f" ORDER BY {order}" if order else "")))
+    rs=填顾问名(rows(f"SELECT * FROM {table} WHERE {片}" + (f" ORDER BY {order}" if order else ""),*参))
+    if 只留: rs=[r for r in rs if 只留(r)]   # 表上没有 shop 列的(审批单)由调用方按行判本店
     for col in facet_cols:
         v=(q.get(col) or [""])[0]
         if v: rs=[r for r in rs if str(r.get(col))==v]
     if kw: rs=[r for r in rs if any(kw in str(r.get(k) or "") for k in key)]
     rs=_sort(rs,q,sortable)
     d=_page(rs,q)
-    d["facets"]={col:[r["v"] for r in rows(f"SELECT DISTINCT {col} v FROM {table} ORDER BY v")]
+    d["facets"]={col:[r["v"] for r in rows(f"SELECT DISTINCT {col} v FROM {table} WHERE {片} ORDER BY v",*参)]
                  for col in facet_cols}
     return d
 
@@ -2028,26 +2159,34 @@ _EXPORT = {
     "customers": ("客户档案", "SELECT c.id 客户号,c.name 姓名,c.phone_tail 手机尾号,c.shop 门店,"
                   "c.advisor_no 顾问工号,s.name 顾问,c.lifecycle 生命周期,c.level 等级,"
                   "c.order_cnt 订单数,c.paid_amount 实付,c.created 建档日 "
-                  "FROM customer c LEFT JOIN staff s ON s.no=c.advisor_no ORDER BY c.id"),
-    "orders":    ("订单", "SELECT id 订单号,customer_id 客户号,status 状态,amount 金额,"
-                  "created 下单时间 FROM ordr ORDER BY id"),
-    "workorders":("在制工单", "SELECT id 工单号,artisan 师傅,craft 工艺,status 状态,"
-                  "start_date 开工,due_date 交期 FROM workorder ORDER BY due_date"),
+                  "FROM customer c LEFT JOIN staff s ON s.no=c.advisor_no WHERE {店} ORDER BY c.id"),
+    "orders":    ("订单", "SELECT o.id 订单号,o.customer_id 客户号,o.status 状态,o.amount 金额,"
+                  "o.created 下单时间 FROM ordr o WHERE {店} ORDER BY o.id"),
+    # 工单按它挂的那张订单归店(workorder.ref = 订单号)
+    "workorders":("在制工单", "SELECT w.id 工单号,w.artisan 师傅,w.craft 工艺,w.status 状态,"
+                  "w.start_date 开工,w.due_date 交期 FROM workorder w LEFT JOIN ordr o ON o.id=w.ref "
+                  "WHERE {店} ORDER BY w.due_date"),
     # ⚠️ 这条按的是**早就不存在的老 schema**(obj / obj_id / detail),
     # 实际列是 machine / target / reason。整条导出一跑就 `no such column: obj` ——
     # **说明它从来没被跑过一次**。和上面那条一样,是这次冒烟检查揪出来的。
     "oplog":     ("操作日志", "SELECT ts 时间,actor 操作人,machine 对象,target 编号,"
-                  "code 结果码,allowed 是否放行,reason 说明 FROM op_log "
+                  "code 结果码,allowed 是否放行,reason 说明 FROM op_log WHERE {日志} "
                   "ORDER BY ts DESC LIMIT 5000"),
 }
 
-def export_csv(kind, q=None, actor="魏欣新"):
+def export_csv(kind, q=None, actor="魏欣新", 本店=None):
     """导出 CSV。kind 见 _EXPORT;未知 kind 返回可选清单,不静默给空文件。"""
     import csv, io
     if kind not in _EXPORT:
         return "错误\n" + f"没有「{kind}」这种导出,可选:{'、'.join(_EXPORT)}\n"
     name, sql = _EXPORT[kind]
-    rs = rows(sql)
+    # 按门店划范围(用户 10-23 拍;11-11 补齐):店里的人只导得出本店的行(None = 跨店,导全部)。
+    # 客户按客户的店、订单 / 工单按订单的店、操作日志按「谁做的」—— 和各自列表页同一条口径
+    if "{日志}" in sql:
+        片, 参 = _日志片(本店); sql = sql.replace("{日志}", 片)
+    else:
+        片, 参 = _店片(本店, "c" if kind == "customers" else "o"); sql = sql.replace("{店}", 片)
+    rs = rows(sql, *参)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(rs[0].keys() if rs else ["(无数据)"])
@@ -2217,8 +2356,21 @@ def approval_detail(aid,me):
                 核对问题=(核 or {}).get("问题") or None,我能批=能,为什么=为何,
                 说明="批准即生效:客户归属改过去、未完成的预约一起迁;驳回什么都不改。批注必填。")
 
-def approval_list(q):
-    d=_simple("approval",q,["id","target"],{"id","applied_at"},["kind","status"],"applied_at DESC")
+def _审批看得到(本店):
+    """按门店划范围(用户 10-23 拍;11-11 补齐):审批单的 target 是「客户号|客户号…」,
+    **全部是本店客户**才看得到 —— 和合并确认同一条(有一位是别家店的,就漏了别家店的客户)。
+    → None 表示不限,否则是看得到的审批单号集合。"""
+    if 本店 is None: return None
+    片, 参 = _店片(本店)
+    本店客 = {r["id"] for r in rows(f"SELECT id FROM customer WHERE {片}", *参)}
+    return {r["id"] for r in rows("SELECT id, target FROM approval")
+            if (lambda xs: xs and all(x in 本店客 for x in xs))(
+                [x for x in (r["target"] or "").split("|") if x.strip()])}
+
+def approval_list(q, 本店=None):
+    _看=_审批看得到(本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐)
+    d=_simple("approval",q,["id","target"],{"id","applied_at"},["kind","status"],"applied_at DESC",
+              只留=None if _看 is None else (lambda r: r["id"] in _看))
     for r in d["rows"]:
         try: r["pl"]=_j.loads(r["payload"] or "{}")
         except Exception: r["pl"]={}
@@ -2226,9 +2378,12 @@ def approval_list(q):
         r["target_name"]=nm[0]["name"] if nm else ""
     return d
 
-def approvals(me=None):
+def approvals(me=None, 本店=None):
     """审批中心:待总部运营审批的事项(后台 PRD 6.2 / 8.1)。高风险那几张带「我能批」—— 本店的客户转移店长也能批(10-25)"""
+    import ops as _ops
+    _看工单=_ops.看得到的工单(本店); _看审批=_审批看得到(本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐)
     merge=rows("SELECT * FROM task WHERE type='客户合并确认' AND status='待总部审批' ORDER BY id")
+    if _看工单 is not None: merge=[m for m in merge if m["id"] in _看工单]
     for m in merge:
         a,b=(m["ref_id"] or "|").split("|")[:2]
         ra=rows("SELECT id,name,created FROM customer WHERE id=?",a)
@@ -2236,6 +2391,11 @@ def approvals(me=None):
         m["a"]=ra[0] if ra else None; m["b"]=rb[0] if rb else None
     exp=rows("SELECT * FROM download_task WHERE status='生成中' ORDER BY created DESC")
     risky=rows("SELECT * FROM approval WHERE status='待审批' ORDER BY applied_at DESC")
+    if 本店 is not None:   # 按门店划范围(用户 10-23 拍;11-11 补齐):导出任务按发起人归店
+        _片, _参 = _店片(本店)
+        _本店人 = {r["no"] for r in rows(f"SELECT no FROM staff WHERE {_片}", *_参)}
+        exp=[x for x in exp if x.get("created_by") in _本店人]
+        risky=[r for r in risky if r["id"] in _看审批]
     for r in risky:
         try: r["pl"]=_j.loads(r["payload"] or "{}")
         except Exception: r["pl"]={}
@@ -2265,9 +2425,9 @@ def approvals(me=None):
              ["等级与积分调整","总部运营可人工调整,但须填写原因并记录日志","后台 PRD 6.1"]],
       todo=len(merge)+len(exp)+len(risky))
 
-def aftersale_list(q):
+def aftersale_list(q, 本店=None):
     d=_simple("aftersale",q,["id","order_id","customer_id"],
-              {"id","created","amount"},["kind","status","shop"],"created DESC")
+              {"id","created","amount"},["kind","status","shop"],"created DESC",本店=本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐)
     for r in d["rows"]:
         nm=rows("SELECT name FROM customer WHERE id=?",r["customer_id"])
         r["cname"]=nm[0]["name"] if nm else ""
@@ -2276,9 +2436,9 @@ def aftersale_list(q):
     d["readonly"]=True
     return d
 
-def maintain_list(q):
+def maintain_list(q, 本店=None):
     d=_simple("maintain",q,["id","order_id","customer_id","item"],
-              {"id","created"},["status","shop"],"created DESC")
+              {"id","created"},["status","shop"],"created DESC",本店=本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐)
     for r in d["rows"]:
         nm=rows("SELECT name FROM customer WHERE id=?",r["customer_id"])
         r["cname"]=nm[0]["name"] if nm else ""
@@ -2384,13 +2544,16 @@ def 工坊报工(body, me):
     return dict(ok=(r["结论"] == "收下"), 结论=r["结论"], reason=r["理由"], 效果=r.get("效果"))
 
 
-def factory_feed_page(q, me=None):
+def factory_feed_page(q, me=None, 范围=None):
     """工厂回传页(业务 09-22:生产和发货只认工厂回传)。该催清单 + 收件箱里要人看的那几条。
     「今天」按演示世界的今天(seed.TODAY),不按机器时钟 —— 和造数据、判超期用的是同一天。"""
     import factory_inbox as _fi, alert_dispatch as _ad
     from seed import TODAY
     _fi.ensure()
-    chase = _fi.该催清单(TODAY)
+    # 按门店划范围(用户 10-23 拍;11-11 补齐):`范围` 由路由按登录身份给(None = 跨店看全部),
+    # 下面每一块都按订单的门店收。原来只给「这行能不能派」打标,别家店的单照样全列
+    片, 参 = _店片(范围, "o")
+    chase = _fi.该催清单(TODAY, shop=范围)
     跟 = _ad.跟进情况("工厂催办", [x["订单"] for x in chase])
     本店 = None if (me or {}).get("role") == "总部运营" else (me or {}).get("shop")
     for x in chase:
@@ -2400,23 +2563,26 @@ def factory_feed_page(q, me=None):
         if x["订单"] in 跟: x["跟进"] = 跟[x["订单"]]
         # 这行能不能派:店长只派本店的单(和写口 alert_dispatch.工厂催办项 同一个范围)
         x["本店"] = 本店 is None or x.get("门店") == 本店
-    stat = {r["result"]: r["n"] for r in rows("SELECT result, COUNT(*) n FROM factory_msg GROUP BY result")}
-    look = rows("SELECT order_id, event, factory, at, result, reason FROM factory_msg "
-                "WHERE result IN ('挂异常','拒收','暂存') ORDER BY at DESC LIMIT 200")
+    stat = {r["result"]: r["n"] for r in rows(
+        f"SELECT f.result, COUNT(*) n FROM factory_msg f LEFT JOIN ordr o ON o.id=f.order_id WHERE {片} GROUP BY f.result", *参)}
+    look = rows("SELECT f.order_id, f.event, f.factory, f.at, f.result, f.reason FROM factory_msg f "
+                f"LEFT JOIN ordr o ON o.id=f.order_id WHERE f.result IN ('挂异常','拒收','暂存') AND {片} "
+                "ORDER BY f.at DESC LIMIT 200", *参)
     # 延期待通知(业务 09-23:顾问通知完点「已通知」,不点的话这份清单只进不出)
-    told = rows("""SELECT d.id, d.order_id, d.old_promise, d.new_promise, d.reason, d.at, o.shop, o.advisor_no
+    told = rows(f"""SELECT d.id, d.order_id, d.old_promise, d.new_promise, d.reason, d.at, o.shop, o.advisor_no
                    FROM factory_delay d JOIN ordr o ON o.id=d.order_id
-                   WHERE d.told_at IS NULL AND o.status NOT IN ('取消','完成') ORDER BY d.at DESC LIMIT 100""")
+                   WHERE d.told_at IS NULL AND o.status NOT IN ('取消','完成') AND {片} ORDER BY d.at DESC LIMIT 100""", *参)
     # 人工回退(发错件 / 到店返工)—— **一直留着**,页面上看得到这张单倒退过
-    back = rows("""SELECT r.order_id, r.at, r.cause, r.note, r.frm, r.too, r.freight, s.name by_name
-                   FROM order_rollback r LEFT JOIN staff s ON s.no=r.by_no ORDER BY r.at DESC LIMIT 100""")
+    back = rows(f"""SELECT r.order_id, r.at, r.cause, r.note, r.frm, r.too, r.freight, s.name by_name
+                   FROM order_rollback r LEFT JOIN staff s ON s.no=r.by_no LEFT JOIN ordr o ON o.id=r.order_id
+                   WHERE {片} ORDER BY r.at DESC LIMIT 100""", *参)
     # 包裹:在途和到店的(已签收的在签收那一侧看)
-    pkgs = rows("""SELECT p.pkg_id, p.order_id, p.tracking_no, p.shipped_at, p.arrived_at, p.status,
+    pkgs = rows(f"""SELECT p.pkg_id, p.order_id, p.tracking_no, p.shipped_at, p.arrived_at, p.status,
                           (SELECT COUNT(*) FROM pkg_item i WHERE i.pkg_id=p.pkg_id) n, o.shop
                    FROM pkg p JOIN ordr o ON o.id=p.order_id
-                   WHERE p.void_at IS NULL AND p.status IN ('在途','到店') ORDER BY p.shipped_at DESC LIMIT 100""")
-    分批 = rows("SELECT COUNT(*) n FROM (SELECT order_id FROM pkg WHERE void_at IS NULL "
-               "GROUP BY order_id HAVING COUNT(*)>1)")[0]["n"]
+                   WHERE p.void_at IS NULL AND p.status IN ('在途','到店') AND {片} ORDER BY p.shipped_at DESC LIMIT 100""", *参)
+    分批 = rows("SELECT COUNT(*) n FROM (SELECT p.order_id FROM pkg p LEFT JOIN ordr o ON o.id=p.order_id "
+               f"WHERE p.void_at IS NULL AND {片} GROUP BY p.order_id HAVING COUNT(*)>1)", *参)[0]["n"]
     return dict(today=TODAY, chase=chase, stat=stat, look=look, told=told, back=back, pkgs=pkgs, 分批=分批,
                 派单=_预警派单(me, "订单跟踪"),
                 note="生产和发货是工厂回传的事实,门店和后台不能手动推(订单状态机只认收下了的回传)。"
@@ -2426,9 +2592,10 @@ def factory_feed_page(q, me=None):
                      "现在没接真的供应链系统,回传由模拟工厂发出。")
 
 
-def guide_perf(q):
+def guide_perf(q, 本店=None):
     """导购业绩:按顾问聚合。原设计稿无此页面,按后台 PRD 第 9 章数据指标口径实现。"""
-    advs=rows("SELECT no,name,role,shop FROM staff WHERE role='顾问' ORDER BY no")
+    片, 参 = _店片(本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐):只列本店顾问
+    advs=rows(f"SELECT no,name,role,shop FROM staff WHERE role='顾问' AND {片} ORDER BY no",*参)
     out=[]
     for a in advs:
         # ⚠️ **按工号数,不按名字 LIKE。**
@@ -2909,8 +3076,9 @@ def combo_matrix():
     return dict(crafts=crafts,mats=mats,grid=grid,undef=undef,
       note="组合约束属企业 know-how,无公开来源,全部为演示数据;真实项目须由工艺负责人确认。")
 
-def op_logs(n=200):
-    return rows("SELECT * FROM op_log ORDER BY id DESC LIMIT ?",n)
+def op_logs(n=200, 本店=None):
+    片, 参 = _日志片(本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐):只看本店员工留下的
+    return rows(f"SELECT * FROM op_log WHERE {片} ORDER BY id DESC LIMIT ?",*参,n)
 
 def _page(all_rows, q):
     page=max(1,int(q.get("page",[1])[0])); per=min(100,max(5,int(q.get("per",[10])[0])))
@@ -2924,11 +3092,15 @@ def _sort(rs,q,allow):
     d=(q.get("dir") or ["asc"])[0]=="desc"
     return sorted(rs,key=lambda r:(r.get(k) is None, r.get(k)),reverse=d)
 
-def task_list(q):
+def task_list(q, 本店=None):
     typ=(q.get("type") or ["财务人工任务"])[0]
     kw=(q.get("q") or [""])[0].strip()
     stt=(q.get("status") or [""])[0]
     rs=rows("SELECT * FROM task WHERE type=?",typ)
+    # 按门店划范围(用户 10-23 拍;11-11 补齐):工单挂的单据归哪家店,口径在 ops.看得到的工单
+    import ops as _ops
+    _看=_ops.看得到的工单(本店)
+    if _看 is not None: rs=[r for r in rs if r["id"] in _看]
     dr=load_drafts()
     for r in rs: r["draft"]=dr.get(r["id"],{}).get("status")
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["ref_id"] or "")]
@@ -2986,17 +3158,20 @@ def customer_list(q):
       level=[r["v"] for r in rows("SELECT DISTINCT level v FROM customer ORDER BY v")])
     return d
 
-def appt_list_q(q):
+def appt_list_q(q, 本店=None):
     kw=(q.get("q") or [""])[0].strip(); stt=(q.get("status") or [""])[0]; sh=(q.get("shop") or [""])[0]
-    rs=填顾问名(rows("""SELECT a.*, c.name cname FROM appointment a
-               LEFT JOIN customer c ON a.customer_id=c.id"""))
+    片, 参 = _店片(本店, "a")   # 按门店划范围(用户 10-23 拍;11-11 补齐):传了别家店的 shop 也只在本店里筛
+    访, 访参 = _到访片(本店, "a.status", "c", 预约状态_进行中)   # 跨店到访(用户 11-11 拍)
+    rs=填顾问名(rows(f"""SELECT a.*, c.name cname FROM appointment a
+               LEFT JOIN customer c ON a.customer_id=c.id WHERE {片} AND {访}""",*参,*访参))
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["cname"] or "") or kw in (r["customer_id"] or "")]
     if stt: rs=[r for r in rs if r["status"]==stt]
     if sh:  rs=[r for r in rs if r["shop"]==sh]
     rs=_sort(rs,q,{"id","start_ts","status","shop"}) or rs
     d=_page(sorted(rs,key=lambda r:r["start_ts"],reverse=True) if not (q.get("sort")) else rs,q)
     d["facets"]=dict(status=["已预约","已到店","已完成","已取消","已过期","爽约"],
-                     shop=[r["v"] for r in rows("SELECT DISTINCT shop v FROM appointment ORDER BY v")])
+                     shop=([本店] if 本店 is not None else   # 按门店划范围(11-11):下拉只给本店
+                           [r["v"] for r in rows("SELECT DISTINCT shop v FROM appointment ORDER BY v")]))
     return d
 
 def customer_detail(cid):
@@ -3243,14 +3418,15 @@ def calls_of(cid):
                    WHERE a.customer_id=? ORDER BY a.created DESC, a.id DESC""", cid)
 
 
-def lifecycle_page(sel=None):
+def lifecycle_page(sel=None, 本店=None):
     types=["潜在","新客","活跃","高价值","忠诚","休眠","潜在流失","流失"]  # 展示顺序,不是优先级
-    cnt={r["lifecycle"]:r["n"] for r in rows(f"SELECT lifecycle,COUNT(*) n FROM customer WHERE {_人头()} GROUP BY lifecycle")}   # 按人
+    片, 参 = _店片(本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐):计数和名单都只算本店
+    cnt={r["lifecycle"]:r["n"] for r in rows(f"SELECT lifecycle,COUNT(*) n FROM customer WHERE {_人头()} AND {片} GROUP BY lifecycle",*参)}   # 按人
     cur=sel or types[0]
-    cs=rows("""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
+    cs=rows(f"""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
                paid_amount,last_interact,
                idle_days,amount_12m,orders_12m,quarters_12m,matched,manual_lc,manual_at
-               FROM customer WHERE lifecycle=? ORDER BY (manual_lc IS NULL), id LIMIT 60""",cur)
+               FROM customer WHERE lifecycle=? AND {片} ORDER BY (manual_lc IS NULL), id LIMIT 60""",cur,*参)
     填顾问名(cs)
     for c in cs:
         p=c["phone"] or ""; c["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
@@ -3268,9 +3444,11 @@ def lifecycle_page(sel=None):
                 overrides=sum(1 for c in cs if c["overridden"]),
                 recalc="系统每日重算单一主状态;人工调整 30 天内优先并记录原因")
 
-def appt_list():
-    a=rows("""SELECT a.*, c.name cname FROM appointment a
-              LEFT JOIN customer c ON a.customer_id=c.id ORDER BY a.start_ts DESC""")
+def appt_list(本店=None):
+    片, 参 = _店片(本店, "a")   # 按门店划范围(用户 10-23 拍;11-11 补齐)
+    访, 访参 = _到访片(本店, "a.status", "c", 预约状态_进行中)   # 跨店到访(用户 11-11 拍)
+    a=rows(f"""SELECT a.*, c.name cname FROM appointment a
+              LEFT JOIN customer c ON a.customer_id=c.id WHERE {片} AND {访} ORDER BY a.start_ts DESC""",*参,*访参)
     return a
 
 def appt_detail(aid):
@@ -3422,13 +3600,21 @@ class H(BaseHTTPRequestHandler):
             if _warn:
                 self.send_header("x-draft-warnings",str(len(_warn)))
             self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
-        if p=="/api/workbench": return self._send(workbench())
-        if p.startswith("/api/task/"): return self._send(task_detail(p.split("/api/task/")[1]))
+        # ── 按门店划范围(用户 10-23 拍;11-11 补齐)── 下面这批读接口的门店范围一律从登录身份来:
+        # 读跨店角色(总部运营 / 售后 / 财务)= None 看全部;其余只看本店(没挂门店的看不到任何店的数)
+        if p=="/api/workbench": return self._send(workbench(_店范围(self)))
+        if p.startswith("/api/task/"):
+            _tid = p.split("/api/task/")[1]; _本店 = _店范围(self)
+            import ops as _ops
+            _看 = _ops.看得到的工单(_本店)
+            if _看 is not None and _tid not in _看 and rows("SELECT 1 FROM task WHERE id=?", _tid):
+                return self._send(_不是本店(_本店, "这条工单"), 403)
+            return self._send(task_detail(_tid))
         if p=="/api/lifecycle": 
             from urllib.parse import parse_qs
             q=parse_qs(urlparse(self.path).query)
             t=(q.get("t") or [None])[0]
-            return self._send(lifecycle_page(_u(unquote(t)) if t else None))
+            return self._send(lifecycle_page(_u(unquote(t)) if t else None, _店范围(self)))
         from urllib.parse import parse_qs
         Q={k:[_u(unquote(x)) for x in v] for k,v in parse_qs(urlparse(self.path).query).items()}
         # 这两条必须放在 Q 赋值**之后**。第一版插在 do_GET 开头,
@@ -3564,7 +3750,8 @@ class H(BaseHTTPRequestHandler):
                 # 登录闸在上面那份 `要登录的读` 里(2026-10-25 加),**这里不再写第二道** ——
                 # 档位 / 名单类的东西在这个项目里已经有四份各自维护的先例,每多一份就多一次
                 # 「改了一处漏了另一处,而漏的那一处不报错」。口径(筛档 + 计数)在 `ops.队列载荷()`。
-                return self._send(_ops.队列载荷((Q.get("state") or [None])[0]))
+                # 按门店划范围(用户 10-23 拍;11-11 补齐):门店从登录身份给,口径在 ops.看得到的工单
+                return self._send(_ops.队列载荷((Q.get("state") or [None])[0], 本店=_店范围(self)))
             if p=="/api/ops-manual":
                 # 值班台「差评待店长确认」(用户 10-15 拍)—— 和研判队列同一份 queue() 分出来,不另算
                 return self._send(_ops.待店长确认())
@@ -3633,9 +3820,16 @@ class H(BaseHTTPRequestHandler):
             # 现在只给**本页**的人算档案;顶部统计照旧按**全部人**算(一条查询就够,不逐个调)。
             import api as _api, ops as _o, growth as _g
             rl=_o.recheck_list()
+            # 按门店划范围(用户 10-23 拍;11-11 补齐):着装人按他挂的客户档案归店
+            _本店=_店范围(self); _片, _参=_店片(_本店, "c")
+            全=_api._rows(f"SELECT w.id,w.name,w.birthday FROM wearer w LEFT JOIN customer c ON c.id=w.customer_id "
+                          f"WHERE {_片} ORDER BY w.customer_id,w.id", *_参)
+            if _本店 is not None:
+                _有={w["id"] for w in 全}
+                rl=dict(rl, 该复量=[x for x in rl["该复量"] if x["id"] in _有],
+                        需人工确认=[x for x in rl["需人工确认"] if x.get("id") in _有])
             due={x["id"]:x for x in rl["该复量"]}
             超=lambda i: due[i]["已过"]-due[i]["上限"]
-            全=_api._rows("SELECT id,name,birthday FROM wearer ORDER BY customer_id,id")
             今=_api._wc.今天()
             序=sorted([w["id"] for w in 全 if w["id"] in due], key=超, reverse=True) + \
                [w["id"] for w in 全 if w["id"] not in due]
@@ -3666,9 +3860,17 @@ class H(BaseHTTPRequestHandler):
             q={k:[_u(unquote(x)) for x in v] for k,v in _pq(urlparse(self.path).query).items()}
             g=lambda k,d=None:(q.get(k) or [d])[0]
             cs=[x for x in (g("c") or "").split(",") if x]
+            if not g("w"):
+                return self._send({"error": "要给着装人(w=着装人编号)和用件日期(d=YYYY-MM-DD)"}, 400)
+            # 按门店划范围(用户 10-23 拍;11-11 补齐):别家店客户名下的着装人 → 403
+            _本店=_店范围(self)
+            if _本店 is not None:
+                _店=_api._rows("SELECT c.shop FROM wearer w LEFT JOIN customer c ON c.id=w.customer_id WHERE w.id=?", g("w"))
+                if _店 and not _是本店(_本店, _店[0]["shop"]):
+                    return self._send(_不是本店(_本店, "这位着装人"), 403)
             return self._send(_api.plan_for_event(g("w"), g("d"), g("p","PT04"),
                                                   g("m","云锦"), cs, g("s","局部")))
-        if p=="/api/fit-customers": return self._send(backend.fit_customers())
+        if p=="/api/fit-customers": return self._send(backend.fit_customers(_店范围(self)))   # 按门店划范围(用户 10-23 拍;11-11 补齐)
         # 方案页:客户改成输入搜索、选定后列着装人(复审第 4 节 B,用户 10-23 拍)。
         # 登录闸在上面 `要登录的读`;范围(只搜本店)由 `backend.本店范围` 定,和客户读接口同一个函数
         if p=="/api/scheme-customers":
@@ -3705,17 +3907,19 @@ class H(BaseHTTPRequestHandler):
             import scheme as _sch
             return self._send(_sch.options())
         if p=="/api/schemes":
-            return self._send(scheme_list())
+            return self._send(scheme_list(_店范围(self)))   # 按门店划范围(用户 10-23 拍;11-11 补齐)
         if p.startswith("/api/export/"):
             kind=p.split("/api/export/")[1]
-            data=export_csv(kind,Q).encode("utf-8-sig")
+            # 按门店划范围(用户 10-23 拍;11-11 补齐):店里的人只导得出本店;台账记真实导出人(原来恒记「魏欣新」)
+            data=export_csv(kind,Q,actor=_actor_of(self),本店=_店范围(self)).encode("utf-8-sig")
             self.send_response(200)
             self.send_header("content-type","text/csv; charset=utf-8")
             self.send_header("content-disposition",f'attachment; filename="{kind}.csv"')
             self.send_header("content-length",str(len(data))); self.end_headers()
             self.wfile.write(data); return
-        if p=="/api/oplog": return self._send(op_logs())
-        if p=="/api/tasks": return self._send(task_list(Q))
+        # 按门店划范围(用户 10-23 拍;11-11 补齐)
+        if p=="/api/oplog": return self._send(op_logs(本店=_店范围(self)))
+        if p=="/api/tasks": return self._send(task_list(Q, _店范围(self)))
         # ── 客户的读接口要登录,而且按门店划范围(用户 2026-10-23 拍「必须登录」)──
         # 原来写的只要登录、读不要 —— 为了「不登录也能演示」留的口子。而客户详情里有手机号(打了码)、
         # 地址、消费额、预约,**谁都能翻全公司 5 千多位客户**。
@@ -3725,10 +3929,23 @@ class H(BaseHTTPRequestHandler):
             _uc = _me(self)
             if not _uc:
                 return self._send({"error": "请先登录 —— 客户资料要登录才能看", "code": "NO_AUTH"}, 401)
-            _本店 = backend.本店范围(_uc)   # 口径只在 api.本店范围 写一次(方案页搜客户也调它)
+            # 11-11 起和这批读接口用同一个 `_店范围`:财务看全部(用户 11-11 拍);版师 / 工匠没挂门店 → 一个都看不到
+            # (用户 11-11:「可以,他们不用看客户资料」)。原来走 api.本店范围,没挂门店返回空串、
+            # 而这里 `if _本店:` 把空串当成「不加条件」—— **版师、工匠能翻全公司客户**(fail-open)
+            _本店 = _店范围(self)
             if p=="/api/customers2":
                 if _本店: Q = dict(Q, shop=[_本店])   # 自己传了别的店也不认 —— 范围跟登录走,不跟参数走
-                return self._send(customer_list(Q))
+                _d = customer_list(Q)
+                if _本店 and isinstance(_d.get("facets"), dict):
+                    # 筛选下拉也只给本店(11-11 shop_scope_check 抓到:列表已按店筛,下拉还列着三家店和别店导购)
+                    import shop_key as _SK2
+                    with _conn() as _c2:
+                        _片2, _参2 = _SK2.门店条件(_c2, _本店)      # 按门店码筛(店改名不筛空),不按门店串
+                    _本店导购 = {r["name"] for r in rows(f"SELECT name FROM staff WHERE {_片2}", *_参2)}
+                    _d["facets"]["shop"] = [_本店]
+                    if "advisor" in _d["facets"]:
+                        _d["facets"]["advisor"] = [x for x in _d["facets"]["advisor"] if str(x).split(" ")[-1] in _本店导购]
+                return self._send(_d)
             if p=="/api/customers":
                 # 按门店码收范围 —— 店长改过名之后按串筛会**一个客户都看不到**(不报错)
                 import shop_key as _SK
@@ -3746,17 +3963,21 @@ class H(BaseHTTPRequestHandler):
                     return self._send({"error": f"这位客户不是本店的(你是 {_本店}),看不了",
                                        "code": "NOT_YOUR_SHOP"}, 403)
             return self._send(customer_detail(_cid))
-        if p=="/api/appts2": return self._send(appt_list_q(Q))
+        if p=="/api/appts2": return self._send(appt_list_q(Q, _店范围(self)))   # 按门店划范围(用户 10-23 拍;11-11 补齐)
         if p=="/api/shops": return self._send(shop_list(Q))
         if p.startswith("/api/shop/"): return self._send(shop_detail(p.split("/api/shop/")[1]))
-        if p=="/api/staff": return self._send(staff_list(Q))
-        if p=="/api/schedule": return self._send(schedule_list(Q))
-        if p=="/api/orders": return self._send(order_list(Q))
+        # 按门店划范围(用户 10-23 拍;11-11 补齐)
+        if p=="/api/staff": return self._send(staff_list(Q, _店范围(self)))
+        if p=="/api/schedule": return self._send(schedule_list(Q, _店范围(self)))
+        if p=="/api/orders": return self._send(order_list(Q, _店范围(self)))
         # ⚠️ 聊天里点开卡片用的那条 —— **它带身份**,而 `/api/orders` 不带
         #    (那条是后台列表页在用的,返回全部订单)。两条路名字只差一点,
         #    **而一条带权限一条不带** —— 所以这里不复用那个函数。
         if p.startswith("/api/chat-order/"):
-            return self._send(chat_order_detail(p.split("/api/chat-order/")[1], self))
+            # 范围在 chat_order_detail 里按登录身份判(knowledge/order_scope);看不到回 403(按门店划范围,11-11)。
+            # 「不存在」和「不在你范围」形状相同、码也相同 —— 不让这个口变成「这单存不存在」的探测器
+            _r = chat_order_detail(p.split("/api/chat-order/")[1], self)
+            return self._send(_r, 403 if _r.get("看不到") else 200)
         if p=="/api/products": return self._send(product_list(Q))
         if p.startswith("/api/product/"): return self._send(product_detail(p.split("/api/product/")[1]))
         if p.startswith("/api/craft-doc/"): return self._send(craft_doc(p.split("/api/craft-doc/")[1]))
@@ -3773,29 +3994,59 @@ class H(BaseHTTPRequestHandler):
         if p.startswith("/api/page/"): return self._send(page_detail(p.split("/api/page/")[1]))
         if p=="/api/syscodes": return self._send(syscode_list(Q))
         if p=="/api/downloads": return self._send(download_list(Q))
-        if p=="/api/approvals": return self._send(approvals(_me(self)))
+        if p=="/api/approvals": return self._send(approvals(_me(self), _店范围(self)))   # 按门店划范围(用户 10-23 拍;11-11 补齐)
         if p.startswith("/api/approval/"):
             return self._send(approval_detail(unquote(p.split("/api/approval/")[1]),_me(self)))
         if p.startswith("/api/call-status/"):
             out, code = call_status(_me(self), unquote(p.split("/api/call-status/")[1]))
             return self._send(out, code)
-        if p=="/api/approval-list": return self._send(approval_list(Q))
-        if p=="/api/aftersales": return self._send(aftersale_list(Q))
-        if p=="/api/maintains": return self._send(maintain_list(Q))
-        if p=="/api/guide-perf": return self._send(guide_perf(Q))
-        if p=="/api/factory-feed": return self._send(factory_feed_page(Q, _me(self)))
+        # 按门店划范围(用户 10-23 拍;11-11 补齐)
+        if p=="/api/approval-list": return self._send(approval_list(Q, _店范围(self)))
+        if p=="/api/aftersales": return self._send(aftersale_list(Q, _店范围(self)))
+        if p=="/api/maintains": return self._send(maintain_list(Q, _店范围(self)))
+        if p=="/api/guide-perf": return self._send(guide_perf(Q, _店范围(self)))
+        if p=="/api/factory-feed": return self._send(factory_feed_page(Q, _me(self), _店范围(self)))
         if p=="/api/workshop-todo": return self._send(自有工坊待报工(_me(self)))
-        if p.startswith("/api/order-log/"): return self._send(order_log_page(p.split("/api/order-log/")[1]))
+        if p.startswith("/api/order-log/"):
+            _oid = p.split("/api/order-log/")[1]; _本店 = _店范围(self)   # 按门店划范围(用户 10-23 拍;11-11 补齐)
+            _店 = rows("SELECT shop FROM ordr WHERE id=?", (_oid or "").strip())
+            if _店 and not _是本店(_本店, _店[0]["shop"]):
+                return self._send(_不是本店(_本店, "这张订单"), 403)
+            return self._send(order_log_page(_oid))
         if p=="/api/stock-log": return self._send(stock_log_list(Q))
         if p=="/api/kb": return self._send(kb_search(Q))
         if p=="/api/kb-matrix": return self._send(combo_matrix())
-        if p.startswith("/api/aftersale/"): return self._send(aftersale_detail(p.split("/api/aftersale/")[1]))
-        if p.startswith("/api/maintain/"): return self._send(maintain_detail(p.split("/api/maintain/")[1]))
+        # 按门店划范围(用户 10-23 拍;11-11 补齐):别家店的售后 / 维保单 → 403
+        if p.startswith("/api/aftersale/"):
+            _id = p.split("/api/aftersale/")[1]; _本店 = _店范围(self)
+            _店 = rows("SELECT shop FROM aftersale WHERE id=?", _id)
+            if _店 and not _是本店(_本店, _店[0]["shop"]):
+                return self._send(_不是本店(_本店, "这张售后单"), 403)
+            return self._send(aftersale_detail(_id))
+        if p.startswith("/api/maintain/"):
+            _id = p.split("/api/maintain/")[1]; _本店 = _店范围(self)
+            _店 = rows("SELECT shop FROM maintain WHERE id=?", _id)
+            if _店 and not _是本店(_本店, _店[0]["shop"]):
+                return self._send(_不是本店(_本店, "这张维保单"), 403)
+            return self._send(maintain_detail(_id))
         if p=="/api/levels": return self._send(dict(rows=rows("SELECT * FROM level_cfg ORDER BY sort"),
             dist={r["level"]:r["n"] for r in rows(f"SELECT level,COUNT(*) n FROM customer WHERE {_人头()} GROUP BY level")}))   # 按人
         if p=="/api/tags": return self._send(_simple("tag",Q,["code","name"],{"code","n","updated"},["grp","status"],"code"))
-        if p=="/api/appts": return self._send(appt_list())
-        if p.startswith("/api/appt/"): return self._send(appt_detail(p.split("/api/appt/")[1]))
+        # 按门店划范围(用户 10-23 拍;11-11 补齐)
+        if p=="/api/appts": return self._send(appt_list(_店范围(self)))
+        if p.startswith("/api/appt/"):
+            _id = p.split("/api/appt/")[1]; _本店 = _店范围(self)
+            _店 = rows("SELECT a.shop, a.status, c.shop cshop FROM appointment a "
+                       "LEFT JOIN customer c ON c.id=a.customer_id WHERE a.id=?", _id)
+            if _店 and not _是本店(_本店, _店[0]["shop"]):
+                return self._send(_不是本店(_本店, "这条预约"), 403)
+            # 跨店到访(用户 11-11 拍):客户档案在别家店、这次预约已经结束 → 本店不再看
+            if (_店 and _本店 is not None and not _是本店(_本店, _店[0]["cshop"])
+                    and _店[0]["status"] not in 预约状态_进行中):
+                return self._send({"error": f"这位客户的档案在 {_店[0]['cshop'] or '别家店'},"
+                                   f"这次预约已经{_店[0]['status']} —— 跨店到访只在预约进行中时本店可看",
+                                   "code": "NOT_YOUR_SHOP"}, 403)
+            return self._send(appt_detail(_id))
         self._send({"error":"not found"},404)
     def do_POST(self):
         p=_u(unquote(urlparse(self.path).path))

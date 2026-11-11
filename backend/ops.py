@@ -386,7 +386,49 @@ def 待店长确认(行=None):
     )
 
 
-def 队列载荷(state=None):
+def 看得到的工单(本店):
+    """按门店划范围(用户 10-23 拍;11-11 补齐):这家店的人看得到哪些工单 → task_id 集合。
+
+    `本店` 为 None(跨店角色 / 服务端内部调用)→ 返回 None,表示不限。
+    task 表没有门店列,门店从工单挂的单据反查,每种类型一条 JOIN(不逐条查):
+
+        财务人工任务  ref = 押金单 → 押金的客户 → 客户的门店
+        评价差评      rating.task_id → 那张订单的门店
+        售后判责      ref = 维保单 → 维保单的门店
+        客户合并确认  ref = 「客户A|客户B」→ **两位客户都是本店的**才看得到
+
+    ⚠️ 合并确认要「都是本店」而不是「有一位是本店」:跨店重复建档那一类,
+    详情里两份档案的姓名电话地址并排摆着,有一位是别家店的,看一眼就漏了别家店的客户。
+    跨店的合并本来就归总部运营审。认不出门店的(新类型、导入行号这种挂不到客户的)→ 看不到,
+    宁可少看一条,不放一条别家店的出来。"""
+    if 本店 is None:
+        return None
+    import shop_key as _SK
+    with _c() as c:
+        片c, 参c = _SK.门店条件(c, 本店, "c")
+        片o, 参o = _SK.门店条件(c, 本店, "o")
+        片m, 参m = _SK.门店条件(c, 本店, "m")
+        片c, 片o, 片m = 片c or "0", 片o or "0", 片m or "0"
+        看 = {r[0] for r in c.execute(
+            "SELECT t.id FROM task t JOIN deposit d ON d.id=t.ref_id JOIN customer c ON c.id=d.customer_id "
+            f"WHERE t.type='财务人工任务' AND {片c}", 参c)}
+        看 |= {r[0] for r in c.execute(
+            f"SELECT r.task_id FROM rating r JOIN ordr o ON o.id=r.order_id WHERE r.task_id IS NOT NULL AND {片o}", 参o)}
+        看 |= {r[0] for r in c.execute(
+            f"SELECT t.id FROM task t JOIN maintain m ON m.id=t.ref_id WHERE t.type='售后判责' AND {片m}", 参m)}
+        并 = [(r[0], [x for x in (r[1] or "").split("|") if x]) for r in c.execute(
+            "SELECT id, ref_id FROM task WHERE type='客户合并确认'")]
+        全客 = sorted({x for _, xs in 并 for x in xs})
+        本店客 = set()
+        for i in range(0, len(全客), 500):
+            段 = 全客[i:i + 500]
+            本店客 |= {r[0] for r in c.execute(
+                f"SELECT c.id FROM customer c WHERE c.id IN ({','.join('?' * len(段))}) AND {片c}", [*段, *参c])}
+        看 |= {tid for tid, xs in 并 if xs and all(x in 本店客 for x in xs)}
+    return 看
+
+
+def 队列载荷(state=None, 本店=None):
     """研判队列这个口的**完整返回**。`/api/ops-queue` 和运维平台服务端都调它。
 
     为什么要有这个函数:原来这段(取全量 → 筛 AI 能跑的 → 按档过滤 → 配计数 →
@@ -403,6 +445,11 @@ def 队列载荷(state=None):
     **但不许在那边复制一份这个逻辑**。
     """
     所有 = queue()
+    # 按门店划范围(用户 10-23 拍;11-11 补齐)。`本店` 由 HTTP 口按登录身份传;
+    # 运维平台服务端(agentsite/app.py)直接调、不传 → 照旧全量,自动研判不受影响
+    看 = 看得到的工单(本店)
+    if 看 is not None:
+        所有 = [x for x in 所有 if x["task_id"] in 看]
     全 = 研判队列(所有)
     挪 = 待店长确认(所有)
     # 各档计数一起给 —— 页面要在「待办」那档说出「另有 N 条已超时」。

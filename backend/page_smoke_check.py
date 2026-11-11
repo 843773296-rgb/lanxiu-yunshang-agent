@@ -157,6 +157,19 @@ def 带身份的handler():
                           (SQL("SELECT id FROM ordr WHERE kind='标品订单' LIMIT 1"),
                            ("带身份", None))],
 }
+# 按门店划范围(用户 10-23 拍;11-11 补齐):这些入口多了一个 `本店` 参数,带上它走的是另一条 SQL ——
+# 只跑「跨店 / 不带」那一种,本店那条路拼错了也照样绿(11-11 当场撞上:工作台本店那条 JOIN 写反,崩)。
+# 所以每个都再拿一家**真实存在的门店**跑一遍
+_一家店 = SQL("SELECT shop FROM staff WHERE role='店长' AND status='启用' AND shop IS NOT NULL LIMIT 1")
+for _fn, _参 in {
+        "task_list": ({}, _一家店), "appt_list_q": ({}, _一家店), "staff_list": ({}, _一家店),
+        "schedule_list": ({}, _一家店), "order_list": ({}, _一家店), "approval_list": ({}, _一家店),
+        "aftersale_list": ({}, _一家店), "maintain_list": ({}, _一家店), "guide_perf": ({}, _一家店),
+        "factory_feed_page": ({}, None, _一家店), "lifecycle_page": (None, _一家店),
+        "appt_list": (_一家店,), "scheme_list": (_一家店,), "workbench": (_一家店,),
+        "op_logs": (200, _一家店), "approvals": (None, _一家店)}.items():
+    用例[_fn] = 用例[_fn] + [_参]
+用例["export_csv"] = 用例["export_csv"] + [(k, {}, "冒烟", _一家店) for k in ("customers", "orders", "workorders", "oplog")]
 
 # 豁免:不是页面入口,是工具函数。**每一条都要写清为什么**,
 # 否则这张表会变成「懒得写用例就往里扔」的垃圾桶。
@@ -178,6 +191,13 @@ def 带身份的handler():
     "_u":       "解 URL 参数",
     "_eval":    "评测入口的取数,不是页面",
     "_truths":  "truth 表的读口,backend/selftest.py 专门盯它(不许经工具层暴露)",
+    # 按门店划范围(用户 10-23 拍;11-11 补齐)那一批的小工具:都不是页面,
+    # 用上面「带 本店 再跑一遍」的那些用例覆盖到;范围对不对由 customer_read_auth_check 打 HTTP 层验
+    "_店范围":  "从登录身份换门店范围(None = 跨店),不是页面",
+    "_店片":    "按门店筛的 WHERE 片段,不是页面;各列表页带 本店 的冒烟覆盖到",
+    "_是本店":  "单条记录是不是本店,详情页 403 用,不是页面",
+    "_不是本店": "拼 403 的那句话,不是页面",
+    "_actor_of": "从会话取当前登录人的名字(导出记台账用),不是页面",
 }
 
 咬合 = [

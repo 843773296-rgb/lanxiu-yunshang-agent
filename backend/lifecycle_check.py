@@ -187,7 +187,8 @@ def conflicts(c):
                             parents=(ph[0]["height"], ph[1]["height"]))
         v = r.get("靶身高校验") or {}
         if v.get("需人工确认"):
-            out.append(dict(着装人=w["name"], 遗传身高=v["遗传身高"],
+            # id:着装人页按门店划范围时要靠它认人(同名的不止一个;用户 10-23 拍,11-11 补齐)
+            out.append(dict(id=w["id"], 着装人=w["name"], 遗传身高=v["遗传身高"],
                             百分位推算=v["百分位推算成年身高"], 差值=v["差值"]))
     return out
 

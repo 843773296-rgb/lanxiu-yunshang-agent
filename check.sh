@@ -283,6 +283,7 @@ run "表的来路 · 每张表都要能从 rebuild.sh 建出来(本地有≠CI�
 run "订单↔预约链路 · 空值要说清是哪一种空" python3 backend/link_check.py
 run "客户旅程 · 触点归一 + W 型归因(算法跑得通≠算得准)" python3 backend/touchpoint_check.py
 run "数据隔离 · A 顾问看不到 B 顾问(漏了不会报错)" python3 backend/isolation_check.py
+run "读接口按门店划范围 · 店长看不到别家店 / 传别店参数被覆盖 / 别店详情 403 / 总部和财务看全部 / 版师不看客户 / 跨店到访结束后本店看不到(用户 10-23 + 11-11)" python3 backend/shop_scope_check.py
 run "月度复盘 · 验性质不逐例标真值(相对指标标真值会过期)" python3 backend/review_check.py
 run "预约漏斗 · 嵌套/加总/最窄一环(后一环比前一环多=结构错)" python3 backend/funnel_check.py
 run "会员等级/积分/审批 · 边界逐例标真值(差一块钱掉一档是对的)" python3 backend/membership_check.py
