@@ -19560,5 +19560,17 @@
    }
   ],
   "预期红": "道罕见层的题超过"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "交回给人 里的轴一关掉(`if any(\"draft_capability_request\" …)` 改成永假)",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "        if any(\"draft_capability_request\" in str(x) for x in (traj or [])):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "写请求·轴一:调了起草申请单"
  }
 ]
