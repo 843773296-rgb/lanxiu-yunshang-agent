@@ -874,7 +874,12 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
-#### 📍 11-11 13:5x · 第 ③ 步 + 全量门禁在跑(最新)
+#### 📍 11-11 14:xx · 版师「没有权限执行 draft.py」(最新)
+- 用户截图:版师要 PT03 M 打版图,助手照 pattern-draft 技能第一行去跑 `python3 tools/patterndraw/draft.py`,被「模型碰不到执行命令」那道闸拦(**这是红线,不改**)。而给地址那条路 `/pattern/PT03-M.svg` **聊天站不转发(8770 上 404,8760 上 200)**。
+- **已改未提交**:app.py 反代加 `/pattern/`;SKILL.md 出图只给站内链接、写明助手不能跑脚本;draft_check 加两条 + bite_specs 一条(待锁里 bite_run 重放)。要重启 8770 才生效(全量门禁第二遍 bhkfibhxj 在跑,跑完再重启)。
+- 门禁第二遍跑完要做:看 /tmp/gate_mine2.log 退出码 → 绿了提交(app.py、chat_assistants_api.py、workflows_api.py、contract/endpoints.py、openapi.json、api.ts、待办清单.md、SKILL.md、draft_check.py、bite_specs.json)→ bite_run --only draft_check → 重启 8770 → 推。
+
+#### 📍 11-11 13:5x · 第 ③ 步 + 全量门禁在跑
 - **查实**:网页店长助手 11-02 起就读后台选的模型(`assistant_client.默认模型`),欠账清单那条是被后台过期提示「默认模型还没接」误导的。真缺口两处,**已改未提交**:① /internal/chat(访问 API)也走 `默认模型` 定模型(app.py)② 后台三处过期提示删掉(chat_assistants_api.py ×2、workflows_api.py ×1)。
 - **Haiku 5.5 直连复测没结论**:这会儿网络频繁 connection reset,4.5 也 2/4。意图分类仍写死 4.5(runtime/意图.py),别动,等网络稳了再复测。⚠️ 第一次复测我用错了 v1.call 签名、0.0 秒全「成功」—— 假结果,已作废。
 - **CI 连红 7 次**,原因都是今天新功能的连锁(工具表 / SOP / 版师真跑 / 咬合棘轮 / fetch 路由 / worktree 路径),9445b40b 已修四处。**现在本地全量门禁在后台 b8jtabajo 跑(锁里)**,看 /tmp/gate_mine.log 的「被包的命令退出码」;绿了再一起推 ③ 的两处改动 + 后台 e2e。
