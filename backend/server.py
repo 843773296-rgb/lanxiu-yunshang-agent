@@ -545,6 +545,7 @@ def transit(mid, target, to, ctx, actor="魏欣新", me=None):
          "bk-product":"product","bk-activity":"activity","bk-page":"page","bk-download":"download_task",
          "bk-order":"ordr","fe-scheme":"scheme"}[mid]
     key={"bk-shop":"code","bk-product":"spu","bk-activity":"code","bk-page":"code"}.get(mid,"id")
+    _付款单 = None
     with _conn() as c:
         c.execute(f"UPDATE {tbl} SET status=? WHERE {key}=?",(to,target))
         if mid=="bk-task" and to=="完结":
@@ -566,6 +567,8 @@ def transit(mid, target, to, ctx, actor="魏欣新", me=None):
                     "取消":"cancelled_at"}.get(to)
             if _stamp:
                 c.execute(f"UPDATE ordr SET {_stamp}=wnow() WHERE id=?",(target,))
+            if cur=="待付款" and to not in ("取消",):
+                _付款单 = target      # 付款 = 成交:事务提交后判客户归属转移(用户 11-11 拍保护期)
         if mid=="bk-deposit" and to=="退款审批中":
             import refund_write as _rw
             _rw.建表(c); _rw.记发起(c, target, me, _rw._now(), ctx.get("note") or "")
@@ -587,7 +590,18 @@ def transit(mid, target, to, ctx, actor="魏欣新", me=None):
                  [{"字段": "上架状态", "改前": cur, "改后": to,
                    "说明": ctx.get("note") or ""}],
                  ctx.get("source") or "后台")
-    return dict(ok=True,code="OK",frm=cur,to=to,reason=f"已从「{cur}」流转到「{to}」")
+    归属 = None
+    if _付款单:
+        # 客户归属保护期(用户 11-11 拍):在流转的事务之外判,出错不回滚这次流转,但写操作日志
+        try:
+            import ownership_transfer as _ot, worldclock as _wc
+            with _conn() as c:
+                归属 = _ot.成交后(c, _付款单, _wc.今天(), actor)
+            _ot.记日志(归属, actor)
+        except Exception as e:      # noqa: BLE001
+            log_op(actor, "bk-order", target, cur, to, False, "OWNER_CHECK_FAIL", f"付款后判客户归属转移出错:{type(e).__name__}: {e}"[:200], ctx)
+    return dict(ok=True,code="OK",frm=cur,to=to,reason=f"已从「{cur}」流转到「{to}」",
+                **({"客户归属": {k: 归属.get(k) for k in ("转了吗", "理由", "知会任务", "指定导购任务") if 归属.get(k) is not None}} if 归属 else {}))
 
 def adjust_lifecycle(cid,to,reason,actor="魏欣新"):
     r=rows("SELECT lifecycle,matched FROM customer WHERE id=?",cid)

@@ -281,6 +281,18 @@ def confirm_order(d, me):
         确认书 = _oc.生成(c, oid, me, now[:10], 七天确认=dict(时间=now, 账号=me.get("no") or me.get("name")))
     log_op(me["name"], "ordr", oid, "待确认", "待审核", True, "CONFIRM",
            f"{me['name']} 确认下单 {oid}:{话}(付款在确认时已完成)", {"role": me["role"]})
+    # 客户归属保护期(用户 11-11 拍):付款 = 成交,跨店且过了 180 天保护期 → 整户转给接待导购并知会。
+    # **在确认下单的事务之外**:判转移出错不能让已付款的确认回滚;但不静默 —— 写进返回和操作日志
+    归属, 归属出错 = None, None
+    try:
+        import ownership_transfer as _ot, worldclock as _wc2
+        with closing(sqlite3.connect(DB)) as c3, c3:
+            归属 = _ot.成交后(c3, oid, _wc2.今天(), me.get("name") or "系统")
+        _ot.记日志(归属, me.get("name") or "系统")
+    except Exception as e:      # noqa: BLE001
+        归属出错 = f"{type(e).__name__}: {e}"[:160]
+        log_op(me["name"], "ordr", oid, "—", "—", False, "OWNER_CHECK_FAIL",
+               f"确认下单后判客户归属转移出错(确认本身已成功):{归属出错}", {"role": me["role"]})
     # 商机满足扫描(用户 10-12:当场 + 每天兜底)—— 她之前挂着的商机,这一单是不是满足了,派给顾问去问。
     # **在确认下单的事务之外**:扫描出错不能让已付款的确认回滚;但不静默 —— 写进返回和操作日志
     满足提醒, 扫描出错 = [], None
@@ -297,4 +309,6 @@ def confirm_order(d, me):
     return dict(ok=True, code="CONFIRM", 订单=oid, 从="待确认", 到="待审核", 逐件=明细,
                 订单确认书=确认书, 确认书下载=_oc.下载(oid), 商机满足提醒=满足提醒,
                 **({"商机扫描出错": 扫描出错 + "(确认已成功,每天凌晨会兜底再扫)"} if 扫描出错 else {}),
+                **({"客户归属": {k: 归属.get(k) for k in ("转了吗", "理由", "知会任务", "指定导购任务") if 归属.get(k) is not None}} if 归属 else {}),
+                **({"客户归属判定出错": 归属出错} if 归属出错 else {}),
                 reason=f"已确认下单:{话}。付款在确认时已完成,订单进「待审核」;订单确认书已生成,请让顾客看过")

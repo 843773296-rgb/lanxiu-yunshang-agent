@@ -123,7 +123,8 @@ def main():
     print("  " + "=" * 76)
     import tasktypes as tt
     # 10-03 加了「商机提醒」(系统按商机派,挂客户号)→ 5
-    check("客户相关类型数", str(len(tt.CUSTOMER_TYPES)), "5")
+    # 11-11 加了「归属转移」(客户归属过保护期、系统整户转移后派给原导购和两家店长的知会,挂客户号)→ 6
+    check("客户相关类型数", str(len(tt.CUSTOMER_TYPES)), "6")
     check("店铺运营类型数", str(len(tt.OPS_TYPES)), "7")   # 10-21 +经营改进(挂已确认报告,经营复盘闭环);10-23 +补货跟进(挂 SKU,只从库存预警派)
     for t in tt.CUSTOMER_TYPES:
         if tt.ref_of(t) != "customer":
