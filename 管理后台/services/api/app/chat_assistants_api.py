@@ -298,6 +298,62 @@ async def 同步技能清单(project_id: str, cid: str, request: Request, me: �
             "note": "**只改了草稿的技能清单**。线上不变 —— 要生效得出版本、上生产。"}
 
 
+生效项 = (("术语", "glossary_version_id"), ("实体识别", "entity_version_id"), ("路由", "route_version_id"), ("意图", "intent_version_id"))
+
+
+def 生效对比(目标, 实际):
+    """→ [{项, 目标, 实际, 状态}]。纯函数。目标 = 生产版本那一行的四个 id;实际 = 聊天站 /internal/loaded 的返回。
+    状态四种:一致 / 不一致(要重启聊天站)/ 聊天站还没加载 / 拿不到实际 —— **拿不到不等于一致**。"""
+    if not isinstance(实际, dict) or 实际.get("error"):
+        因 = (实际 or {}).get("error") if isinstance(实际, dict) else "聊天站没回"
+        return [{"项": 名, "目标": 目标.get(键), "实际": None, "状态": "拿不到实际", "说明": 因} for 名, 键 in 生效项]
+    if not 实际.get("加载了吗"):
+        return [{"项": 名, "目标": 目标.get(键), "实际": None, "状态": "聊天站还没加载",
+                 "说明": 实际.get("说明") or "聊天站这个进程还没人问过"} for 名, 键 in 生效项]
+    行 = []
+    for 名, 键 in 生效项:
+        要, 有 = 目标.get(键), (实际.get(名) or {}).get("版本id")
+        if 要 == 有:
+            行.append({"项": 名, "目标": 要, "实际": 有, "状态": "一致", "说明": "" if 要 else "两边都没挂"})
+        else:
+            行.append({"项": 名, "目标": 要, "实际": 有, "状态": "不一致",
+                       "说明": "聊天站这几样一个进程只同步一次 —— 重启聊天站才会用上目标那一版"})
+    return 行
+
+
+def _问聊天站加载了什么():
+    """→ dict(聊天站 /internal/loaded 的返回,或 {error})。走 curl + 内部凭证,同 open_api._问聊天站。"""
+    import subprocess as _sp
+    from open_api import _内部凭证, 聊天站
+    凭 = _内部凭证()
+    if not 凭:
+        return {"error": "内部通道没开:本机没有凭证文件(~/.lanxiu/internal-call)"}
+    try:
+        r = _sp.run(["curl", "-sS", "-m", "8", 聊天站.rstrip("/") + "/internal/loaded", "-H", f"X-Lanxiu-Internal: {凭}",
+                     "-w", "\n%{http_code}"], capture_output=True, text=True, timeout=15)
+    except Exception as e:
+        return {"error": f"调聊天站起不来:{type(e).__name__}"}
+    体, _, 码 = r.stdout.rpartition("\n")
+    if 码 != "200":
+        return {"error": f"聊天站回 HTTP {码 or '连不上'}" + (f":{体[:120]}" if 体 else "")}
+    try:
+        return json.loads(体)
+    except ValueError:
+        return {"error": "聊天站回的不是 JSON"}
+
+
+@router.get(前缀 + "/chat-assistants/by-role/{role}/adoption")
+def 生效状态(project_id: str, role: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """「上了生产」和「聊天站用上了」并排(用户 11-11「按你的顺序做」第 ② 步)。目前只有店长助手 task 接了后台配置。"""
+    pv = 生产版本(project_id, role, me)
+    实际 = _问聊天站加载了什么() if role == "task" else {"error": "聊天站只有店长助手(task)读后台配置,别的角色照用代码"}
+    行 = 生效对比(pv, 实际)
+    return {"角色键": role, "目标版本": pv.get("版本号"), "行": 行,
+            "都一致吗": all(x["状态"] == "一致" for x in 行),
+            "聊天站进程启动于": (实际 or {}).get("进程启动于") if isinstance(实际, dict) else None,
+            "note": "目标 = 生产指针指着的那一版;实际 = 聊天站进程里加载的那一版。**拿不到 / 没加载 ≠ 一致**。"}
+
+
 @router.get(前缀 + "/chat-assistants/by-role/{role}/production")
 def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查看有权配置"))):
     """给聊天站拉:这个角色的生产指针指着哪一版、那一版的内容(第 2 步用)。

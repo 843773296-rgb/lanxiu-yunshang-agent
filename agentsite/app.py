@@ -301,6 +301,14 @@ class H(BaseHTTPRequestHandler):
                 html = _注入登录守卫(html)
             html = _注入版本(html)
             self._send(html.encode(), "text/html; charset=utf-8"); return
+        if p == "/internal/loaded":
+            # 给管理后台并排「目标版本 / 实际版本」(11-11):本机 + 内部凭证才收;只读进程缓存,不触发同步
+            import internal_call as _ic
+            ok_i, why_i = _ic.核对(self.headers.get(_ic.凭证头), self.client_address[0])
+            if not ok_i:
+                return self._send({"error": why_i, "code": "INTERNAL_DENIED"}, code=403)
+            import config_adoption as _ca
+            return self._send(_ca.实际加载("task"))
         if p == "/api/my-opinions":
             # 「我的意见」(PRD §3.3):工号只从登录会话取,不从参数取 —— 别人的意见看不到
             # ⚠️ 必须在下面那行「/api/ 一律转给门店后台」之前 —— 11-04 第一版写在它后面,永远轮不到,页面报 not found(真浏览器冒烟抓到的)

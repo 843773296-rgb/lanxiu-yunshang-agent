@@ -8379,12 +8379,27 @@ async function 页_聊天助手(cid) {
   画_聊天助手();
 }
 
+// 「上了生产」和「聊天站用上了」并排(用户 11-11「按你的顺序做」第 ② 步):术语 / 实体识别 / 路由 / 意图
+// 一个进程只同步一次,不重启聊天站就还是旧的 —— 后台页面原来只看得到「上了生产」那一半。**拿不到 / 没加载 ≠ 一致**。
+async function 画_生效状态(角色) {
+  const 框 = $("#c-adopt"); if (!框) return;
+  let d;
+  try { d = await 请求(`${P()}/chat-assistants/by-role/${encodeURIComponent(角色)}/adoption`); }
+  catch (e) { 框.className = "err"; 框.textContent = "生效状态取不到:" + (e.message || e) + " —— 这是没问到,不是一致"; return; }
+  const 色 = { "一致": "ok", "不一致": "bad", "聊天站还没加载": "warn", "拿不到实际": "warn" };
+  框.className = d["都一致吗"] ? "note" : "err";
+  框.innerHTML = `<b>生效状态</b>(目标 = 生产指着的 v${esc(String(d["目标版本"] ?? "—"))};实际 = 聊天站进程里加载的${d["聊天站进程启动于"] ? ",聊天站启动于 " + esc(d["聊天站进程启动于"]) : ""})
+    <table><tr><th>项</th><th>目标</th><th>实际</th><th>状态</th></tr>${(d["行"] || []).map((r) =>
+      `<tr><td>${esc(r["项"])}</td><td><code>${esc(r["目标"] || "没挂")}</code></td><td><code>${esc(r["实际"] || "—")}</code></td>
+       <td><span class="pill ${色[r["状态"]] || "warn"}">${esc(r["状态"])}</span>${r["说明"] ? ` <small>${esc(r["说明"])}</small>` : ""}</td></tr>`).join("")}</table>`;
+}
+
 function 画_聊天助手() {
   const g = 聊态;
   $("#side").innerHTML = `<a class="back" href="#/studio/chat">← 工作室</a>
     <div class="apphead"><span class="ico ch">聊</span><div class="an"><b>${esc(g["名称"])}</b><div class="k">聊天助手</div></div></div>
     ${["编排", "版本", "访问 API"].map((t) => `<a href="#" data-ctab="${t}"${g.Tab === t ? ' class="on"' : ""}>${t}</a>`).join("")}
-    <div class="grp">还没做</div><a class="todo" title="第 2 步:聊天站读后台这一版,并核对「后台这一版 == 模型真收到的」">接到聊天站</a>`;
+    ${g["接上了吗"] ? "" : '<div class="grp">还没做</div><a class="todo" title="第 2 步:聊天站读后台这一版,并核对「后台这一版 == 模型真收到的」">接到聊天站</a>'}`;
   $("#side").querySelectorAll("[data-ctab]").forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); 聊态.Tab = a.dataset.ctab; 画_聊天助手(); };
   });
@@ -8396,7 +8411,9 @@ function 画_聊天助手() {
       <div>${g.Tab === "编排" ? '<button id="c-save" class="pri">保存草稿</button>' : g.Tab === "版本" ? '<button id="c-ver" class="pri">出版本</button>' : ""}</div></div>
     ${g["接上了吗"] ? `<div class="note" id="c-wire" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>`
                      : `<div class="err" id="c-wire" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>`}
+    ${g["接上了吗"] ? '<div class="note" id="c-adopt" style="padding:10px;margin-bottom:12px">生效状态:在问聊天站…</div>' : ""}
     <div id="body"></div>`;
+  if (g["接上了吗"]) 画_生效状态(g["角色键"]);
   if (g.Tab === "编排") { 画_聊天编排(); $("#c-save").onclick = 做_存聊天助手; }
   else if (g.Tab === "访问 API") 画_聊天访问();
   else { 画_聊天版本(); $("#c-ver").onclick = 做_出聊天版本; }

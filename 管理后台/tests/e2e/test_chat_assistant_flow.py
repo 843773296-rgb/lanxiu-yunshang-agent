@@ -265,6 +265,11 @@ def main():
     ck("按角色取生产带出「技能」(import_chat_assistant.py --核对技能 拿它比聊天站现算的)",
        s == 200 and pv.get("版本号") == 号 and pv.get("技能") == 新技能, (s, pv))
 
+    print("\n▸ ⑪ 生效状态(11-11):目标版本 / 实际版本并排;聊天站不读的角色报「拿不到实际」,不许算一致")
+    s, ad = 打("GET", f"{D}/chat-assistants/by-role/e2e_terms/adoption")
+    ck("非店长助手 → 四项都是「拿不到实际」、都一致吗=False、目标版本就是生产那一版",
+       s == 200 and {r["状态"] for r in ad.get("行", [])} == {"拿不到实际"} and ad.get("都一致吗") is False
+       and ad.get("目标版本") == 号 and len(ad.get("行", [])) == 4, (s, ad))
     print(f"\n{'✅' if not 挂 else '❌'} {len(过)} 过 / {len(挂)} 挂" + (f":{' / '.join(挂)}" if 挂 else ""))
     return 1 if 挂 else 0
 
