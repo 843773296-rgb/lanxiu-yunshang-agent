@@ -12,6 +12,83 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟢 11-11 傍晚 · 走 textmatch 的我那 5 份全接完(棘轮 10→15),而**查清了「钉不出」到底是什么意思**
+
+#### 一句话在做什么
+给 `talk / fitting / rating / store_report / refund_sets` 五份判分器对照接上**标点不变量**
+(半角逗号换成全角,判定必须不变),棘轮 `punct_coverage_check.已接下限` 10 → **15**。
+实测样本量:talk 19 / fitting 10 / rating 31 / store_report 25 / refund_sets 13。
+咬合 8 条(含老的 liability/growth/vision 3 条)重放**三关全过**。
+
+#### ⚠️⚠️ 这一轮最值钱的东西:`textmatch` 有**两个粒度**,而这张试纸只管得着一个
+
+源码 `agent/textmatch.py:360` 自己写着,我之前**没读到这一行**就接了五份:
+
+    in_clause / negated   **逗号级**,用 `STOP`(含全角逗号「,」、顿号「、」)
+    in_sentence / _句     **句号级**,用 `HARD = "。!?!?\n\r"` —— **一个逗号都没有**
+
+**标点不变量换的是逗号,所以它只对「逗号级」的判据钉得出东西。**
+
+> **「这张试纸钉不出它」和「这个判据对标点安全」是两件事。**
+> 钉不出只说明:**这张试纸换的那个标点,不在这个判据的边界表里。**
+
+这把「钉不出」从一个谜变成**一条可判定的规则** —— 看它用哪一组函数就知道。
+⚠️ 但**不要**因此把句号级的那些从「该接」里摘出去:接入防的是**粒度被人悄悄改掉**
+(哪天有人把一处从 `in_sentence` 改成 `in_clause`,这条试纸会红)。
+摘掉的那一刻,「它是句号级所以安全」和「它改成逗号级了而没人看见」就又长得一样了。
+已写进 `tools/punct_coverage_check.py` 的 docstring。
+
+#### 对照实验怎么做的(方法,下次照抄)
+
+**在内存里**把全角逗号从 `textmatch.STOP` 摘掉,**不动磁盘上的共享库**,
+然后 `runpy.run_path` 跑每一份 judgetest,比对两轮的「标点不变量」那一行:
+
+    for m in [k for k in sys.modules if k.startswith(("textmatch", "punct_invariant", ...))]:
+        del sys.modules[m]          # ← 必须清,否则第二轮读的是第一轮缓存的 STOP
+    import textmatch as tm; tm.STOP = tm.STOP.replace("，", "")
+
+结果:**只有 talk 当场红**(红在「能让的只有三样,送小件**没选**」—— 否定的作用域靠小句切),
+另外四份一条都不变。**所以试纸是好的,四份是真的钉不出。**
+⚠️ 比改磁盘安全得多:不影响并行会话,也不会忘记改回去。
+
+#### ❌ 别重做:试过并否决的
+
+1. **「给 refund_sets 补一对『X 和 Y 隔着一个逗号』的用例」** —— 前提是
+   「`in_sentence` 按逗号切」,**那个前提是错的**(它按句号切)。用例写完
+   **当场红在我自己的期望值上**,已撤掉。这件事留在 `refund_sets_judgetest.py`
+   的注释里,别再推一遍。
+2. **「把句号级的那几份从棘轮的风险面里摘出去」** —— 见上面那条 ⚠️。
+3. **用 `python3 x.py | tail` 然后 `echo $?` 取退出码** —— `$?` 是 `tail` 的。
+   这一轮又踩了一次(当天第十次同形状)。**正确写法**:
+   `python3 x.py > log 2>&1; rc=$?; tail log; echo "rc=$rc"`。
+
+#### 用户 11-11 傍晚拍的四件(都已落档到 `intent/`)
+
+1. **那三道写请求题的判定规则** = **两轴并联**(调了 `draft_capability_request` → 过;
+   没调但说清自己做不了 → 也过;两样都没有 → 挂)。选型卡 `intent/verdict-rule-selection.md`。
+   ⚠️ **还没写判据** —— 这是下一步第一个动作之后的事。
+2. **罕见层 96 道**(每面 16),**脱离 60/30/10 的比例约束**;
+   各面**封存 5 道**(共 30)、平时跑 11 道(共 66);日常再补 22 道把日常:偶发调成 2:1。
+   总集 459,还要写 **110 道**。方法卡 `intent/rare-tier-method.md`。
+   ⚠️ 这一拍**覆盖了**他半小时前拍的「各留 2 道封存」(那是按 40 道算的)。
+   ⚠️ 算过:40 道→96 道,Wilson 区间只从 27pp 收到 18pp ——
+   **补题买的是覆盖面,不是分数精度。百分比门槛在任何题量上都不该设。**
+3. **全量门禁跑在 `rebase` 之后** —— 已写进 `CLAUDE.md` 第 5 节 `1.5` 条(用户点名要写)。
+   依据是 Not Rocket Science Rule:**测的必须就是要落地的那份代码**。
+   ⚠️ 主检出那边要 `git pull` 之后才读到这条新规矩。
+4. 罕见层的时间节点:**周跑**(挂夜跑)+ **14 天没跑就在门禁里红**(失效闸,读结果文件的
+   `跑于` 字段)+ 三件事当场强制跑(换模型 / 库重建 / 那六个业务面口径改了)。
+   ⚠️ 失效闸**还没实现**。
+
+#### 上次停在哪
+五份接完、咬合 8 条三关全过、受影响面四项检查(bite_check / vocab_check /
+selftest_registry_check / punct_coverage_check)全 rc=0。**还没提交。**
+
+#### 下一步第一个动作
+`git fetch` + rebase → **然后**跑全量门禁(新规矩,见 CLAUDE.md 1.5)→ 绿了立刻推。
+⚠️ **并行会话 15:46 起在跑「全量门禁(客户归属保护期 第二遍)」**,我这一轮等锁等了 8 分钟。
+推完接着做:① 按两轴并联写那条判据 + 咬合 ② 罕见层失效闸 ③ 写那 110 道题。
+
 ## 🟢 11-11 午后② · 再接三份派生器(棘轮 7→10),而**这三份试纸钉不出** —— 那个对照实验是重点
 
 **一句话在做什么**:上一批已推(d7d6cb87)。这一批接了售后判责 / 成长推算 / 识图
@@ -17551,21 +17628,31 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-11 12:27。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-11 16:03。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `w75` |
-| 最新提交 | 087f8b79 · 2026-11-11 · 评测判据的三类空转:角色没有那个工具 / 真校验器不认识那个动作 / 判据的模式串写死半角标点 |
-| 代码量 | 1042 个 Python 文件 / 193533 行(不含 .venv) |
+| 最新提交 | 13834b82 · 2026-11-11 · 交接:接三份派生器时那个对照实验(「试纸钉不出」和「试纸失效」要分开),以及退出码被管道吞掉的第七次 |
+| 代码量 | 1042 个 Python 文件 / 193873 行(不含 .venv) |
 | 验收 | `./check.sh` 共 395 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
+M CLAUDE.md
+ M HANDOFF.md
+ M agent/fitting_eval_judgetest.py
+ M agent/rating_eval_judgetest.py
+ M agent/refund_sets_judgetest.py
+ M agent/store_report_eval_judgetest.py
+ M agent/talk_eval_judgetest.py
+AM intent/push-gate-after-rebase.md
+AM intent/rare-tier-method.md
+AM intent/verdict-rule-selection.md
+ M tools/bite_specs.json
+ M tools/punct_coverage_check.py
 ?? .feynman/bite-all-20261016.log
 ?? .feynman/nightly-eval.log
 ?? ".feynman/\345\205\250\351\241\271\347\233\256\345\277\253\347\205\247-20261109.md"
@@ -17575,11 +17662,11 @@ M agentsite/evals/funnel.jsonl
 **最近 5 次提交:**
 
 ```
-087f8b79 评测判据的三类空转:角色没有那个工具 / 真校验器不认识那个动作 / 判据的模式串写死半角标点
-fdac3347 交接:目标 / 实际版本并排上线、CI 修复、两条教训
-17f7bbe5 修 CI:确认卡的请求地址是拼出来的、三份新检查没带咬合记录
-d3914443 后台店长助手详情页并排「目标版本 / 实际版本」:上了生产 ≠ 聊天站用上了
-6b0e6c83 交接:确认卡、商品图、能力申请单三件上线;未验证项与下一步
+13834b82 交接:接三份派生器时那个对照实验(「试纸钉不出」和「试纸失效」要分开),以及退出码被管道吞掉的第七次
+fbbe2a68 标点不变量再接三份判分器对照(棘轮 7→10):而这三份**试纸钉不出** —— 如实记,并在同一轮里打了对照
+872ffa2a 交接:一批推完(打版图 / 弹窗 / API 模型 / 契约),合并 bite_specs 的坑,下一步
+c0d70938 版师拿得到打版图、看图都在当前页弹窗;访问 API 也按后台选的模型;两个新接口登记契约
+d7d6cb87 交接:ops 全量跑成的读法、派生器自己漏了中文句号、评测环境闸,以及 rebase 合并咬合规格的键不唯一
 ```
 <!--/AUTO-->
 ## 一句话在做什么
