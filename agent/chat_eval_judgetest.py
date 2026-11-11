@@ -75,6 +75,12 @@ for cid, want, answer, traj, note in CASES:
     # 而那句任何一条对照错了都会印:**红了但不知道是哪一条**,第三关等于空的。
     print(f"{'✅' if ok else '❌'} {cid} 应判{'对' if want else '错':２s} 实判{'对' if got else '错':２s}"
           f"  {note}" + ("" if ok else f"   ← 判据说:{why}"))
+# 11-11:工具报错时判挂是对的,但理由要说「判据取不到期望值」,不能写成像模型答错了(原来印「工具返回「None」」)
+for 判 in (ce.g_combo("不存在的工艺", "MT01"), ce.g_combo_disclose("不存在的工艺", "MT01")):
+    got, why = 判(dict(answer="可以做。", trajectory=KB))
+    ok = (got is False) and ("取不到期望值" in why)
+    if not ok: bad += 1
+    print(f"{'✅' if ok else '❌'} 工具报错 → 判挂且理由是「判据取不到期望值」" + ("" if ok else f"   ← 实判 {got}:{why}"))
 print("=" * 84)
 if bad:
     print(f"❌ 判分器有 {bad} 处不符预期 —— 判分器本身不可信,评测结果不作数")

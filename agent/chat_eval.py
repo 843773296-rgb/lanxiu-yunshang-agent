@@ -127,15 +127,14 @@ def 报了库里的名词(text):
             if n in 句: return n
     return None
 
-def combo_expect(craft, material):
-    """期望值从库里读,不是我手写的"""
-    v = api.kb_combo(craft, material)
-    return v.get("verdict")
-
 # ── 判分器 ──────────────────────────────────────────────────────────
 def g_combo(craft, material):
     def g(r):
-        want = combo_expect(craft, material)
+        v = api.kb_combo(craft, material)
+        # 工具报错时 .get("verdict") 是 None —— 判挂是对的,但理由不能写成「工具返回 None」像是模型答错了(11-11)
+        if not isinstance(v, dict) or v.get("error"):
+            return False, f"判据取不到期望值(kb_combo 报错:{str((v or {}).get('error') if isinstance(v, dict) else v)[:80]})—— 不是模型的错"
+        want = v.get("verdict")
         got = conclude(norm(r["answer"]))
         if not called_kb(r["trajectory"]):
             n = 报了库里的名词(r["answer"])
@@ -189,6 +188,8 @@ def g_combo_disclose(craft, material):
         if not called_kb(r["trajectory"]):
             return False, "轨迹:一次知识库工具都没调就作答"
         cell = api.kb_combo(craft=craft, material=material)
+        if not isinstance(cell, dict) or cell.get("error"):
+            return False, f"判据取不到期望值(kb_combo 报错:{str((cell or {}).get('error') if isinstance(cell, dict) else cell)[:80]})—— 不是模型的错"
         v, rule = cell.get("verdict"), (cell.get("rule") or "")
         # ① 结论要对得上(结论归类沿用 conclude(),不靠同义词表)
         said = conclude(t)
