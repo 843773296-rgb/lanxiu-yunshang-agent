@@ -235,7 +235,7 @@ def unassigned(shop=None):
     # 每条现算一个建议。**现算不存库** —— 存下来的建议会变味(人离职了、
     # 负载变了),而且从存下到店长确认之间,库里那张单看起来已经有人负责了。
     for r in out:
-        r["建议"] = suggest(r)
+        r["建议"], r["提不出的原因"] = suggest_why(r)
     return out
 
 
@@ -249,7 +249,42 @@ def _busy(no, start, end):
 
 
 def suggest(task):
-    """给一张没派出去的客户任务提一个人选,**并且说清楚凭什么**。
+    """给一张没派出去的客户任务提一个人选 —— 提不出返回 None。要知道**为什么**提不出,用 suggest_why。"""
+    return suggest_why(task)[0]
+
+
+def _排班过滤(pool, shop, start, end):
+    """排班层的硬过滤(用户 11-11 夜:派单要查在不在班,和店长排班一起做)。
+    → (留下的人, 排除了谁及原因, 整周没发布时的原因或 None)。没有时段的任务不过滤(判不了)。
+
+    · 那一周本店排班**没发布**(没排 / 只有草稿)→ 不出推荐(用户拍:提示先排班,店长可手动指定)
+    · 那个时段不在班(休息 / 请假 / 早班的人晚上 / 草稿)→ 出局,这是 D2「时段有空」硬条件的另一半
+    · 那天被预留给点名的客户了 → 出局
+    """
+    if not start:
+        return pool, {}, None
+    import roster as _R, datetime as _dt
+    d = _dt.date.fromisoformat(start[:10])
+    周一 = (d - _dt.timedelta(days=d.weekday())).isoformat()
+    发了, _ = _R.一周排了吗(shop, 周一, db=DB)      # 显式带库:roster 的默认 db 在定义时就定死了
+    if not 发了:
+        return [], {}, (f"{周一} 那一周本店的排班还没发布(没排或只有草稿)—— 不出推荐:"
+                        f"按没发布的排班推荐,店长一改,单就挂在错的人身上。请先把那周的班排好发布;"
+                        f"急的话可以手动指定一个人")
+    留, 出局 = [], {}
+    for p in pool:
+        ok, 码, why = _R.时段在班(p["no"], start, end or start, db=DB)
+        if not ok:
+            出局[p["no"]] = why; continue
+        占, why2 = _R.时段被预留了吗(p["no"], start, db=DB)
+        if 占:
+            出局[p["no"]] = why2; continue
+        留.append(p)
+    return 留, 出局, None
+
+
+def suggest_why(task):
+    """给一张没派出去的客户任务提一个人选,**并且说清楚凭什么**。→ (建议 dict 或 None, 提不出的原因)
 
     依据按强弱排,强的先用 —— 强弱不是修辞,是「店长凭这条能不能一眼点头」:
 
@@ -274,10 +309,18 @@ def suggest(task):
     pool = _rows(f"SELECT no,name,adv_code FROM staff "
                  f"WHERE role='顾问' AND status='启用' AND {_片 or '1=0'} ORDER BY no", *_参)
     if not pool:
-        return None
+        return None, "这个门店没有在职顾问可派"
 
     cid = task.get("customer_id")
     start, end = task.get("start_ts"), task.get("end_ts")
+    # 排班层先过:**不在班的人不进候选**(D2「时段有空」是硬条件,排班是它的另一半)
+    pool, 不在班, 没发布 = _排班过滤(pool, shop, start, end)
+    if 没发布:
+        return None, 没发布
+    if not pool:
+        名 = {r["no"]: r["name"] for r in _rows("SELECT no,name FROM staff")}
+        return None, ("那个时段本店没有在班的顾问 —— " +
+                      ";".join(f"{名.get(k, k)}:{v}" for k, v in list(不在班.items())[:5]))
 
     # ① 接触史:这个客户以前被谁服务过(日程 + 跟进都算)
     seen = {}
@@ -311,8 +354,11 @@ def suggest(task):
         why.append(f"这个客户以前由 {pick['name']} 接待过 {n} 次 —— 他知道上次聊到哪儿")
     else:
         why.append(f"这个客户没有接触史,{pick['name']} 手上活最少({load[pick['no']]} 件在办)")
+    if 不在班:
+        名 = {r["no"]: r["name"] for r in _rows("SELECT no,name FROM staff")}
+        why.append("不在班、已排除:" + "、".join(名.get(k, k) for k in 不在班))
     if not free:
-        why.append("⚠️ 这个时间段**所有在职顾问都有别的活**,选出来的这位也冲突,请确认能不能挪")
+        why.append("⚠️ 这个时间段**在班的顾问都有别的活**,选出来的这位也冲突,请确认能不能挪")
     elif clash:
         who = [p["name"] for p in pool if clash.get(p["no"])]
         why.append(f"{'、'.join(who)} 在这个时间段已经有别的安排,已排除")
@@ -321,7 +367,8 @@ def suggest(task):
                    f"**这一条是按工号先后挑的,不是算出来的**,请你来定")
 
     return dict(no=pick["no"], name=pick["name"], why=why,
+                不在班={k: v for k, v in 不在班.items()},
                 load=load[pick["no"]], history=n,
                 alts=[dict(no=p["no"], name=p["name"], load=load[p["no"]],
                            history=seen.get(p["no"], 0),
-                           busy=bool(clash.get(p["no"]))) for p in cands[1:4]])
+                           busy=bool(clash.get(p["no"]))) for p in cands[1:4]]), None

@@ -3338,7 +3338,7 @@ def dispatch_pool():
                                           else "这个客户没有归属顾问"),
                         "建议人选": (sg or {}).get("name"),
                         "建议工号": (sg or {}).get("no"),
-                        "建议依据": (sg or {}).get("why"),
+                        "建议依据": (sg or {}).get("why") or ([r.get("提不出的原因")] if r.get("提不出的原因") else None),
                         "备选": [f"{a['name']}(在办 {a['load']})" for a in (sg or {}).get("alts", [])]}))
     return dict(条数=len(out), 说明="**建议不是决定** —— 要店长确认才算派出去", 待分配=out)
 
@@ -3427,10 +3427,11 @@ def dispatch_task(task_id, assignee=None):
     if not to:
         t = _rows("SELECT * FROM schedule WHERE id=?", (task_id or "").strip())
         if not t: return dict(error=f"没有任务 {task_id}")
-        sg = booking.suggest(t[0])
+        sg, 为什么 = booking.suggest_why(t[0])
         if not sg:
-            return dict(error="这个门店没有在职顾问可派,也提不出建议 —— "
-                              "**硬凑一个人出来比说「提不出」有害得多**")
+            # 原因要照实说:「排班没发布」「那个时段没人在班」和「店里没顾问」下一步完全不同(11-11 夜)
+            return dict(error=f"提不出建议:{为什么} —— **硬凑一个人出来比说「提不出」有害得多**;"
+                              f"要派的话请点名派给谁")
         to = sg["no"]
     else:
         pool = tasks.my_staff(me)
@@ -3440,7 +3441,19 @@ def dispatch_task(task_id, assignee=None):
                         可派的人=[f"{p['name']}({p['no']})" for p in pool])
         to = hit[0]["no"]
     r = tasks.dispatch(dict(id=task_id, assignee_no=to), me)
-    if r.get("ok"): _agent_log(me, "DISPATCH", r.get("reason", ""))
+    if r.get("ok"):
+        _agent_log(me, "DISPATCH", r.get("reason", ""))
+        if assignee:
+            # 手动指定放行(用户 11-11 夜:排班没发布时不出推荐,店长可手动指定),但不在班要说一声
+            try:
+                import roster as _R
+                t = _rows("SELECT start_ts,end_ts FROM schedule WHERE id=?", (task_id or "").strip())
+                if t and t[0].get("start_ts"):
+                    ok, _, why = _R.时段在班(to, t[0]["start_ts"], t[0].get("end_ts") or t[0]["start_ts"])
+                    if not ok:
+                        r["排班提醒"] = f"派是派了,但按排班 {why}"
+            except Exception:       # noqa: BLE001 —— 提醒取不到不影响已经派出去的单
+                pass
     return r
 
 

@@ -561,10 +561,9 @@ def dispatch_batch(items, me):
             him = allowed.get(who) or by_name.get(who)
             if not him: bad.append(f"{tag}:派给谁没写对(「{who}」)"); continue
         else:
-            sg = booking.suggest(t)
+            sg, 为什么 = booking.suggest_why(t)
             if not sg:
-                bad.append(f"{tag}:{sid} 没给人选,agent 也提不出建议 —— "
-                           f"这个门店没有在职顾问可派"); continue
+                bad.append(f"{tag}:{sid} 没给人选,agent 也提不出建议 —— {为什么}"); continue
             him = allowed.get(sg["no"])
             if not him: bad.append(f"{tag}:建议的 {sg['name']} 不在可派范围"); continue
         plan.append(dict(i=i, t=t, him=him,

@@ -8,8 +8,9 @@
   ④ 改班撞单:没确认 → 只回预览、一行不写;确认 → 照发 + 给店长建「待改派」任务;
      撞单只卡「要人在场」的类型(回电不算撞)
   ⑤ 合规拦发布:一周没排休息 / 跨周连上超过 6 天
+  ⑦ 派单接排班:休息 / 不在时段的人不推荐;那周没发布(只有草稿 / 一格没排)不出推荐、说清原因
   ⑥ 真库一行没动(日志带 db 参数写副本;不带的话会往真库塞假痕迹 —— oplog.log_op 那段注释)
-  ⑦ 口径里「要人在场的类型」和「待改派」都在 tasktypes 里有登记(名字漂了撞单会静默失效)
+  ⑧ 口径里「要人在场的类型」和「待改派」都在 tasktypes 里有登记(名字漂了撞单会静默失效)
 """
 import os
 import sqlite3
@@ -32,6 +33,8 @@ G, R_, D = "\033[32m", "\033[31m", "\033[0m"
     ("查在不在班时草稿优先于已发布(店长一改草稿,人就变成不可派)", "③ 🔑 改了草稿还没发布 → 仍按已发布的早班算(在班)"),
     ("有撞单也不等确认,直接发布", "④ 有撞单、没确认 → 不写,回清单"),
     ("一批里有错的条目照样写进对的那些(写一半)", "① 混进一个别店的人 → 整批不写"),
+    ("派单建议不过排班这一层(休息的人照样被推荐)", "⑦ 那天休息的那位被排除、不会被推荐"),
+    ("排班没发布的周照样推荐(按「人人有空」推)", "⑦ 那周一格没排 → 不推荐(不当成「人人有空」)"),
 ]
 坏 = []
 验了 = [0]
@@ -155,6 +158,31 @@ def _跑(db):
         林名 = c.execute("SELECT name FROM staff WHERE no=?", (林,)).fetchone()[0]
     连 = [v for v in 预.get("违规", []) if v.startswith(林名) and "连上" in v]
     ck("⑤ 跨周连上超过 6 天 → 违规(每周休一天那条是满足的)", bool(连), 预.get("违规"))
+
+    # ⑦ 派单接排班(用户 11-11 夜:派单要查在不在班;没发布的周不出推荐)—— 真调 booking.suggest_why
+    import booking
+    旧 = booking.DB
+    booking.DB = db
+    try:
+        店 = "SH001 静安旗舰店"
+        休的 = 人们[3 % len(人们)] if len(人们) > 3 else None      # 一周里 j%7==3 的那位 12-03 休息
+        sg, 为什么 = booking.suggest_why(dict(shop=店, customer_id=None,
+                                             start_ts="2026-12-03 11:00", end_ts="2026-12-03 12:00"))
+        ck("⑦ 已发布那周、早班时段 → 提得出人选", bool(sg), 为什么)
+        ck("⑦ 那天休息的那位被排除、不会被推荐", bool(sg) and 休的 and sg["no"] != 休的 and 休的 in sg.get("不在班", {}),
+           (sg or {}).get("不在班"))
+        sg, 为什么 = booking.suggest_why(dict(shop=店, customer_id=None,
+                                             start_ts="2026-12-03 17:00", end_ts="2026-12-03 18:00"))
+        ck("⑦ 那个时段全员早班已下班 → 不推荐,原因说「没有在班」", sg is None and "没有在班" in (为什么 or ""), (sg, 为什么))
+        sg, 为什么 = booking.suggest_why(dict(shop=店, customer_id=None,
+                                             start_ts="2026-12-09 11:00", end_ts="2026-12-09 12:00"))
+        ck("⑦ 那周只有草稿(发布被拒)→ 不推荐,原因说「还没发布」", sg is None and "还没发布" in (为什么 or ""), (sg, 为什么))
+        sg, 为什么 = booking.suggest_why(dict(shop=店, customer_id=None,
+                                             start_ts="2026-12-16 11:00", end_ts="2026-12-16 12:00"))
+        ck("⑦ 那周一格没排 → 不推荐(不当成「人人有空」)", sg is None and "还没发布" in (为什么 or ""), (sg, 为什么))
+        ck("⑦ suggest() 和 suggest_why() 是同一个结果", booking.suggest(dict(shop=店, start_ts="2026-12-16 11:00")) is None)
+    finally:
+        booking.DB = 旧
 
 
 if __name__ == "__main__":

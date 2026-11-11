@@ -19656,5 +19656,29 @@
    }
   ],
   "预期红": "① 混进一个别店的人 → 整批不写"
+ },
+ {
+  "script": "backend/roster_write_check.py",
+  "改坏": "派单建议不过排班这一层(休息的人照样被推荐)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "    pool, 不在班, 没发布 = _排班过滤(pool, shop, start, end)\n",
+    "new": "    不在班, 没发布 = {}, None\n"
+   }
+  ],
+  "预期红": "⑦ 那天休息的那位被排除、不会被推荐"
+ },
+ {
+  "script": "backend/roster_write_check.py",
+  "改坏": "排班没发布的周照样推荐(按「人人有空」推)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "    if not 发了:\n        return [], {}, (",
+    "new": "    if False and not 发了:\n        return [], {}, ("
+   }
+  ],
+  "预期红": "⑦ 那周一格没排 → 不推荐(不当成「人人有空」)"
  }
 ]
