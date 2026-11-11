@@ -39,6 +39,8 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("让 rating.处理方式能不能用() 不比批准人和处理人是不是同一个",
      "批准人填成处理人自己 → 拒"),
     ("让 customer_edit_rating() 在差评改好评时把工单关掉", "差评改好评 → 工单不撤,还在待处理"),
+    ("customer_rate() 不核标签,顾客给什么存什么(「面料手感好」也进来了)",
+     "不认识的标签(「面料手感好」挂不上四个分项)→ 整份退回,不静默丢掉"),
     ("在 seed_rating 的建表里加一句 ALTER,给 rating 加个 status 列",
      "rating 表没有 status 列"),
     ("把 seed_rating._建() 里的补列去掉", "已有的老表补完列,和从零建的列一致"),
@@ -186,8 +188,19 @@ def run(T):
     ck("0 星 → 拒", rt.customer_rate(oid, 尾, 0)["code"] == "BAD_STAR")
     ck("半星 → 拒", rt.customer_rate(oid, 尾, 4.5)["code"] == "BAD_STAR")
     ck("还是一行都没写进去(被拒的都没落库)", 没多(), f"基线 {基线} 条")
-    r = rt.customer_rate(oid, 尾, 5, "导购很细心")
+    # 分项 / 标签(11-12 接写口):不合法的整份退回、一行不写
+    ck("分项打 6 星 → 整份退回", rt.customer_rate(oid, 尾, 5, 分项={"准时": 6})["code"] == "BAD_SUBSTAR")
+    ck("不认识的分项(「面料」)→ 整份退回", rt.customer_rate(oid, 尾, 5, 分项={"面料": 5})["code"] == "BAD_SUBSTAR")
+    ck("不认识的标签(「面料手感好」挂不上四个分项)→ 整份退回,不静默丢掉",
+       rt.customer_rate(oid, 尾, 5, 标签=["准时交付", "面料手感好"])["code"] == "BAD_TAG")
+    ck("图片超过 9 个 → 整份退回", rt.customer_rate(oid, 尾, 5, 媒体=[{"类型": "图片", "地址": f"x{i}"} for i in range(10)])["code"] == "BAD_MEDIA")
+    ck("分项 / 标签被拒时也一行没写", 没多(), f"基线 {基线} 条")
+    r = rt.customer_rate(oid, 尾, 5, "导购很细心", 分项={"准时": 5, "导购": 4, "合身": None}, 标签=["准时交付", "导购耐心"], 匿名=True)
     ck("签收之后 5 星 → 收下", r["ok"], r.get("reason"))
+    行0 = c.execute("SELECT star_ontime, star_fit, star_service, star_package, tags, anonymous FROM rating WHERE pkg_id=?", (包,)).fetchone()
+    ck("分项写进去了;没评的(合身 / 包装)存成「没评」(NULL),不是 0 星",
+       行0 and (行0[0], 行0[1], 行0[2], 行0[3]) == (5, None, 4, None), tuple(行0) if 行0 else None)
+    ck("标签按顾客点的原词存下,匿名记下了", 行0 and "准时交付" in (行0[4] or "") and 行0[5] == 1, tuple(行0) if 行0 else None)
     行 = c.execute("SELECT * FROM rating WHERE pkg_id=?", (包,)).fetchone()
     ck("评价落在包裹上,带着单号和客户", 行 and 行["order_id"] == oid and 行["customer_id"] == o["customer_id"])
     ck("来源记的是顾客小程序(顾问不能替顾客评)", 行["src"] == rt.来源_顾客)

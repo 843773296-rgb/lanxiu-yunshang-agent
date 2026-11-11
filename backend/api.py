@@ -2996,7 +2996,9 @@ def bad_ratings(status="待处理"):
     sql = ("""SELECT t.id 工单, t.status 状态, r.pkg_id 包裹, r.order_id 订单, r.star 星,
                      r.note 顾客说, r.rated_at 评于, r.star_before 原来几星,
                      r.handled_at 处理于, r.handle_note 处理记录, o.shop 门店,
-                     k.name 客户
+                     k.name 客户, r.star_ontime 准时, r.star_fit 合身, r.star_service 导购,
+                     r.star_package 包装, r.tags 标签, r.anonymous 匿名, r.followup_note 追评,
+                     r.followup_at 追评于
                 FROM task t JOIN rating r ON r.task_id=t.id
                 LEFT JOIN ordr o ON o.id=r.order_id
                 LEFT JOIN customer k ON k.id=r.customer_id
@@ -3004,9 +3006,24 @@ def bad_ratings(status="待处理"):
     a = () if status in (None, "全部") else (status,)
     rs = _rows(sql + " ORDER BY r.rated_at DESC LIMIT 60", *a)
     if 本店: rs = [x for x in rs if x.get("门店") == 本店]
+    import json as _json
     for x in rs:
         if x.get("原来几星") is not None:
             x["⚠️ 顾客改过"] = f"原来 {x['原来几星']} 星,后来改成 {x['星']} 星 —— **清单不撤**"
+        # 分项 / 标签 / 追评(11-12 接):**没评的分项不出现**(没评 ≠ 0 星);标签是顾客点的原词
+        分 = {k: x.pop(k) for k in ("准时", "合身", "导购", "包装")}
+        分 = {k: v for k, v in 分.items() if v is not None}
+        if 分: x["分项"] = 分
+        try:
+            if x.get("标签"): x["标签"] = _json.loads(x["标签"])
+        except ValueError:
+            pass
+        if x.get("匿名"):
+            x["匿名"] = "顾客选了匿名 —— **只对外不露名,店长照样看得到是谁**,照常跟进"
+        else:
+            x.pop("匿名", None)
+        if x.get("追评"):
+            x["追评"] = f"{x['追评']}(穿过之后说的,不带星、不改原来的星级)"
     return _nz(dict(条数=len(rs), 按什么算差评=f"≤{_R.差评线} 星(业务 2026-09-27 定,不是常见的 ≤2)",
                     关掉要什么="**必须写处理记录** —— 「看过了」不算处理完",
                     差评=rs))

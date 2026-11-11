@@ -1760,7 +1760,7 @@ async function scheduleList(){
    <div class="card">
     <div class="form">${fld("任务号/客户","q",st,null,"请输入")}
       ${fld("任务类型","type",st,d.facets.type)}${fld("状态","status",st,d.facets.status)}${acts()}</div>
-    <div class="ops"><button class="btn sol" disabled title="新建日程 · 本期未实现">+ 新建日程</button></div>
+    <div class="ops"><button class="btn sol" data-new-sch>+ 新建日程</button></div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:110px">任务号</th><th style="width:110px">类型</th><th>客户</th>
      <th style="width:100px">顾问</th><th style="width:170px">起止时间</th>
@@ -1789,6 +1789,30 @@ async function scheduleList(){
   M.querySelectorAll("[data-cxl]").forEach(e=>e.onclick=()=>
     modal("取消日程任务",[{k:"reason",type:"text",req:1,label:"取消原因(必填)",ph:"例如:客户改期"}],
       v=>doTransit("bk-task",e.dataset.cxl,"取消",{reason:v.reason},scheduleList)));
+  // 新建日程(11-12):走后端派任务的写口 /api/task-assign —— 权限、能派给谁、类型挂什么单据全在后端判,
+  // 页面只摆后端给的类型(只列「手工能派」的:补货跟进从库存预警派、归属转移 / 待改派是系统派的知会)
+  M.querySelector("[data-new-sch]").onclick=async()=>{
+    const [类, 人]=await Promise.all([get("/api/task-types"),get("/api/my-staff")]);
+    if(!(人.rows||[]).length){ res(false,"ERR","只有店长及以上能派任务 —— 你的账号没有可派的人"); return; }
+    const 能派=(类.rows||[]).filter(t=>t.手工能派);
+    const 名到类={}; 能派.forEach(t=>名到类[t.name]=t);
+    modal("新建日程(派一条任务)",[
+      {k:"type",type:"select",label:"任务类型",req:1,opts:能派.map(t=>t.name)},
+      {k:"who",type:"select",label:"派给谁",req:1,opts:(人.rows||[]).map(x=>`${x.name} ${x.no}`)},
+      {k:"ref",label:"挂哪张单(按类型:客户号 / 订单号 / 维保单号…;店内的事不填)",ph:"例如 C10001"},
+      {k:"start",it:"datetime-local",label:"开始(选填)"},
+      {k:"end",it:"datetime-local",label:"截止",req:1},
+      {k:"note",type:"text",label:"要做什么",req:1,ph:"例如:回访问下方案定了没有"}],
+      async v=>{
+        const t=名到类[v.type]||{};
+        const r=await post("/api/task-assign",{type:v.type, assignee_no:String(v.who||"").split(" ").pop(),
+          ref_id:(v.ref||"").trim()||null, start:(v.start||"").replace("T"," ")||null,
+          end:(v.end||"").replace("T"," "), note:v.note});
+        res(!!r.ok, r.ok?"OK":(r.code||"ERR"), r.ok?(r.reason||"已派出去"):((r.reason||r.error||"没派出去")+(t.ref&&!(v.ref||"").trim()?`(「${v.type}」要挂${t.ref_label||"单号"})`:"")));
+        if(r.ok) scheduleList();
+        return r;
+      }, true);
+  };
   bindTable(st,scheduleList);
 }
 

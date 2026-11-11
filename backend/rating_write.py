@@ -146,8 +146,11 @@ def _建工单(c, pkg_id, 待办):
 
 
 # ── 顾客端 ────────────────────────────────────────────────────────────
-def customer_rate(order_id, phone_tail, star, note=None, pkg=None):
-    """顾客提交评价。签收之后、一个包裹一次。"""
+def customer_rate(order_id, phone_tail, star, note=None, pkg=None, 分项=None, 标签=None, 媒体=None, 匿名=False):
+    """顾客提交评价。签收之后、一个包裹一次。
+
+    分项 / 标签 / 媒体 / 匿名(11-12 接写口;口径 2026-09-29 立、业务确认照用,见 knowledge/rating.py):
+    都是**选填**;有一样不合法整份不收 —— 不挑能收的收一半(顾客点了却没记上,比整份退回更糟)。"""
     o, err = _顾客的单(order_id, phone_tail)
     if err: return err
     pid, err = _挑包裹(o["id"], pkg)
@@ -159,15 +162,30 @@ def customer_rate(order_id, phone_tail, star, note=None, pkg=None):
     收, n, 说 = R.收下星级(star)
     if not 收:
         return dict(ok=False, code="BAD_STAR", reason=说)
+    收, 分们, 说 = R.收下分项(分项)
+    if not 收:
+        return dict(ok=False, code="BAD_SUBSTAR", reason=说)
+    收, 标们, 说 = R.收下标签(标签)
+    if not 收:
+        return dict(ok=False, code="BAD_TAG", reason=说)
+    收, 媒们, 说 = R.收下媒体(媒体)
+    if not 收:
+        return dict(ok=False, code="BAD_MEDIA", reason=说)
+    import json as _json
     顾问 = next((x["fit_verified_by"] for x in 件 if x["fit_result"] == "合身" and x["fit_verified_by"]), None)
     now = _now()
     待办 = R.差评待办(n, note, o["id"], pid, now, 顾问=顾问)
     with closing(sqlite3.connect(DB)) as c, c:
         tid = _建工单(c, pid, 待办) if 待办 else None
         c.execute("""INSERT INTO rating(pkg_id,order_id,customer_id,star,note,rated_at,src,advisor_no,
-                                        edit_cnt,task_id) VALUES(?,?,?,?,?,?,?,?,0,?)""",
+                                        edit_cnt,task_id,star_ontime,star_fit,star_service,star_package,
+                                        tags,media,anonymous) VALUES(?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)""",
                   (pid, o["id"], o["customer_id"], n, (str(note or "").strip() or None),
-                   now, 来源_顾客, 顾问, tid))
+                   now, 来源_顾客, 顾问, tid,
+                   分们.get("star_ontime"), 分们.get("star_fit"), 分们.get("star_service"), 分们.get("star_package"),
+                   (_json.dumps(标们, ensure_ascii=False) if 标们 else None),
+                   (_json.dumps(媒们, ensure_ascii=False) if 媒们 else None),
+                   1 if 匿名 else 0))
     log_op("顾客", "rating", pid, "—", f"{n}星", True, "RATED",
            f"订单 {o['id']} 包裹 {pid} 评 {n} 星" + ("(差评,已进待处理清单)" if 待办 else ""), {})
     出 = dict(ok=True, code="RATED", 订单=o["id"], 包裹=pid, 星=n,

@@ -19752,5 +19752,29 @@
    }
   ],
   "预期红": "已付款的 / 别店的 → 认成「不在清单里」,不派"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "customer_rate() 不核标签,顾客给什么存什么(「面料手感好」也进来了)",
+  "file": [
+   {
+    "path": "backend/rating_write.py",
+    "old": "    收, 标们, 说 = R.收下标签(标签)\n    if not 收:\n        return dict(ok=False, code=\"BAD_TAG\", reason=说)",
+    "new": "    标们 = list(标签 or [])"
+   }
+  ],
+  "预期红": "不认识的标签(「面料手感好」挂不上四个分项)→ 整份退回,不静默丢掉"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "通用派任务口不拦系统派的知会(手工能建「归属转移」)",
+  "file": [
+   {
+    "path": "backend/tasks.py",
+    "old": "    if kind in tt.只系统派:\n        return dict(ok=False, code=\"SYSTEM_ONLY\",",
+    "new": "    if False and kind in tt.只系统派:\n        return dict(ok=False, code=\"SYSTEM_ONLY\","
+   }
+  ],
+  "预期红": "「归属转移」通用口手工建 → 拒(SYSTEM_ONLY)"
  }
 ]

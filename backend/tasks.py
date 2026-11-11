@@ -251,6 +251,11 @@ def assign_task(d, me, _来源=None):
                     reason=f"「{kind}」只能从库存预警那一行派 —— 那里会记下是哪条预警、"
                            f"同一件事没办完不会再派一遍;从这里派就没有这两样")
 
+    if kind in tt.只系统派:
+        return dict(ok=False, code="SYSTEM_ONLY",
+                    reason=f"「{kind}」是系统派的知会(付款后判归属 / 发布排班撞单时自动建),不能手工建 —— "
+                           f"手工建一条,就和系统真建的长得一模一样")
+
     to = (d.get("assignee_no") or "").strip()
     allowed = {x["no"]: x for x in pool_for(kind, me)}
     if to not in allowed:

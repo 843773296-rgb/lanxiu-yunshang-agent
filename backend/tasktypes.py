@@ -103,6 +103,9 @@ REF_SOURCE = {
 }
 # 只能从预警那一行派的类型(通用派单口 / 批量派单都不收)—— 理由见上面「补货跟进」那条
 只从预警派 = ("补货跟进",)
+# 只由系统派的类型(11-12 补):归属转移(付款后判保护期)、待改派(发布排班撞单)都是系统直接写的知会。
+# 原来通用口不拦它们 —— 店长手工建一条「归属转移」,就是一条**凭空的转户通知**,而它和真的长得一模一样。
+只系统派 = ("归属转移", "待改派")
 
 
 def 可派角色(t):
@@ -208,7 +211,9 @@ def needs_photo(t):
 
 def catalog():
     """给界面用的清单。界面**不许自己写一份类型列表**。"""
-    return [dict(BY_NAME[n], can_propose=agent_may_propose(n)) for n in BY_NAME]
+    # 手工能派:页面「新建日程」只列这些 —— 界面不自己写一份「哪些不能手工派」(11-12)
+    return [dict(BY_NAME[n], can_propose=agent_may_propose(n),
+                 手工能派=(n not in 只从预警派 and n not in 只系统派)) for n in BY_NAME]
 
 
 def resolve_ref(kind, ref_id, q):
