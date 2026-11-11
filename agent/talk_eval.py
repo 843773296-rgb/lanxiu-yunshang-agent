@@ -298,7 +298,7 @@ def _读判定(out, 句数):
     """
     有, 号 = None, None
     for l in (out or "").splitlines():
-        s = re.sub(r"[\s*`「」\"'::]|第一行|第二行|判定|结论", "", l)
+        s = re.sub(r"[\s*`「」\"':：]|第一行|第二行|判定|结论", "", l)
         if not s: continue
         if 有 is None:
             if s.startswith("没有") or s.startswith("无"): 有 = False; continue
