@@ -874,7 +874,15 @@ V1 和 V3 各掉一题而且掉的不是同一题;旧表写单轮 6/6/6 读起�
 - 判据:no_backend_workaround 的限定词加「只能由 / 只有」(N10 真跑「只能由工厂自己在后台改」被误判成指绕路),两轮原话钉回对照;那条老规格的破坏点跟着更新。
 - factory 20 道两轮 18/20 · 18/20;日常层 211 → 220(已登记)。今晚补题合计:我那 7 套新写 57 + 老题首跑 10 + 工坊新写 9。
 
-#### 📍 11-11 10:4x · 写操作确认卡(做到一半,等 eureka-fc 12:25 放 mcp/protocol.py)(最新)
+#### 📍 11-11 11:2x · 用户又拍两件(排在确认卡之后,同样等 12:25 接线)(最新)
+- **用户原话**:「都加,按你的顺序做」;「加新工具这件事,可以由用户自行填写,也可以由智能体和用户进行讨论后,由智能体生成更细致的需求…生成需求申请单可以让智能体代劳」。缘起:版师截图里助手说「找管理员确认能不能接进来」—— 没人知道管理员是谁、走什么流程(实际:意见与建议「新增能力」→ 管理后台意见待受理 → 开发 → MCP 工具管理启用 → 聊天助手配置开工具 → 出版本上生产)。
+- **顺序**:① 确认卡收尾 ② `get_product_images`(版师核料 + 顾问;图在 backend/static/img 2585 张,经 /img/<款号>-<图位>.svg 取,无真图则现画示意图)③ 能力申请单 `draft_capability_request`(只读起草,六栏:场景 / 谁用 / 现在卡在哪 / 想让它做什么 / 给它什么 / 希望得到什么;**提交由用户在页面点「确认提交」走 /api/opinion**,不另开写口)+ 缺工具时的话术改成引导起草申请。
+- **已写未接线**:`backend/product_images.py`、`backend/capability_request.py`(新,纯函数,试过);`agentsite/web/station.html` 加了 imgCards / reqCard(从 trajectory 的 result 画)/ 意见与建议选「新增能力」换六栏。
+- **12:25 后接线要动**:api.py 加两个工具(+ SCHEMAS)、backend/domains.py 归领域、sdk 角色工具表(版师 / 顾问 kb / 店长 task)、prompts.py 配规矩(P6:挂工具必须有规矩;缺工具 → 主动问「要不要帮你写能力申请」)、boundary_audit 白名单与 MCP 暴露一致、页面检查(申请栏 JS 和 Python 同一组)。⚠️ api.py / domains / protocol 都会被 ops 评测的 MCP 子进程读,**12:25 前别动**。
+- **图存储风险(用户问「商品图和版型图存在哪」时说过)**:商品图只在这台 Mac(不进 git、无云存储);两份「商品图备份」各 5.4G 互相对不上;10-14 拍的「45 张收进正式目录当第二版」没做。版型图不存盘,/pattern/<版型>-<号型>.svg 现画。
+- 需求欠账清单已发飞书:https://aqvi2xbk5kd.feishu.cn/docx/QoCWdRkvhodFNgxB5FmcFlxdnoh(文件 澜绣云裳agent-需求欠账清单-20261111.md,未提交)。
+
+#### 📍 11-11 10:4x · 写操作确认卡(做到一半,等 eureka-fc 12:25 放 mcp/protocol.py)
 - **用户拍(卡)**:29 个写操作(api.WRITE_TOOLS)**全部出卡**;审批类也出卡、点卡就算本人那一步;**30 分钟**过期;只回文字**不算**,必须点卡。来源:用户读了 `~/Documents/ChatGPT/澜绣云裳agent-辅助/…应用编排配置与生效版本及操作确认_详细方案_V1.0_20261108.md`,让我「按你的顺序做」(① 确认卡 ② 目标/实际版本并排 ③ 默认模型接上)。
 - **结构**:拦在工具服务(mcp/protocol tools/call):env 有 `LANXIU_CONFIRM_STORE` 且是写工具 → 不执行、`pending_actions.建` 一张卡、回「⏸ 还没有执行…」;点卡 → `action_confirm.确认` 原子领取 → 用 `sdk.mcp_config(me, 名单=[全名])` 起同一个服务、env 加 `LANXIU_CONFIRMED=参数指纹` 再调一次。30 分钟内同人同参数成功过 → 回「已经办过了」不建卡(代替「下一轮注入结果」:注入会进意图分类,可能判不出 → 转人工,所以没做)。
 - **⚠️ 现在的状态**:`mcp/protocol.py`、`agentsite/sdk.py` **已恢复 HEAD**(eureka-fc 的 ops 全量 2 轮在读 protocol.py,约 12:25 完,它会喊)。我的改动存在 `.wip-glossary/confirm_card/protocol.diff`、`sdk.diff` → **12:25 后 `git apply` 这两份**。eureka-fc 验过窗口期(10:1x–10:28)那几道有效、不用重跑。教训(它记的):开关放在 `and` 最左边、import 放 if 里。
