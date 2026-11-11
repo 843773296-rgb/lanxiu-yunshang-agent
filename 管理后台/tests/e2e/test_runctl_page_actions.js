@@ -52,12 +52,46 @@ const { ck, 组, 结束, 状 } = 桩.计分(该跑几组);
     // (判据本身没错:它拒绝在「挑不到」时蒙混过关,红得对。
     //  错的是测试**消耗共享资源** —— 和连接那一页同一条规矩:
     //  **自己建夹具,别动现成的**。)
-    const [码W, W] = await 桩.直打("GET", `${P}/workflows`, null, "U001");
-    const wf = ((W || {}).items || [])[0];
-    ck("找得到一个工作流当夹具(找不到的话下面全是空跑)", Boolean(wf), wf && wf.id);
+    // ⚠️ **夹具流程要「跑不完」的那种(11-11 夜改)。**
+    // 原来拿列表里第一条流程发起运行,而有活 Worker 的环境里(CI、make progress)
+    // 新运行会被**立刻跑成终态**(mock 模式秒完或秒挂)—— 于是「它现在不是终态」
+    // 和第③组「找得到能做的动作」时红时绿,单跑又是绿的。
+    // 改成用「音频整理」模板:它第一步就是等澜绣回执(取转写),运行会**停在
+    // waiting_external** —— 有 Worker 也跑不完,没 Worker 就停在 queued,两种都不是终态。
+    // 名字固定、找得到就复用,不每跑一次多建一条流程(测试残留已经清过一回 180 条)。
+    const 夹具名 = "e2e 运行控制夹具(音频整理,停在等回执)";
+    // 逐页找:列表上限 100 条(写 200 会被 422 拒,第一版就栽在这儿 —— 拒了等于
+    // 「没找到」,于是每跑一次建一条),而且按更新时间排,夹具会被别的测试挤出第一页。
+    let wf = null;
+    for (let 页 = 1; 页 <= 60 && !wf; 页++) {
+      const [码W, W] = await 桩.直打("GET", `${P}/workflows?limit=100&page=${页}`, null, "U002");
+      if (码W !== 200) {
+        ck("列工作流(找夹具)", false, { 码: 码W, 体: W }); 结束(弹过); return;
+      }
+      wf = (W.items || []).find((x) => x["名称"] === 夹具名) || null;
+      if (页 >= (W["页数"] || 1)) break;
+    }
+    if (!wf) {
+      const [码建, 建] = await 桩.直打("POST", `${P}/workflows`,
+        { 名称: 夹具名, 模板: "音频整理" }, "U002");
+      ck("建夹具流程(音频整理模板)", 码建 === 201 && 建 && 建.id, { 码: 码建, 体: 建 });
+      if (!(建 && 建.id)) { 结束(弹过); return; }
+      const [, 详W] = await 桩.直打("GET", `${P}/workflows/${建.id}`, null, "U002");
+      const 定义 = 详W["草稿"]["定义"];
+      for (const n of 定义.nodes) {          // 只补模型(和 test_audio_flow.py 建图() 同一套)
+        if (n.type === "llm" || n.type === "classifier") {
+          n.config.connection_version_id = "cv_mock_" + 项目;
+        }
+      }
+      const [码改, 改] = await 桩.直打("PATCH", `${P}/workflows/${建.id}/draft`,
+        { 定义 }, "U002", { "If-Match": String(详W["草稿"].revision) });
+      ck("夹具流程补上模型", 码改 === 200, { 码: 码改, 体: 改 });
+      wf = 建;
+    }
+    ck("找得到会停在等回执的夹具流程(找不到的话下面全是空跑)", Boolean(wf), wf && wf.id);
     if (!wf) { 结束(弹过); return; }
     const [码N, 新运行] = await 桩.直打("POST", `${P}/execution-runs`,
-      { workflow_id: wf.id, 输入: {}, 模式: "mock" }, "U001",
+      { workflow_id: wf.id, 输入: { call_id: "TS-001", customer_id: "C10001" }, 模式: "mock" }, "U001",
       { "Idempotency-Key": "rc" + Date.now().toString(16)
         + Math.random().toString(16).slice(2, 8) });
     ck("自己发起一次运行 → 拿到 id",
@@ -65,9 +99,18 @@ const { ck, 组, 结束, 状 } = 桩.计分(该跑几组);
        { 码: 码N, id: 新运行 && (新运行.id || 新运行.resource_id) });
     const 目标 = 新运行 && (新运行.id || 新运行.resource_id);
     if (!目标) { 结束(弹过); return; }
-    const [, 详] = await 桩.直打("GET",
-      `${P}/execution-runs/${encodeURIComponent(目标)}`, null, "U001");
-    ck("它现在**不是终态**(刚发起的,还没人跑它)",
+    // 等它**停稳**再往下:有 Worker 时它会 queued → running → waiting_external,
+    // 中途拿的 revision 和可做动作,到点按钮时可能已经过期(那是另一种时序红)。
+    // 停在 waiting_external 就稳了;12 秒一直 queued 说明没 Worker,queued 本身也稳。
+    let 详 = null;
+    for (let i = 0; i < 40; i++) {
+      [, 详] = await 桩.直打("GET",
+        `${P}/execution-runs/${encodeURIComponent(目标)}`, null, "U001");
+      const st = (详 || {})["执行状态"];
+      if (st === "waiting_external" || (详 || {})["是终态吗"]) break;
+      await new Promise((ok) => setTimeout(ok, 300));
+    }
+    ck("它现在**不是终态**(夹具第一步等回执,有 Worker 也跑不完)",
        (详 || {})["是终态吗"] === false, (详 || {})["执行状态"]);
     ck("详情里给了 `revision`(**控制动作拿它做 If-Match**;"
        + "拿不到就只能不带,而那正是「后到的悄悄覆盖先到的」那条路)",
@@ -195,8 +238,8 @@ const { ck, 组, 结束, 状 } = 桩.计分(该跑几组);
     // ⚠️ **不还原。** 这一份把一次运行推到了 `pause_requested`/`cancel_requested`,
     // 而那是**真实的状态流转** —— 硬改回去等于绕过状态机,
     // 而绕过状态机的测试证明不了状态机有用。
-    // 它挑的是已有的非终态运行(不是自己造的),所以下一轮会挑到另一个;
-    // 挑不到的时候上面那条断言会**明说这一组没验到**,不会混成绿的。
+    // 每轮自己发起一次新运行(夹具流程复用),所以不消耗共享资源;
+    // 万一没停住,上面那几条断言会**明说这一组没验到**,不会混成绿的。
     console.log("\n▸ 收尾:**不还原** —— 推进状态是真实流转,"
       + "硬改回去等于绕过状态机,而绕过状态机的测试证明不了状态机有用");
     结束(弹过);
