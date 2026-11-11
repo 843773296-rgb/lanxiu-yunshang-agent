@@ -19428,5 +19428,65 @@
    }
   ],
   "预期红": "接线:定制单确认下单之后判归属(事务之外)"
+ },
+ {
+  "script": "agent/talk_eval_judgetest.py",
+  "改坏": "把 `最少=19` 改成一个到不了的数(样本量缩水闸)",
+  "file": [
+   {
+    "path": "agent/talk_eval_judgetest.py",
+    "old": "        最少=19,",
+    "new": "        最少=999,"
+   }
+  ],
+  "预期红": "标点不变量(销售话术判分器 judge)"
+ },
+ {
+  "script": "agent/fitting_eval_judgetest.py",
+  "改坏": "把 `最少=10` 改成一个到不了的数(样本量缩水闸)",
+  "file": [
+   {
+    "path": "agent/fitting_eval_judgetest.py",
+    "old": "        最少=10,",
+    "new": "        最少=999,"
+   }
+  ],
+  "预期红": "标点不变量(白坯试衣判分器)"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "把 `最少=31` 改成一个到不了的数(样本量缩水闸)",
+  "file": [
+   {
+    "path": "agent/rating_eval_judgetest.py",
+    "old": "        最少=31,",
+    "new": "        最少=999,"
+   }
+  ],
+  "预期红": "标点不变量(评价判分器)"
+ },
+ {
+  "script": "agent/store_report_eval_judgetest.py",
+  "改坏": "把 `最少=25` 改成一个到不了的数(样本量缩水闸)",
+  "file": [
+   {
+    "path": "agent/store_report_eval_judgetest.py",
+    "old": "        最少=25,",
+    "new": "        最少=999,"
+   }
+  ],
+  "预期红": "标点不变量(经营报告判分器 判)"
+ },
+ {
+  "script": "agent/refund_sets_judgetest.py",
+  "改坏": "把 `最少=13` 改成一个到不了的数(样本量缩水闸)",
+  "file": [
+   {
+    "path": "agent/refund_sets_judgetest.py",
+    "old": "        最少=13,",
+    "new": "        最少=999,"
+   }
+  ],
+  "预期红": "标点不变量(押金退款判分器 判一题)"
  }
 ]
