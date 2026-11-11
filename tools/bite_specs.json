@@ -19536,5 +19536,29 @@
    }
   ],
   "预期红": "这不叫通过,这叫没测到东西"
+ },
+ {
+  "script": "tools/rare_tier_freshness_check.py",
+  "改坏": "把判层那一步关掉(`if T.层(套, tid) == 这一层:` 改成永假)",
+  "file": [
+   {
+    "path": "tools/rare_tier_freshness_check.py",
+    "old": "                if T.层(套, tid) == 这一层:",
+    "new": "                if False:"
+   }
+  ],
+  "预期红": "一道罕见层的题都没找到"
+ },
+ {
+  "script": "tools/rare_tier_freshness_check.py",
+  "改坏": "把 `闸天数` 从 14 改成 -1(闸形同不存在,任何时间都算过期)",
+  "file": [
+   {
+    "path": "tools/rare_tier_freshness_check.py",
+    "old": "闸天数 = 14          # 用户 2026-11-11 拍。节奏是每周,闸比节奏松一档",
+    "new": "闸天数 = -1          # 用户 2026-11-11 拍。节奏是每周,闸比节奏松一档"
+   }
+  ],
+  "预期红": "道罕见层的题超过"
  }
 ]
