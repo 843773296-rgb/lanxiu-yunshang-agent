@@ -19332,5 +19332,41 @@
    }
   ],
   "预期红": "聊天站转发打版图地址"
+ },
+ {
+  "script": "agent/liability_eval_judgetest.py",
+  "改坏": "把 `最少=17` 改成一个到不了的数(样本量缩水闸)",
+  "file": [
+   {
+    "path": "agent/liability_eval_judgetest.py",
+    "old": "        最少=17,",
+    "new": "        最少=999,"
+   }
+  ],
+  "预期红": "标点不变量(售后判责判分器 judge)"
+ },
+ {
+  "script": "agent/growth_eval_judgetest.py",
+  "改坏": "把 `最少=21` 改成一个到不了的数(样本量缩水闸)",
+  "file": [
+   {
+    "path": "agent/growth_eval_judgetest.py",
+    "old": "        最少=21,",
+    "new": "        最少=999,"
+   }
+  ],
+  "预期红": "标点不变量(成长推算判分器 judge)"
+ },
+ {
+  "script": "agent/vision_eval_judgetest.py",
+  "改坏": "把 `最少=13` 改成一个到不了的数(样本量缩水闸)",
+  "file": [
+   {
+    "path": "agent/vision_eval_judgetest.py",
+    "old": "        最少=13,",
+    "new": "        最少=999,"
+   }
+  ],
+  "预期红": "标点不变量(识图判分器 judge)"
  }
 ]
