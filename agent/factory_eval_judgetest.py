@@ -19,8 +19,12 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad, 验 = [], [0]
 
 
+_记 = []
+
+
 def ck(name, grader, text, c, want_pass):
     验[0] += 1
+    _记.append((grader, text, c))     # 标点不变量要用(11-11 接 agent/punct_invariant)
     got = grader(text, [], c)
     ok = (not got) == want_pass
     print(f"  {G+'✅'+D if ok else R+'❌'+D} {name}" + ("" if ok else f"  判成:{got or '过'}"))
@@ -98,6 +102,12 @@ ck("反问「是哪一件不对」→ 过", 问退, "退回去要写清楚:是�
 ck("直接编个理由退了 → 挂", 问退, "已按「发错件」退回待发货。", {}, False)
 
 print()
+# 标点不变量(11-11):把每条用例回答里的半角逗号换成全角,判分器给的**完整理由列表**必须不变 ——
+# 人造用例几乎全是半角,而模型真实回答是全角(textmatch 否定跨中文逗号那个 bug 就是这么瞒住的)
+import punct_invariant as _pi
+if _pi.查(_记, 取文本=lambda r: r[1] or "", 判定=lambda r, t: sorted(str(x).replace("，", ",") for x in (r[0](t[0], [], r[2]) or [])),   # 理由里原样引了回答原文,逗号先归一再比
+         名="标点不变量(工厂判分器)", 最少=16):   # 实测 16 条(11-11);掉到下面算不过
+    bad.append("标点不变量")
 if bad:
     print(f"{R}❌ {len(bad)} 条对照没过{D}"); sys.exit(1)
 print(f"{G}✅ 工厂回传判分器 {验[0]} 条对照全过{D}")
