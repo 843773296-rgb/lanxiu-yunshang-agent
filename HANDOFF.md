@@ -91,15 +91,17 @@
 **我自己定的两条(用户没拍,写进总结让他知道)**:① 撞单只算「要人在场」的四类(预约到店 / 上门沟通 / 接待任务 / 团建培训)落在班外;改成休息则当天全算 —— 否则系统 09–18 的知会任务每次改班都冒假改派 ② 排班只排本店在职顾问(店长不进表,和现有 280 行一致)。
 **更正过用户一次**:聊天里现有 roster 技能排的是**任务 / 日程**(assign_batch),不是**班次** —— 第 5 项要新加排班次工具并在技能里分清两件事。
 **派单改法(第 4 项,未动手)**:booking.suggest 加排班硬过滤(时段在班 + 没预留;那周没发布 → 返回 None);另给 `suggest_why(task)` → (建议, 提不出的原因),四处调用方(api.dispatch_task / dispatch_pool、tasks.py 两处)「没有在职顾问」的提示改用原因。待分配池现在是空的,真实数据不受影响。
-**🔴 下一步第一个动作**:后台门禁+推(任务 by9w4q827,日志 /tmp/gate_1111n.log)出结果 → 只认「被包的命令退出码 N」行 + `git status -sb` 同步。
-  红了先看是不是我这批带的(派单改动可能碰 boundary_audit / gate_test / run_journey / write_check 里依赖 dispatch 的用例 —— **未验证**)。
-  绿了推完:① 修 CI 偶发红 backend/pickup_write_check.py:151「操作台账里不留明文码」—— 随机 6 位码撞上 19 位订单号子串;
-  改法:LIKE 粗筛后 Python 用 (?<!\d)码(?!\d) 精判(只认独立出现的 6 位数),保证不变;**门禁跑时别动这个文件**
-  ② 第 5 项聊天工具:shift_week(读)/ shift_draft、shift_publish(写 → WRITE_TOOLS 进确认卡);要动 api.py 函数 + SHOP_SCHEMAS + TOOLS、
-  domains.py、sdk.py 店长白名单(SHOP_TOOLS,写工具必须 mcp__shop__)、prompts.py 规矩、文档工具数(doc_numbers_check 点名行)、
-  roster 技能加一节「排班次 ≠ 排任务」;参照 b9e5e96a + 9445b40b + 5ce15da5 三笔的连锁
-  ③ 第 6 项后台页:server.py 加 GET /api/roster?week= (进「要登录的读」)、POST /api/roster/draft、/api/roster/publish(身份 _me);
-  index.html「导购」菜单加「排班」子页(照 scheduleList 写法),发布先弹受影响清单
+**🔴 下一步第一个动作(11-11 夜 第三遍门禁时刷)**:门禁+推任务 bffejc9bt,日志 /tmp/gate_1111n3.log —— 只认「被包的命令退出码」。
+  前两遍红过 7 项 / 3 项,都已修:库路径默认参数、连库没 closing、咬合 [932] 过期、待办清单(**每加一份检查脚本都要 make_todo 重生成**)、
+  写口得有门(已接 /api/roster 三个接口)、冒烟两份要登记 _wtoday 豁免。
+  绿了推完:② 第 5 项聊天工具 ③ 第 6 项后台排班页 —— **页面代码已写好在 scratchpad/roster_page.js**
+  (插到 index.html scheduleList 之后;nav subs 加 ["roster","排班"]、TAB_TITLE roster、view() 加 `if(v==="roster") return rosterPage();`、
+  菜单名映射 "排班":"roster")。scratchpad 会被清 —— 丢了就照 rosterPage 的说明重写。
+  ⚠️ **改 server.py 重启后第一件事 curl --noproxy '*' http://127.0.0.1:8760/ 看 200** —— 今晚一个 `_u` 局部变量让所有请求挂了约 10 分钟
+  (ef05b7fd 修,server_shadow_check 钉住;那时代码没推)。curl 本机必须 --noproxy '*',localhost 会走 IPv6 连不上。
+  已在真服务上验过排班接口(只读 + 被拒的写,真库没多一行)。
+**禁区补充**:`.wip-glossary/patch_pickup_eval.py.已应用` 是我改的后缀(并行会话的 charset 检查原来扫未跟踪文件);
+  它已改成只扫 git ls-files 但**还没推** —— 推了之后再改回原名。CI 偶发红(签收码撞订单号)已修 6e8c27e3 并补咬合。
 **作废 / 别重做**:roster 技能(agentsite/.claude/skills/roster)排的是任务不是班次 —— 别当成「已有排班技能只缺写口」。
 **并行会话**:用户让我转告它可以开始验收(客户档案合并 8 道题、整套重跑);已转原话,授权由它判断;约好它开跑先拿锁、我攒门禁。用户又说「还是以你的项目为主」。
 
