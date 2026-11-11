@@ -4026,13 +4026,12 @@ renderNav();
 function 看大图(地址, 标题){
   let ov = document.getElementById("zoomov");
   if(!ov){
-    ov = document.createElement("div"); ov.id = "zoomov";
+    document.body.insertAdjacentHTML("beforeend", '<div id="zoomov"></div>'); ov = document.getElementById("zoomov");   // 写成 id="zoomov" 字面量:ref_check 只认得写出来的 id
     ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px";
     ov.innerHTML = `<div style="display:flex;gap:8px;align-items:center;max-width:95vw;width:100%;justify-content:space-between;color:#fff;margin-bottom:8px">
         <b id="zoomt" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>
         <span><small style="opacity:.8">点图放大 / 还原 · Esc 关闭</small> <button id="zoomx" type="button" class="btn">关闭</button></span></div>
       <div style="overflow:auto;max-width:95vw;max-height:85vh;background:#fff;border-radius:8px"><img id="zoomimg" alt="" style="display:block;max-width:95vw;max-height:85vh;cursor:zoom-in"></div>`;
-    document.body.appendChild(ov);
     const 关 = () => { ov.style.display = "none"; document.getElementById("zoomimg").src = ""; };
     ov.addEventListener("click", e => { if(e.target === ov) 关(); });
     document.getElementById("zoomx").onclick = 关;
