@@ -19527,7 +19527,7 @@
  },
  {
   "script": "tools/charset_fullwidth_check.py",
-  "改坏": "把 `正则函数` 集合清空(一个正则模式都扫不到)",
+  "改坏": "把 `正则函数` 集合清空(检查瞎掉一大半,扫到的字面量数暴跌)",
   "file": [
    {
     "path": "tools/charset_fullwidth_check.py",
@@ -19535,7 +19535,7 @@
     "new": "正则函数 = set()"
    }
   ],
-  "预期红": "这不叫通过,这叫没测到东西"
+  "预期红": "这条检查自己瞎掉了一大半"
  },
  {
   "script": "tools/rare_tier_freshness_check.py",

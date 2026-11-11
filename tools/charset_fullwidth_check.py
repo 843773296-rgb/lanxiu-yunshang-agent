@@ -52,7 +52,22 @@ code review 看不出来,语法检查也不报 —— 只有逐字打码点才�
 import ast, re, sys, unicodedata, pathlib
 from collections import Counter
 
-欠债下限 = 44     # 11-11 实测值。修掉一处就把它减一(只许少不许多)
+字面量下限 = 2500  # 实测 2709。⚠️⚠️ **这一条守的是「检查自己瞎掉」。**
+                  # 2026-11-11 夜发现:把 `正则函数` 集合清空(检查瞎掉一大半),
+                  # 要检查的字面量从 2709 掉到几百,欠债数跟着从 43 掉到 **2** ——
+                  # 而棘轮只守「涨」,于是它印 ✅,还贴心建议「把下限改成 2」。
+                  # > **「欠债降到 2 处了,真棒」和「我的检查瞎掉了大半、
+                  # > 所以只看到 2 处」,在那个 ✅ 上长得一模一样。**
+                  # `agent/punct_invariant.py` 的 `最少=` 早就是这个设计
+                  # (它守「接线退化」),我接了 15 份、把那条注释抄了无数遍,
+                  # **却没给自己这条检查装上**。
+欠债下限 = 43     # 11-11 实测值。修掉一处就把它减一(只许少不许多)
+                  # 11-11 夜:**视野扩大**(加了「赋值语句右侧的字面量」)之后重测 = 43。
+                  # ⚠️ 这个数的变化**不全是「代码变好/变坏」** —— 这一次是视野变了:
+                  # > 「欠债涨了因为新代码变坏」和「欠债涨了因为我把检查视野扩大了」,
+                  # > 在这个数上长得一模一样。
+                  # 扩视野那一轮本应涨(多扫到 5 处),但同一轮里 `ops_eval.py` 那三处
+                  # 被我手工修了、并行会话也修了几处,净值反而降。**改这个数时写清原因。**
                   # 11-11 傍晚:50 → 44。修掉的六处:guards.py:563(豁免判据,收紧)、
                   # member_eval.py:152、以及并行会话修的 pattern_eval 1 / chat_eval 2 /
                   # talk_eval 1(都在 main 里了)。50-6=44,数字对得上 —— 这本身是一次验算。
@@ -72,8 +87,14 @@ from collections import Counter
     ("去掉「集合里本来就有 CJK 标点」那个前置过滤(纯 ASCII 正则也要求成对)",
      "新代码又犯了同一个"),
     # ⚠️ 这一条验的是项目第八条要素:「没东西可验」必须和「验过了」分开
-    ("把 `正则函数` 集合清空(一个正则模式都扫不到)",
-     "这不叫通过,这叫没测到东西"),
+    # ⚠️ 这一条的**预期红换过**:视野扩大(加了赋值右侧的字面量)之后,
+    #    清空 `正则函数` 不再让样本量变 0,所以它不再触发「没测到东西」那句 ——
+    #    它触发的是**新加的样本量闸**。而在装上那道闸之前,这个改坏点
+    #    让检查瞎掉大半、欠债从 43 掉到 2,**而输出是 ✅**。
+    #    > 「规格还有效」和「规格的 old 还匹配、但语义已经失效」,
+    #    > 在那句「唯一命中」上长得一模一样。
+    ("把 `正则函数` 集合清空(检查瞎掉一大半,扫到的字面量数暴跌)",
+     "这条检查自己瞎掉了一大半"),
 ]
 
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
@@ -120,16 +141,46 @@ def 读树(根="."):
     return out, 崩
 
 
-def 正则字面量们(tree):
-    """这棵树里所有「被 `re.*()` 当模式用」的字符串字面量节点(按 id)。"""
+def 要看的字面量们(tree):
+    """这棵树里**要检查的**字符串字面量节点(按 id)。两类:
+
+    ① 被 `re.*()` 当模式用的(第一个参数是字面量)
+    ② **赋值语句右侧是字符串字面量的** —— `人办 = r"(你|您)[^。!！?？\n]{0,12}(…)"`
+
+    ⚠️⚠️ **第二类是 2026-11-11 补的,而它暴露了「试纸」这个方法的局限。**
+    这条检查原来只看第一类,于是 `agent/ops_eval.py` 的 `交回给人()` 里**三处**
+    坏字符集**一处都看不见** —— 那三处正是「先赋值给变量再 `_re.search(变量, …)`」。
+    > 「字符集都成对了」和「那个字符集先赋值给变量、检查看不见它」,
+    > 在那个欠债数上长得一模一样。
+    而三个试纸(`member_eval:152`、`guards:563` / `:783`)**全钉到了** ——
+    因为它们恰好都是直接字面量。
+    > **试纸只能证明「判据看得见逼出它的那次翻车」,
+    > 不能证明「判据看得见同一形状的所有变体」。**
+
+    ⚠️ **为什么不干脆扫所有字符串字面量**:量过,44 → **83 处**,
+    多出的 39 处大半是 docstring 里的类型注释(`[(日期, [(短号, …)]` 那种),
+    信噪比不划算;而且会**撞自指** —— 本文件 docstring 里举例的坏字符集会被扫到。
+    只加「赋值右侧」是 44 → 49,多出 5 处里 3 处是真 bug、2 处是噪声
+    (一个字符串里包着 JSON)。这个账划得来。
+    """
     out = set()
     for node in ast.walk(tree):
+        # ① re.*() 的模式参数
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and node.func.attr in 正则函数):
             for arg in node.args[:1]:
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                     out.add(id(arg))
+        # ② 赋值语句右侧的字符串字面量(`人办 = r"..."`)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            v = getattr(node, "value", None)
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                out.add(id(v))
     return out
+
+
+# 旧名保留,免得别处 import 了它
+正则字面量们 = 要看的字面量们
 
 
 def 本仓出现过的全角(trees, 半到全):
@@ -147,7 +198,7 @@ def 本仓出现过的全角(trees, 半到全):
     全到半 = {全: 半 for 半, 全们 in 半到全.items() for 全 in 全们}
     见 = Counter()
     for src, tree in trees.values():
-        跳 = 正则字面量们(tree)
+        跳 = 要看的字面量们(tree)
         for n in ast.walk(tree):
             if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in 跳:
                 for ch in n.value:
@@ -165,13 +216,14 @@ def 扫(根="."):
     反查, 见 = 本仓出现过的全角(trees, 半到全)
     出, 模式数 = [], 0
     for p, (src, tree) in trees.items():
+        # ⚠️ **位置集合算一次就缓存住。** 第一版在内层循环里重复调它,
+        #    写成了 O(n²) —— 2182 个文件跑了 120 秒超时。
+        位置 = 要看的字面量们(tree)
         for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                    and node.func.attr in 正则函数):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and id(node) in 位置):
                 continue
-            for arg in node.args[:1]:
-                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
-                    continue
+            for arg in (node,):
                 模式数 += 1
                 for m in _集.finditer(arg.value):
                     字们 = 集里的字(m.group(1))
@@ -183,7 +235,7 @@ def 扫(根="."):
                           for 半 in sorted(字们)
                           if 半 in 反查 and not (反查[半] & 字们)]
                     if 缺:
-                        出.append((str(p), node.lineno, m.group(0), 缺))
+                        出.append((str(p), getattr(node, "lineno", 0), m.group(0), 缺))
     return dict(文件=trees, 崩=崩, 模式数=模式数, 反查=反查, 见=见, 出=出)
 
 
@@ -231,7 +283,7 @@ if __name__ == "__main__":
     n = len(r["出"])
     print("=" * 88)
     print(f"  样本量:扫了 {len(r['文件'])} 个 .py(语法崩 {len(r['崩'])} 个)、"
-          f"{r['模式数']} 个正则模式字面量")
+          f"{r['模式数']} 个要检查的字符串字面量(正则模式 + 赋值右侧)")
     print(f"  本仓真出现过的全角标点 {len(r['见'])} 种"
           f"(最多的:{''.join(c for c, _ in r['见'].most_common(4))})"
           f" —— **该要求哪些全角是数据说的,不是我写的表**")
@@ -240,6 +292,11 @@ if __name__ == "__main__":
         print(f"{R}❌ 一个正则模式都没扫到 —— 这不叫通过,这叫没测到东西{D}")
         sys.exit(1)
     坏 = []
+    # ── 样本量闸:**检查自己瞎掉**要红(见文件顶上 `字面量下限` 那段)───────────
+    if r["模式数"] < 字面量下限:
+        坏.append(f"要检查的字面量从 {字面量下限} 掉到 {r['模式数']} —— "
+                  f"**这条检查自己瞎掉了一大半**。它会让欠债数跟着变小、"
+                  f"于是棘轮不但不红、还会建议你把下限调低 —— 那是把温度计调一下")
     # ── 自指闸:**没有哪个全角标点该只由某一个文件贡献** ────────────────────
     # 那种形状说明「这个字符是被某份文档/注释举例举出来的」,不是项目真在用它 ——
     # 而它一旦进了统计,判据就凭空变严。本文件的 docstring 2026-11-11 干过这事。
