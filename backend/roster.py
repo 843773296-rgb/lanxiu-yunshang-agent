@@ -68,8 +68,10 @@ import shift as _口径
 # 原来这条只活在两处:造数脚本里「每人固定休一天」、检查里一句 SQL —— 规则模块本身没有它。
 # 眼下不出事(排班表只有重建时的回填脚本会写),但以后加一个排班写入口,**没有任何东西会拦**。
 # 所以写成口径:检查、将来的写入口,都从这里取。
-# 「连上不超过 N 天」:N 业务没定,**不实现**,不替业务编一个数。
-每周至少休几天 = 1
+# 「连上不超过 N 天」:用户 2026-11-11 夜拍 N=6(滚动 7 天),在口径模块。
+# 11-11 夜:数和判定都挪进口径模块(连同用户新拍的「最多连上 6 天」),这里转发不抄。
+每周至少休几天 = _口径.每周至少休几天
+最多连上几天 = _口径.最多连上几天
 
 
 def 这一周合规吗(一周的班次):
@@ -77,10 +79,7 @@ def 这一周合规吗(一周的班次):
 
     ⚠️ **没排的日子不算休息** —— 休息必须是显式记录(见文件头「查不到只能表示未排」)。
     """
-    休 = sum(1 for x in 一周的班次 if x == "S0")
-    if 休 >= 每周至少休几天:
-        return True, f"这一周休了 {休} 天"
-    return False, f"这一周只休了 {休} 天,规定每周至少休 {每周至少休几天} 天"
+    return _口径.一周休够吗(一周的班次)
 
 
 def 建表(c):
@@ -138,8 +137,11 @@ def 查排班事实(staff_no, 日期, db=DB):
         请 = c.execute("""select * from leave_req where staff_no=? and status='已批准'
                           and d_from<=? and d_to>=? limit 1""",
                        (staff_no, 日期, 日期)).fetchone()
-        r = c.execute("select * from roster where staff_no=? and d=?",
-                      (staff_no, 日期)).fetchone()
+        # 已发布优先:店长改已发布的班时草稿另存一行(roster_write.py),发布前**生效的还是已发布那行** ——
+        # 不排序的话 fetchone 拿到哪行看库的心情,改个草稿就可能让人从「可派」变成「草稿不可派」
+        r = c.execute("select * from roster where staff_no=? and d=? "
+                      "order by case status when ? then 0 else 1 end limit 1",
+                      (staff_no, 日期, _口径.已发布)).fetchone()
     return {"日期": 日期,
             "请假种类": (请["kind"] or "事假") if 请 else None,
             "排班": {"status": r["status"], "shift": r["shift"]} if r else None}

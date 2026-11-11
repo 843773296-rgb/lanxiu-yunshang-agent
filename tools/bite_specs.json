@@ -19584,5 +19584,77 @@
    }
   ],
   "预期红": "标点不变量(工坊报工判分器)"
+ },
+ {
+  "script": "knowledge/shift.py",
+  "改坏": "连上上限从「超过 6 天」改成「达到 6 天」就算超(差一错位)",
+  "file": [
+   {
+    "path": "knowledge/shift.py",
+    "old": "\n    if len(段) > 最多连上几天:\n",
+    "new": "\n    if len(段) >= 最多连上几天:\n"
+   }
+  ],
+  "预期红": "连上 6 天不超(边界含端)"
+ },
+ {
+  "script": "knowledge/shift.py",
+  "改坏": "没排的日子不打断连续(把不知道当成上了班)",
+  "file": [
+   {
+    "path": "knowledge/shift.py",
+    "old": "    日们 = sorted(d for d, s in 日到班.items() if s and s != \"S0\")\n",
+    "new": "    _全 = sorted(日到班)\n    if _全:\n        _d0 = datetime.date.fromisoformat(_全[0])\n        _n = (datetime.date.fromisoformat(_全[-1]) - _d0).days + 1\n        日到班 = {(_d0 + datetime.timedelta(days=i)).isoformat(): 日到班.get((_d0 + datetime.timedelta(days=i)).isoformat(), \"S1\") for i in range(_n)}\n    日们 = sorted(d for d, s in 日到班.items() if s and s != \"S0\")\n"
+   }
+  ],
+  "预期红": "没排的日子也断开(不知道 ≠ 上了)"
+ },
+ {
+  "script": "knowledge/shift.py",
+  "改坏": "撞单不分类型,一律按时段卡(知会类待办冒假改派)",
+  "file": [
+   {
+    "path": "knowledge/shift.py",
+    "old": "    if 任务类型 not in 要人在场的类型:",
+    "new": "    if False and 任务类型 not in 要人在场的类型:"
+   }
+  ],
+  "预期红": "早班 + 知会类待办 09–18 → 不撞(不按时段卡)"
+ },
+ {
+  "script": "backend/roster_write_check.py",
+  "改坏": "查在不在班时草稿优先于已发布(店长一改草稿,人就变成不可派)",
+  "file": [
+   {
+    "path": "backend/roster.py",
+    "old": "\"order by case status when ? then 0 else 1 end limit 1\"",
+    "new": "\"order by case status when ? then 1 else 0 end limit 1\""
+   }
+  ],
+  "预期红": "③ 🔑 改了草稿还没发布 → 仍按已发布的早班算(在班)"
+ },
+ {
+  "script": "backend/roster_write_check.py",
+  "改坏": "有撞单也不等确认,直接发布",
+  "file": [
+   {
+    "path": "backend/roster_write.py",
+    "old": "    if 预[\"受影响\"] and not 确认受影响:",
+    "new": "    if False and 预[\"受影响\"] and not 确认受影响:"
+   }
+  ],
+  "预期红": "④ 有撞单、没确认 → 不写,回清单"
+ },
+ {
+  "script": "backend/roster_write_check.py",
+  "改坏": "一批里有错的条目照样写进对的那些(写一半)",
+  "file": [
+   {
+    "path": "backend/roster_write.py",
+    "old": "        if 坏:\n            return dict(ok=False, error=\"有条目不对,**整批没写**\"",
+    "new": "        if 坏 and not 计划:\n            return dict(ok=False, error=\"有条目不对,**整批没写**\""
+   }
+  ],
+  "预期红": "① 混进一个别店的人 → 整批不写"
  }
 ]

@@ -148,9 +148,11 @@ def main():
 
     # **一人一天只有一个班次** —— 这条约束不在数据库里(见 roster.py 的说明),
     # 所以必须在这儿验。**库不挡的东西,检查就得挡,否则它只是一句注释。**
-    重 = q("""select count(*) from (select staff_no, d from roster
-                                    group by staff_no, d having count(*)>1)""")
-    ck("一人一天只有一个班次", "是" if 重 == 0 else f"{重} 个人天重复", "是",
+    # 11-11 夜改口径:店长改已发布的班时,**草稿另存一行**、发布才顶掉已发布(见 roster_write.py 开头) ——
+    # 所以是「每个状态各最多一行」:一人一天最多一行已发布、一行草稿。两行已发布才是真重复。
+    重 = q("""select count(*) from (select staff_no, d, status from roster
+                                    group by staff_no, d, status having count(*)>1)""")
+    ck("一人一天只有一个班次(已发布、草稿各最多一行)", "是" if 重 == 0 else f"{重} 个人天重复", "是",
        "  ← 数据库不挡这个(工厂造不出复合唯一约束的表),**靠这条检查挡**")
 
     # 合规:每人每周至少休 N 天 —— N 从口径模块取(业务 2026-09-22 确认 N=1),
