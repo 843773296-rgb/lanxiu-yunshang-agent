@@ -1214,7 +1214,7 @@ async function 点确认卡(b){
   const c = cur(), m = c && c.msgs[+b.dataset.act], k = m && (m.待确认卡 || [])[+b.dataset.actj];
   if(!k) return;
   b.disabled = true;      // 前端禁用只是体验;防双击靠服务端原子领取
-  const r = await fetch("/api/action/" + b.dataset.actv, {method: "POST", headers: {"content-type": "application/json"},
+  const r = await fetch(b.dataset.actv === "confirm" ? "/api/action/confirm" : "/api/action/cancel", {method: "POST", headers: {"content-type": "application/json"},
     body: JSON.stringify({id: k.id})}).then(x => x.json()).catch(e => ({error: String(e)}));
   if(r.卡){ m.待确认卡[+b.dataset.actj] = r.卡; save(); drawStream(); return; }
   b.disabled = false;

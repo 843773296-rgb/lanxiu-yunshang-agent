@@ -18924,5 +18924,77 @@
    }
   ],
   "预期红": "`序号()` 认不出来时返回 None 而不是 0"
+ },
+ {
+  "script": "agentsite/action_confirm_check.py",
+  "改坏": "工具服务的确认卡拦截被关掉 —— 聊天里写操作又变成模型一调就直接写",
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "            if 卡库 and _是写(nm):",
+    "new": "            if False and 卡库 and _是写(nm):"
+   }
+  ],
+  "预期红": "带卡库:写工具**没执行**"
+ },
+ {
+  "script": "agentsite/action_confirm_check.py",
+  "改坏": "领取不认发起人 —— 别人(哪怕店长看顾问那一张)也能点你的卡,确认人就是假的",
+  "file": [
+   {
+    "path": "backend/pending_actions.py",
+    "old": "    if not 卡 or str(卡[\"asker_no\"]) != str(me[\"no\"]):",
+    "new": "    if not 卡:"
+   }
+  ],
+  "预期红": "别人领 → 404"
+ },
+ {
+  "script": "agentsite/capability_check.py",
+  "改坏": "两个工具的返回值不送到页面 —— 商品图卡、申请单卡一张都画不出来(11-11 第一版就是这样)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "          \"get_product_images\", \"draft_capability_request\"}",
+    "new": "          }"
+   }
+  ],
+  "预期红": "两个工具的返回值真的送到页面"
+ },
+ {
+  "script": "agentsite/capability_check.py",
+  "改坏": "起草时不再列还缺哪几栏 —— 没问清的申请单看起来和写清了的一样",
+  "file": [
+   {
+    "path": "backend/capability_request.py",
+    "old": "    缺 = [名 for 名 in 必填 if not 单[名]]",
+    "new": "    缺 = []"
+   }
+  ],
+  "预期红": "缺的必填栏照实列在「还缺」"
+ },
+ {
+  "script": "agentsite/config_adoption_check.py",
+  "改坏": "拿不到聊天站的实际版本却报「一致」—— 聊天站挂了,后台照样显示全绿",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/chat_assistants_api.py",
+    "old": "\"实际\": None, \"状态\": \"拿不到实际\", \"说明\": 因}",
+    "new": "\"实际\": None, \"状态\": \"一致\", \"说明\": 因}"
+   }
+  ],
+  "预期红": "拿不到实际(聊天站报错 / 没回)"
+ },
+ {
+  "script": "agentsite/config_adoption_check.py",
+  "改坏": "聊天站 /internal/loaded 不核内部凭证 —— 谁都能读聊天站加载了哪几版配置",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "            # 给管理后台并排「目标版本 / 实际版本」(11-11):本机 + 内部凭证才收;只读进程缓存,不触发同步\n            import internal_call as _ic\n            ok_i, why_i = _ic.核对(self.headers.get(_ic.凭证头), self.client_address[0])",
+    "new": "            # 给管理后台并排「目标版本 / 实际版本」(11-11):本机 + 内部凭证才收;只读进程缓存,不触发同步\n            import internal_call as _ic\n            ok_i, why_i = True, \"\""
+   }
+  ],
+  "预期红": "先核内部凭证、再调 实际加载"
  }
 ]

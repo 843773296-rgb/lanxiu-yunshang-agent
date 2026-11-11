@@ -21,7 +21,12 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "backend"), ROOT]
 import product_images as PI          # noqa: E402
 import capability_request as CR      # noqa: E402
 
-咬合 = []
+# 咬合记录(可重放的规格在 tools/bite_specs.json,script 为这个文件的那几条)
+咬合 = [
+    ('两个工具的返回值不送到页面', '两个工具的返回值真的送到页面'),
+    ('起草时不再列还缺哪几栏', '缺的必填栏照实列在「还缺」'),
+]
+
 过, 挂 = [], []
 
 

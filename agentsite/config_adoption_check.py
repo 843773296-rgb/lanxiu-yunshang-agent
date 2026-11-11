@@ -16,7 +16,12 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import config_adoption as CA     # noqa: E402
 
-咬合 = []
+# 咬合记录(可重放的规格在 tools/bite_specs.json,script 为这个文件的那几条)
+咬合 = [
+    ('拿不到聊天站的实际版本却报「一致」—— 聊天站挂了,后台照样显示全绿', '拿不到实际(聊天站报错 / 没回)'),
+    ('聊天站 /internal/loaded 不核内部凭证', '先核内部凭证、再调 实际加载'),
+]
+
 过, 挂 = [], []
 
 

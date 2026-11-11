@@ -26,8 +26,11 @@ ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "backend"), os.path.join(ROOT, "mcp")]
 import pending_actions as PA      # noqa: E402
 
-# 咬合记录(可重放的规格在 tools/bite_specs.json)
-咬合 = []
+# 咬合记录(可重放的规格在 tools/bite_specs.json,script 为这个文件的那几条)
+咬合 = [
+    ('工具服务的确认卡拦截被关掉', '带卡库:写工具**没执行**'),
+    ('领取不认发起人', '别人领 → 404'),
+]
 
 过, 挂 = [], []
 
@@ -184,7 +187,7 @@ def 接线():
     漏 = sorted(set(api.WRITE_TOOLS) - 页里)
     ck(f"⑥ 页面每个写操作都有中文名(登记的 {len(api.WRITE_TOOLS)} 个;新加写工具没起名会红)", mm and not 漏, 漏)
     ck("⑥ 页面:卡有「确认执行」「暂不执行」,点了发到 /api/action/,按钮绑了点击",
-       'data-actv="confirm"' in 页 and 'data-actv="cancel"' in 页 and '"/api/action/" + b.dataset.actv' in 页
+       'data-actv="confirm"' in 页 and 'data-actv="cancel"' in 页 and '"/api/action/confirm"' in 页 and '"/api/action/cancel"' in 页
        and 'querySelectorAll("[data-act]")' in 页)
 
 
