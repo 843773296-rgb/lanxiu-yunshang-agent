@@ -127,10 +127,38 @@ def 集里的字(集):
     return 字
 
 
+def _版本库里的py(根):
+    """`git ls-files` 列出的 .py —— **已跟踪 + 已暂存**,不含未跟踪的草稿。
+
+    ⚠️⚠️ **2026-11-11 夜修的:原来用 `rglob` 扫整个工作区。**
+    并行会话的全量门禁因此红在「43→44」,多出来的那一处是
+    `.wip-glossary/patch_pickup_eval.py` —— 一份**未跟踪的、已经应用过的补题脚本**。
+    CI 从零克隆看不到它,所以**只有本机红**。
+    > **「新代码又犯了同一个」和「工作区里躺着一份草稿」,
+    > 在那个欠债数上长得一模一样。**
+    项目里早有先例:`tools/scan_secrets.sh` 的输出就写着「扫了 N 个**跟踪文件**」。
+
+    ⚠️ `git ls-files` 含**已暂存**的新文件,所以「新建 + `git add`」照旧扫得到 ——
+    这正是要的语义:**只要它会进版本库就扫**。
+    ⚠️ git 不可用时**退回 rglob 并印一行说明** ——
+    「用 git 列的」和「git 没跑起来、退回扫全盘」不许在输出上长得一样。
+    """
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", 根, "ls-files", "-z", "--", "*.py"],
+                           capture_output=True, check=True, timeout=30)
+        xs = [x for x in r.stdout.decode().split("\0") if x.endswith(".py")]
+        return [pathlib.Path(根) / x for x in xs], "git ls-files"
+    except Exception as e:
+        return (list(pathlib.Path(根).rglob("*.py")),
+                f"⚠️ git 用不了({type(e).__name__}),**退回扫全盘** —— 会扫到未跟踪的草稿")
+
+
 def 读树(根="."):
     out = {}
     崩 = []
-    for p in pathlib.Path(根).rglob("*.py"):
+    files, 来路 = _版本库里的py(根)
+    for p in files:
         if any(x in p.parts or x in str(p) for x in 跳目录):
             continue
         try:
@@ -138,7 +166,7 @@ def 读树(根="."):
             out[p] = (src, ast.parse(src))
         except Exception as e:
             崩.append((str(p), f"{type(e).__name__}"))
-    return out, 崩
+    return out, 崩, 来路
 
 
 def 要看的字面量们(tree):
@@ -211,7 +239,7 @@ def 本仓出现过的全角(trees, 半到全):
 
 
 def 扫(根="."):
-    trees, 崩 = 读树(根)
+    trees, 崩, 来路 = 读树(根)
     半到全 = 半到全派生()
     反查, 见 = 本仓出现过的全角(trees, 半到全)
     出, 模式数 = [], 0
@@ -236,7 +264,7 @@ def 扫(根="."):
                           if 半 in 反查 and not (反查[半] & 字们)]
                     if 缺:
                         出.append((str(p), getattr(node, "lineno", 0), m.group(0), 缺))
-    return dict(文件=trees, 崩=崩, 模式数=模式数, 反查=反查, 见=见, 出=出)
+    return dict(文件=trees, 崩=崩, 模式数=模式数, 反查=反查, 见=见, 出=出, 来路=来路)
 
 
 def 自测():
@@ -282,7 +310,7 @@ if __name__ == "__main__":
     r = 扫(".")
     n = len(r["出"])
     print("=" * 88)
-    print(f"  样本量:扫了 {len(r['文件'])} 个 .py(语法崩 {len(r['崩'])} 个)、"
+    print(f"  样本量:扫了 {len(r['文件'])} 个 .py(来路:{r['来路']};语法崩 {len(r['崩'])} 个)、"
           f"{r['模式数']} 个要检查的字符串字面量(正则模式 + 赋值右侧)")
     print(f"  本仓真出现过的全角标点 {len(r['见'])} 种"
           f"(最多的:{''.join(c for c, _ in r['见'].most_common(4))})"
