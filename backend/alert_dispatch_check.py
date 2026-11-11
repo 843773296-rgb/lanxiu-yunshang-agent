@@ -35,6 +35,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("改派不按类型取可派的人(补货跟进能改派给顾问)", "补货跟进改派给顾问 → 拒"),
     ("从预警派单的 HTTP 口不取会话身份(谁都能派)", "HTTP:没登录 → 拒(NO_LOGIN),一行没写"),
     ("key_date 不校验形状(什么都往里写)", "key_date 只收 YYYY-MM-DD 或空"),
+    ("挽回不核单子现在还在不在清单里(已付款的照样派)", "已付款的 / 别店的 → 认成「不在清单里」,不派"),
 ]
 
 
@@ -231,6 +232,38 @@ ck("库存页这一行显示档位和「已跟进」", 行 and 行[0]["档位"] 
    and (行[0].get("跟进") or {}).get("任务") == r14.get("id"), 行)
 ck("库存页:店长可派的人只有店长 / 总部运营里他管得到的",
    库页["派单"]["能派"] and {p["role"] for p in 库页["派单"]["可派"]} == {"店长"}, 库页["派单"])
+
+# ── ⑥ 挽回清单一键建跟进(业务需求池 D2,11-12)────────────────────────
+# 夹具自己造:本店两张待付款单(两位不同的客户)、一条爽约的预约;再造一张已付款单和一张别店的待付款单当反例。
+print("\n▸ ⑥ 挽回清单一键建跟进")
+客 = q("SELECT id FROM customer WHERE shop=? ORDER BY id LIMIT 3", 店)
+别店 = q("SELECT shop FROM staff WHERE role='店长' AND status='启用' AND shop<>? LIMIT 1", 店)[0]["shop"]
+for i, (oid, st, sh, cid) in enumerate([("CHKRC1", "待付款", 店, 客[0]["id"]), ("CHKRC2", "待付款", 店, 客[1]["id"]),
+                                         ("CHKRC3", "已完成", 店, 客[2]["id"]), ("CHKRC4", "待付款", 别店, 客[2]["id"])]):
+    x("INSERT INTO ordr(id, kind, status, shop, customer_id, advisor_no, payable, created) VALUES(?,?,?,?,?,?,?,?)",
+      oid, "标品订单", st, sh, cid, 顾问["no"], 1000 + i, f"{今} 10:00")
+x("INSERT INTO appointment(id, customer_id, start_ts, status, shop, advisor_no) VALUES(?,?,?,?,?,?)",
+  "CHKAP1", 客[2]["id"], f"{今} 15:00", "爽约", 店, 顾问["no"])
+for cid in (客[0]["id"], 客[1]["id"], 客[2]["id"]):      # 清掉这几位客户原有的没办完的电话回电,免得被「已经有人在跟」挡住
+    x("UPDATE schedule SET status='完结' WHERE type='电话回电' AND ref_id=? AND status='有效'", cid)
+rr = AD.批量挽回([{"号": "CHKRC1"}, {"号": "CHKRC2"}, {"号": "CHKAP1"}, {"号": "CHKRC3"}, {"号": "CHKRC4"}], 店长)
+分 = rr.get("分") or {}
+ck("批量建跟进:本店两张待付款 + 一条爽约 → 建了 3 条", 分.get("建了") == 3, rr.get("reason"))
+ck("已付款的 / 别店的 → 认成「不在清单里」,不派", 分.get("不在清单里") == 2,
+   [(y["号"], y["结果"]) for y in rr.get("明细", [])])
+建 = q("SELECT s.type, s.ref_id, s.assignee_no, s.note, a.key_tag FROM schedule s JOIN alert_task a ON a.schedule_id=s.id "
+      "WHERE a.kind='挽回' AND s.ref_id IN (?,?,?)", 客[0]["id"], 客[1]["id"], 客[2]["id"])
+ck("回读:3 条都是「电话回电」、挂客户号、默认派给这一单的顾问、来源记着是哪张单 / 哪条预约",
+   len(建) == 3 and all(y["type"] == "电话回电" and y["assignee_no"] == 顾问["no"] for y in 建)
+   and {y["key_tag"] for y in 建} == {"待付款 CHKRC1", "待付款 CHKRC2", "爽约 CHKAP1"}, 建)
+ck("说明里写明「只是派给你去联系,不是已经联系过」(说成联系过,顾问就不打了)",
+   all("不是已经联系过" in (y["note"] or "") or "爽约" in (y["key_tag"] or "") for y in 建), [y["note"][:40] for y in 建])
+rr2 = AD.批量挽回([{"号": "CHKRC1"}], 店长)
+ck("同一位客户还有没办完的电话回电 → 不重复派(报「已经有人在跟」,不算失败)",
+   (rr2.get("分") or {}).get("已经有人在跟") == 1 and not rr2.get("ok"), rr2.get("明细"))
+rr3 = AD.批量挽回([{"号": "CHKRC2"}], 顾问)
+ck("顾问建不了(店长及以上)", (rr3.get("分") or {}).get("派不了") == 1, rr3.get("明细"))
+ck("一次最多 30 行", AD.批量挽回([{"号": str(i)} for i in range(31)], 店长).get("code") == "TOO_MANY")
 
 # ── HTTP 层:身份只从 Cookie 换 ─────────────────────────────────────
 print("\n▸ HTTP 层(假 handler 直接调 do_POST / do_GET)")

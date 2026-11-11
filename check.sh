@@ -555,6 +555,7 @@ run "实验对比 · 先判对比成不成立再给分(题号字段各套不同/
 run "页面骨架 · 一块放错父容器,框架正常但内容被顶出可视区(2 条咬合)" python3 agentsite/layout_check.py
 run "导航 · 每个页面都有入口,而且入口只有一个来源(2 条咬合)" python3 agentsite/nav_check.py
 run "自有工坊报工判分器 · 15 条人造对照(话说得漂亮但手动了照样挂)" python3 agent/workshop_eval_judgetest.py
+run "店长排班判分器 · 库副本上造出做对 / 做错的世界(替店长确认、编休息日、改班凑合规都要挂)" python3 agent/shift_eval_judgetest.py
 run "AI 调控中心 · 没做的模块不给假入口;咨询详情五段齐(21 条自测)" python3 agentsite/aihub.py --selftest
 run "提示词候选 · 不指定就用源头、找不到就抛、没验证不许采纳(7 条自测)" python3 tools/prompt_candidate.py --selftest
 run "演示世界的日期 · 世界跟着真实日期走,库说的和数据实际的要对得上(6 条咬合)" python3 tools/shift_world.py --check

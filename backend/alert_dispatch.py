@@ -40,14 +40,17 @@ DB = os.path.join(HERE, "lanxiu.db")
 
 DDL = """CREATE TABLE IF NOT EXISTS alert_task(
   schedule_id TEXT PRIMARY KEY,   -- schedule.id
-  kind     TEXT NOT NULL,         -- 工厂催办 / 库存预警
-  obj      TEXT NOT NULL,         -- 订单号 / SKU 号(和 schedule.ref_id 同一个)
+  kind     TEXT NOT NULL,         -- 工厂催办 / 库存预警 / 挽回
+  obj      TEXT NOT NULL,         -- 订单号 / SKU 号 / 客户号(和 schedule.ref_id 同一个)
   key_date TEXT,                  -- 工厂催办:超期的那个承诺完工日(YYYY-MM-DD);其余 NULL
-  key_tag  TEXT NOT NULL,         -- 工厂催办:超期 / 未回接单;库存预警:档位(发不出 / 断货 / 快没了)
+  key_tag  TEXT NOT NULL,         -- 工厂催办:超期 / 未回接单;库存预警:档位(发不出 / 断货 / 快没了);挽回:「待付款 订单号」/「爽约 预约号」…
   created  TEXT NOT NULL)"""
 
 # 预警类 → 派成什么类型的任务
-任务类型 = {"工厂催办": "订单跟踪", "库存预警": "补货跟进"}
+# 「挽回」(业务需求池 D2,用户 11-12 排到下一件):未成交挽回清单上的一行 → 给顾问派一条「电话回电」。
+#   挂的是**客户**(电话回电是客户族,规范要挂客户号),所以防重复派的键是客户:
+#   这位客户还有一条没办完的电话回电 → 不再派(不管那条是不是从挽回派的 —— 同一个客户两个人在打电话更糟)。
+任务类型 = {"工厂催办": "订单跟踪", "库存预警": "补货跟进", "挽回": "电话回电"}
 # 库存预警里**哪几档能派补货跟进**:就是 stockalert.档 里表示「缺」的那三档。
 # 「卖不动」是压货不是缺货、「够」不是预警 —— 都不是补货的事。不是新门槛,是档位本身的意思
 可派档 = ("发不出", "断货", "快没了")
@@ -112,6 +115,44 @@ def 全部sku档(c):
             卖[x["sku"]] = 卖.get(x["sku"], 0) + (x["qty"] or 0)
     return {r["code"]: (None if r["status"] == "停用" else _sa.档(r["stock"], r["locked"], 卖.get(r["code"], 0))[0])
             for r in c.execute("SELECT code, stock, locked, status FROM sku")}
+
+
+def 挽回项(号, me):
+    """这张单 / 这条预约现在在不在**这个人看得到的**挽回清单里。→ dict 或 None。
+    口径和 api.recovery_queue 同一个:待付款的订单、已取消 / 爽约 / 已过期的预约。
+    范围:总部运营看全部,其余只看本店(按门店码,改过名也对得上)。"""
+    import sys
+    sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
+    import recovery as _rc
+    import shop_key as SK
+    c = _c()
+    try:
+        跨店 = me.get("role") == "总部运营"
+        本店码 = None if 跨店 else SK.码(c, me.get("shop"))
+        def 在范围(店):
+            return 跨店 or (店 and SK.码(c, 店) == 本店码)
+        o = c.execute("SELECT o.id, o.status, o.created, o.shop, o.customer_id, o.advisor_no, o.payable, c.name, "
+                      "c.advisor_no bind FROM ordr o LEFT JOIN customer c ON c.id=o.customer_id WHERE o.id=?",
+                      (号,)).fetchone()
+        if o:
+            if o["status"] != "待付款" or not 在范围(o["shop"]) or not o["customer_id"]:
+                return None
+            return dict(客户=o["customer_id"], 客户名=o["name"], 标=f"待付款 {o['id']}",
+                        日=str(o["created"] or "")[:10] or None, 顾问=o["advisor_no"] or o["bind"],
+                        话=f"挽回 · 待付款订单 {o['id']}(应付 {o['payable']}):下了单没付钱 —— 问清卡在哪(价格 / 方案 / 家里商量),"
+                           f"不催款不逼单;**这条只是派给你去联系,不是已经联系过**")
+        a = c.execute("SELECT a.id, a.status, a.start_ts, a.shop, a.customer_id, a.advisor_no, c.name, c.advisor_no bind "
+                      "FROM appointment a LEFT JOIN customer c ON c.id=a.customer_id WHERE a.id=?", (号,)).fetchone()
+        if a:
+            if a["status"] not in _rc.未成行 or not 在范围(a["shop"]) or not a["customer_id"]:
+                return None
+            是什么, 该做什么 = _rc.未成行[a["status"]]
+            return dict(客户=a["customer_id"], 客户名=a["name"], 标=f"{a['status']} {a['id']}",
+                        日=str(a["start_ts"] or "")[:10] or None, 顾问=a["advisor_no"] or a["bind"],
+                        话=f"挽回 · 预约 {a['id']}「{a['status']}」({是什么.replace('**', '')}):{该做什么.replace('**', '')}")
+        return None
+    finally:
+        c.close()
 
 
 # ── 防重复派(在写的那个事务里调)────────────────────────────────────
@@ -181,7 +222,7 @@ def 跟进情况(kind, objs):
 
 # ── 写口 ────────────────────────────────────────────────────────────
 def 派(d, me):
-    """从预警的一行派单。d = {kind: 工厂催办 / 库存预警, obj: 订单号 / SKU, assignee_no, end, note?}。
+    """从预警的一行派单。d = {kind: 工厂催办 / 库存预警 / 挽回, obj: 订单号 / SKU / (挽回:订单号或预约号), assignee_no?, end, note?}。
 
     身份只认登录会话(me),**请求体里的键(超期日期、档位)一概不收** —— 由这里现算。
     权限(店长及以上)、能派给谁、类型的数据规范,全交给 tasks.assign_task,不在这里另写一份。
@@ -207,6 +248,16 @@ def 派(d, me):
         来源 = dict(kind=kind, obj=obj, key_date=日, key_tag=标)
         默认话 = (f"工厂催办 · 订单 {obj}:" + ("过了承诺完工日还没完工 —— 去催工厂,并先告诉顾客可能会晚"
                                               if 标 == "超期" else "开工多日工厂还没回接单 —— 问清单发到了没有"))
+    elif kind == "挽回":
+        项 = 挽回项(obj, me)
+        if not 项:
+            return dict(ok=False, code="NOT_ALERTING",
+                        reason=f"{obj} 现在不在你能看到的挽回清单里(已经付了 / 预约已经成行 / 不是本店的 / 没有这个号)—— "
+                               "不在清单里的不从这里派;要联系一个客户用普通的「电话回电」")
+        来源 = dict(kind=kind, obj=项["客户"], key_date=项["日"], key_tag=项["标"])
+        默认话 = 项["话"]
+        if not d.get("assignee_no"):
+            d = dict(d, assignee_no=项["顾问"])     # 默认派给这一单 / 这条预约的顾问;不在本店在职的由 assign_task 拒、点名可派的人
     else:
         c = _c()
         try:
@@ -221,8 +272,35 @@ def 派(d, me):
         默认话 = f"补货跟进 · SKU {obj}:{档} —— {话}"
 
     note = (d.get("note") or "").strip() or 默认话
-    r = TK.assign_task(dict(type=任务类型[kind], assignee_no=d.get("assignee_no"), ref_id=obj,
+    r = TK.assign_task(dict(type=任务类型[kind], assignee_no=d.get("assignee_no"), ref_id=来源["obj"],
                             note=note, end=d.get("end"), start=d.get("start")), me, _来源=来源)
     if r.get("ok"):
         r["来源"] = 来源
     return r
+
+
+def 批量挽回(行们, me):
+    """未成交挽回清单**一键建跟进**(业务需求池 D2)。行们 = [{号: 订单号或预约号, assignee_no?, end?, note?}…]。
+
+    **逐行各自成败,不是全过才写** —— 和 assign_batch 不一样:排班是一个决定(半截比没排更难收拾),
+    而这里每一行是**一位客户的一通电话**,彼此独立;一位客户已经有人在跟,不该挡住另外九位。
+    返回每行的结果,并分「建了 / 已经有人在跟 / 不在清单里 / 派不了」报,不混成一个失败数。
+    """
+    if not 行们:
+        return dict(ok=False, code="EMPTY", reason="没给要跟进的行(订单号或预约号)")
+    if len(行们) > 30:
+        return dict(ok=False, code="TOO_MANY", reason=f"一次最多 30 行,你给了 {len(行们)} 行 —— 分几次建")
+    from seed import TODAY
+    默认止 = f"{TODAY[:10]} 18:00"
+    结果, 分 = [], {"建了": 0, "已经有人在跟": 0, "不在清单里": 0, "派不了": 0}
+    for it in 行们:
+        号 = str(it.get("号") or it.get("obj") or it.get("订单") or it.get("预约") or "").strip()
+        r = 派(dict(kind="挽回", obj=号, assignee_no=it.get("assignee_no") or it.get("assignee"),
+                   end=it.get("end") or 默认止, note=it.get("note")), me)
+        类 = ("建了" if r.get("ok") else "已经有人在跟" if r.get("code") in ("ALERT_OPEN", "ALERT_DONE")
+              else "不在清单里" if r.get("code") == "NOT_ALERTING" else "派不了")
+        分[类] += 1
+        结果.append(dict(号=号, 结果=类, 任务=r.get("id") or r.get("task_id"), 说明=r.get("reason")))
+    return dict(ok=分["建了"] > 0, 分=分, 明细=结果,
+                reason=f"建了 {分['建了']} 条跟进;已经有人在跟 {分['已经有人在跟']} 条;不在清单里 {分['不在清单里']} 条;派不了 {分['派不了']} 条"
+                       + " —— 这些只是派给顾问去联系,**不是已经联系过客户**")

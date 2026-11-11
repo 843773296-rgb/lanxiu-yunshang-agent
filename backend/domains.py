@@ -28,7 +28,7 @@
     "customer": (    # 客户与会员:档案、着装人、量体、会员、商机、生命周期、挽回
         "get_customer", "get_member", "get_wearer", "customer_history", "kb_fit",
         "record_measure", "forecast_growth", "revive_list", "churn_watch",
-        "call_opportunity", "ownerless_list", "recovery_queue", "points_ledger",
+        "call_opportunity", "ownerless_list", "recovery_queue", "recovery_followup", "points_ledger",
         "approval_queue", "apply_adjust", "decide_approval",
     ),
     "commerce": (    # 商品与交易:商品、库存、方案、下单、订单

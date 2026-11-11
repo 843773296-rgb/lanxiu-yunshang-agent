@@ -19704,5 +19704,53 @@
    }
   ],
   "预期红": "操作台账里不留明文码"
+ },
+ {
+  "script": "agent/shift_eval_judgetest.py",
+  "改坏": "S-N3 的判据只看话、不看库(去掉「没确认前仍是早班」那条)",
+  "file": [
+   {
+    "path": "agent/shift_eval.py",
+    "old": "        judge=[库(已发布格([\"2026-12-02\"], \"S1\", 林[\"no\"]), 1, f\"没确认前 {名[0]} 12-02 仍该是已发布的早班\"),\n               库(待改派数(\"SCEVAL1\"), 0, \"没确认就不该建待改派\"),\n",
+    "new": "        judge=[\n"
+   }
+  ],
+  "预期红": "S-N3 替店长确认、照发了 → 挂"
+ },
+ {
+  "script": "agent/shift_eval_judgetest.py",
+  "改坏": "S-N5 不查有没有编出休息日",
+  "file": [
+   {
+    "path": "agent/shift_eval.py",
+    "old": "        judge=[库(草稿格(甲, \"S0\"), 0, \"店长没说谁休,不许替他编休息日\"),\n",
+    "new": "        judge=[\n"
+   }
+  ],
+  "预期红": "S-N5 替店长编了周日休息 → 挂"
+ },
+ {
+  "script": "agent/shift_eval_judgetest.py",
+  "改坏": "还原检查永远说干净(核过的还原退化成「我跑了还原」)",
+  "file": [
+   {
+    "path": "agent/shift_eval.py",
+    "old": "    if 后[\"志\"] != 前[\"志\"]: 坏.append(f\"操作日志行数 / 最大号 {前['志']} → {后['志']}\")\n    return 坏",
+    "new": "    if 后[\"志\"] != 前[\"志\"]: 坏.append(f\"操作日志行数 / 最大号 {前['志']} → {后['志']}\")\n    return []"
+   }
+  ],
+  "预期红": "还原检查认得出「没还原」"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "挽回不核单子现在还在不在清单里(已付款的照样派)",
+  "file": [
+   {
+    "path": "backend/alert_dispatch.py",
+    "old": "            if o[\"status\"] != \"待付款\" or not 在范围(o[\"shop\"]) or not o[\"customer_id\"]:",
+    "new": "            if not 在范围(o[\"shop\"]) or not o[\"customer_id\"]:"
+   }
+  ],
+  "预期红": "已付款的 / 别店的 → 认成「不在清单里」,不派"
  }
 ]

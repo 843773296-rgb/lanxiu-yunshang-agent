@@ -147,10 +147,17 @@ def 写草稿(操作人工号, 条目们, 今天, db=None):
             名到号.setdefault(p["name"], []).append(p["no"])
         坏, 计划 = [], []
         for i, it in enumerate(条目们 or [], 1):
-            谁 = str(it.get("工号") or it.get("staff_no") or it.get("姓名") or "").strip()
+            # 字段名多认几种写法(11-12 真跑:模型一次排 35 格时用了英文键,整批被拒、重试又被一轮一写的闸挡住,
+            # 结果一格没写进去 —— 字段名认不出和「排错了」在返回里长得一样,都是「有条目不对」)
+            def _取(*键):
+                for k in 键:
+                    if it.get(k) not in (None, ""):
+                        return str(it.get(k)).strip()
+                return ""
+            谁 = _取("工号", "staff_no", "staff", "no", "姓名", "name", "员工", "顾问", "who")
             no = 谁 if 谁 in 人们 else (名到号.get(谁, [None])[0] if len(名到号.get(谁, [])) == 1 else None)
-            d = str(it.get("日期") or it.get("d") or "").strip()
-            s = str(it.get("班次") or it.get("shift") or "").strip()
+            d = _取("日期", "d", "date", "day")
+            s = _取("班次", "shift", "code", "班")
             s = {n: c_ for c_, n, _, _ in K.班次}.get(s, s)     # 「早班」也认
             if not no:
                 坏.append(f"第 {i} 条:「{谁}」不是本店在职顾问(可排:{'、'.join(p['name'] for p in 人们.values()) or '没有'})")

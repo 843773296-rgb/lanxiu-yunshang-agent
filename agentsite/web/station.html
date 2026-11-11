@@ -1183,7 +1183,7 @@ function fbBar(m, i){
  * 聊天里 29 个写操作全部出卡:模型调写工具时工具服务**不执行**,只建一张卡;店员核对后点「确认」才执行。
  * 卡 30 分钟过期;只回一句「好」不算 —— 必须点卡。卡上的参数就是会被执行的那一份(服务端按参数指纹核对)。
  * 是谁点的不从页面传 —— 聊天站从登录会话取,只认发起人本人(agentsite/action_confirm.py)。 */
-const 写操作名 = {shift_draft: "排班(草稿)", shift_publish: "发布排班", apply_adjust: "提交审批", decide_approval: "审批决定", assign_task: "分派任务", dispatch_task: "派任务",
+const 写操作名 = {recovery_followup: "建挽回跟进", shift_draft: "排班(草稿)", shift_publish: "发布排班", apply_adjust: "提交审批", decide_approval: "审批决定", assign_task: "分派任务", dispatch_task: "派任务",
   reassign_task: "改派任务", finish_task: "完成任务", dispatch_batch: "批量派任务", assign_batch: "批量分派",
   mark_delay_told: "记已告知延期", open_order: "开单", confirm_order: "确认下单", rollback_order: "回滚订单",
   record_measure: "登记量体", record_fitting: "登记白坯试衣", start_cutting: "开裁", report_production: "报工",
