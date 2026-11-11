@@ -59,6 +59,59 @@ def 快照(角色):
     }
 
 
+def _后台(a, 方法, 路, 体=None):
+    r = subprocess.run(["curl", "-sS", "-m", "30", "-w", "\n%{http_code}", "-X", 方法,
+                        f"{a.基址}/api/v1/projects/{a.项目}{路}", "-H", f"X-Dev-User: {a.谁}",
+                        "-H", "content-type: application/json"] + (["--data-binary", "@-"] if 体 is not None else []),
+                       input=(json.dumps(体, ensure_ascii=False) if 体 is not None else None), capture_output=True, text=True)
+    正文, _, 码 = r.stdout.rpartition("\n")
+    try:
+        return 码, json.loads(正文) if 正文 else {}
+    except ValueError:
+        return 码, {"原文": (正文 or r.stderr)[:400]}
+
+
+def 技能那一支(a):
+    """--只同步技能 / --核对技能(用户 11-11:路由点名「库存巡检 / 活动复盘 / 经营数诊断」被拦,
+    因为后台的技能清单是导入那天拍的快照,而聊天站按 Skill 管理现算 —— 补一次不解决漂移,所以还要能核)。"""
+    sys.path[:0] = [os.path.join(仓, "agentsite"), 仓, os.path.join(仓, "backend")]
+    import sdk
+    现算 = list(sdk.skills_for("own"))
+    if not 现算:
+        print(f"  {R}❌ 聊天站现算的放行技能一个都没有 —— 是没算出来,不是「助手没有技能」{D}")
+        return 1
+    if a.核对技能:
+        码, pv = _后台(a, "GET", f"/chat-assistants/by-role/{a.角色}/production")
+        if 码 != "200":
+            print(f"  {R}❌ 拉不到生产版(HTTP {码 or '连不上'})—— 没核,不是核过了{D}")
+            return 1
+        记的 = pv.get("技能") or pv.get("skill_snapshot")
+        if 记的 is None:
+            print(f"  {R}❌ 生产版返回里没有技能清单这一项 —— 没核,不是核过了{D}")
+            return 1
+        多, 少 = sorted(set(现算) - set(记的)), sorted(set(记的) - set(现算))
+        print(f"▸ 「{a.角色}」技能清单:聊天站现算 {len(现算)} 个 · 后台生产版 v{pv.get('版本号')} 记着 {len(记的)} 个")
+        if 多 or 少:
+            print(f"  {R}❌ 对不上 —— 聊天站有而后台没记:{多 or '无'};后台记着而聊天站不放行:{少 or '无'}{D}")
+            print("     路由点名「后台没记」的那几个会被拦下;修法:--只同步技能 → 出版本 → 上生产")
+            return 1
+        print(f"  {G}✅ 一致{D}")
+        return 0
+    码, l = _后台(a, "GET", "/chat-assistants")
+    助手 = next((x for x in (l.get("items") or []) if x.get("角色键") == a.角色), None)
+    if 码 != "200" or not 助手:
+        print(f"  {R}❌ 找不到「{a.角色}」的聊天助手(HTTP {码 or '连不上'}){D}")
+        return 1
+    码, d = _后台(a, "POST", f"/chat-assistants/{助手['id']}/skills-sync", {"技能": 现算})
+    if 码 != "200":
+        print(f"  {R}❌ 后台拒了(HTTP {码 or '连不上'}):{str(d)[:600]}{D}")
+        return 1
+    print(f"  {G}✅ {'草稿技能清单已换' if d.get('动了吗') else '和草稿一样,没动'}:{len(d['技能'])} 个"
+          f"{' · 多了 ' + str(d.get('多了')) if d.get('多了') else ''}{' · 少了 ' + str(d.get('少了')) if d.get('少了') else ''}{D}")
+    print(f"  ⚠️ {d.get('note')}")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--角色", default="task")
@@ -66,7 +119,13 @@ def main():
     ap.add_argument("--基址", default="http://127.0.0.1:8801")
     ap.add_argument("--谁", default="U001")
     ap.add_argument("--看", action="store_true", help="只打印快照,不推")
+    ap.add_argument("--只同步技能", action="store_true",
+                    help="只把聊天站现算的放行技能推给后台草稿(别的配置不碰);导入会整份换草稿,丢掉挑好的术语 / 意图 / 路由")
+    ap.add_argument("--核对技能", action="store_true",
+                    help="只比:后台生产版记的技能清单 vs 聊天站现算的放行技能,对不上退 1(不改任何东西)")
     a = ap.parse_args()
+    if a.只同步技能 or a.核对技能:
+        return 技能那一支(a)
     s = 快照(a.角色)
     print(f"▸ 聊天站「{a.角色}」:工具 {len(s['工具'])} 个(写 {sum(t['写'] for t in s['工具'])})· "
           f"规矩池 {len(s['规矩池'])} 条、装上 {len(s['装上的规矩'])} 条 · 提示词 {len(s['提示词全文'])} 字 · "

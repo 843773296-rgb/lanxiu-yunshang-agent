@@ -110,7 +110,11 @@ def 内容哈希(cfg, 规矩):
          # 实体识别版本(11-08)同理:决定哪几个字被当成名字占掉、哪几条术语不带 → 改变模型收到什么;只在选了时进哈希
          **({"实体识别版本": cfg["实体识别版本"]} if cfg.get("实体识别版本") else {}),
          **({"路由版本": cfg["路由版本"]} if cfg.get("路由版本") else {}),
-         **({"意图版本": cfg["意图版本"]} if cfg.get("意图版本") else {})}       # 11-08 第二期:路由决定带哪些定义、给模型哪些提示
+         **({"意图版本": cfg["意图版本"]} if cfg.get("意图版本") else {}),       # 11-08 第二期:路由决定带哪些定义、给模型哪些提示
+         # 技能清单(11-11):它不改模型收到什么(聊天站按 Skill 管理现算),但它决定**路由能点名哪些技能** ——
+         # 不进哈希的话,「只同步技能」出不了版本(409 内容没变),生产版记的清单就永远追不上,--核对技能 一直红。
+         # 代价:老版本存的哈希没算它,下一次从代码导入会多出一版(那一版确实变了:清单不同)。
+         **({"技能": sorted((k.get("名") if isinstance(k, dict) else k) for k in cfg["技能"])} if cfg.get("技能") else {})}
     return "sha256:" + hashlib.sha256(json.dumps(料, ensure_ascii=False, sort_keys=True)
                                       .encode()).hexdigest()
 
@@ -247,6 +251,53 @@ async def 导入基线(project_id: str, request: Request, me: 身份 = Depends(�
     return {"id": aid, "版本": f"v{号}", "动了吗": True, "草稿": 草稿, "note": _接线(体["角色键"])[1]}
 
 
+def 技能清单问题(技能):
+    """→ (干净的清单, 毛病)。纯函数。技能名去空白、去重、保序;空清单不收(那等于把助手的技能全摘了)。"""
+    if not isinstance(技能, list):
+        return None, "「技能」要是一个列表"
+    出, 见 = [], set()
+    for k in 技能:
+        n = str(k or "").strip()
+        if not n or n in 见:
+            continue
+        if len(n) > 100 or "/" in n:
+            return None, f"技能名不像技能名:{n[:40]}"
+        见.add(n); 出.append(n)
+    if not 出:
+        return None, "清单是空的 —— 不收(那等于把这个助手的技能全摘了)"
+    return 出, None
+
+
+@router.post(前缀 + "/chat-assistants/{cid}/skills-sync")
+async def 同步技能清单(project_id: str, cid: str, request: Request, me: 身份 = Depends(要权限("改编排草稿"))):
+    """**只换草稿里的技能清单**,别的(开头 / 工具 / 术语 / 实体 / 路由 / 意图)一个字不碰(用户 11-11 那次撞出来的)。
+
+    为什么不让人重跑导入:导入会把草稿整份换成代码那一份 —— 草稿上挑好的术语 / 意图 / 路由版本就丢了
+    (11-10 草稿停在 v5 那次就是这个形状)。而技能清单是**导入那天拍的快照**,聊天站运行时按 Skill 管理的
+    放行状态现算 —— 后来放行的技能,快照里没有,路由点名它就被「助手没有这个技能」拦下。
+    清单由 tools/import_chat_assistant.py --只同步技能 从聊天站现算后推过来;**出版本、上生产照旧要人点**。"""
+    体 = await request.json()
+    清单, 毛病 = 技能清单问题((体 or {}).get("技能"))
+    if 毛病:
+        raise _错(422, "VALIDATION", 毛病, "用 tools/import_chat_assistant.py --只同步技能 生成", field_errors={"技能": 毛病})
+    with 事务() as c:
+        a = c.execute(text("select id, definition from chat_assistants where project_id=:p and id=:i for update"),
+                      {"p": project_id, "i": cid}).mappings().first()
+        if not a:
+            raise _错(404, "NOT_FOUND", "没有这个聊天助手", "回列表重新进入")
+        定 = dict(a["definition"] or {})
+        旧 = [(k.get("名") if isinstance(k, dict) else k) for k in 定.get("技能") or []]
+        if 旧 == 清单:
+            return {"动了吗": False, "技能": 清单, "note": "和草稿里的一样,什么都没动"}
+        定["技能"] = 清单
+        c.execute(text("""update chat_assistants set definition=cast(:d as jsonb), updated_at=now(),
+                              draft_revision=coalesce(draft_revision,0)+1 where project_id=:p and id=:i"""),
+                  {"d": json.dumps(定, ensure_ascii=False), "p": project_id, "i": cid})
+        _审计(c, me, "chat_assistant.skills_sync", {"chat_assistant": cid, "之前": 旧, "之后": 清单})
+    return {"动了吗": True, "技能": 清单, "多了": [x for x in 清单 if x not in 旧], "少了": [x for x in 旧 if x not in 清单],
+            "note": "**只改了草稿的技能清单**。线上不变 —— 要生效得出版本、上生产。"}
+
+
 @router.get(前缀 + "/chat-assistants/by-role/{role}/production")
 def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查看有权配置"))):
     """给聊天站拉:这个角色的生产指针指着哪一版、那一版的内容(第 2 步用)。
@@ -263,7 +314,7 @@ def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查
             return {"角色键": role, "版本号": None, "glossary_version_id": None, "entity_version_id": None, "route_version_id": None, "intent_version_id": None,
                     "note": "没指定生产 —— 聊天站照用代码里那一份"}
         v = c.execute(text("""select version_no, head_template, foot_template, tools, model_name, rule_ids,
-                                     content_hash, source_kind, source_hash, glossary_version_id, entity_version_id, route_version_id, intent_version_id from chat_assistant_versions
+                                     content_hash, source_kind, source_hash, glossary_version_id, entity_version_id, route_version_id, intent_version_id, skill_snapshot from chat_assistant_versions
                                where project_id=:p and chat_assistant_id=:a and version_no=:n"""),
                       {"p": project_id, "a": a["id"], "n": a["production_version_no"]}).mappings().first()
     if not v:      # 指针存的是版本号、库里没外键(见契约)—— 指着一个不存在的版本要明说,不当成「没指定」
@@ -272,6 +323,8 @@ def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查
     return {"角色键": role, "版本号": v["version_no"], "开头": v["head_template"], "结尾": v["foot_template"] or "",
             "工具": v["tools"] or [], "模型": v["model_name"], "规矩": v["rule_ids"] or [],
             "内容哈希": v["content_hash"], "来源": v["source_kind"],
+            # 11-11:这一版记着的技能清单(导入 / 同步时的快照)—— 给 import_chat_assistant.py --核对技能 比聊天站现算的那份
+            "技能": v["skill_snapshot"] or [],
             # 术语(11-06,和并行会话对过):这一版没挂术语给**显式 null**,不许字段缺失 —— 缺失 = 老响应没这个字段,聊天站要分得开
             # 键名用 glossary_version_id(和并行会话约定的名字;聊天站客户端按这个名字认,「字段缺失」它当成契约没同步)
             "glossary_version_id": v["glossary_version_id"],

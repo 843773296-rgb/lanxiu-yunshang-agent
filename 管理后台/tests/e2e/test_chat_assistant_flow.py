@@ -243,6 +243,28 @@ def main():
     ck("没挂术语的那一版:glossary_version_id 是显式 null,不是字段缺失",
        s == 200 and "glossary_version_id" in pv and pv["glossary_version_id"] is None, pv)
 
+    print("\n▸ ⑩ 只同步技能清单(11-11):只换技能,挂好的术语不丢;空清单不收;上生产后按角色取生产带出技能")
+    s, g4 = 打("GET", f"{D}/chat-assistants/{did}")
+    术前 = g4["草稿"]["配置"].get("术语版本")
+    s, d = 打("POST", f"{D}/chat-assistants/{did}/skills-sync", 体={"技能": []})
+    ck("空清单 → 422(那等于把助手的技能全摘了)", s == 422 and 码(d) == "VALIDATION", (s, d))
+    s, d = 打("POST", f"{D}/chat-assistants/{did}/skills-sync", 体={"技能": ["../etc"]})
+    ck("技能名带斜杠 → 422", s == 422, (s, d))
+    新技能 = ["e2e-skill-a", "e2e-skill-b-" + uuid.uuid4().hex[:4]]
+    s, d = 打("POST", f"{D}/chat-assistants/{did}/skills-sync", 体={"技能": [" " + 新技能[0], 新技能[1], 新技能[0]]})
+    ck("同步 → 200、去空白去重保序", s == 200 and d.get("技能") == 新技能 and d.get("动了吗") is True, (s, d))
+    s, g5 = 打("GET", f"{D}/chat-assistants/{did}")
+    ck("草稿上挑好的术语版本没丢(这条就是不让人重跑导入的理由)", g5["草稿"]["配置"].get("术语版本") == 术前 and 术前, (术前, g5["草稿"]["配置"].get("术语版本")))
+    ck("详情里技能清单就是同步过去的那份", (g5.get("技能") or {}).get("当时放行的") == 新技能, g5.get("技能"))
+    s, d = 打("POST", f"{D}/chat-assistants/{did}/skills-sync", 体={"技能": 新技能})
+    ck("原样再同步 → 什么都不动", s == 200 and d.get("动了吗") is False, (s, d))
+    s, v = 打("POST", f"{D}/chat-assistants/{did}/versions", 体={"变更说明": "e2e:同步技能清单"})
+    号 = int((v or {}).get("版本", "v-1")[1:])
+    打("POST", f"{D}/chat-assistants/{did}/production", 体={"版本号": 号, "理由": "e2e 同步技能上生产"})
+    s, pv = 打("GET", f"{D}/chat-assistants/by-role/e2e_terms/production")
+    ck("按角色取生产带出「技能」(import_chat_assistant.py --核对技能 拿它比聊天站现算的)",
+       s == 200 and pv.get("版本号") == 号 and pv.get("技能") == 新技能, (s, pv))
+
     print(f"\n{'✅' if not 挂 else '❌'} {len(过)} 过 / {len(挂)} 挂" + (f":{' / '.join(挂)}" if 挂 else ""))
     return 1 if 挂 else 0
 
