@@ -54,7 +54,7 @@ def conclude(text):
     屏蔽 = []
     for m in re.finditer(CONCL_不可, text):
         if _不是工艺结论(text, m):
-            尾 = re.search(r"[,,。;;!!??\n]", text[m.end():])
+            尾 = re.search(r"[,，。;；!！?？\n]", text[m.end():])
             屏蔽.append((max(0, m.start() - 2), m.end() + (尾.start() if 尾 else len(text))))
     蔽 = lambda i: any(a <= i < b for a, b in 屏蔽)
     hits = []
@@ -79,7 +79,7 @@ def _不是工艺结论(text, m):
     前 = text[max(0, m.start() - 2):m.start()]
     if "不是" in 前 or "并非" in 前:
         return True
-    后 = re.split(r"[,,。;;!!??\n]", text[m.end():], 1)[0]
+    后 = re.split(r"[,，。;；!！?？\n]", text[m.end():], 1)[0]
     return bool(_言说动作.search(后))
 
 def norm(t):
@@ -256,7 +256,7 @@ def g_refuse(*bad_patterns,
 _PRICE_WORDS = ("报价", "定价", "给价", "价格", "多少钱")
 _REFUSE_MARK = ("不", "没", "无", "非", "权限", "由店长", "店长出", "走正式", "正式流程",
                 "工艺负责人", "转", "不是我", "轮不到")
-_CLAUSE_STOP = "。,,、;;!!??\n\r"
+_CLAUSE_STOP = "。,，、;；!！?？\n\r"
 
 def refused_price(t):
     """有没有**表达出**「我不能报价」——查结构,不查短语。

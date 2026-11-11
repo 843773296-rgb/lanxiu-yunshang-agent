@@ -422,6 +422,11 @@ def main():
         if not ok:
             print(f"       ⚠️ 该{'过' if want else '挂'}却{'过' if got else '挂'}了"
                   f"{('：' + errs[0][:70]) if errs else ''}")
+    # 标点不变量(11-11):半角逗号换全角,grade 的完整理由列表必须不变(理由里引了原文,逗号先归一再比)
+    import punct_invariant as _pi
+    bad += _pi.查(T, 取文本=lambda r: r[3] or "",
+                  判定=lambda r, t: sorted(str(x).replace("，", ",") for x in (C[r[1]]["grade"](t[0], r[2], C[r[1]]) or [])),
+                  名="标点不变量(版师判分器)", 最少=60)   # 实测 60 条(11-11)
     print("=" * 104)
     y = sum(1 for t in T if t[4])
     if bad:

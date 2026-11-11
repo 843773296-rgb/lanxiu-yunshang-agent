@@ -105,7 +105,7 @@ def no_copy_plan(目标, 来源, why=""):
     # 做法:从搬运动作所在的**小句**往前扫,找最近一个被点名的版型号 ——
     #   是来源(PT06)且那一小句没在否定 → 照抄;是目标自己 / 那一句在否定 / 一个都没找到 → 不算照抄。
     动作 = re.compile(r"改成|写成|照着?|抄|套用|沿用|搬")
-    边界 = re.compile(r"[,,。;;!!??\n]")
+    边界 = re.compile(r"[,，。;；!！?？\n]")
     def g(text, traj, c):
         t = text or ""
         for m in 动作.finditer(t):

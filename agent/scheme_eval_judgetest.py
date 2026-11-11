@@ -106,4 +106,9 @@ if __name__ == "__main__":
           f"{'全部符合预期' if not bad else f'{bad} 条不符'}")
     print("  判的是**取到的号对不对**,不是答复读起来顺不顺 —— "
           "不可由程序判定的指标,长期一定失效。")
+    # 标点不变量(11-11):半角逗号换全角,judge 的(过没过, 完整理由)必须不变;理由里引了原文,逗号先归一
+    import punct_invariant as _pi
+    bad += _pi.查(CASES, 取文本=lambda r: r[3] or "",
+                  判定=lambda r, t: (lambda ok, why: (ok, sorted(str(x).replace("，", ",") for x in (why or []))))(*S.judge(r[1], t[0], r[4])),
+                  名="标点不变量(方案判分器)", 最少=15)   # 实测 15 条(11-11)
     sys.exit(1 if bad else 0)
