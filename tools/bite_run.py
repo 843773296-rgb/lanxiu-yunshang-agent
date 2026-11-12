@@ -341,6 +341,11 @@ def 门禁怎么跑(script):
     #
     # ⚠️ **找不到解释器就返回 None,绝不退回系统 python** —— 退回的正是上面这句话要避免的姿势。
     #    (2026-11-06 第一次整轮重放逮到:19 条全报「对照就是红的」。详见 `管理后台解释器`。)
+    # JS 测试用 node 跑(11-12:列表迭代面板那 3 条是规格库里头一批 .js 规格,原来一律交给 python,
+    # 对照恒红「这条咬合证明不了任何事」—— 和 11-06 那次同一个形状:姿势错了,红的不是判据)
+    if script.endswith(".js"):
+        nd = shutil.which("node")
+        return [nd, script] if nd else None
     if script.startswith("管理后台/"):
         py = 管理后台解释器()
         return [py, script] if py else None
