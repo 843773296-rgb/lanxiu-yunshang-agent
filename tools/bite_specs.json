@@ -20172,5 +20172,29 @@
    }
   ],
   "预期红": "最多做几项不给默认值"
+ },
+ {
+  "script": "tools/gate_db_check.py",
+  "改坏": "重定向不换普通路径(连真库路径照旧连真库)",
+  "file": [
+   {
+    "path": "tools/gate_db/sitecustomize.py",
+    "old": "        if s and s != \":memory:\" and os.path.realpath(s) == _真实:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "门禁里连真库的路径落在副本上"
+ },
+ {
+  "script": "tools/gate_db_check.py",
+  "改坏": "重定向不换 file: URI(只读打开照旧连真库)",
+  "file": [
+   {
+    "path": "tools/gate_db/sitecustomize.py",
+    "old": "            if 路 and os.path.realpath(路) == _真实:\n",
+    "new": "            if False:\n"
+   }
+  ],
+  "预期红": "只读 URI 也落在副本上"
  }
 ]

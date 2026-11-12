@@ -25,6 +25,26 @@ export PYTHONDONTWRITEBYTECODE=1
 # **台账本来就该有新行,多几行假的没人会觉得怪**。这个变量在,`oplog.log_op` 遇到「门禁里写真库」就不写、记一笔;
 # 收尾那一步汇总点名。页面上真人点的不受影响(服务进程不在门禁里,没有这个变量)。
 export LANXIU_CHECK_LEAK="$(mktemp -t lanxiu-oplog-leak.XXXXXX)"
+# ⚠️⚠️ **门禁跑在一份库副本上,不碰真库**(2026-11-12,执行手册 W02)。
+# 255 个检查里 123 个直接连 `backend/lanxiu.db`,只有三十来个自己拷副本 —— 丢 55 条评价(11-03)、
+# 台账假操作(10-19)、69 条咬合规格改真库(10-17)全是同一个根:**检查默认连真库,漏一处就写真库,而漏的那处不报错**。
+# 做法:这里拷一份(在线备份,不用 cp —— 别的检出里库是软链),`tools/gate_db/sitecustomize.py` 把门禁里
+# 每个 Python 进程连真库的 `sqlite3.connect` 改连到副本。127 处 `DB = …` 一处不用改;
+# 服务进程(8760 / 8770 / 8801)不在门禁里,不受影响。`tools/gate_db_check.py` 验连接真落在哪。
+# 用的是专门的 LANXIU_GATE_DB,**不复用 LANXIU_DB** —— 那个变量 MCP 工具服务和两条检查各有用处。
+# 拷不出来就停:在真库上接着跑,等于退回老样子而且没人知道。
+LANXIU_REAL_DB="$(python3 -c 'import os;print(os.path.realpath("backend/lanxiu.db"))')"
+LANXIU_GATE_DIR="$(mktemp -d -t lanxiu-gate-db.XXXXXX)"
+LANXIU_GATE_DB="$LANXIU_GATE_DIR/lanxiu.db"
+if [ -f "$LANXIU_REAL_DB" ] && sqlite3 "$LANXIU_REAL_DB" ".backup '$LANXIU_GATE_DB'" 2>/dev/null && [ -s "$LANXIU_GATE_DB" ]; then
+  export LANXIU_REAL_DB LANXIU_GATE_DB
+  export PYTHONPATH="$PWD/tools/gate_db${PYTHONPATH:+:$PYTHONPATH}"
+  echo "🗄  门禁跑在库副本上($(du -h "$LANXIU_GATE_DB" | cut -f1),真库不碰)"
+else
+  echo "❌ 门禁拷不出库副本($LANXIU_REAL_DB → $LANXIU_GATE_DB)—— 停。在真库上接着跑等于退回老样子"
+  rm -rf "$LANXIU_GATE_DIR"
+  exit 3
+fi
 # ⚠️ **缩进用 awk 不用 sed。** macOS 自带的是 BSD sed,
 # 在 LANG=zh_CN.UTF-8 下处理某些中文输出会**断言失败直接 abort**:
 #
@@ -95,7 +115,7 @@ CHK_OUT="${TMPDIR:-/tmp}/chk.$$.out"
 # 各项之和与整条门禁的差额。那 215 秒就落在这个差额里,
 # **而只按项去看的话它会被摊到某一项头上,看起来就是那一项慢了 16 倍。**
 CHK_TIMES="${TMPDIR:-/tmp}/chk.$$.times"
-trap 'rm -f "$CHK_OUT" "$CHK_TIMES"' EXIT
+trap 'rm -f "$CHK_OUT" "$CHK_TIMES"; rm -rf "$LANXIU_GATE_DIR"' EXIT
 run(){ local name="$1"; printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
   local rc=0
   python3 -c 'import subprocess, sys, time
@@ -205,6 +225,7 @@ run "产品文档 · 写死的数字和代码对账(文档变假时不会报错)
 run "产品文档 · MCP 工具表和代码对账(标题的数对过账,表本身没人对)" python3 tools/gen_doc_lists.py
 # 2026-10-23 装进来:这台机器上同一时刻只许一轮门禁 / 冒烟 / 写共享库(6 个工作区共用)。
 # 自测在**临时锁目录**上跑,不碰那把真锁 —— 所以它在门禁里跑不会和持锁的那一轮打架。
+run "门禁库副本 · 连真库的一律落在副本上(看连接真落在哪;往真库路径写的那一行只在副本里)" python3 tools/gate_db_check.py
 run "共享资源锁 · 陈锁会被抢、活锁不许抢、被打断照样还锁、退出码原样传回" ./tools/gate_lock.sh --selftest
 # 2026-11-09 装进来:全项目快照起跑前,调度器崩在一个 UnicodeDecodeError 上,根因在上面那把锁的
 # 提示行里 —— 不加花括号的变量紧跟中文,shell 把那个字的首字节吃进变量名:路径悄悄变成空,
