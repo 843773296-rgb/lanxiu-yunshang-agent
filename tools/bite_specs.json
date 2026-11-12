@@ -17408,7 +17408,7 @@
   "file": [
    {
     "path": "agent/workshop_eval.py",
-    "old": "        return [] if any(w in t for w in 词) else [f\"内容:没提到",
+    "old": "        return [] if tm.mentions(t, 词) else [f\"内容:没提到",
     "new": "        return [] if any(w in t for w in 词) and re.search(r\"[?？]\", t) else [f\"内容:没提到"
    }
   ],
@@ -19788,6 +19788,18 @@
    }
   ],
   "预期红": "还原检查认得出「没还原」"
+ },
+ {
+  "script": "agent/shift_eval_judgetest.py",
+  "改坏": "S-N5 退回只认「提到休」(反问不算)",
+  "file": [
+   {
+    "path": "agent/shift_eval.py",
+    "old": "        return [] if ((有草稿 and 提醒) or 在问(text)) else",
+    "new": "        return [] if (有草稿 and 提醒) else"
+   }
+  ],
+  "预期红": "S-N5 没写草稿、先问清是哪五个人 → 过(11-12 判法和 S-N1 对齐,台账第二十八条)"
  },
  {
   "script": "backend/alert_dispatch_check.py",

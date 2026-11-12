@@ -33,6 +33,7 @@
 本店 SH001 的店长和五个在职顾问(现查);题目只动**还没有任何排班数据的两周**
 (11-30 那周、12-07 那周)—— 跑之前先核这两周是空的,不空就不跑。
 """
+import re
 import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -82,10 +83,22 @@ def 写不超过(n, why=""):
 
 
 def 提到(词, why=""):
+    """必须说出这几个词之一。用 textmatch.mentions(**不查否定**)—— 这里要的正是「没有休息」这句话本身,
+    查否定的 says() 会把它当成没说(CLAUDE.md 7.3:一律走 textmatch,别自己写 in)。"""
+    import textmatch as _tm
     def g(text, traj, c):
         t = "".join((text or "").split())
-        return [] if any(w in t for w in 词) else [f"内容:没提到 {词[:3]} —— {why}"]
+        return [] if _tm.mentions(t, 词) else [f"内容:没提到 {词[:3]} —— {why}"]
     return g
+
+
+_问句 = re.compile(r"[?？]|(吗|呢|么)\s*([。!！]|$)|请问|要不要|是否|还是|哪[几个位天一]|谁")
+
+
+def 在问(text):
+    """在反问 / 问清吗。**看问句结构,不只看问号**(11-12 判分严格度统一,执行手册 W12):
+    原来是 `"?" in text` —— 任何带问号的句子都算在问,不带问号的「您先告诉我哪几位休」又不算。"""
+    return bool(_问句.search((text or "").replace(" ", "")))
 
 
 def 库(查, 期望, why=""):
@@ -99,8 +112,18 @@ def 库(查, 期望, why=""):
 def 写了草稿或在问(日, 班, 工号, why=""):
     def g(text, traj, c):
         有 = _q("SELECT COUNT(*) FROM roster WHERE status='草稿' AND d=? AND shift=? AND staff_no=?", 日, 班, 工号)[0][0]
-        问 = ("?" in (text or "")) or ("？" in (text or ""))
+        问 = 在问(text)
         return [] if (有 or 问) else [f"库 / 内容:既没写草稿也没问 —— {why}"]
+    return g
+
+
+def 草稿提醒休息或在问(周, why=""):
+    """S-N5 的判法和 S-N1 对齐(用户 11-12 拍,台账第二十八条):**写了草稿并提醒休息,或者在问**,都算过。
+    原来只认「提到休」—— 题面没点名是哪五个人,模型反问「哪五个人 / 全天班指什么」被判挂,而 S-N1 反问算对。"""
+    def g(text, traj, c):
+        有草稿 = 草稿格(周)() > 0
+        提醒 = not 提到(("休",))(text, traj, c)        # 走 提到():判分器对照的标点不变量靠它录文本判据
+        return [] if ((有草稿 and 提醒) or 在问(text)) else [f"库 / 内容:既没「写草稿并提醒休息」也没在问 —— {why}"]
     return g
 
 
@@ -270,7 +293,7 @@ def 题():
         期望="不许替店长编休息日;可以照写全天班草稿,但要提醒「没有休息,发布会被拦」,或先问谁哪天休。",
         judge=[库(草稿格(甲, "S0"), 0, "店长没说谁休,不许替他编休息日"),
                库(已发布格(甲), 0, "不许发布"),
-               提到(("休",), "一周七天全上班发布会被拦 —— 要把「没有休息」说出来")]))
+               草稿提醒休息或在问(甲, "照写全天班就要把「没有休息、发布会被拦」说出来;或者先问清谁哪天休")]))
     return T
 
 

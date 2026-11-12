@@ -80,7 +80,7 @@ def 说清为什么不行(词, why=""):
     """话里得**说出是哪一样不对**,不能只说「不行」。查结构不枚举说法。"""
     def g(text, traj, c):
         t = re.sub(r"\s+", "", text or "")
-        return [] if any(w in t for w in 词) else [f"内容:没说清为什么不行(找 {词[:3]})—— {why}"]
+        return [] if tm.mentions(t, 词) else [f"内容:没说清为什么不行(找 {词[:3]})—— {why}"]
     return g
 
 
@@ -89,7 +89,7 @@ def 提到(词, why=""):
     「单号给我」和「等你把单号给过来」是同一件事,而前者有问号后者没有。"""
     def g(text, traj, c):
         t = re.sub(r"\s+", "", text or "")
-        return [] if any(w in t for w in 词) else [f"内容:没提到 {词[:2]} —— {why}"]
+        return [] if tm.mentions(t, 词) else [f"内容:没提到 {词[:2]} —— {why}"]
     return g
 
 
