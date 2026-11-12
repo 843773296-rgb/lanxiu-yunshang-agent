@@ -268,6 +268,9 @@ def 准备(c, x):
 
 def main():
     only = sys.argv[1] if len(sys.argv) > 1 else None
+    # 写库评测跑在库副本上(执行手册 W09):先导入懒加载的写口,再切;工具服务子进程经 LANXIU_DB 跟着切
+    import evaldb
+    evaldb.用副本("eval-order-", 先导入=("order_write", "measure_write"))
     x = 挑()
     if not x:
         print("❌ 挑不到题要的人和商品(一家店:一个名下只有一人、成年、有同意书、穿过定制品的客户;"

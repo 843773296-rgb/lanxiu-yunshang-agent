@@ -272,6 +272,9 @@ def 题(x):
 
 def main():
     only = sys.argv[1] if len(sys.argv) > 1 else None
+    # 写库评测跑在库副本上(执行手册 W09):先导入懒加载的写口,再切;工具服务子进程经 LANXIU_DB 跟着切
+    import evaldb
+    evaldb.用副本("eval-workshop-", 先导入=())
     x = 挑()
     if not x:
         print("❌ 挑不到题要的单和人(要:一张外发工厂在产单、一张自有工坊在产单、店长、工匠)"
