@@ -343,15 +343,18 @@ def _时限(x, 现在=None):
 
 # ── 受理(意见收集 PRD §5.1;用户拍「总部运营统一受理」→ 能力「受理意见」)──────────────────
 # 状态 → 这一步能做的动作 → 到哪个状态。**一张表,判据真调它**;不在表里的一律 409。
-# 「关联问题」要等问题单做出来(PRD §4.2),现在不开 —— 开了它就是一个指向不存在东西的状态
+# 「关联问题」11-12 问题单做出来之后开了(PRD §5.1):要指定一张问题单(issues_api 从意见直接建单也走这一步);
+# 「重新归并」= 已关联问题 → 核实中(关联错了 / 要并到别的单),要写为什么
 流转 = {
     "待受理": {"开始核实": "核实中", "请求补充": "待补充"},
     "待补充": {"开始核实": "核实中"},
-    "核实中": {"答复": "已答复", "不采纳": "不采纳", "请求补充": "待补充"},
+    "核实中": {"答复": "已答复", "不采纳": "不采纳", "请求补充": "待补充", "关联问题": "已关联问题"},
+    "已关联问题": {"重新归并": "核实中"},
     "已答复": {"重开": "核实中"},
     "不采纳": {"重开": "核实中"},
 }
-要说明的动作 = ("请求补充", "答复", "不采纳", "重开")      # 和库 CHECK ck_opinion_events_note 同一份意思
+要说明的动作 = ("请求补充", "答复", "不采纳", "重开", "重新归并")      # 和库 CHECK ck_opinion_events_note 同一份意思
+要指定问题单的动作 = ("关联问题",)
 给提的人看的动作 = ("请求补充", "答复", "不采纳")         # 这几步写的那句话会出现在「我的意见」里
 
 
@@ -370,6 +373,11 @@ def 意见详情(project_id: str, opinion_id: str, me: 身份 = Depends(要权�
         线 = c.execute(text("""select created_at, created_by, action_code, from_status, to_status, note from opinion_events
                               where project_id=:p and opinion_id=:i order by created_at, id"""),
                        {"p": project_id, "i": opinion_id}).mappings().all()
+        # PRD §5.1「已关联问题:跟随问题单显示进度」—— 问题单的状态读的时候现取,不抄一份进意见单(抄的那份会停在关联那一刻)
+        单 = c.execute(text("""select i.id, i.title, i.status, i.duplicate_of_issue_id,
+                                     (select m.status from issues m where m.project_id=i.project_id and m.id=i.duplicate_of_issue_id) 主状态
+                                from issues i where i.project_id=:p and i.id=:s"""),
+                      {"p": project_id, "s": x["issue_id"]}).mappings().first() if x["issue_id"] else None
     return {"id": x["id"], "来源": x["source"], "评价": x["verdict"], "问题类型": x["problem_type"], "说明": x["note"],
             "期望结果": x["expected_note"], "影响": x["impact_type"], "提问人": x["asker_snapshot"] or {"工号": x["asker_staff_code"]},
             "状态": x["status"], "聊天站trace": x["chat_trace_ref"], "会话号": x["session_ref"], "管理后台trace": x["后台trace"],
@@ -377,7 +385,10 @@ def 意见详情(project_id: str, opinion_id: str, me: 身份 = Depends(要权�
             "revision": x["revision"], **_时限(x),
             "样本": ({"id": 样["id"], "复核状态": 样["review_status"]} if 样 else None),
             "能提样本": x["status"] in 能提样本的状态 and (not 样 or 样["review_status"] == "已退回"),
-            "能做的动作": [{"动作": k, "到": v, "要写说明": k in 要说明的动作, "提的人看得到": k in 给提的人看的动作}
+            "问题单": ({"id": 单["id"], "标题": 单["title"], "状态": 单["status"],
+                      "指向主问题": 单["duplicate_of_issue_id"], "主问题状态": 单["主状态"]} if 单 else None),
+            "能做的动作": [{"动作": k, "到": v, "要写说明": k in 要说明的动作, "提的人看得到": k in 给提的人看的动作,
+                        "要指定问题单": k in 要指定问题单的动作}
                         for k, v in 流转.get(x["status"], {}).items()],
             "时间线": [{"时间": e["created_at"].isoformat(), "谁": e["created_by"], "动作": e["action_code"],
                       "从": e["from_status"], "到": e["to_status"], "说明": e["note"]} for e in 线]}
@@ -387,7 +398,7 @@ def 意见详情(project_id: str, opinion_id: str, me: 身份 = Depends(要权�
 async def 受理一步(project_id: str, opinion_id: str, request: Request,
                if_match: str = Header(default=None, alias="If-Match"),
                me: 身份 = Depends(要权限("受理意见"))):
-    """受理动作:`{动作, 说明?}`,带 If-Match(详情里的 revision)。**每一步追加一行时间线,不改不删**;
+    """受理动作:`{动作, 说明?, 问题单?}`,带 If-Match(详情里的 revision)。「关联问题」要给问题单编号(同项目、不是重复单)。**每一步追加一行时间线,不改不删**;
     第一次动作记下首次处理时刻(超时标红就此解除)。不采纳 / 答复 / 请求补充写的那句话,提的人在「我的意见」里看得到。"""
     if not if_match:
         raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match", "把这条意见详情里的 revision 放进 If-Match 头")
@@ -401,6 +412,9 @@ async def 受理一步(project_id: str, opinion_id: str, request: Request,
     说明 = _字(体, "说明")
     if 说明 and len(说明) > 说明最长:
         raise _错(422, "VALIDATION", f"说明最多 {说明最长} 字", "写短一点;详细的证据看调用树,不用抄进说明", field_errors={"说明": f"最多 {说明最长} 字"})
+    if 动作 in 要指定问题单的动作:
+        with 事务() as c:
+            return 关联到问题单(c, project_id, me, opinion_id, if_match, _字(体, "问题单"), 说明)
     with 事务() as c:
         x = c.execute(text("select status, revision, organization_id from opinions where project_id=:p and id=:i for update"),
                       {"p": project_id, "i": opinion_id}).mappings().first()
@@ -411,12 +425,16 @@ async def 受理一步(project_id: str, opinion_id: str, request: Request,
         能 = 流转.get(x["status"], {})
         if 动作 not in 能:
             raise _错(409, "TRANSITION_NOT_ALLOWED", f"「{x['status']}」的意见不能「{动作}」",
-                      f"这一步能做的:{list(能) or '没有(已是终态)'}" + ("。「关联问题」要等问题单做出来" if 动作 == "关联问题" else ""),
+                      f"这一步能做的:{list(能) or '没有(已是终态)'}",
                       field_errors={"动作": f"只收 {list(能)}"})
         if 动作 in 要说明的动作 and not 说明:
             raise _错(422, "VALIDATION", f"「{动作}」要写说明", "不采纳要说为什么、答复要写给提的人看的那句话",
                       field_errors={"说明": "必填"})
         到 = 能[动作]
+        if 动作 == "重新归并":
+            原单 = c.execute(text("select issue_id from opinions where project_id=:p and id=:i"),
+                            {"p": project_id, "i": opinion_id}).scalar()
+            说明 = f"从问题单 {原单} 撤出:{说明}"      # 关联过哪张单留在时间线里(issue_id 下面会清空)
         c.execute(text("""insert into opinion_events (id, organization_id, project_id, created_at, created_by,
                               opinion_id, action_code, from_status, to_status, note)
                           values (:i, :o, :p, now(), :u, :op, :a, :f, :t, :n)"""),
@@ -424,12 +442,56 @@ async def 受理一步(project_id: str, opinion_id: str, request: Request,
                    "op": opinion_id, "a": 动作, "f": x["status"], "t": 到, "n": 说明})
         r = c.execute(text("""update opinions set status=:t, revision=revision+1, updated_at=now(),
                                   first_responded_at = coalesce(first_responded_at, now()),
-                                  reply_note = case when :给看 then :n else reply_note end
+                                  reply_note = case when :给看 then :n else reply_note end,
+                                  issue_id = case when :清单 then null else issue_id end
                                where project_id=:p and id=:i returning revision, first_responded_at"""),
-                      {"t": 到, "给看": 动作 in 给提的人看的动作, "n": 说明, "p": project_id, "i": opinion_id}).mappings().first()
+                      {"t": 到, "给看": 动作 in 给提的人看的动作, "n": 说明, "p": project_id, "i": opinion_id,
+                       "清单": 动作 == "重新归并"}).mappings().first()
     return {"id": opinion_id, "从": x["status"], "到": 到, "revision": r["revision"],
             "首次处理时刻": r["first_responded_at"].isoformat(),
             "note": ("提的人在「我的意见」里会看到这句话" if 动作 in 给提的人看的动作 else "这一步只记在时间线上,提的人看到的是进度变了")}
+
+
+def 关联到问题单(c, project_id, me, opinion_id, if_match, issue_id, 说明):
+    """意见走一步「关联问题」(核实中 → 已关联问题),在调用方的事务里。受理口和「从意见建问题单」(issues_api)都走这一个 ——
+    判据(状态、revision、问题单在不在同一个项目、是不是重复单)只写这一份。"""
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match", "把这条意见详情里的 revision 放进 If-Match 头")
+    x = c.execute(text("select status, revision, organization_id from opinions where project_id=:p and id=:i for update"),
+                  {"p": project_id, "i": opinion_id}).mappings().first()
+    if not x:
+        raise _错(404, "NOT_FOUND", "没有这条意见", "回清单重新进")
+    if str(x["revision"]) != str(if_match).strip('"'):
+        raise _错(409, "REVISION_CONFLICT", "这条意见刚被别人处理过(或提的人刚改过)", "刷新看一眼最新状态再处理")
+    能 = 流转.get(x["status"], {})
+    if "关联问题" not in 能:
+        raise _错(409, "TRANSITION_NOT_ALLOWED", f"「{x['status']}」的意见不能「关联问题」",
+                  f"这一步能做的:{list(能) or '没有(已是终态)'};要先核实(核实中才能关联)",
+                  field_errors={"动作": f"只收 {list(能)}"})
+    if not issue_id:
+        raise _错(422, "VALIDATION", "「关联问题」要指定一张问题单", "填问题单编号;还没有合适的就从这条意见直接建一张",
+                  field_errors={"问题单": "必填"})
+    单 = c.execute(text("select id, status, duplicate_of_issue_id from issues where project_id=:p and id=:s"),
+                  {"p": project_id, "s": issue_id}).mappings().first()
+    if not 单:
+        raise _错(422, "VALIDATION", "这个项目里没有这张问题单", "确认编号(只能关联同一个项目里的)",
+                  field_errors={"问题单": "不存在"})
+    if 单["status"] == "已重复":
+        raise _错(422, "VALIDATION", f"这张问题单是重复单(主问题 {单['duplicate_of_issue_id']})",
+                  "直接关联到主问题", field_errors={"问题单": "是重复单"})
+    记 = f"关联问题单 {issue_id}" + (f":{说明}" if 说明 else "")
+    c.execute(text("""insert into opinion_events (id, organization_id, project_id, created_at, created_by,
+                          opinion_id, action_code, from_status, to_status, note)
+                      values (:i, :o, :p, now(), :u, :op, '关联问题', :f, '已关联问题', :n)"""),
+              {"i": f"oe_{_uuid.uuid4().hex[:12]}", "o": x["organization_id"], "p": project_id, "u": me.user_id,
+               "op": opinion_id, "f": x["status"], "n": 记})
+    r = c.execute(text("""update opinions set status='已关联问题', issue_id=:s, revision=revision+1, updated_at=now(),
+                              first_responded_at = coalesce(first_responded_at, now())
+                           where project_id=:p and id=:i returning revision, first_responded_at"""),
+                  {"s": issue_id, "p": project_id, "i": opinion_id}).mappings().first()
+    return {"id": opinion_id, "从": x["status"], "到": "已关联问题", "问题单": issue_id, "revision": r["revision"],
+            "首次处理时刻": r["first_responded_at"].isoformat(),
+            "note": "提的人在「我的意见」里看到的是「已安排」;问题单的进度在这条意见的详情里跟着显示"}
 
 
 # ── 期望结果 → 待审核样本 → 店长复核(PRD 第三阶段第一刀;用户 11-04 拍「总部运营提、店长复核」「店长在聊天站里复核」)──

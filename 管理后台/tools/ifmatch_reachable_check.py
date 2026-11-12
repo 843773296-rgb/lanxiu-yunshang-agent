@@ -105,6 +105,12 @@ P = f"{基址}/api/v1/projects/{项目}"
         取id=("/opinions", "items[0].id"), 读="/opinions/{id}", 字段="revision", 项目="project_demo_a"),
     "POST /opinions/{id}/promote": dict(
         取id=("/opinions", "items[0].id"), 读="/opinions/{id}", 字段="revision", 项目="project_demo_a"),
+    # 问题单(11-12):流转和改字段要的 revision 都在问题单详情顶层。样例由 test-e2e-ci 里的 test_issues_flow
+    # 在**演示项目**留的那一张提供(正式项目里不留)
+    "PATCH /issues/{id}": dict(
+        取id=("/issues", "items[0].id"), 读="/issues/{id}", 字段="revision", 项目="project_demo_a"),
+    "POST /issues/{id}/actions": dict(
+        取id=("/issues", "items[0].id"), 读="/issues/{id}", 字段="revision", 项目="project_demo_a"),
     # 轮换(11-04)和改小上限同一个 revision 来源
     "POST /access-keys/{id}/rotate": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),

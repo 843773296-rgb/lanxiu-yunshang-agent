@@ -245,6 +245,9 @@
     "seq": "BIGINT", "supersedes_score_id": "TEXT",
     # 意见处理时间线(11-04):前后两个状态 —— 套不上后缀约定,点名登记(不给 TEXT 兜底)
     "from_status": "TEXT", "to_status": "TEXT",
+    # 问题单(11-12):标题套不上后缀约定;处理时限 / 重新评估是**日历日不是时刻**(和 world_date 同一个理由:
+    # 存成 timestamp 会带一个看起来像真时刻的 00:00)—— 点名登记成 DATE
+    "title": "TEXT", "due_date": "DATE", "reevaluate_date": "DATE",
     # 告警规则(11-04):阈值 / 窗口 / 去重周期 —— 套不上后缀约定,点名登记
     "threshold_value": "NUMERIC(20,6)", "window_minutes": "INTEGER", "dedupe_minutes": "INTEGER",
     # 评测派发(11-05):超时分钟 —— 套不上后缀约定,点名登记
@@ -357,6 +360,9 @@
     # 意见单(11-04):来路 / 好不好 / 谁提的 / 走到哪 —— 少一样受理人就没法处理(chat_trace_ref 可空:独立建议不挂任何一轮)
     "opinions": {"source", "verdict", "asker_staff_code", "status"},
     "opinion_events": {"opinion_id", "action_code", "to_status"},
+    # 问题单(11-12):叫什么 / 走到哪 / 根因核实到哪 —— 少一样清单就没法筛;重开次数从 0 数(不许 NULL 冒充 0)
+    "issues": {"title", "status", "root_cause_status", "reopen_count"},
+    "issue_events": {"issue_id", "action_code", "to_status"},
     # 告警(11-04):少一样规则就判不了 / 待办就说不清是哪条规则、什么状态
     "alert_rules": {"name", "filter_snapshot", "metric_code", "direction_code", "threshold_value", "window_minutes",
                     "min_sample_count", "trigger_count", "recover_count", "dedupe_minutes", "owner", "breach_count", "normal_count"},

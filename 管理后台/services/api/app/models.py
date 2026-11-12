@@ -32,6 +32,9 @@ import importlib.util as _ilu
 _桥spec = _ilu.spec_from_file_location("桥工具", os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                             "runtime", "桥工具.py"))
 _桥 = _ilu.module_from_spec(_桥spec); _桥spec.loader.exec_module(_桥)
+# 问题单的状态 / 根因类别 / 时间线动作只在 issue_flow.py 写一次(11-12)—— 库 CHECK 从那里拼,和上面桥工具名单同一个做法
+_问spec = _ilu.spec_from_file_location("问题单口径", os.path.join(os.path.dirname(os.path.abspath(__file__)), "issue_flow.py"))
+_问 = _ilu.module_from_spec(_问spec); _问spec.loader.exec_module(_问)
 
 from sqlalchemy import (Date, MetaData, Table, Column, Text, Integer, BigInteger, Boolean,
                         Numeric, TIMESTAMP, Index, UniqueConstraint,
@@ -362,9 +365,31 @@ _额外检查 = {
         ("ck_alert_incidents_handled", "status <> '已处理' or (handled_at is not null and note is not null)"),
     ],
     "opinion_events": [
-        ("ck_opinion_events_action", "action_code in ('开始核实', '请求补充', '关联问题', '答复', '不采纳', '重开', '提的人补充', '提为样本', '店长通过', '店长退回')"),
+        # 「重新归并」(11-12,问题单做出来之后):已关联问题 → 核实中,要写为什么(不在下一条的免写名单里)
+        ("ck_opinion_events_action", "action_code in ('开始核实', '请求补充', '关联问题', '答复', '不采纳', '重开', '提的人补充', '提为样本', '店长通过', '店长退回', '重新归并')"),
         # 不采纳 / 重开 / 请求补充 / 答复 一定要写为什么(给提的人看的那句话也在这里)
         ("ck_opinion_events_note", "action_code in ('开始核实', '关联问题', '提的人补充', '店长通过') or note is not null"),
+    ],
+    # 问题单(11-12,PRD §4.2 / §5.2):枚举从 issue_flow.py 拼;三条「到了这个状态就必须有」的字段 ——
+    # 接口里也拦(422),库这一层再钉一次:下一个写入方(补数据的 SQL、脚本)不会经过接口那个 if
+    "issues": [
+        ("ck_issues_status", "status in " + _问.sql_枚举(_问.状态们)),
+        ("ck_issues_root_cause_type", "root_cause_type is null or root_cause_type in " + _问.sql_枚举(_问.根因类别们)),
+        ("ck_issues_root_cause_status", "root_cause_status in " + _问.sql_枚举(_问.核实状态们)),
+        # 没分类就说「原因已证实」—— 证实的是什么?
+        ("ck_issues_proven_has_type", "root_cause_status <> '原因已证实' or root_cause_type is not null"),
+        # 搁置不计已解决,而且要说为什么、什么时候再看(PRD「记录理由、责任人及重新评估日期」)
+        ("ck_issues_shelved", "status <> '已搁置' or (shelve_reason is not null and reevaluate_date is not null)"),
+        # 重复 ⇔ 指向主问题;不能指自己
+        ("ck_issues_duplicate", "(status = '已重复') = (duplicate_of_issue_id is not null)"),
+        ("ck_issues_not_self_duplicate", "duplicate_of_issue_id is null or duplicate_of_issue_id <> id"),
+        # 关闭要处理说明 + 完成证据(版本 / 验证记录的真绑定是 PRD §4.3,这次没做 —— 证据先是一段文字)
+        ("ck_issues_closed", "status <> '已验证关闭' or (resolution_note is not null and completion_evidence_note is not null)"),
+        ("ck_issues_reopen_count", "reopen_count >= 0"),
+    ],
+    "issue_events": [
+        ("ck_issue_events_action", "action_code in " + _问.sql_枚举(_问.全部事件动作)),
+        ("ck_issue_events_note", "action_code not in " + _问.sql_枚举(_问.要说明的动作) + " or note is not null"),
     ],
     "chat_handoffs": [
         ("ck_chat_handoffs_status", "status in ('待处理', '已处理')"),
@@ -386,6 +411,8 @@ _额外检查 = {
                                      "('答错', '没答全', '证据不支持', '查错对象', '太慢或失败', '不好操作', '新增能力', '其他')"),
         ("ck_opinions_impact", "impact_type is null or impact_type in ('仅影响本次', '反复出现', '影响业务办理')"),
         ("ck_opinions_status", "status in ('待受理', '待补充', '核实中', '已关联问题', '已答复', '不采纳', '已撤回')"),
+        # 11-12:「已关联问题」⇔ 指着一张问题单 —— 一条已关联却说不出关联到哪张的意见,在清单上和真关联了的长得一样
+        ("ck_opinions_issue", "(status = '已关联问题') = (issue_id is not null)"),
     ],
     "access_keys": [
         ("ck_access_keys_target", "(application_id is null) <> (chat_assistant_id is null)"),

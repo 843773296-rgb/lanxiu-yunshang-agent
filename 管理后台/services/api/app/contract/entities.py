@@ -920,7 +920,7 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     E("opinions", "意见单", 项目级, 可改,
       ["source", "chat_trace_ref", "session_ref", "verdict", "problem_type", "note", "expected_note", "impact_type",
        "asker_staff_code", "asker_snapshot", "status", "history_snapshot", "promoted_sample_id", "submit_ref",
-       "first_response_due_at", "due_basis_code", "first_responded_at", "reply_note"],
+       "first_response_due_at", "due_basis_code", "first_responded_at", "reply_note", "issue_id"],
       ["**每条问答都能提**(原来只有查过知识库的回答有评分条,而那评的是「找得准不准」不是「答得对不对」);"
        "执行失败的那一轮也能报(source=执行失败);独立建议不挂任何一轮(source=独立建议,chat_trace_ref 为空)",
        "**记的是提问的那个人**(asker_staff_code = 澜绣工号,asker_snapshot = 当时的姓名 / 角色 / 门店):"
@@ -934,8 +934,9 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "审核过的才升成评测样本(promoted_sample_id),**不自动改线上答案**(C13)",
        "状态照 PRD §5.1:待受理 / 待补充 / 核实中 / 已关联问题 / 已答复 / 不采纳 / 已撤回",
        "**独立建议**(11-04 第二刀):不挂任何一轮,评价记成「建议」;防重靠 submit_ref(提交幂等键,PRD §3.2「响应丢失后用原提交幂等键"
-       "查询或重试,不能重复生成多条」)—— 挂一轮的那种靠 (项目, 那一轮, 工号) 唯一,而独立建议那一列是空的,PG 把 NULL 当互不相同,防不了"],
-      依赖=["samples"]),
+       "查询或重试,不能重复生成多条」)—— 挂一轮的那种靠 (项目, 那一轮, 工号) 唯一,而独立建议那一列是空的,PG 把 NULL 当互不相同,防不了",
+       "**已关联问题**(11-12):issue_id 指向问题单(同项目复合外键);「重新归并」回核实中时清空,关联过哪张单留在 opinion_events 里"],
+      依赖=["samples", "issues"]),
     # ②''' 告警(DF-04 第二步,2026-11-04;Dify 对标 §8.1 / C16;用户拍「连续 N 次越线才报、连续 M 次正常才恢复、样本不够那轮不算」)
     E("chat_handoffs", "聊天转人工", 项目级, 可改,
       ["chat_trace_ref", "session_ref", "asker_staff_code", "asker_snapshot", "question_note", "intent_name", "reason_note",
@@ -967,6 +968,29 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "谁做的在 created_by(管理后台账号);不采纳 / 重开 / 请求补充必须带 note(PRD §5.1「不采纳必须说明原因」)",
        "意见单上的状态是这张表最后一行的 to_status —— 两边对不上,以这张表为准去查是哪一步没写进去"],
       依赖=["opinions"]),
+    # ②'''' 问题单(2026-11-12;口径照《意见收集与能力持续改进 PRD》10-24 §4.2 / §5.2 / §7.1)
+    E("issues", "问题单", 项目级, 可改,
+      ["title", "impact_note", "repro_note", "root_cause_type", "root_cause_status", "solution_note", "acceptance_note",
+       "target_version", "dependency_note", "owner", "due_date", "completion_evidence_note", "resolution_note",
+       "shelve_reason", "reevaluate_date", "duplicate_of_issue_id", "status", "last_closed_at", "reopen_count"],
+      ["**意见是用的人说的话,问题单是要修的那件事**:多条意见可以并进同一张问题单(opinions.issue_id),原意见保留(PRD §5.1)",
+       "根因类别(§4.2 那 9 类)和核实状态(原因待核实 / 原因已证实)**分两列** —— PRD「两者分开」;"
+       "没分类就不许标「已证实」(库 CHECK)",
+       "状态照 PRD §5.2:待分析 → 已确认 → 处理中 → 待验证 → 待发布 → 观察中 → 已验证关闭;旁路 已搁置 / 已重复。"
+       "流转表只在 services/api/app/issue_flow.py 写一次,接口和库 CHECK 都从那里来",
+       "**已搁置不计已解决**,而且必须有理由 + 重新评估日期(库 CHECK);已重复必须指向主问题(duplicate_of_issue_id,自引用不建外键,"
+       "接口校验同项目、不是自己、主问题本身不是重复单)",
+       "**已验证关闭**必须有处理说明 + 完成证据(库 CHECK)。⚠️ 这次的完成证据是一段文字 —— "
+       "PRD §4.3「修复版本已实际生效、原案例与回归通过」的**真绑定(版本 / 验证记录)这次没做**",
+       "关闭后复发 → 重开回处理中:**关闭记录不抹掉**(last_closed_at 不清空、时间线里那一行「关闭」还在,reopen_count +1)",
+       "处理时限 due_date 可空:**几天算超时 PRD §10 待定**,这里不替业务定数"],
+      依赖=["issues"]),
+    E("issue_events", "问题处理时间线", 子对象, 只追加,
+      ["issue_id", "action_code", "from_status", "to_status", "note", "change_snapshot"],
+      ["**每一步追加一行,不改不删**(PRD §7.1「操作者、动作、前后值、原因、时间,追加留痕」):建单、改字段、每一次流转",
+       "change_snapshot 记这一步改了哪些字段的前后值(改根因 / 搁置的日期 / 指向哪个主问题 / 关闭的说明和证据)",
+       "暂不处理 / 标为重复 / 验证失败 / 发布失败 / 复发 / 重新评估 必须带 note;**发布失败是一行 待发布 → 待发布**,状态不动、记录留下"],
+      依赖=["issues"]),
 
     # ③ 工具 / 连接 / 指南 / 规则
     E("tool_definitions", "工具", 项目级, 可改,

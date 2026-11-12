@@ -82,6 +82,8 @@ G, Y, R, D = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
     # 意见受理详情(2026-11-04)。冒烟项目里的样例是 test_opinions_flow 在演示项目留的那一条(E2E-SAMPLE);
     # CI 上它排在冒烟前面。正式项目里不留测试数据
     ("#/opinion/",  "页_意见详情",   "opinions",         ""),
+    # 问题单详情(2026-11-12)。冒烟项目里的样例是 test_issues_flow 在演示项目留的那一张;CI 上它排在冒烟前面
+    ("#/issue/",    "页_问题单详情", "issues",           ""),
 )
 
 # 页签(2026-10-28 导航照 Dify):`#/studio/xxx` `#/integrations/xxx` 也是 startsWith 路由,但**不带 id** ——

@@ -121,6 +121,7 @@ const 导航 = [
   ["grp", "日志与监测"],
   ["#/runs", "运行记录", true, true],
   ["#/opinions", "意见受理", true, true],
+  ["#/issues", "问题单", true, true],
   ["#/monitoring", "监测", true, true],
   ["#/alerts", "告警", true, true],
   ["#/traces", "调用链", true, true],
@@ -1606,7 +1607,7 @@ async function 页_意见受理(页 = 1, 筛 = "") {
   let d;
   try { d = await 请求(`${P()}/opinions?limit=30&page=${页}` + (筛 ? `&status=${encodeURIComponent(筛)}` : "")); }
   catch (e) { const s = 错误块(e, () => 页_意见受理(页, 筛)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
-  const 态们 = ["", "待受理", "待补充", "核实中", "已答复", "不采纳", "已撤回"];
+  const 态们 = ["", "待受理", "待补充", "核实中", "已关联问题", "已答复", "不采纳", "已撤回"];
   const 筛条 = `<div>` + 态们.map((t) => `<button data-opf="${esc(t)}"${t === 筛 ? ' class="on"' : ""}>${esc(t || "全部")}</button>`).join("") + `</div>`;
   const 超 = d.items.filter((x) => x.超时).length;
   const 表 = !d.items.length ? 状态("", "还没有意见", "聊天站回答下面点「反馈问题」、左栏「意见与建议」提的都会到这里。").html
@@ -1636,6 +1637,16 @@ async function 页_意见详情(id) {
   const kv = (k, v) => `<tr><td class="k">${esc(k)}</td><td>${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
   const 人 = d.提问人 || {};
   const 钮 = (d.能做的动作 || []).map((a) => `<button data-opact="${esc(a.动作)}">${esc(a.动作)} → ${esc(a.到)}</button>`).join(" ");
+  // 11-12 问题单:「关联问题」要指定一张单(接口用「要指定问题单」告诉页面);也可以从这条意见直接建一张并关联
+  const 能关联 = (d.能做的动作 || []).some((a) => a.要指定问题单);
+  const 单 = d.问题单;
+  const 单块 = 单 ? `<div class="note">${md(`已关联问题单 **${单.标题}**,问题单现在是「**${单.状态}**」`
+      + (单.指向主问题 ? `(这张是重复单,主问题 \`${单.指向主问题}\` 现在是「${单.主问题状态 || "?"}」)` : ""))}
+      <a href="#/issue/${encodeURIComponent(单.id)}">打开问题单</a></div>` : "";
+  const 关联块 = 能关联 ? `<div>关联到已有问题单:<input id="op-act-issue" placeholder="问题单编号(is_…)">(填了再点「关联问题」)</div>
+      <h2>从这条意见建问题单</h2>
+      <input id="op-is-title" placeholder="问题单标题(必填)" style="width:100%">
+      <div><button id="op-is-new">建问题单并关联</button> <span class="k" id="op-is-why"></span></div>` : "";
   $("#main").innerHTML = 头 + `<div class="head"><div><h1>${esc(d.评价)}${d.问题类型 ? " · " + esc(d.问题类型) : ""}</h1>
       <div class="sub">${esc(d.来源)} · ${esc(人.姓名 || 人.工号 || "")} ${esc(人.角色 || "")} ${esc(人.门店 || "")} · 状态 <b>${esc(d.状态)}</b>
         ${d.超时 ? ' · <span class="pill fail">超时未处理</span>' : ""}</div></div></div>
@@ -1645,9 +1656,10 @@ async function 页_意见详情(id) {
       ${kv("给提的人的答复", d.答复)}${kv("改过几次", (d.改之前的版本 || []).length)}</tbody></table>
     ${d.管理后台trace ? `<button data-optrace="${esc(d.管理后台trace)}">看这一轮的调用树</button>`
       : d.聊天站trace ? `<div class="note">${md("这一轮的执行记录**还没推过来**,推过来之后这里会出现调用树入口。")}</div>` : ""}
+    ${单块}
     <h2>处理</h2>
-    ${钮 ? `<textarea id="op-act-note" rows="2" placeholder="说明:不采纳 / 答复 / 请求补充 / 重开要写;答复、不采纳、请求补充写的这句话提的人看得到"></textarea>
-      <div>${钮}</div><div class="k" id="op-act-why"></div>` : `<div class="note">这一步没有能做的动作(已是终态)。</div>`}
+    ${钮 ? `<textarea id="op-act-note" rows="2" placeholder="说明:不采纳 / 答复 / 请求补充 / 重开 / 重新归并要写;答复、不采纳、请求补充写的这句话提的人看得到"></textarea>
+      <div>${钮}</div><div class="k" id="op-act-why"></div>${关联块}` : `<div class="note">这一步没有能做的动作(已是终态)。</div>`}
     <h2>评测样本</h2>
     ${d.样本 ? `<div class="note">${md(`已提成样本 \`${d.样本.id}\` · 复核状态 **${d.样本.复核状态}**`
         + (d.样本.复核状态 === "待复核" ? "(等提问人所在门店的店长在聊天站里复核;**复核通过之前它不算标准答案**)" : ""))}</div>` : ""}
@@ -1677,14 +1689,158 @@ async function 页_意见详情(id) {
       const 话 = ($("#op-act-note") || {}).value || "";
       // 11-08 用户拍:「不采纳」「答复」写的话提意见的人看得到 → 先确认
       if (["不采纳", "答复"].includes(b.dataset.opact) && !(await 问一句(`确定${b.dataset.opact}?`, `提意见的人会看到这个决定${话 ? "和你写的这句话" : ""}。`, { 确定: b.dataset.opact }))) return;
+      const 体 = { 动作: b.dataset.opact, 说明: 话 };
+      const 这步 = (d.能做的动作 || []).find((a) => a.动作 === b.dataset.opact) || {};
+      if (这步.要指定问题单) 体.问题单 = (($("#op-act-issue") || {}).value || "").trim();
       b.disabled = true;
       try {
         await 请求(`${P()}/opinions/${encodeURIComponent(id)}/actions`,
-          { method: "POST", headers: { "If-Match": String(d.revision) }, body: JSON.stringify({ 动作: b.dataset.opact, 说明: 话 }) });
+          { method: "POST", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
         页_意见详情(id);
       } catch (e) { b.disabled = false; $("#op-act-why").textContent = "没处理上:" + ((e.体 && (e.体.message + " " + (e.体.advice || ""))) || e.message); }
     };
   });
+  if ($("#op-is-new")) $("#op-is-new").onclick = async () => {
+    const 题 = ($("#op-is-title").value || "").trim();
+    if (!题) { $("#op-is-why").textContent = "标题要写"; return; }
+    $("#op-is-new").disabled = true;
+    try {
+      const r = await 请求(`${P()}/issues`, { method: "POST",
+        body: JSON.stringify({ 标题: 题, 来自意见: id, 意见revision: d.revision, 说明: ($("#op-act-note") || {}).value || null }) });
+      location.hash = "#/issue/" + encodeURIComponent(r.id);
+    } catch (e) { $("#op-is-new").disabled = false; $("#op-is-why").textContent = "没建上:" + ((e.体 && (e.体.message + " " + (e.体.advice || ""))) || e.message); }
+  };
+}
+
+/* ── 问题单(11-12;意见收集 PRD §4.2 / §5.2)──
+ * 意见是用的人说的话,问题单是要修的那件事。流转表只在后端 issue_flow.py:
+ * 按钮照详情接口给的「能做的动作」画(连这一步要写说明 / 要带什么字段也是接口说的),筛选条照清单接口给的「可选状态」画 ——
+ * 页面不另抄一份。完成证据现在是文字(绑真实版本 / 验证记录是 PRD §4.3,没做);处理时限过了不标超时(PRD §10 待定)。 */
+async function 页_问题单清单(页 = 1, 筛 = {}) {
+  const 头 = `<div class="crumb">问题单</div>
+    <div class="head"><div><h1>问题单</h1>
+      <div class="sub">${md("要修的那件事。多条意见可以并进同一张单;**已解决只算「已验证关闭」**,已搁置不算。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  const 查 = (筛.状态 ? `&status=${encodeURIComponent(筛.状态)}` : "") + (筛.根因 ? `&root_cause=${encodeURIComponent(筛.根因)}` : "");
+  try { d = await 请求(`${P()}/issues?limit=30&page=${页}` + 查); }
+  catch (e) { const s = 错误块(e, () => 页_问题单清单(页, 筛)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 条 = (名, 值们, 当前) => `<div>${esc(名)}:` + [""].concat(值们 || []).map((t) =>
+    `<button data-isf-k="${esc(名)}" data-isf="${esc(t)}"${t === (当前 || "") ? ' class="on"' : ""}>${esc(t || "全部")}</button>`).join("") + `</div>`;
+  const 建 = `<h2>新建问题单</h2>
+    <input id="is-new-title" placeholder="标题:一句话说清是什么问题(必填)" style="width:100%">
+    <textarea id="is-new-impact" rows="2" placeholder="业务影响(选填)" style="width:100%"></textarea>
+    <div><button id="is-new-send">建问题单</button> <span class="k" id="is-new-why"></span></div>
+    <div class="k">${md("从一条意见建:去那条意见的详情页点「从这条意见建问题单」,会同时把意见关联上。")}</div>`;
+  const 表 = !d.items.length ? 状态("", "还没有问题单", "从意见受理台把核实过的意见并进问题单,或者在下面直接建。").html
+    : `<table><thead><tr><th>标题</th><th>状态</th><th>根因</th><th>负责人</th><th>处理时限</th><th>关联意见</th><th></th></tr></thead><tbody>`
+      + d.items.map((x) => `<tr>
+          <td>${esc(x.标题)}${x.重开次数 ? `<div class="k">重开过 ${esc(String(x.重开次数))} 次</div>` : ""}</td>
+          <td>${x.状态 === "已验证关闭" ? '<span class="pill ok">' : '<span class="pill">'}${esc(x.状态)}</span>${x.指向主问题 ? `<div class="k">→ ${esc(x.指向主问题)}</div>` : ""}</td>
+          <td>${esc(x.根因类别 || "未分类")}<div class="k">${esc(x.根因核实 || "")}</div></td>
+          <td>${esc(x.负责人 || "—")}</td>
+          <td class="k">${esc(x.处理时限 || "—")}</td>
+          <td>${esc(String(x.关联意见数))}</td>
+          <td><button data-isopen="${esc(x.id)}">打开</button></td></tr>`).join("") + `</tbody></table>`;
+  $("#main").innerHTML = 头 + 条("状态", d.可选状态, 筛.状态) + 条("根因", d.可选根因类别, 筛.根因) + 表 + 页码条(d) + 建;
+  $("#main").querySelectorAll("[data-isf]").forEach((b) => {
+    b.onclick = () => 页_问题单清单(1, Object.assign({}, 筛, b.dataset.isfK === "状态" ? { 状态: b.dataset.isf } : { 根因: b.dataset.isf }));
+  });
+  $("#main").querySelectorAll("[data-isopen]").forEach((b) => { b.onclick = () => { location.hash = "#/issue/" + encodeURIComponent(b.dataset.isopen); }; });
+  挂页码($("#main"), (n) => 页_问题单清单(n, 筛));
+  $("#is-new-send").onclick = async () => {
+    const 题 = ($("#is-new-title").value || "").trim(), 影 = ($("#is-new-impact").value || "").trim();
+    if (!题) { $("#is-new-why").textContent = "标题要写"; return; }
+    $("#is-new-send").disabled = true;
+    try {
+      const r = await 请求(`${P()}/issues`, { method: "POST", body: JSON.stringify({ 标题: 题, 业务影响: 影 || null }) });
+      location.hash = "#/issue/" + encodeURIComponent(r.id);
+    } catch (e) { $("#is-new-send").disabled = false; $("#is-new-why").textContent = "没建上:" + ((e.体 && (e.体.message + " " + (e.体.advice || ""))) || e.message); }
+  };
+}
+
+async function 页_问题单详情(id) {
+  const 头 = `<div class="crumb"><a href="#/issues">问题单</a> / ${esc(id)}</div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/issues/${encodeURIComponent(id)}`); }
+  catch (e) { const s = 错误块(e, () => 页_问题单详情(id)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const kv = (k, v) => `<tr><td class="k">${esc(k)}</td><td>${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
+  const 选 = (fid, 值们, 当前, 可空) => `<select id="${fid}">` + (可空 ? [""] : []).concat(值们 || []).map((t) =>
+    `<option value="${esc(t)}"${t === (当前 || "") ? " selected" : ""}>${esc(t || "(未分类)")}</option>`).join("") + `</select>`;
+  // 「能改的字段」:页面上的输入框 ↔ 请求体里的名字;只把改了的那几样发出去
+  const 改 = [["标题", "is-e-title"], ["业务影响", "is-e-impact"], ["复现条件", "is-e-repro"], ["方案", "is-e-solution"],
+    ["验收标准", "is-e-accept"], ["目标版本", "is-e-version"], ["依赖", "is-e-dep"], ["负责人", "is-e-owner"],
+    ["处理时限", "is-e-due"], ["根因类别", "is-e-rc"], ["根因核实", "is-e-rcs"]];
+  const 框 = (名, fid) => 名 === "根因类别" ? 选(fid, d.可选根因类别, d.根因类别, true)
+    : 名 === "根因核实" ? 选(fid, d.可选核实状态, d.根因核实, false)
+    : 名 === "处理时限" ? `<input id="${fid}" type="date" value="${esc(d.处理时限 || "")}">`
+    : `<input id="${fid}" value="${esc(d[名] || "")}" style="width:100%">`;
+  const 编辑 = d.能改字段 ? `<h2>改字段</h2><table><tbody>`
+      + 改.map(([名, fid]) => `<tr><td class="k">${esc(名)}</td><td>${框(名, fid)}</td></tr>`).join("")
+      + `</tbody></table><input id="is-e-note" placeholder="说明(改根因类别 / 核实状态时必填:调整理由入日志)" style="width:100%">
+      <div><button id="is-e-save">保存</button> <span class="k" id="is-e-why"></span></div>`
+    : `<div class="note">${md(`「${d.状态}」的问题单不能改字段(已关闭的要改先「关闭后复发」;重复的去改主问题)。`)}</div>`;
+  // 动作要带的字段:哪一步要什么由接口说(要的字段),这里只管画成输入框
+  const 要的 = [...new Set((d.能做的动作 || []).flatMap((a) => a.要的字段 || []))];
+  const 字段框 = (名) => 名 === "重新评估日期" ? `<div>${esc(名)}:<input data-isx="${esc(名)}" type="date"></div>`
+    : 名 === "主问题" ? `<div>${esc(名)}:<input data-isx="${esc(名)}" placeholder="主问题单编号(is_…)"></div>`
+    : `<div>${esc(名)}:<textarea data-isx="${esc(名)}" rows="2" style="width:100%"></textarea></div>`;
+  const 钮 = (d.能做的动作 || []).map((a) => `<button data-isact="${esc(a.动作)}">${esc(a.动作)} → ${esc(a.到)}</button>`).join(" ");
+  const 处理 = 钮 ? `<textarea id="is-act-note" rows="2" placeholder="说明:暂不处理(理由)/ 标为重复 / 验证失败 / 发布失败(错误)/ 复发 / 重新评估 要写" style="width:100%"></textarea>
+      ${要的.map(字段框).join("")}<div>${钮}</div><div class="k" id="is-act-why"></div>`
+    : `<div class="note">这一步没有能做的动作(${esc(d.状态)})。</div>`;
+  const 意见表 = (d.关联的意见 || []).length ? `<table><thead><tr><th>意见</th><th>谁</th><th>说了什么</th><th>状态</th></tr></thead><tbody>`
+      + d.关联的意见.map((o) => `<tr><td><a href="#/opinion/${encodeURIComponent(o.id)}">${esc(o.id)}</a><div class="k">${esc(o.评价)}${o.问题类型 ? " · " + esc(o.问题类型) : ""}</div></td>
+          <td>${esc((o.提问人 || {}).姓名 || (o.提问人 || {}).工号 || "")}</td><td>${esc(String(o.说明 || "").slice(0, 60))}</td><td>${esc(o.状态)}</td></tr>`).join("") + `</tbody></table>`
+    : `<div class="note">还没有意见关联到这张单。</div>`;
+  $("#main").innerHTML = 头 + `<div class="head"><div><h1>${esc(d.标题)}</h1>
+      <div class="sub">状态 <b>${esc(d.状态)}</b>${d.已解决 ? ' · <span class="pill ok">已解决</span>' : ""}
+        · ${esc(d.根因类别 || "根因未分类")} · ${esc(d.根因核实)}${d.重开次数 ? ` · 重开过 ${esc(String(d.重开次数))} 次` : ""}</div></div></div>
+    ${d.主问题 ? `<div class="note">这是重复单,指向主问题 <a href="#/issue/${encodeURIComponent(d.主问题.id)}">${esc(d.主问题.标题)}</a>(${esc(d.主问题.状态)})。关联在这张单上的意见留在这里(保留来源)。</div>` : ""}
+    <table><tbody>${kv("业务影响", d.业务影响)}${kv("复现条件", d.复现条件)}${kv("方案", d.方案)}${kv("验收标准", d.验收标准)}
+      ${kv("目标版本", d.目标版本)}${kv("依赖", d.依赖)}${kv("负责人", d.负责人)}${kv("处理时限(过了不标超时:几天算超时待定)", d.处理时限)}
+      ${kv("搁置理由", d.搁置理由)}${kv("重新评估日期", d.重新评估日期)}
+      ${kv("处理说明", d.处理说明)}${kv("完成证据(现在是文字;绑真实版本 / 验证记录还没做)", d.完成证据)}
+      ${kv("最近一次关闭", d.最近一次关闭 && String(d.最近一次关闭).slice(0, 16).replace("T", " "))}
+      ${kv("受影响问答数(含重复单,按那一轮去重)", d.受影响问答数)}</tbody></table>
+    ${(d.重复指向它的 || []).length ? `<div class="note">重复指向它的:` + d.重复指向它的.map((r) =>
+      `<a href="#/issue/${encodeURIComponent(r.id)}">${esc(r.标题)}</a>(${esc(String(r.关联意见数))} 条意见)`).join(" · ") + `</div>` : ""}
+    <h2>处理</h2>${处理}
+    ${编辑}
+    <h2>关联的意见</h2>${意见表}
+    <h2>时间线</h2>
+    ${(d.时间线 || []).length ? `<table><thead><tr><th>什么时候</th><th>谁</th><th>动作</th><th>从 → 到</th><th>说明</th><th>改了什么</th></tr></thead><tbody>`
+      + d.时间线.map((e) => `<tr><td class="k">${esc(String(e.时间).slice(5, 16).replace("T", " "))}</td><td>${esc(e.谁 || "")}</td>
+          <td>${esc(e.动作)}</td><td>${esc(e.从 || "")} → ${esc(e.到)}</td><td>${esc(e.说明 || "")}</td>
+          <td class="k">${e.变化 ? esc(JSON.stringify(e.变化)) : ""}</td></tr>`).join("") + `</tbody></table>`
+      : `<div class="note">还没有记录。</div>`}`;
+  const 错话 = (e) => (e.体 && (e.体.message + " " + (e.体.advice || "") + (e.体.field_errors ? " " + JSON.stringify(e.体.field_errors) : ""))) || e.message;
+  $("#main").querySelectorAll("[data-isact]").forEach((b) => {
+    b.onclick = async () => {
+      const 动作 = b.dataset.isact, 体 = { 动作, 说明: ($("#is-act-note") || {}).value || "" };
+      const 这步 = (d.能做的动作 || []).find((a) => a.动作 === 动作) || {};
+      (这步.要的字段 || []).forEach((名) => { const el = $("#main").querySelector(`[data-isx="${名}"]`); 体[名] = el ? el.value : ""; });
+      if (动作 === "关闭" && !(await 问一句("确定关闭?", "关闭之后关联的意见会跟着显示「已验证关闭」。复发了可以重开,这次的关闭记录会留着。", { 确定: "关闭" }))) return;
+      b.disabled = true;
+      try {
+        await 请求(`${P()}/issues/${encodeURIComponent(id)}/actions`,
+          { method: "POST", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
+        页_问题单详情(id);
+      } catch (e) { b.disabled = false; $("#is-act-why").textContent = "没处理上:" + 错话(e); }
+    };
+  });
+  if ($("#is-e-save")) $("#is-e-save").onclick = async () => {
+    const 体 = {};
+    改.forEach(([名, fid]) => { const v = ($("#" + fid).value || "").trim(); if (v !== (d[名] || "")) 体[名] = v; });
+    if (!Object.keys(体).length) { $("#is-e-why").textContent = "没有改动"; return; }
+    体.说明 = ($("#is-e-note").value || "").trim();
+    $("#is-e-save").disabled = true;
+    try {
+      await 请求(`${P()}/issues/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
+      页_问题单详情(id);
+    } catch (e) { $("#is-e-save").disabled = false; $("#is-e-why").textContent = "没保存上:" + 错话(e); }
+  };
 }
 
 /* ── 运行记录(占位:列表已有接口,详情页还没做)────────────────── */
@@ -8620,6 +8776,8 @@ async function 路由() {
     if (h === "#/monitoring") return await 页_监测();
     if (h === "#/alerts") return await 页_告警();
     if (h.startsWith("#/opinion/")) return await 页_意见详情(decodeURIComponent(h.slice(10)));
+    if (h === "#/issues") return await 页_问题单清单();
+    if (h.startsWith("#/issue/")) return await 页_问题单详情(decodeURIComponent(h.slice(8)));
     if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));
