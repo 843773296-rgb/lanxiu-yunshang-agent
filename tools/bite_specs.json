@@ -20991,5 +20991,53 @@
    }
   ],
   "预期红": "每面正好"
+ },
+ {
+  "script": "tools/nightly_check.py",
+  "改坏": "把检查里读 `连续失败已知` 那一行换成空字典(五套事故类连续失败全部没人记)",
+  "file": [
+   {
+    "path": "tools/nightly_check.py",
+    "old": "    _已知 = M.连续失败已知\n",
+    "new": "    _已知 = {}\n"
+   }
+  ],
+  "预期红": "事故类连续失败都登记了"
+ },
+ {
+  "script": "tools/nightly_check.py",
+  "改坏": "往 `连续失败已知` 里加一条早就不出事的套(chat_eval.py)—— 囤积的豁免",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "连续失败已知 = {\n",
+    "new": "连续失败已知 = {\n    \"chat_eval.py\": (\"早就不出事了,留着当样本\", \"intent/x.md\"),\n"
+   }
+  ],
+  "预期红": "「已知连续失败」名单里没有过期的"
+ },
+ {
+  "script": "tools/nightly_check.py",
+  "改坏": "把 `事故前缀` 里的「没跑成」删掉(0 秒空跑连着两周又会被当成慢性病)—— factory / triage 两条登记因此过期",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "事故前缀 = (\"没跑成\", \"崩了\", \"超时\", \"连续 0 分\")",
+    "new": "事故前缀 = (\"崩了\", \"超时\", \"连续 0 分\")"
+   }
+  ],
+  "预期红": "「已知连续失败」名单里没有过期的"
+ },
+ {
+  "script": "agent/rounds.py --自测",
+  "改坏": "把 `环境性失败()` 的判断改成永假(搜了 6 次一个业务工具都没调也不标)",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "    return 搜 >= 搜索上限 and not 业务\n",
+    "new": "    return False\n"
+   }
+  ],
+  "预期红": "环境性失败 · 搜 6 次一个业务工具都没调 → 是"
  }
 ]

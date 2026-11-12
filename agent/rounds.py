@@ -670,6 +670,36 @@ def _套名(结果文件):
     return re.sub(r"-eval$", "", b)
 
 
+搜索上限 = 6      # ToolSearch 调到这个数还一个业务工具都没碰 → 这一题挂在工具加载上,不是能力
+
+
+def 环境性失败(行, 搜索上限=搜索上限):
+    """这一题是不是**挂在工具加载上**(用户 2026-11-12 拍:「什么都不动,成绩单上标成
+    『环境性失败』不计分」)。判法:一轮里 `ToolSearch` ≥ 6 次 **且** 一个业务工具都没调。
+
+    依据(`.feynman/spans.jsonl` 1179 轮):haiku-4-5 的全能入口里搜 ≥6 次的 171 轮,
+    **66.7% 最后一个业务工具都没调**;搜 1–5 次的 587 轮只有 1.4%;sonnet-5 搜 ≥6 次只有 1 轮。
+    > 一道「模型答错了」和一道「模型卡在工具加载上、根本没拿到数据」,
+    > **在成绩单上长得一模一样** —— 而后者不该算进能力分。
+
+    ⚠️ 只认 `tools` 字段(逗号串或列表;眼下只有 ops_eval 这么写)。没有这个字段的套**永远返回 False**,
+       行为不变 —— 「没法判」和「判了不是」在这里是同一个 False,所以调用方把标出来的条数**单独印**。
+    ⚠️ `Skill` 不算业务工具(它是加载技能,不是取数)。
+    ⚠️ 这条判据**没排除**一种混淆:搜了 6 次和没调成可能是同一个原因(题本身无解)—— 同题对比没做,
+       所以它标的是「环境性失败」,**不是**「模型没问题」。
+    """
+    t = 行.get("tools") if isinstance(行, dict) else None
+    if isinstance(t, str):
+        xs = [x.strip() for x in t.split(",") if x.strip()]
+    elif isinstance(t, (list, tuple)):
+        xs = [str(x) for x in t]
+    else:
+        return False
+    搜 = sum(1 for x in xs if x.endswith("ToolSearch"))
+    业务 = [x for x in xs if not x.endswith("ToolSearch") and not x.endswith("Skill")]
+    return 搜 >= 搜索上限 and not 业务
+
+
 def 跑并收尾(一轮, *, 名, 结果文件, 全集数, 本轮数, 键="id", 过="passed",
              写=None, 轮数=None, 日志=print, 明知=()):
     """跑 `轮数` 轮(默认 2;设了 `LANXIU_一轮` 就 1),然后把收尾一次做完。
@@ -692,7 +722,16 @@ def 跑并收尾(一轮, *, 名, 结果文件, 全集数, 本轮数, 键="id", �
         if 轮数 > 1:
             日志(f"  【第 {i + 1} 轮】")
         行们 = 一轮() or []
-        多.append({r[键]: bool(r.get(过)) for r in 行们})
+        # ── 环境性失败:标出来、不计分、单独印(用户 2026-11-12 拍)────────────
+        环 = [r for r in 行们 if 环境性失败(r)]
+        for r in 环:
+            r["环境性失败"] = True          # 写进结果文件,事后核得了
+        if 环:
+            日志(f"  ⚠️ 本轮 {len(环)}/{len(行们)} 题是**环境性失败**(ToolSearch ≥{搜索上限} 次且一个业务工具都没调)"
+                 f",**不计入判对率**:{'、'.join(str(r.get(键)) for r in 环[:8])}"
+                 + (f" ……还有 {len(环) - 8} 题" if len(环) > 8 else ""))
+        计分 = [r for r in 行们 if not r.get("环境性失败")]
+        多.append({r[键]: bool(r.get(过)) for r in 计分})
         # 理由有的评测是列表、有的是一句字符串(chat_eval 的 `judge`)——
         # 字符串直接 list() 会被拆成一个个字,分类就全认不出了
         # ⚠️ **理由字段名写死成 `why`,不再可配置**(2026-10-20)。
@@ -705,7 +744,7 @@ def 跑并收尾(一轮, *, 名, 结果文件, 全集数, 本轮数, 键="id", �
         #    把参数去掉之后,这种分叉在结构上不可能再出现。
         理由 = "why"
         因.append({r[键]: ([r[理由]] if isinstance(r.get(理由), str)
-                           else list(r.get(理由) or [])) for r in 行们})
+                           else list(r.get(理由) or [])) for r in 计分})
         最后 = 行们
     基线, 来路 = _取基线(结果文件, 键, 过, [r[键] for r in 最后], 全集数, 本轮数, 日志)
     报(多, 基线通过数=基线, 名=名, 原因=因, 基线来路=来路, 日志=日志)
@@ -751,6 +790,19 @@ def 自测():
     """咬合:三种情形各自都要说对话。"""
     import io, contextlib
     坏 = []
+
+    # ── 环境性失败(2026-11-12):六种形状各自要判对 ──────────────────────
+    _ts = "ToolSearch"
+    for 名_, 行_, 应 in (
+            ("搜 6 次一个业务工具都没调 → 是", {"tools": ",".join([_ts] * 6)}, True),
+            ("搜 6 次但调了 get_order → 不是", {"tools": ",".join([_ts] * 6 + ["get_order"])}, False),
+            ("搜 5 次没调工具 → 不是(没到线)", {"tools": ",".join([_ts] * 5)}, False),
+            ("只调了 Skill 也算没调业务工具 → 是", {"tools": ",".join([_ts] * 7 + ["Skill"])}, True),
+            ("没有 tools 字段 → False(没法判,行为不变)", {"id": "X"}, False),
+            ("列表形式、带 mcp 前缀也认 → 是", {"tools": ["mcp__x__ToolSearch"] * 6}, True)):
+        得 = 环境性失败(行_)
+        if 得 != 应:
+            坏.append(f"环境性失败 · {名_}:得 {得} 应 {应}")
 
     # 对照用例用的来路:同供应商同模型、代码不同(**版本对比的常态**)
     _来 = {"供应商": "claude", "模型": "haiku", "代码": "aaa"}

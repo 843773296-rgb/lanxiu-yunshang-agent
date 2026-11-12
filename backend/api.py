@@ -29,8 +29,28 @@ _TRUTH = re.compile(r"\btruth\b", re.I)
 # **别枚举语句形状,去看结果长什么样** —— truth 那次已经教过一遍了。
 _CRED = re.compile(r"pwd_(hash|salt|algo)", re.I)
 
+class _用完就关(sqlite3.Connection):
+    """`with _c() as c:` 结束时**连接真的关掉**。
+
+    ⚠️ 标准库的 `with sqlite3.connect(...) as c:` 只提交、**不关连接**,关掉靠 GC。
+    2026-11-12 量过:一次经营报告取数包 `connect` 调了 **3265 次、显式 close 82 次**;
+    我的 shell 文件描述符上限 100 万所以从不出事,而 **launchd 起的进程上限 256** ——
+    夜跑里 `store_report_eval` 从 10-28 起每晚崩在「unable to open database file」,
+    那是 open() 撞上限时 sqlite 的原话;10-29 服务那次「页面打得开、登录进不去」是同一个根因。
+    > 一台「连接都关了」的机器和一台「连接靠 GC 关、碰巧没撞上限」的机器,
+    > **在本地跑任何检查都长得一模一样** —— 只在 256 那条线上分得开。
+    修在这一处而不是 23 个调用点:AST 扫过全部 `with _c() as X`,X 没有一处在 with 之后还被用。
+    `contextlib.closing(_c())` 那 10 处照旧成立(关两次是无害的)。
+    """
+    def __exit__(self, *a):
+        try:
+            return super().__exit__(*a)
+        finally:
+            self.close()
+
+
 def _c():
-    c=sqlite3.connect(f"file:{DB}?mode=ro", uri=True); c.row_factory=sqlite3.Row; return c
+    c=sqlite3.connect(f"file:{DB}?mode=ro", uri=True, factory=_用完就关); c.row_factory=sqlite3.Row; return c
 
 _CRED_MSG = ("账户凭据(密码哈希 / 盐)**不允许经工具层访问** —— 拿到哈希和盐就能离线爆破。\n"
              "查账户请把列名写清楚(id / phone / login_name / status),对外只给脱敏手机号。\n"

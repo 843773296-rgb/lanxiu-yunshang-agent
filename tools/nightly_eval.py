@@ -36,7 +36,7 @@
      挪到 `agent/nightly/`,原文件**恢复原样**。基线是从那些文件读的 —— 人工基线曾被一轮
      用错模型的结果盖过(CLAUDE.md 第 4 节)。「不提交」不够:文件已经被改了,而基线是读文件的。
 """
-import datetime as dt, json, os, re, subprocess, sys, time
+import datetime as dt, io, json, os, re, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
@@ -537,6 +537,130 @@ def 提交夜跑结果(报告):
 # 又比「解释器起来 + import + 读库」宽松 —— 不会把真跑了一道题的套误判。
 秒退线_分钟 = 0.1
 
+# ── 连续 N 晚同一失败(2026-11-12)──────────────────────────────────────
+#
+# 夜报每天一张表、「过 / 判红」两档,**没有「连续 N 天」的视图**。11-12 全项目审读查出三套:
+#   · oppo_eval      11-04 / 05 / 10 连三夜 0/24(「判红 · 没结论」),理由全是同一句 —— 没人报
+#   · factory_eval   10-27 起每晚 0.0 分钟「挑不到题」,表格那一列印的是「过」
+#   · store_report   10-28 起每晚崩在「unable to open database file」
+# > 一张「全过」的报表,和一张「大半是空跑、一套连崩一周」的报表,**在那个过字上长得一模一样** ——
+# > 而这个项目每天看的就是那个字。
+# 这里只做一件事:**把「同一个失败字连着出现 N 晚」单独列出来**。两路信号:
+#   ① 夜报里的结果字(抓 判红 / 崩了 / 超时 / 没跑成…);
+#   ② 结果文件里连续 N 晚 0 分(抓「退 0 但全挂」那种 —— oppo 就是这形状)。
+# ⚠️ 读老夜报时,「过 + 0.0 分钟 + 不在秒退名单」按今天的规矩**重判成「没跑成(0 秒就回来)」** ——
+#    那条规矩 11-10 才进来,之前的夜报把空跑印成了「过」,照字面读会漏掉 factory 那两周。
+正常结果 = ("过", "进步", "持平")
+连续_最少晚 = 3
+# ⚠️ **两类分开,否则豁免会囤积。** 很多套长期有一两题挂着 → 退出码非 0 → 每晚「判红」——
+#    那是慢性病,不是事故;把它们全判红只会逼着建一大堆豁免(用户 10-20 拍过:长期错的不红
+#    要和「白纸黑字记着为什么」绑在一起,那份名单还没建)。
+#    **事故类**(红):没跑成 / 崩了 / 超时 / 连续 0 分 —— 这些意味着**什么都没测到**;
+#    **慢性类**(只列):判红连着 N 晚 —— 夜报里列出来给人看,`nightly_check` 只印不拦。
+事故前缀 = ("没跑成", "崩了", "超时", "连续 0 分")
+
+# 已知的连续失败 —— **每条要理由 + 指向哪张卡**;`nightly_check` 反向守:套不再连续失败了这条就得删
+连续失败已知 = {
+    "oppo_eval.py": ("call-notes 技能被「聊天接管」拦下 → 按 TL76 转 start_workflow → 工作流没发布 → "
+                     "takeover_client 回「别改用技能自己做」;生产同状态。等用户拍「接管出错时技能兜不兜底」",
+                     "intent/optimization-program-2026-11.md"),
+    "factory_eval.py": ("库里生产中 357 单承诺日全在今天之后,「逾期」这个状态不存在,挑题第一关就空;"
+                        "挑() 现在会印缺哪一样;夹具该自己造还是改造数,待定",
+                        "intent/optimization-program-2026-11.md"),
+    "store_report_eval.py": ("10-30 起每晚崩在 api._c「unable to open database file」。**根因没查到**:"
+                             "主检出路径、venv 解释器、空环境、256 描述符上限下都复现不出"
+                             "(连接不关那条是真隐患、已修,但对照没红 —— 不是这条路)。"
+                             "11-12 起夜跑把崩了的套**完整输出落盘**,等下一晚拿证据",
+                             "intent/optimization-program-2026-11.md"),
+    "triage_pipeline_eval.py": ("夜跑配了 `--做` 但输出仍是「先 --看」用法提示然后退 0 —— 开关没生效"
+                                "(并行会话 11-12 体检也查到),归它那条线",
+                                "intent/optimization-program-2026-11.md"),
+    "triage_shadow.py": ("每晚 0 秒退 0:它印的是一份库况报表、不调模型。要么进 `秒退正常`(结构性理由)、"
+                         "要么配 `--跑 N` 真跑 —— 待定,先登记",
+                         "intent/optimization-program-2026-11.md"),
+}
+
+
+def _读夜报(路径):
+    """一张夜报 → [(套, 结果, 判定, 分钟)]。认不出表格行就跳过,**不编**。"""
+    出 = []
+    try:
+        for ln in io.open(路径, encoding="utf-8", errors="replace"):
+            if not ln.startswith("| ") or ln.startswith("| 套 ") or ln.startswith("|---"):
+                continue
+            格 = [x.strip() for x in ln.strip().strip("|").split("|")]
+            if len(格) < 4 or not 格[0].endswith(".py"):
+                continue
+            try:
+                分 = float(格[3])
+            except ValueError:
+                分 = None
+            出.append((格[0], 格[1], 格[2], 分, 格[4] if len(格) > 4 else ""))
+    except OSError:
+        pass
+    return 出
+
+
+def 连续失败(目录=None, 最少晚=连续_最少晚, 最多看=10, 夜跑结果目录=None):
+    """→ [(套, 连续晚数, 现象)],按套名排。两路信号见上面那段注释。**夜报少于 `最少晚` 份时返回 []**,
+    调用方要自己把「不适用」和「没有」分开(`nightly_check` 做了)。"""
+    import glob
+    目录 = 目录 or 报告目录
+    报们 = sorted(glob.glob(os.path.join(目录, "*.md")))[-最多看:][::-1]       # 最新在前
+    出 = []
+    if len(报们) >= 最少晚:
+        按套 = {}
+        for p in 报们:
+            for 套, 结果, _判定, 分, 尾 in _读夜报(p):
+                if 结果 == "过" and 分 is not None and 分 < 秒退线_分钟 and 套 not in 秒退正常:
+                    结果 = "没跑成(0 秒就回来)"        # 按今天的规矩重判老夜报,见上
+                elif 结果 == "判红" and ("Traceback" in 尾 or 'File "' in 尾 or "Error" in 尾):
+                    结果 = "崩了(尾巴里有 traceback)"  # 退出码非 0 + traceback = 崩,不是判红
+                按套.setdefault(套, []).append(结果)
+        for 套, xs in 按套.items():
+            if not xs or xs[0] in 正常结果 or xs[0].startswith("没开"):
+                continue
+            首, n = xs[0], 0
+            for x in xs:
+                if x != 首:
+                    break
+                n += 1
+            if n >= 最少晚:
+                出.append((套, n, 首, "事故" if 首.startswith(事故前缀) else "慢性"))
+    # ② 结果文件:连续 N 晚有题却 0 分
+    夜 = 夜跑结果目录 or os.path.join(ROOT, "agent", "nightly")
+    for fp in sorted(glob.glob(os.path.join(夜, "agent__*-results.jsonl"))):
+        套 = os.path.basename(fp)[len("agent__"):-len("-results.jsonl")].replace("-eval", "_eval") + ".py"
+        按日 = {}
+        try:
+            for ln in io.open(fp, encoding="utf-8", errors="replace"):
+                try:
+                    d = json.loads(ln)
+                except Exception:
+                    continue
+                日 = str(d.get("跑于") or d.get("ts") or "")[:10]
+                if not 日:
+                    continue
+                过, 总 = 按日.get(日, (0, 0))
+                按日[日] = (过 + (1 if str(d.get("passed")).lower() == "true" else 0), 总 + 1)
+        except OSError:
+            continue
+        日们 = sorted(按日)[::-1]
+        n = 0
+        for 日 in 日们:
+            过, 总 = 按日[日]
+            if 总 > 0 and 过 == 0:
+                n += 1
+            else:
+                break
+        if n >= 最少晚:
+            # ⚠️ **事故盖过慢性。** oppo 在夜报里是「判红」连 8 晚(慢性),而结果文件里是 0/24 连 3 晚 ——
+            #    后者才是「什么都没测到」。第一版「已在清单里就不加」把它留在了慢性类,
+            #    于是登记成事故的那条反而被反向判据判成「过期」。
+            出 = [x for x in 出 if x[0] != 套]
+            出.append((套, n, f"连续 0 分(最近一晚 0/{按日[日们[0]][1]})", "事故"))
+    return sorted(出)
+
 
 def 归类(退出码, 输出, 分钟=None, 套=None):
     """一套评测跑完 → 结果。抽出来是为了让检查真调它(tools/eval_env_check.py)。
@@ -616,6 +740,23 @@ def 跑一套(名, 参数, 截止):
         # 这种对不上的情况 —— 而那正是这一类 bug 最难查的形状:
         # 报告上明明写着 0.0,判据却说它不是秒退。
         _分 = round((time.time() - t0) / 60, 1)
+        # ⚠️ 崩了的套**完整输出落盘**。夜报只留 3 行尾巴,store_report 从 10-30 起每晚崩在
+        #    「unable to open database file」,那 3 行只够看到 `_c()`,看不到是谁调的、环境是什么 ——
+        #    11-12 复现了四种环境都没崩,只能认输。有完整 traceback 这件事一晚就能定。
+        _全 = r.stdout + r.stderr
+        if r.returncode != 0 and ("Traceback" in _全 or 'File "' in _全):
+            try:
+                os.makedirs(报告目录, exist_ok=True)
+                _日 = os.path.join(报告目录, f"{dt.date.today():%Y-%m-%d}-{名}.崩.log")
+                with open(_日, "w", encoding="utf-8") as _h:
+                    _h.write(f"# {名} 崩了 · 退出码 {r.returncode} · {_分} 分钟 · cwd={ROOT}\n")
+                    _h.write("# 环境(去掉凭证):" + json.dumps(
+                        {k: v for k, v in env.items() if not any(x in k for x in ("KEY", "TOKEN", "SECRET"))},
+                        ensure_ascii=False)[:2000] + "\n\n")
+                    _h.write(_全[-20000:])
+                尾 = 尾 + [f"完整输出落在 {os.path.relpath(_日, ROOT)}"]
+            except OSError:
+                pass
         # 跑到一半登录掉了也算(开跑前那一问只证明开跑那一刻通)—— 输出里有认证失败就是**没跑成**,
         # 不记「过」:那套题一道都没真答,退出码 0 只说明脚本没崩(10-16 那晚 17 套就是这么「过」的)
         结 = 归类(r.returncode, r.stdout + r.stderr, 分钟=_分, 套=名)
@@ -707,6 +848,19 @@ def _跑(现在, 套们, 试, 截止):
         for r in 结果:
             f.write(f"| {r['套']} | {r['结果']} | {r.get('判定', '没打')} | {r['分钟']} "
                     f"| {' / '.join(x[:80] for x in r['尾']).replace('|', '¦')} |\n")
+        # ── 连续告警:同一个失败字连着出现 N 晚(2026-11-12)──────────────
+        连 = 连续失败()
+        for 类, 题 in (("事故", f"## 连续告警 · 事故类(没跑成 / 崩了 / 超时 / 0 分连着 ≥{连续_最少晚} 晚 —— **什么都没测到**)"),
+                      ("慢性", "## 长期判红(判红连着 N 晚 —— 慢性病,列出来给人看,不当事故)")):
+            f.write(f"\n{题}\n\n")
+            组 = [x for x in 连 if x[3] == 类]
+            if not 组:
+                f.write("- 没有\n")
+            for 套, n, 象, _类 in 组:
+                已 = 连续失败已知.get(套)
+                f.write(f"- **{套}**:连续 {n} 晚「{象}」"
+                        + (f" —— 已知:{已[0]}(卡:{已[1]})" if 已 else
+                           (" —— **没登记,去查**" if 类 == "事故" else "")) + "\n")
     关掉(后台进程)                     # 夜跑自己拉起来的才关;本来就开着的是 None,不动
     # ⚠️ **「退步」也算跑完了** —— 它是一次有效的测量,只是结果变差了。
     #    漏了它的话那个「成功过」的时间戳就不再更新,而按双时间戳的设计,

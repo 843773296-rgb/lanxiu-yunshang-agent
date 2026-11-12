@@ -162,6 +162,13 @@ def 挑():
     催 = fi.该催清单(TODAY)
     过期 = [x for x in 催 if "承诺" in x["为什么"]]
     if not 过期:
+        # ⚠️ 2026-11-12 查实:夜跑从 10-27 起每晚「挑不到题」,卡的就是这一关 ——
+        #    该催清单 18 条**全是「没回接单」**,生产中 357 单的承诺日**全在今天之后**。
+        #    原来这里只 return None,外面那句 ❌ 列了十样东西,**看不出缺的是哪一样**。
+        生产中 = c.execute("SELECT COUNT(*) FROM ordr WHERE status='生产中'").fetchone()[0]
+        print(f"  缺:**过了承诺日还没完工的生产单**(该催清单 {len(催)} 条、"
+              f"其中「承诺」0 条;生产中 {生产中} 单)—— 库里现在没有「逾期」这个状态,"
+              f"这是数据问题不是判据问题")
         return None
     店 = 过期[0]["门店"]
     店长 = c.execute("SELECT no,name,role,shop FROM staff WHERE role='店长' AND status='启用' AND shop=? LIMIT 1",
@@ -197,7 +204,12 @@ def 挑():
     # 那一单所在门店的店长来问 —— 别店的店长用工具看不到它,题就测不到「编不编单号」了
     店长2 = 没单号 and c.execute("SELECT s.no,s.name,s.role,s.shop FROM staff s JOIN ordr o ON o.shop=s.shop "
                                "WHERE o.id=? AND s.role='店长' AND s.status='启用' LIMIT 1", (没单号[0],)).fetchone()
-    if not (店长 and 顾问 and 没单号 and 店长2 and 没接单店 and 女款 and 男士 and 发货单 and 延 and 分批):
+    夹具 = dict(店长=店长, 顾问=顾问, 没单号=没单号, 店长2=店长2, 没接单店=没接单店,
+              女款=女款, 男士=男士, 发货单=发货单, 延=延, 分批=分批)
+    缺 = [k for k, v in 夹具.items() if not v]
+    if 缺:
+        # 一句「挑不到」和一句「缺的是 X」,在那个 ❌ 上长得一模一样 —— 后者才能照着修
+        print(f"  缺:{'、'.join(缺)}(十样夹具里缺这几样)")
         return None
     import datetime as _d
     晚几天 = (_d.date.fromisoformat(TODAY) - _d.date.fromisoformat(承诺[:10])).days
