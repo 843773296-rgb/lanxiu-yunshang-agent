@@ -1673,13 +1673,20 @@ TOGGLE_ALLOW = {("measure_item", "code", "status"), ("measure_tpl", "code", "sta
                 ("sys_code", "code", "status"), ("tag", "code", "status")}
 
 
-def toggle(table,key,val,col="status",on="启用",off="停用",*,actor):
+def toggle(table,key,val,col="status",on="启用",off="停用",*,actor,role=None):
     # 不在白名单里**直接拒,一个字都不拼进 SQL** —— 判在拼之前,不是拼完再看
     if (table, key, col) not in TOGGLE_ALLOW:
         log_op(actor, str(table)[:40], str(val)[:40], "—", "—", False, "TOGGLE_NOT_ALLOWED",
                f"这一对不在通用开关白名单里:{str(table)[:40]}.{str(key)[:40]}.{str(col)[:40]}", {})
         return dict(ok=False, code="TOGGLE_NOT_ALLOWED",
                     reason="这张表 / 这一列不能经通用开关切换 —— 只有量体项、量体模版、系统编码、标签四类")
+    # 店长以上才能切(用户 11-12 拍,台账第二十七条):停用一个量体项 / 编码,全店新建单据都选不到它 ——
+    # 原来只要登录,顾问也能停用。角色只从登录会话取(W01),请求体里自报的不算
+    if role not in MANAGER_ROLES:
+        log_op(actor, table, str(val)[:40], "—", "—", False, "TOGGLE_ROLE",
+               f"「{role}」不能切换启用 / 停用(店长以上才行)", {"role": role})
+        return dict(ok=False, code="TOGGLE_ROLE",
+                    reason=f"启用 / 停用要店长或总部运营来做,你是「{role}」—— 停用后全店新建单据都选不到这一项")
     r=rows(f"SELECT {col} s FROM {table} WHERE {key}=?",val)
     if not r: return {"error":"记录不存在"}
     cur=r[0]["s"]; to=off if cur==on else on
@@ -4587,7 +4594,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/content-save": return self._send(save_content(body,登录人["name"]))
         if p=="/api/toggle":
             # 表 / 键只认 TOGGLE_ALLOW 那四对(在 toggle 里判);列不收请求体的,固定 status
-            return self._send(toggle(body.get("table"),body.get("key"),body.get("val"),actor=登录人["name"]))
+            return self._send(toggle(body.get("table"),body.get("key"),body.get("val"),actor=登录人["name"],role=登录人.get("role")))
         if p=="/api/transfer":
             ids=body.get("ids") or []; adv=body.get("advisor"); role=登录人.get("role")
             if role not in ("店长","总部运营"):

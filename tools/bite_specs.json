@@ -20333,5 +20333,17 @@
    }
   ],
   "预期红": "追评落进追评两列,星级和工单原样(不改星、不进差评清单)"
+ },
+ {
+  "script": "backend/authgate_check.py",
+  "改坏": "把 toggle() 的店长以上判定删掉(顾问又能停用全店的量体项 / 编码)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if role not in MANAGER_ROLES:\n        log_op(actor, table, str(val)[:40], \"—\", \"—\", False, \"TOGGLE_ROLE\",",
+    "new": "    if False:\n        log_op(actor, table, str(val)[:40], \"—\", \"—\", False, \"TOGGLE_ROLE\","
+   }
+  ],
+  "预期红": "顾问切开关 → 拒(TOGGLE_ROLE),状态没动"
  }
 ]

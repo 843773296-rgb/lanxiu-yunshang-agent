@@ -51,6 +51,8 @@ bad = 0
      '不登录打 do_POST 的每一条路径 → 必须 401(豁免名单除外)'),
     ('把 toggle() 里的 TOGGLE_ALLOW 白名单判断删掉(表名 / 键名又从请求体拼进 SQL)',
      'toggle 表名不在白名单 → 拒,员工状态一个字没动'),
+    ('把 toggle() 的店长以上判定删掉(顾问又能停用全店的量体项 / 编码)',
+     '顾问切开关 → 拒(TOGGLE_ROLE),状态没动'),
     ('把 /api/template-save 的 role 改回读请求体(body.get("role"))',
      '角色只从会话取:顾问登录、请求体自称总部运营 → 三个口都按顾问拒'),
 ]
@@ -250,19 +252,26 @@ def main():
                码之(回a) == "TOGGLE_NOT_ALLOWED" and 码之(回b) == "TOGGLE_NOT_ALLOWED" and 后态 == "启用",
                f"停用员工:{码之(回a)};键名注入:{码之(回b)};员工 {号} 现在「{后态}」")
             # 对照:白名单里的照样切得动(否则「拒」也可能是 toggle 整个坏了)
-            码 = server.rows("SELECT code FROM sys_code LIMIT 1")
-            if 码:
-                # 署名用**顾问**的会话验:副本里第一位总部运营恰好就是「魏欣新」,用他验署名分不出真假
-                r1 = 打一次("/api/toggle", {"table": "sys_code", "key": "code", "val": 码[0]["code"]}, cookie=ck_顾)[1]
+            码 = server.rows("SELECT code, status FROM sys_code LIMIT 1")
+            ck_店, 店长 = 会话(server, auth, "店长")
+            if 码 and ck_店:
+                # 台账第二十七条:开关限店长以上 —— 顾问来切 → 拒,状态一个字没动
+                rg = 打一次("/api/toggle", {"table": "sys_code", "key": "code", "val": 码[0]["code"]}, cookie=ck_顾)[1]
+                rg = rg if isinstance(rg, dict) else {}
+                后 = server.rows("SELECT status FROM sys_code WHERE code=?", 码[0]["code"])[0]["status"]
+                ck("顾问切开关 → 拒(TOGGLE_ROLE),状态没动", rg.get("code") == "TOGGLE_ROLE" and 后 == 码[0]["status"],
+                   f"{str(rg)[:60]};现在「{后}」")
+                # 对照 + 署名用**店长**的会话验:副本里第一位总部运营恰好就是「魏欣新」,用他验署名分不出真假
+                r1 = 打一次("/api/toggle", {"table": "sys_code", "key": "code", "val": 码[0]["code"]}, cookie=ck_店)[1]
                 r1 = r1 if isinstance(r1, dict) else {}
-                打一次("/api/toggle", {"table": "sys_code", "key": "code", "val": 码[0]["code"]}, cookie=ck_顾)  # 切回去
-                ck("白名单里的(系统编码)照样切得动(对照)", bool(r1.get("ok")), str(r1)[:60])
+                打一次("/api/toggle", {"table": "sys_code", "key": "code", "val": 码[0]["code"]}, cookie=ck_店)  # 切回去
+                ck("白名单里的(系统编码)店长照样切得动(对照)", bool(r1.get("ok")), str(r1)[:60])
                 最近 = server.rows("SELECT actor FROM op_log WHERE code='TOGGLE' ORDER BY id DESC LIMIT 1")
                 ck("toggle 的台账署名是登录的人,不是写死的真实员工",
-                   bool(最近) and 最近[0]["actor"] == 顾问["name"] != "魏欣新",
-               f"记的是 {(最近 or [{}])[0].get('actor')},登录的是 {顾问['name']}")
+                   bool(最近) and 最近[0]["actor"] == 店长["name"] != "魏欣新",
+               f"记的是 {(最近 or [{}])[0].get('actor')},登录的是 {店长['name']}")
             else:
-                ck("副本里有系统编码(样本量 0 不叫通过)", False)
+                ck("副本里有系统编码和启用的店长(样本量 0 不叫通过)", False)
 
         # ── ⑤ 角色只从会话取:顾问登录、请求体自称总部运营 ────────────────
         # 三个口原来读 `body.get("role")`。判据看的是**被谁拒**:按会话 → 顾问 → WRONG_ROLE
