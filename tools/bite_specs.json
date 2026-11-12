@@ -19490,6 +19490,18 @@
   "预期红": "接线:定制单确认下单之后判归属(事务之外)"
  },
  {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "没知会过也直接释放(上线第一天一批老客一夜被收走)",
+  "file": [
+   {
+    "path": "knowledge/ownership_protection.py",
+    "old": "    if 知 is None or 知 < 维:\n",
+    "new": "    if 天 < 释放天 and (知 is None or 知 < 维):\n"
+   }
+  ],
+  "预期红": "过了 180 天但没知会过:先知会,不直接放"
+ },
+ {
   "script": "agent/talk_eval_judgetest.py",
   "改坏": "把 `最少=19` 改成一个到不了的数(样本量缩水闸)",
   "file": [
