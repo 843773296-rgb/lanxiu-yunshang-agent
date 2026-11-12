@@ -130,7 +130,7 @@
 **C 段 · 夜跑占锁期间(00:00–04:55,只改代码)**
 - [ ] W07 补评测场景:接管关着 / 工作流没发布 / 兜底窗口内三种(call-notes);「录音跟进」发布生产版的步骤写清,放到 D 段做
 - [ ] 第 5 天收尾的代码部分:后台「目标版本 / 实际版本」并排;页面「未做」按钮做掉或拿掉(导出走后台 + 操作日志 + 脱敏,店长以上);追评写口(顾问代录,台账第二十一条)
-- [ ] 预约三列(台账第十二条):迁移脚本 + 派单读点名 + 点名三步接入口,**迁移只写不跑**
+- [~] 预约三列:23:5x 交给 worktree 子任务(迁移脚本只写不跑 + seed.py 带列 + 派单读点名 / 没空调 roster 的三步 + 两个入口加字段 + 检查和咬合),只 commit。**D 段**:挑回 → 锁内对真库 `python3 tools/migrate_appt_columns.py --go` → 重启 8760 → 全量 → 推。**它在改 booking.py / server.py / index.html / seed.py —— 回来前我不碰这几个**
 - [x] ✅ W24 新人保底(提交见 git log「派单新人保底」;PRD 附录 A 还没补)
 - [~] 第 5 天收尾:**「目标 / 实际版本并排」11-11 已做(d3914443),清单过期**;追评:**顾客自己追评的写口已做**(rating_write.customer_followup,口径 09-29 早有:90 天、一次、不带星、不进差评清单;rating_write_check 74/74 + 一条咬合),**没接顾客页面**(server.py,等 W01 挑回后);⚠️ **「顾问代录追评」和 09-27「顾问不能替顾客评」冲突 → 待用户拍,没做**;未做按钮 / 导出未做
 - [~] W27 标品:**标品不开返修已做**(repair_write.create 拦 STANDARD_NO_REPAIR,理由指向换货;repair_write_check 36/36 + 一条咬合);⚠️ **查实「定制签收已生成交付告知单」是假的** —— 没有任何写口写 delivery_notice,库里 25 张全是造数;签收告知(定制 + 标品)要在订单流转里补,在 server.py,等 W01 挑回后做
@@ -142,10 +142,18 @@
 - 追评写口**撤出**这次推送(门禁「没有门的写口」7→8 红:顾客端在后台服务里一个接口都没有,挂不上门;上限不许调)。改动存在项目根 `.wip-rating-followup.patch`(未跟踪),顾客端页面做了再 `git apply` 接回
 
 **D 段 · 05:20 之后**
-- [ ] 锁内跑 C 段的迁移(SQLite 预约三列 / PG 验收表)→ 重启 aimc 等 25 秒 + 探活 → 管理后台 e2e → 全量门禁 → 推
+- [ ] **05:20 后锁内按顺序**(子任务都做完了,都只 commit 在分支上):
+  1. 确认夜跑结束、拿锁;`sqlite3 <真库> ".backup ~/lanxiu-backup/pre-W21-$(date +%m%d%H%M).db"`(先备份)
+  2. 预约三列:`python3 tools/migrate_appt_columns.py`(dry-run 要正好 4 列「将加列」)→ `--go`(「✅ 加了 4 列」)→ 再跑一次确认幂等。**迁移脚本在分支 599dacb0 里**,先 `git show 599dacb0:tools/migrate_appt_columns.py > /tmp/m.py` 跑它,或先挑回再跑(挑回后**立刻**跑迁移,中间别重启服务:两个写口会无条件写新列)
+  3. 挑回 599dacb0(worktree-agent-a252eecae5fc16a61;它基于 e4da6c9f,改 booking / roster / server / seed / index.html / check.sh / bite_specs,修了两条过期旧规格)
+  4. 验收页:挑回 54b68e0d(worktree-agent-ac1bb8f62ad38d5fb)→ 管理后台 PG 迁移 `cd 管理后台/services/api && alembic upgrade head`(先看清它连的是哪个库)→ 重启管理后台 API(com.lanxiu.aimc,等 25 秒 + 探活)→ `cd 管理后台 && make test-e2e-ci`
+  5. 重启 8760(+8770)→ curl 冒烟 → 全量 `./check.sh` → 推(chain_B.sh 那一套);连同本地 81b3749b
+  6. 推完删两个 worktree + 分支;锁内 `bite_run --only named_advisor_check / booking_check / query_index_check`
+  **新待拍(加进早上的卡)**:⑥ 归属导购在班时 book() 直接派给他、点名不参与 —— 要不要「点名优先于归属」⑦ 客户来源渠道要不要加录入口(现在只有列)⑧ /m 顾客预约页在 agentsite/,没加点名 / 渠道字段(接口已收)
 - [ ] 「录音跟进」工作流发布生产版(台账第二十五条),发完看 eureka-fc 说的 oppo 夜跑结果顺序(Skill→start_workflow→Skill)
-- [ ] 看今晚夜跑:factory_eval 有没有题(W48)、triage 两套不是 0 秒(W49)、oppo 回没回到有分;结论回给 eureka-fc
-- [ ] 早上汇总发飞书(做了哪些、门禁绿没绿、哪些没做为什么)
+- (01:5x)growth / liability 判红**不是整晚环境性失败**:逐晚看每晚挂 1–3 道、挂的题轮换 → 真是「时对时错」的题碰上「全对才算过」;nightly_stats 显示把「时对时错」标成 ❌ 的 bug 修了(按档名整比)
+- [~] (00:51 中途:factory_eval 过、12.8 分钟 → 有题在跑;triage_shadow 0.5 分钟过;tool_eval 判红 14 分钟 —— 早上看原因)看今晚夜跑:factory_eval 有没有题(W48)、triage 两套不是 0 秒(W49)、oppo 回没回到有分;结论回给 eureka-fc
+- [~] 早上汇总发飞书:**草稿已写** `澜绣云裳agent-夜间汇总-20261113.md`(00:10,7 个待拍问题已列);08:40 前补「早上合并结果 / 夜跑结论 / 两处放宽补丁命令(00:1x 已问 eureka-fc)」再 `python3 tools/feishu_publish.py` 发,发完删 cron 455cc583、停循环
 
 ### 📍 11-12 夜 · 还债开工(模型换成 Opus 5.5 接着做)
 **已做(提交 aad72534 / 73f7be95 / f430da52,门禁链 chain_d1 在跑,绿了自动推)**:
