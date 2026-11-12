@@ -2294,7 +2294,8 @@ async function 页_运行记录(页 = 1) {
 const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "访问入口", "设置"];
 // 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
-  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值" };
+  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值",
+  list_operator: "列表操作", doc_extractor: "文档提取器" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -2753,7 +2754,7 @@ const 字段中文 = { connection_version_id: "用哪个模型", prompt_version_
   candidate_roles: "谁来处理", expires_at_policy: "多久没处理就结束", operations: "怎么整理",
   knowledge_base_id: "查哪个资料库", retrieval_config_version_id: "怎么查", candidates: "汇合哪几路",
   output_field: "汇合后叫什么", agent_version_id: "用哪个 Agent", task_binding: "交给它的任务",
-  sub_limits: "这一步的上限", bindings: "用到的数据" };
+  sub_limits: "这一步的上限", bindings: "用到的数据", filter: "过滤", sort: "排序", limit: "只要前几个" };
 const 中文名 = (f) => 字段中文[f] || f;
 
 /* 执行顺序:从开始沿边走;条件的每一路缩进一层。没接进流程的放最后 */
@@ -2920,7 +2921,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner"]
+  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -2952,6 +2953,8 @@ function 默认配置(类型) {
            answer: { template: "", bindings: {} },
            template: { template: "", bindings: {} },
            assigner: { assignments: [] },
+           list_operator: { bindings: {} },
+           doc_extractor: { bindings: {} },
            extractor: { parameters: [{ name: "", type: "string", description: "", required: false }], bindings: {}, instruction: "" },
            classifier: { classes: [{ key: "类别一", 说明: "" }, { key: "类别二", 说明: "" }], bindings: {}, instruction: "" },
            transform: { operations: [], output_schema: { type: "object" } },
@@ -3186,6 +3189,18 @@ function 转新写法(b) {
   b.conditions = b.when ? [b.when] : []; b.logic = "and"; delete b.when;
   if (b.on_missing) { b.conditions.forEach((w) => { if (!w.on_missing) w.on_missing = b.on_missing; }); delete b.on_missing; }
 }
+/* 列表操作的过滤比较方式(11-12):和后端 dsl.操作符表 同名;一元的不填比较值 */
+const 列表比法 = [["equals", "等于"], ["not_equals", "不等于"], ["gt", "大于"], ["gte", "大于等于"], ["lt", "小于"], ["lte", "小于等于"],
+  ["contains", "包含"], ["exists", "有这一项"], ["not_exists", "没有这一项"], ["is_null", "是空(null)"], ["is_not_null", "不是空"],
+  ["date_before", "早于(日期)"], ["date_after", "晚于(日期)"]];
+const 列表一元比法 = ["exists", "not_exists", "is_null", "is_not_null"];
+/* 比较值:比大小的转成数字;等于 / 包含跟着当前类型走(现在是数字就仍按数字)。转不成数字的原样留着 —— 检查配置会说「要填数字」,不悄悄当 0 */
+function 列表比较值(op, 原, 旧) {
+  const t = String(原).trim(), 数 = t !== "" && Number.isFinite(Number(t));
+  if (["gt", "gte", "lt", "lte"].includes(op)) return 数 ? Number(t) : 原;
+  if (["equals", "not_equals", "contains"].includes(op) && typeof 旧 === "number") return 数 ? Number(t) : 原;
+  return 原;
+}
 function 表_设置(n) {
   const g = 图态, c = n.config;
   let 体 = `<div class="two"><div><label class="f">这一步叫什么</label>${输入框(n.name || "", (el) => { n.name = el.value.trim() || undefined; 重画(); })}</div>
@@ -3393,6 +3408,49 @@ function 表_设置(n) {
         只做替换 —— 要按条件写不同的话,用「条件分支」分开写。</div>`;
     体 += `
       ${缺.length ? `<div class="ferr">模板里的 ${缺.map((x) => `「${esc(x)}」`).join("、")} 还没在「用到的数据」里 —— 运行前要选来源</div>` : ""}`;
+  } else if (n.type === "list_operator") {
+    // 列表操作(11-12,照 Dify):先过滤、再排序、再取前几个。**规则全是选出来的,没有表达式框** —— 和后端 runtime/列表操作.py 同一套
+    const f = c.filter, s = c.sort;
+    体 += `<div class="note">顺序固定:<b>先过滤、再排序、再取前几个</b>。列表里是一条条记录时,「看哪一项」填记录里的名字(比如 金额);是一个个数字或文字时留空,就是比这一项本身。</div>`;
+    体 += `<label class="f">过滤</label>`;
+    if (!f) {
+      体 += `<button data-k="${挂控件(() => { c.filter = { conditions: [{ op: "equals", value: "" }], logic: "and" }; 重画(); })}">加过滤条件</button>
+        <div class="k">不过滤 = 全都留下。</div>`;
+    } else {
+      const 条们 = f.conditions = f.conditions || [];
+      体 += (条们.length > 1 ? 下拉(f.logic || "and", [["and", "且:每条都满足才留下"], ["or", "或:有一条满足就留下"]], (el) => { f.logic = el.value; 重画(); }) : "")
+        + 条们.map((w, j) => {
+          const 一元 = 列表一元比法.includes(w.op);
+          return `<div class="condrow">
+            <div class="k">第 ${j + 1} 条${j ? (f.logic === "or" ? " · 或" : " · 且") : ""} · 看哪一项</div>${输入框(w.field || "", (el) => {
+              const v = el.value.trim(); if (v) w.field = v; else delete w.field; }, "留空 = 这一项本身", { 可清空: true })}
+            <div class="k">怎么比</div>${下拉(w.op || "", 列表比法, (el) => {
+              w.op = el.value || undefined;
+              if (列表一元比法.includes(w.op)) delete w.value; else if (!("value" in w)) w.value = "";
+              重画(); }, "选比较方式")}
+            ${一元 ? "" : `<div class="k">跟什么比</div>${输入框(w.value ?? "", (el) => { w.value = 列表比较值(w.op, el.value, w.value); 重画(); },
+                ["gt", "gte", "lt", "lte"].includes(w.op) ? "填数字" : ["date_before", "date_after"].includes(w.op) ? "例如 2026-11-12" : "", { 可清空: true })}
+              ${["equals", "not_equals", "contains"].includes(w.op) ? `<div class="k">现在按${typeof w.value === "number" ? "<b>数字</b>" : "<b>文字</b>"}比 ·
+                <button data-k="${挂控件(() => { w.value = typeof w.value === "number" ? String(w.value) : (Number.isFinite(Number(w.value)) && String(w.value).trim() !== "" ? Number(w.value) : w.value); 重画(); })}">改成按${typeof w.value === "number" ? "文字" : "数字"}比</button>
+                (文字「100」和数字 100 不一样,不会悄悄转换)</div>` : ""}`}
+            <button class="danger" data-k="${挂控件(() => { 条们.splice(j, 1); if (!条们.length) delete c.filter; 重画(); })}" aria-label="删掉第 ${j + 1} 条过滤条件">删掉这条</button></div>`;
+        }).join("")
+        + `<button data-k="${挂控件(() => { 条们.push({ op: "exists" }); 重画(); })}">再加一条</button>
+           <div class="k">某一项可能没有「看哪一项」那个名字时,先加一条「有这一项」并用「且」连 —— 不然跑到它这一步会失败。</div>`;
+    }
+    体 += `<label class="f">排序</label>` + (!s
+      ? `<button data-k="${挂控件(() => { c.sort = { order: "asc" }; 重画(); })}">加排序</button><div class="k">不排序 = 保持原来的先后。</div>`
+      : `<div class="two"><div><div class="k">按哪一项排</div>${输入框(s.field || "", (el) => { const v = el.value.trim(); if (v) s.field = v; else delete s.field; }, "留空 = 这一项本身", { 可清空: true })}</div>
+          <div><div class="k">方向</div>${下拉(s.order || "", [["asc", "从小到大"], ["desc", "从大到小"]], (el) => { s.order = el.value || undefined; }, "选方向")}</div></div>
+         <div class="k">一样大的保持原来的先后。那一项要么全是数字、要么全是文字;有的没有、或者混着,这一步会失败(不猜顺序)。</div>
+         <button class="danger" data-k="${挂控件(() => { delete c.sort; 重画(); })}">不排序了</button>`);
+    体 += `<label class="f">只要前几个(选填)</label>` + 数字框(c.limit, (v) => { if (v === undefined) delete c.limit; else c.limit = v; }, { 整数: true, 最小: 1, 提示: "留空 = 全都要" });
+  } else if (n.type === "doc_extractor") {
+    // 文档提取器(11-12,照 Dify):文件在下面「用到的数据」里选
+    体 += `<div class="note">从前面给的<b>已上传文件</b>里取出文字,交给后面的步骤(比如交给 AI 处理去总结)。
+      文件是上传记录的编号,一般在「开始」里让使用者给;给一个就取出一段文字,给一组就取出一组。</div>
+      <div class="k">现在能取:Markdown(.md)和纯文本(.txt),UTF-8 编码 —— 也就是上传那里收的那几种。<b>取不了的格式、没传完 / 校验没过的文件、空文件,这一步会失败</b>,不会交给后面一段空文字;
+      要接人工,在「高级」里把「失败后怎么办」设成走「失败时」那条线。一步最多读 10 份。</div>`;
   } else if (n.type === "end") {
     体 += `<div class="k">返回哪些内容、各从哪来 —— 在下面「结果」和「用到的数据」里配。</div>`;
   } else {
@@ -3444,6 +3502,8 @@ function 结果字段名(n) {
   if (n.type === "human") return ["决定", "定稿", "理由", "处理人"];
   if (n.type === "answer") return ["回复"];
   if (n.type === "template") return ["文本"];
+  if (n.type === "list_operator") return ["结果", "个数", "第一个", "最后一个"];
+  if (n.type === "doc_extractor") return ["文本", "文件名"];
   if (n.type === "assigner") return [...new Set((c.assignments || []).map((a) => a.variable).filter(Boolean))];
   if (n.type === "extractor") return (c.parameters || []).map((p) => p.name).filter(Boolean);
   if (n.type === "classifier") return ["类别", "理由"];
@@ -3515,6 +3575,16 @@ function 表_输入(n) {
   if (n.type === "human") return `<div class="k">审核人会看到这些(左边原文、右边摘要)。「摘要」就是通过时默认的定稿。</div>`
     + 绑定编辑(n, "payload_binding");
   if (n.type === "condition") return `<div class="k">条件用到的值在上面「基本」里每一路单独选。</div>`;
+  if (n.type === "list_operator" || n.type === "doc_extractor") {
+    // 列表操作 / 文档提取器(11-12):只读固定的那一项(列表 / 文件),多出来的绑定不会被读 —— 检查配置会拦
+    const 键 = n.type === "list_operator" ? "列表" : "文件", 绑 = n.config.bindings = n.config.bindings || {};
+    const 多 = Object.keys(绑).filter((k) => k !== 键);
+    return `<div class="k">${n.type === "list_operator" ? "要处理的列表从哪来(选一个列表类型的结果)" : "文件从哪来(上传记录的编号,一个或一组;一般是「开始」里让使用者给的)"}:</div>
+      <div class="fieldrow"><label>${键}</label>${下拉(引用值(绑[键]), 上游字段(n.id), (el) => { if (el.value) 绑[键] = 解引用(el.value); else delete 绑[键]; 重画(); }, "选一个来源")}</div>`
+      + (多.length ? `<div class="ferr">「用到的数据」里多了 ${多.map((k) => `「${esc(k)}」`).join("、")},这一步不读它们 ·
+          <button data-k="${挂控件(() => { 多.forEach((k) => delete 绑[k]); 重画(); })}">删掉多出来的</button></div>` : "")
+      + (上游字段(n.id).length ? "" : `<div class="note">这一步前面还没有能取值的步骤 —— 先把它接到流程里。</div>`);
+  }
   if (n.type === "merge") return `<div class="k">汇合会取下面<b>第一个有值</b>的那一路(条件没走的那一路没有值)。</div>`
     + (n.config.candidates || []).map((r, i) => `<div class="fieldrow"><label>第 ${i + 1} 路</label>${下拉(引用值(r), 上游字段(n.id),
         (el) => { n.config.candidates[i] = 解引用(el.value); })}</div>`).join("")
@@ -3587,6 +3657,8 @@ function 表_结果(n) {
   if (n.type === "classifier") return `<div class="k">固定返回:<b>类别</b>(模型挑的那一个名字)、<b>理由</b>(它为什么这么分)。走哪条线由类别定。</div>`;
   if (n.type === "extractor") return `<div class="k">返回上面「基本」里列的每一项参数;<b>原文没提到的那一项是空</b>,必填的没抽到这一步就失败。</div>`;
   if (n.type === "assigner") return `<div class="k">返回改完之后的值(每一项一个)。循环里后面的步骤直接取「循环状态 · 名字」就是新值。</div>`;
+  if (n.type === "list_operator") return `<div class="k">固定返回:<b>结果</b>(处理完的列表)、<b>个数</b>、<b>第一个</b>、<b>最后一个</b>。一个都不剩时结果是空列表,第一个 / 最后一个是空(null)—— 后面可以用条件分支判「个数 等于 0」。</div>`;
+  if (n.type === "doc_extractor") return `<div class="k">固定返回:<b>文本</b>(取出来的文字)、<b>文件名</b>。给的是一组文件时,两个都是列表、顺序和给进来的一样。</div>`;
   if (n.type === "template") return `<div class="k">固定返回:<b>文本</b>(填好名字之后的那一段)。后面的步骤在「用到的数据」里选它。</div>`;
   if (n.type === "answer") return `<div class="k">固定返回:<b>回复</b>(填好名字之后的那一句)。后面的步骤也能取它。</div>`;
   if (n.type === "end") {

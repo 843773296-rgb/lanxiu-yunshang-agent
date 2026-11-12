@@ -2335,6 +2335,375 @@
           }
         ]
       }
+    },
+    "合法_列表操作_过滤排序取前几个": {
+      "为什么": "11-12 列表操作(照 Dify):过滤用条件分支那套操作符、排序选方向、取前几个 —— 全是选出来的规则,正向对照(期望阻断为空)",
+      "期望阻断": [],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "r": {}
+          },
+          "required": [
+            "r"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          },
+          {
+            "id": "lo",
+            "type": "list_operator",
+            "config": {
+              "bindings": {
+                "列表": {
+                  "source": "input",
+                  "pointer": "/items"
+                }
+              },
+              "filter": {
+                "conditions": [
+                  {
+                    "field": "amount",
+                    "op": "gte",
+                    "value": 100
+                  }
+                ],
+                "logic": "and"
+              },
+              "sort": {
+                "field": "amount",
+                "order": "desc"
+              },
+              "limit": 3
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "r": {}
+                },
+                "required": [
+                  "r"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "r": {
+                  "source": "node",
+                  "node_id": "lo",
+                  "pointer": "/个数"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "lo",
+            "port": "success"
+          },
+          {
+            "source": "lo",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_列表操作_过滤写成表达式": {
+      "为什么": "§6.1、§17.4 白名单转换:过滤只许选操作符,塞一个表达式字符串进来既不是登记过的配置字段、操作符也认不出 —— 两处各报各的,不混成一条",
+      "期望阻断": [
+        "NODE_UNKNOWN_CONFIG",
+        "LIST_FILTER_OP"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "r": {}
+          },
+          "required": [
+            "r"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          },
+          {
+            "id": "lo",
+            "type": "list_operator",
+            "config": {
+              "bindings": {
+                "列表": {
+                  "source": "input",
+                  "pointer": "/items"
+                }
+              },
+              "expression": "item.amount > 100",
+              "filter": {
+                "conditions": [
+                  {
+                    "field": "amount",
+                    "op": "item.amount > 100",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "r": {}
+                },
+                "required": [
+                  "r"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "r": {
+                  "source": "node",
+                  "node_id": "lo",
+                  "pointer": "/个数"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "lo",
+            "port": "success"
+          },
+          {
+            "source": "lo",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "合法_文档提取器": {
+      "为什么": "11-12 文档提取器(照 Dify):文件来自使用者输入的上传编号;正向对照(期望阻断为空)",
+      "期望阻断": [],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "r": {}
+          },
+          "required": [
+            "r"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          },
+          {
+            "id": "doc",
+            "type": "doc_extractor",
+            "config": {
+              "bindings": {
+                "文件": {
+                  "source": "input",
+                  "pointer": "/items"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "r": {}
+                },
+                "required": [
+                  "r"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "r": {
+                  "source": "node",
+                  "node_id": "doc",
+                  "pointer": "/文本"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "doc",
+            "port": "success"
+          },
+          {
+            "source": "doc",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_文档提取器_没选文件还带了超时": {
+      "为什么": "文档提取器只读「文件」那一项(多绑的不会被读);它不发外部调用,超时设置填了不生效(§6 不许有拧了不算数的设置)",
+      "期望阻断": [
+        "DOC_EXTRA_BINDING",
+        "DOC_NO_INPUT",
+        "NODE_INAPPLICABLE_FIELD"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "r": {}
+          },
+          "required": [
+            "r"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          },
+          {
+            "id": "doc",
+            "type": "doc_extractor",
+            "config": {
+              "bindings": {
+                "附件": {
+                  "source": "input",
+                  "pointer": "/items"
+                }
+              },
+              "timeout_seconds": 30
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "r": {}
+                },
+                "required": [
+                  "r"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "r": {
+                  "source": "node",
+                  "node_id": "doc",
+                  "pointer": "/文本"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "doc",
+            "port": "success"
+          },
+          {
+            "source": "doc",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
     }
   }
 }

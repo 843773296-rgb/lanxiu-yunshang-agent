@@ -120,6 +120,11 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_split_live.py
 	@echo ""
+	@echo "▸ 工作流文档提取器 · 真库真存储读上传(11-12;事务里摆、最后回滚,存储用临时目录)"
+	@echo "  ⚠️ 别的项目的上传编号当找不到,不读出它的文字;库里有、存储里没有 → 明确失败,不是空串"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_doc_extractor_live.py
+	@echo ""
 	@echo ""
 	# ⚠️ **这条要数据库,所以挂 `test` 不挂 `contract`。**
 	# `contract` 那一组是「不需要数据库」的 —— 放进去会让它在没库的机器上红,
@@ -428,7 +433,8 @@ E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
              test_artifact_page_actions.js test_member_page_actions.js \
              test_release_page_actions.js test_workflow_save_gate.js \
-             test_workflow_graph_logic.js test_workflow_editor_actions.js
+             test_workflow_graph_logic.js test_workflow_editor_actions.js \
+             test_workflow_new_nodes_panel.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
 	@echo "▸ 端到端(CI 版):$(words $(E2E_CI)) 份 Python + $(words $(E2E_CI_JS)) 份 JS"
@@ -515,6 +521,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo ""
 	@echo "▸ 编排页 · 保存与命令层(保存中继续编辑、失败 / 冲突不丢改动、撤销、只读、检查过期)"
 	@node tests/e2e/test_workflow_editor_actions.js
+	@echo ""
+	@echo "▸ 编排页 · 列表操作 / 文档提取器的配置面板(写进定义的形状和后端校验器认的一致,不起服务)"
+	@node tests/e2e/test_workflow_new_nodes_panel.js
 	@echo ""
 	@echo "▸ 任务事件流 SSE(17 条:按 seq 续传、终态要发结束、流开着也重新鉴权)"
 	@echo "  **全后台最后一条「已实现未验」** —— 主要在打「空流和什么都没发生长得一样」"
@@ -756,6 +765,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_workflow_editor_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_workflow_editor_actions.log; exit 1; }
 	@tail -1 /tmp/prog-test_workflow_editor_actions.log
+	@node tests/e2e/test_workflow_new_nodes_panel.js > /tmp/prog-test_workflow_new_nodes_panel.log 2>&1 \
+	  || { echo "  ❌ test_workflow_new_nodes_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_new_nodes_panel.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_new_nodes_panel.log
 	@./.venv/bin/python tests/e2e/test_job_events_sse.py > /tmp/prog-test_job_events_sse.log 2>&1 \
 	  || { echo "  ❌ test_job_events_sse 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_job_events_sse.log; exit 1; }
@@ -1097,6 +1110,12 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 变量赋值:改循环状态马上生效、恢复不清零;不在循环里 / 改的不是这个循环的状态 / 和「每一轮结束取自」抢着写 检查配置就拦"
 	@./.venv/bin/python tests/orchestration/test_assigner_node.py
+	@echo ""
+	@echo "▸ 列表操作:先过滤再排序再取前几个、排序稳定;不是列表 / 缺字段 / 混着排 这一步失败;规则形状 检查配置就拦"
+	@./.venv/bin/python tests/orchestration/test_list_operator_node.py
+	@echo ""
+	@echo "▸ 文档提取器:只认本项目校验过的上传;格式取不了 / 没校验 / 解不开 / 空文件 这一步失败,不给空串"
+	@./.venv/bin/python tests/orchestration/test_doc_extractor_node.py
 	@echo ""
 	@echo "▸ 定时触发的时间口径:日报前一天 / 周报上一个自然周 / 月报上一个自然月;同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py

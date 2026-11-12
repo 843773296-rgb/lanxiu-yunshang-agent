@@ -39,6 +39,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "contract"))
 import dsl as DS  # noqa: E402
 import compiler as CP  # noqa: E402
+import 列表操作 as LO  # noqa: E402
+import 文档提取 as DE  # noqa: E402
 
 待执行, 执行中, 成功, 失败, 跳过 = "pending", "running", "succeeded", "failed", "skipped"
 
@@ -549,6 +551,56 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     出.update(_转换一步(op, 出, 状态))
                 状态["节点"][当前] = 出
                 记一步(当前, 成功, 出=出)
+                下 = 后继[当前].get((DS.成功, None), [])
+                当前 = 下[0] if 下 else 循环回(当前)
+                continue
+
+            if t == "list_operator":
+                # 列表操作(11-12,照 Dify):过滤 → 排序 → 取前几个;规则在 runtime/列表操作.py(校验器同一份)
+                值, 缺 = 解绑定(cfg.get("bindings"), 状态)
+                本步入 = 值
+                if "列表" in 缺 or "列表" not in 值:
+                    raise 节点失败("LIST_VALUE_MISSING", "要处理的列表取不到",
+                                 "来源那一步这次没跑到,或者它的结果里没有这一项;在右侧「用到的数据」里核对「列表」的来源")
+                try:
+                    出 = LO.执行(值["列表"], cfg)
+                except LO.做不了 as e:
+                    raise 节点失败(e.code, e.消息, e.建议)
+                状态["节点"][当前] = 出
+                记一步(当前, 成功, 入={"列表": 值["列表"], "规则": {k: cfg[k] for k in ("filter", "sort", "limit") if k in cfg}}, 出=出)
+                下 = 后继[当前].get((DS.成功, None), [])
+                当前 = 下[0] if 下 else 循环回(当前)
+                continue
+
+            if t == "doc_extractor":
+                # 文档提取器(11-12,照 Dify):从已上传文件里取文字。读库读存储的是 Worker 给的 document 适配器(只查本项目);
+                # 规则(引用认不认得 / 状态 / 格式 / 解码 / 空)在 runtime/文档提取.py
+                值, 缺 = 解绑定(cfg.get("bindings"), 状态)
+                本步入 = 值
+                if "文件" in 缺 or "文件" not in 值:
+                    raise 节点失败("DOC_VALUE_MISSING", "要取文字的文件取不到",
+                                 "来源那一步这次没跑到,或者使用者没给文件;在右侧「用到的数据」里核对「文件」的来源")
+                取 = 适配器.get("document")
+                if 取 is None:
+                    raise 节点失败("NO_ADAPTER", "这里读不了上传的文件(没接文件读取)",
+                                 "这是运行环境的问题,不是流程配错了 —— 请报给技术管理员")
+                try:
+                    编号们, 是一组 = DE.引用们(值["文件"])
+                    本步入 = {"文件": 编号们}
+                    文们, 名们 = [], []
+                    for 号 in 编号们:
+                        记录 = 取(号)
+                        if not 记录:
+                            # 别的项目的编号也走这里 —— 不说「它在别处存在」
+                            raise DE.做不了("DOC_NOT_FOUND", f"找不到文件「{号}」(可能被删了,或者不是这个项目里传的)",
+                                          "回上传那里确认文件还在;重新上传后把新的文件编号给进来")
+                        文们.append(DE.提取(记录))
+                        名们.append(记录.get("file_name"))
+                except DE.做不了 as e:
+                    raise 节点失败(e.code, e.消息, e.建议)
+                出 = {"文本": 文们, "文件名": 名们} if 是一组 else {"文本": 文们[0], "文件名": 名们[0]}
+                状态["节点"][当前] = 出
+                记一步(当前, 成功, 入=本步入, 出=出)
                 下 = 后继[当前].get((DS.成功, None), [])
                 当前 = 下[0] if 下 else 循环回(当前)
                 continue

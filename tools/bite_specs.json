@@ -19776,5 +19776,161 @@
    }
   ],
   "预期红": "「归属转移」通用口手工建 → 拒(SYSTEM_ONLY)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_list_operator_node.py",
+  "改坏": "过滤不短路(且)(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/列表操作.py",
+    "old": "            if 连 == \"and\" and not r:\n                中 = False\n                break",
+    "new": "            if 连 == \"and\" and not r:\n                中 = False"
+   }
+  ],
+  "预期红": "「字段存在 且 金额 > 100」"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_list_operator_node.py",
+  "改坏": "排序不稳定(desc 用反转升序)(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/列表操作.py",
+    "old": "序 = sorted(range(len(列)), key=lambda i: 键们[i], reverse=s[\"order\"] == \"desc\")",
+    "new": "序 = sorted(range(len(列)), key=lambda i: 键们[i])\n    if s[\"order\"] == \"desc\":\n        序 = 序[::-1]"
+   }
+  ],
+  "预期红": "C A D"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_list_operator_node.py",
+  "改坏": "混着排时不失败、按字符串排(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/列表操作.py",
+    "old": "    if 键们 and not (全数 or 全文):",
+    "new": "    键们 = [str(k) for k in 键们]\n    if False:"
+   }
+  ],
+  "预期红": "数字和文字混着排"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_list_operator_node.py",
+  "改坏": "空结果第一个给不出(取不到)(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/列表操作.py",
+    "old": "\"第一个\": 结果[0] if 结果 else None",
+    "new": "**({\"第一个\": 结果[0]} if 结果 else {})"
+   }
+  ],
+  "预期红": "结果空列表、个数 0"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_list_operator_node.py",
+  "改坏": "校验器不调列表规则(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "            for code, 消息, 建议, fp in LO.配置问题(cfg):",
+    "new": "            for code, 消息, 建议, fp in []:"
+   }
+  ],
+  "预期红": "操作符不认得"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_list_operator_node.py",
+  "改坏": "执行器不把运行记录的输入记下(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "记一步(当前, 成功, 入={\"列表\": 值[\"列表\"], \"规则\"",
+    "new": "记一步(当前, 成功, 入2={\"列表\": 值[\"列表\"], \"规则\""
+   }
+  ],
+  "预期红": "⑦ 运行记录"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_doc_extractor_node.py",
+  "改坏": "PDF 当文本读(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/文档提取.py",
+    "old": "    if not 名.lower().endswith(能提取的后缀):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "PDF(上传那关现在根本不收"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_doc_extractor_node.py",
+  "改坏": "空文件给空串(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/文档提取.py",
+    "old": "    if not 文.strip():",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "只有空白"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_doc_extractor_node.py",
+  "改坏": "不看上传校验状态(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/文档提取.py",
+    "old": "    if 记录.get(\"status\") != 已校验:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "没通过上传校验(还是「已上传」)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_doc_extractor_node.py",
+  "改坏": "UTF-8 解不开时退回 GBK(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/文档提取.py",
+    "old": "        文 = bytes(字节).decode(\"utf-8\")",
+    "new": "        文 = bytes(字节).decode(\"utf-8\", errors=\"replace\")"
+   }
+  ],
+  "预期红": "不是 UTF-8(不退回 GBK 去猜)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_doc_extractor_node.py",
+  "改坏": "一组文件时只给第一个(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "出 = {\"文本\": 文们, \"文件名\": 名们} if 是一组 else",
+    "new": "出 = {\"文本\": 文们[0], \"文件名\": 名们[0]} if 是一组 else"
+   }
+  ],
+  "预期红": "文本 / 文件名都是列表,顺序和给进来的一致"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_doc_extractor_node.py",
+  "改坏": "先读再数份数(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/文档提取.py",
+    "old": "        if len(v) > 最多几份:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "超过份数时一份都不读"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_doc_extractor_node.py",
+  "改坏": "校验器不查文档绑定(11-12 工作流补节点)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "            if 绑 and \"文件\" not in 绑:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "绑定里没有「文件」只有别的"
  }
 ]

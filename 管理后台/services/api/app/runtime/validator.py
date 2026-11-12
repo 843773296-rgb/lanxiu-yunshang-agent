@@ -45,6 +45,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "contract"))
 import dsl as DS  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import 列表操作 as LO  # noqa: E402
+import 文档提取 as DE  # noqa: E402
+
 阻断 = "blocking"     # 不修不许冻结版本
 警告 = "warning"      # 可以冻结,但要显示
 
@@ -108,6 +112,9 @@ _缺项说法 = {
     "parameters": ("还没写要提取哪几项", "在右侧「基本」里至少加一项,写上名字、类型和说明"),
     "classes": ("还没写要分成哪几类", "在右侧「基本」里至少写两个类别,比如「有意向」「没意向」「说不清」"),
     "template": ("还没写要回复什么", "在右侧「基本」里写回复内容;要带上前面的结果,写 {{名字}} 并在「用到的数据」里给它选来源"),
+    # 同一个字段在不同步骤里缺的是不同的东西(11-12):按 (步骤类型, 字段) 先找,找不到再按字段
+    ("list_operator", "bindings"): ("还没选要处理哪个列表", "在右侧「用到的数据」里给「列表」选一个前面步骤给的列表"),
+    ("doc_extractor", "bindings"): ("还没选从哪个文件取文字", "在右侧「用到的数据」里给「文件」选上传文件的那一项(比如开始节点里让使用者给的文件编号)"),
 }
 
 # 引用的资源找不到时怎么叫它
@@ -280,7 +287,7 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
         cfg = n.get("config") or {}
         for f in 元["必填"]:
             if f not in cfg or cfg[f] in (None, "", [], {}):
-                什么, 去哪 = _缺项说法.get(f, ("有一项必填的还没填", "在右侧面板里把标了必填的填上"))
+                什么, 去哪 = _缺项说法.get((t, f)) or _缺项说法.get(f, ("有一项必填的还没填", "在右侧面板里把标了必填的填上"))
                 出.append(问(阻断, "NODE_MISSING_CONFIG", 什么, 去哪,
                            node_id=i, field_path=f"config.{f}"))
         # **自由字段一律拒绝**(§16.5:节点 Schema 由契约注册表声明)。
@@ -549,6 +556,27 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                 出.append(问(阻断, "ASSIGN_CONFLICT_UPDATE",
                            f"「{k}」在循环设置里已经是「每一轮结束取自某一步」,这一步又改它 —— 两个写的人,最后算谁的取决于走到哪",
                            f"二选一:去掉循环设置里「{k}」的「每一轮结束取自」,或者删掉这一条", node_id=i, field_path=fp))
+
+    # ④e 列表操作 / 文档提取器(11-12,照 Dify):规则的形状在校验期就拦 —— 查法和执行器同一份(runtime/列表操作.py、文档提取.py)
+    for n in 节点们:
+        t, i, cfg = n.get("type"), n.get("id"), (n.get("config") or {})
+        if t == "list_operator":
+            for code, 消息, 建议, fp in LO.配置问题(cfg):
+                出.append(问(阻断, code, 消息, 建议, node_id=i, field_path=fp))
+        elif t == "doc_extractor":
+            绑 = cfg.get("bindings") if isinstance(cfg.get("bindings"), dict) else {}
+            if 绑 and "文件" not in 绑:
+                出.append(问(阻断, "DOC_NO_INPUT", "还没选从哪个文件取文字",
+                           "在右侧「用到的数据」里给「文件」选上传文件的那一项", node_id=i, field_path="config.bindings.文件"))
+            for k in sorted(set(绑) - {"文件"}):
+                出.append(问(阻断, "DOC_EXTRA_BINDING", f"「用到的数据」里多了一项「{k}」,文档提取器只用「文件」那一项,它不会被读",
+                           f"删掉「{k}」", node_id=i, field_path=f"config.bindings.{k}"))
+            if isinstance(绑.get("文件"), dict) and 绑["文件"].get("source") == "constant":
+                v = 绑["文件"].get("value")
+                try:
+                    DE.引用们(v)
+                except DE.做不了 as e:
+                    出.append(问(阻断, e.code, e.消息, e.建议, node_id=i, field_path="config.bindings.文件"))
 
     # ⑤ 变量可用性:**靠支配关系,不靠找名字** ───────────────────────
     跳过 = []

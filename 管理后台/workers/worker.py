@@ -436,6 +436,26 @@ def _记这一段的账(c, job, r, run_id, 步骤们, 我是谁):
     return 记了
 
 
+def 读上传(c, 项目, 上传id):
+    """工作流「文档提取器」(11-12)的 document 适配器:读一份上传。**只查这次运行所在的项目** ——
+    别的项目的编号返回 None,执行器当「找不到」报(不说它在别处存在,和 uploads_api._取 同一条)。
+    格式 / 状态 / 解码这些判断不在这里,在 runtime/文档提取.py;这里只做两件带 IO 的事:查库、读存储。
+    没校验过的不读字节(用不上,也不该碰)。"""
+    import storage as OS_
+    u = c.execute(text("""select id, file_name, status, content_type, object_key from uploads
+                            where project_id=:p and id=:i and archived_at is null"""),
+                  {"p": 项目, "i": 上传id}).mappings().first()
+    if not u:
+        return None
+    记录 = dict(u)
+    if 记录["status"] == "已校验":
+        try:
+            记录["字节"] = OS_.读出(记录["object_key"])
+        except OS_.存不了:
+            记录["字节"] = None        # 库里有、存储里没有 —— 执行器报 DOC_READ_FAILED(服务端不一致,不是文件的错)
+    return 记录
+
+
 @处理("workflow_run")
 def _跑一张工作流(c, job, 打点):
     """跑一次 Workflow。**照 `_跑一次prompt` 的形状**:
@@ -989,7 +1009,10 @@ def _跑一张工作流(c, job, 打点):
             if isinstance(v, dict) and "__没存全__" not in v:
                 样例[行["node_id"]] = v
         打点("样例预览:取到样例", {"有样例的步骤": sorted(样例)})
-    结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具, "agent": _agent},
+    def _文档(上传id):
+        return 读上传(c, job["project_id"], 上传id)
+
+    结果 =RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档},
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
                     系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例)
     打点("执行完", {"状态": 结果["执行状态"]})
