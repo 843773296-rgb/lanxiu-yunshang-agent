@@ -61,6 +61,10 @@ def _题号(d):
     for k in ("case", "id", "题号", "cid"):
         if d.get(k):
             return str(d[k])
+    # 有的套题本来就没编号(scheme_eval 只存题面原文)—— 拿题面前 24 个字当这道题的名字,
+    # 不然这一整套在分档里是「0 题、无记录」,看着像没跑过(11-13 发现)
+    if isinstance(d.get("题"), str) and d["题"].strip():
+        return "「" + d["题"].strip()[:24] + "」"
     return None
 
 
@@ -164,7 +168,9 @@ def _自测():
         坏.append("有 各轮过 时应按两轮算")
     if _各轮({"passed": True}) != [True]:
         坏.append("没有 各轮过 时应退回 passed 一轮")
-    print("✅ 自测 11 条全过" if not 坏 else "❌ " + ";".join(坏))
+    if _题号({"题": "按这条方案开单,给 C10001 做"}) != "「按这条方案开单,给 C10001 做」" or _题号({"case": "T1", "题": "x"}) != "T1":
+        坏.append("没有题号时用题面兜底、有题号时仍用题号")
+    print("✅ 自测 12 条全过" if not 坏 else "❌ " + ";".join(坏))
     return 1 if 坏 else 0
 
 
