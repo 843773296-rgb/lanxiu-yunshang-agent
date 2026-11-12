@@ -88,8 +88,10 @@ import sys
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 
-def 改过的文件(提交):
+def 改过的文件(提交, 基线=None):
     """那次提交动过哪些文件。合并提交取第一父。
+    给了 `基线`(比如 `origin/main`)就算 **基线...提交 之间全部**改过的文件 —— 推送前用:
+    一个分支上攒了十几笔,逐笔算再合并,和一次算三点号 diff 是同一个集合,后者少十几次 git 调用。
 
     ⚠️⚠️ **必须 `-c core.quotepath=false`。** 这个仓库大半文件名是中文,
     而 git 默认把非 ASCII 路径转义成 `"\346\276\234..."` 输出 ——
@@ -101,8 +103,8 @@ def 改过的文件(提交):
     而这个工具存在的理由本身就是「别漏」:**一个少算了的完备集比不跑更危险**,
     因为跑完的人会以为验过了。
     """
-    r = subprocess.run(["git", "-c", "core.quotepath=false",
-                        "diff", "--name-only", f"{提交}~1", 提交],
+    范围 = [f"{基线}...{提交}"] if 基线 else [f"{提交}~1", 提交]
+    r = subprocess.run(["git", "-c", "core.quotepath=false", "diff", "--name-only", *范围],
                        cwd=根, capture_output=True, text=True)
     if r.returncode != 0:
         sys.exit(f"{R}git diff 失败:{r.stderr.strip()[:200]}{D}")
@@ -161,6 +163,9 @@ def main():
     # 又动了旧三服务的文件头)。**只算主提交会漏掉补刀那次改的文件。**
     ap.add_argument("--提交", default=["HEAD"], nargs="+",
                     help="要看哪几次提交(可给多个,取并集;默认 HEAD)")
+    ap.add_argument("--基线", default=None,
+                    help="给了就算 **基线...提交** 之间全部改过的文件(推送前用 `--基线 origin/main`:"
+                         "一个分支攒了十几笔,一次三点号 diff 就是并集)")
     ap.add_argument("--只看", action="store_true", help="只算完备集,不重放")
     ap.add_argument("--工作区脏也跑", action="store_true",
                     help="明知工作区有未提交改动也要跑 —— **跑出来的红要自己分辨是哪一种**")
@@ -202,7 +207,7 @@ def main():
     for c in a.提交:
         标题 = subprocess.run(["git", "log", "-1", "--format=%h %s", c],
                               cwd=根, capture_output=True, text=True).stdout.strip()
-        这次 = 改过的文件(c)
+        这次 = 改过的文件(c, a.基线)
         print(f"看的是:{标题}  —— 改过 {len(这次)} 个文件")
         S |= 这次
     组, 总 = 要重放的(S)
