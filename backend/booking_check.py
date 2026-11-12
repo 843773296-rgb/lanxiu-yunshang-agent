@@ -38,6 +38,8 @@ bad = 0
      '没到店的预约不许有签到时间'),
     ('把接待任务的展示大类改成「客户预约」(两根轴被合成一根)',
      '接待任务:展示归企业、派单归客户'),
+    ('新人保底不进排序(新客单照旧按负载挑)',
+     '新客单:本周新客不到保底的新人排到最前,理由写明新人保底'),
 ]
 
 def check(title, got, want, extra=""):
@@ -284,6 +286,49 @@ def main():
            "AND checkin_ts > datetime(start_ts, '+2 hours')")[0]["n"]
     check("签到时间落在预约时段附近", str(晚), "0",
           "  ← 签到晚于预约两小时以上,多半是日期整体挪动时漏挪了这一列")
+
+    print("\n\033[1m▸ 新人保底 · 只在新客单上、只管本周新客不到保底的新人(用户 11-12 拍,台账第十五条)\033[0m")
+    print("  " + "=" * 76)
+    店们 = q("SELECT DISTINCT shop FROM staff WHERE role='顾问' AND status='启用'")
+    验了 = 0
+    for 店 in [r["shop"] for r in 店们]:
+        新客 = q("SELECT id FROM customer WHERE shop=? AND archived=0 AND id NOT IN "
+                 "(SELECT customer_id FROM schedule WHERE customer_id IS NOT NULL) LIMIT 1", 店)
+        if not 新客:
+            continue
+        池 = q("SELECT no,name,adv_code,hired_at FROM staff WHERE role='顾问' AND status='启用' AND shop=?", 店)
+        if not 池:
+            continue
+        # 演示数据里在职顾问没有入职不满三个月的(唯一的新人是停用的)—— **自己造前提**:
+        # 临时把一位在职顾问的入职日期改成 30 天前,验完改回去(门禁里这一步落在库副本上,W02)。
+        import worldclock as _wc, datetime as _dt
+        造的 = 池[-1]
+        with closing(sqlite3.connect(DB)) as w, w:
+            w.execute("UPDATE staff SET hired_at=? WHERE no=?",
+                      ((_wc.今天() - _dt.timedelta(days=30)).isoformat(), 造的["no"]))
+        try:
+            保 = booking._新人保底(池, None)
+            if not 保:
+                continue
+            建, 因 = booking.suggest_why(dict(shop=店, customer_id=新客[0]["id"]))
+            验了 += 1
+            check("新客单:本周新客不到保底的新人排到最前,理由写明新人保底",
+                  "对" if 建 and 建["no"] in 保 and any("新人保底" in w for w in 建["why"]) else f"错:{建 and 建['no']} {因 or ''}",
+                  "对", f"  ← 保底名单 {sorted(保)}")
+            老客 = q("SELECT s.customer_id c FROM schedule s JOIN staff t ON t.no=s.assignee_no "
+                     "WHERE t.role='顾问' AND t.status='启用' AND t.shop=? AND s.customer_id IN "
+                     "(SELECT id FROM customer WHERE shop=?) GROUP BY s.customer_id ORDER BY COUNT(*) DESC LIMIT 1", 店, 店)
+            if 老客:
+                建2, _ = booking.suggest_why(dict(shop=店, customer_id=老客[0]["c"]))
+                check("有接触史的单不受保底影响(照旧谁接待过给谁)",
+                      "对" if 建2 and 建2.get("history", 0) > 0 and not any("新人保底" in w for w in 建2["why"]) else "错",
+                      "对")
+            break
+        finally:
+            with closing(sqlite3.connect(DB)) as w, w:
+                w.execute("UPDATE staff SET hired_at=? WHERE no=?", (造的["hired_at"], 造的["no"]))
+    if not 验了:
+        print(f"  {R}❌{D} 库里找不到「有新人、有新客」的门店 —— 新人保底这一节**没验到**,不叫通过"); bad += 1
 
     print()
     if bad:

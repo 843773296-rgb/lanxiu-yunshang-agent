@@ -11042,6 +11042,18 @@
   "预期红": "接待任务:展示归企业、派单归客户"
  },
  {
+  "script": "backend/booking_check.py",
+  "改坏": "新人保底不进排序(新客单照旧按负载挑)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "        return (-seen.get(p[\"no\"], 0), 0 if p[\"no\"] in 保底 else 1, load[p[\"no\"]], p[\"no\"])\n",
+    "new": "        return (-seen.get(p[\"no\"], 0), load[p[\"no\"]], p[\"no\"])\n"
+   }
+  ],
+  "预期红": "新客单:本周新客不到保底的新人排到最前,理由写明新人保底"
+ },
+ {
   "script": "backend/alert_dispatch_check.py",
   "改坏": "防重复派不看「还有没办完的」(只看同一个键办完没有)",
   "file": [

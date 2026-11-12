@@ -248,6 +248,37 @@ def _busy(no, start, end):
                  "AND start_ts < ? AND end_ts > ?", no, end, start)
 
 
+新人保底条数 = 2          # 建议值(台账第十五条),试点后按数据调
+新人天数 = 90
+
+
+def _新人保底(pool, start):
+    """→ {工号: 本周已有新客数} —— 只含「入职不满三个月且本周新客 < 保底条数」的人。
+    新客 = 这条日程的客户在它之前没有任何日程(谁接待的都算);周按任务开始那天算,没时段按世界今天。"""
+    import datetime as _dt, worldclock as _wc
+    今 = _wc.今天()
+    d = _dt.date.fromisoformat(start[:10]) if start else 今
+    周一 = d - _dt.timedelta(days=d.weekday())
+    下周一 = 周一 + _dt.timedelta(days=7)
+    出 = {}
+    for p in pool:
+        r = _rows("SELECT hired_at FROM staff WHERE no=?", p["no"])
+        入职 = (r[0]["hired_at"] if r else None) or ""
+        try:
+            新人 = (今 - _dt.date.fromisoformat(入职[:10])).days < 新人天数
+        except ValueError:
+            新人 = False
+        if not 新人:
+            continue
+        k = _rows("SELECT COUNT(*) c FROM schedule s WHERE s.assignee_no=? AND s.customer_id IS NOT NULL "
+                  "AND s.start_ts >= ? AND s.start_ts < ? AND NOT EXISTS (SELECT 1 FROM schedule q "
+                  "WHERE q.customer_id=s.customer_id AND q.start_ts < s.start_ts)",
+                  p["no"], 周一.isoformat(), 下周一.isoformat())[0]["c"]
+        if k < 新人保底条数:
+            出[p["no"]] = k
+    return 出
+
+
 def suggest(task):
     """给一张没派出去的客户任务提一个人选 —— 提不出返回 None。要知道**为什么**提不出,用 suggest_why。"""
     return suggest_why(task)[0]
@@ -342,14 +373,21 @@ def suggest_why(task):
                            "WHERE assignee_no=? AND status='有效'", p["no"])[0]["c"]
             for p in pool}
 
+    # ④ 新人保底(用户 11-12 拍,台账第十五条):**只在新客单上**(这个客户谁都没接触过)起作用 ——
+    #    入职不满三个月、本周新客还不到「保底条数」的顾问,排到同层最前。有接触史的单照旧谁接待过给谁,
+    #    不改 09-20 拍的「分层排序、不做加权总分」。保底条数 2 是**建议值**,试点后按数据调。
+    保底 = _新人保底(pool, start) if not seen else {}
+
     def rank(p):
-        return (-seen.get(p["no"], 0), load[p["no"]], p["no"])
+        return (-seen.get(p["no"], 0), 0 if p["no"] in 保底 else 1, load[p["no"]], p["no"])
 
     cands = sorted(cands, key=rank)
     pick = cands[0]
 
     why = []
     n = seen.get(pick["no"], 0)
+    if pick["no"] in 保底:
+        why.append(f"新人保底:{pick['name']} 入职不满三个月,本周新客才 {保底[pick['no']]} 条(保底每周 {新人保底条数} 条,建议值)")
     if n:
         why.append(f"这个客户以前由 {pick['name']} 接待过 {n} 次 —— 他知道上次聊到哪儿")
     else:
