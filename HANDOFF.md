@@ -119,6 +119,7 @@
 > **22:4x W47 挑回本地(未推)**:子任务 893e8da3 → 本地挑回(咬合规格冲突用脚本合:以我为准,套它新增 7 条、去掉它改掉的 1 条,1705→1711,bite_check 过)。92 条读路由全部归类(要登录 46 / 自查身份 29 / 匿名 17,带理由),**15 条真漏收紧**:ops-detail(研判根因原文带姓名生日地址,加门店范围)/ ops-manual / ops-backlog / ops-health(按 /api/ops- 前缀)/ craft-doc(着装人生日 + 量体,加门店范围)/ task-ref / shop/(花名册 + 日志)/ shops / activity/ / product/ / stock / stock-log / invites / downloads / agent-run(匿名能真调模型花钱)。新检查 read_route_registry_check(15 条判据,挂了 check.sh)。**风险已核**:8770 页面取 ops-* 走通用反代、cookie 照转;仓库里没有不带 cookie 调这些口的进程。**没验**:js_smoke 真打 8770 页面(全量门禁里会跑)。子任务 worktree agent-a4d163443c943ff33 推完后删。⑤ **待用户拍**:/api/agent-run 登录后回包仍带 truth 根因(CLAUDE.md 第 6 节红线)。
 > **22:3x**:W47(读接口门店范围核完)交给 worktree 子任务:61 条不在「要登录的读」里的 GET 逐条分类 + 写 read_route_registry_check + 挂门禁 + 咬合(它在改 server.py —— **它回来前我不碰 server.py**)。本地未推:f982737d(公海筛选)、f66c2fbb(导出限店长),推时要重启 8760。
 
+> **📍 06:0x**:04:38 那批已推。之后本地提交未推:9b92f824(PRD A-298/B-119,已发飞书)、e265026b(talk_eval 引号告诫误判,对照 37/37、咬合 5/5)。store_report_eval 崩是 10-28 老问题(每套单独 subprocess,不是 evaldb 串的)。**08:00 前**:锁内全量 + 推这两笔 → 汇总定稿 `澜绣云裳agent-夜间汇总-20261113.md` → 发飞书(文件名带项目名)→ 提交汇总 → 删 cron 455cc583 → 停循环。
 > **📍 04:0x 进度(覆盖下面「下一步」)**:夜跑 03:40 提前结束(过 16 / 判红 7 / 退步 3 / 超时 1;退步 = shift、order 是 evaldb bug,repair P02 是 14 晚 50% 的时对时错题)。真库 roster / schedule 行数和 19:11 备份完全一致(evaldb bug 没伤真库)。已做:bite_run evaldb 2/2 ✅;挑回 599dacb0(本地新号见 git log,咬合规格冲突脚本合 1712→1715)→ 真库备份 ~/lanxiu-backups/pre-W21-*.db → 迁移加 4 列 + 幂等 ✅;挑回 54b68e0d → PG 备份 ~/lanxiu-backups/pre-W41-aimc_dev-11130355.dump → alembic 2cd9c9bf1587→f112450e5aa7 ✅ → 重启 aimc 探活 200 ✅ → **make test-e2e-ci 在跑**(后台 b64czx6lj,日志 /tmp/e2e_w41.log)。**下一步第一个动作**:看 e2e 结果 → 绿了跑 chain_B.sh(重启 8760/8770 + 全量 + 推)→ 删 worktree agent-a252eecae5fc16a61 / agent-ac1bb8f62ad38d5fb 及分支 → bite_run --only named_advisor_check / query_index_check → 补汇总发飞书。注意 HEAD 下有一笔夜跑自动提交 47bfe33b。
 > **📍 03:4x 压缩前六项(压缩后从这里接;替换 22:0x 那版)**
 > - **下一步第一个动作**:4:55 夜跑结束后(看 `.nightly-eval.pid` 进程没了 / 日志收尾),**锁内**:① `bite_run --only evaldb`(1f343ea5 那条新咬合)② 照下面 D 段第 1–6 步:备份真库 → `git show 599dacb0:tools/migrate_appt_columns.py` 跑 dry-run(4 列)→ `--go` → 挑回 599dacb0 和 54b68e0d → 管理后台 alembic upgrade + 重启 aimc + make test-e2e-ci → 重启 8760/8770 → 全量 → 推(连同本地 81b3749b / d0eb3480 / 1f343ea5)→ 删两个 worktree。推送脚本 `scratchpad/chain_B.sh`(8770 首页 302 算起来了)。
@@ -151,12 +152,12 @@
   5. 重启 8760(+8770)→ curl 冒烟 → 全量 `./check.sh` → 推(chain_B.sh 那一套);连同本地 81b3749b
   6. 推完删两个 worktree + 分支;锁内 `bite_run --only named_advisor_check / booking_check / query_index_check`
   **新待拍(加进早上的卡)**:⑥ 归属导购在班时 book() 直接派给他、点名不参与 —— 要不要「点名优先于归属」⑦ 客户来源渠道要不要加录入口(现在只有列)⑧ /m 顾客预约页在 agentsite/,没加点名 / 渠道字段(接口已收)
-- [ ] 「录音跟进」工作流发布生产版(台账第二十五条),发完看 eureka-fc 说的 oppo 夜跑结果顺序(Skill→start_workflow→Skill)
+- [~] 「录音跟进」发布生产版:**没发** —— project_lanxiu 的 wf_8aa00b1d04f8「录音跟进」校验通过、接管 call-notes、聊天接管开着,但 status=草稿、从没发过生产。release.py 生产三关:真模型试跑过一次(用户 11-05)/ 连接探过 / **审核过的清单**。审核是人的复核,不拿服务账号替签;真模型试跑走管理后台的模型连接,是否付费没核 → 白天和 eureka-fc 一起做,审核请用户签。另:project_lanxiu 里约 180 条「e2e 访问API」工作流 + **522 个没吊销的 e2e 访问密钥**,来自 管理后台/tests/e2e/test_access_api_flow.py(有意用 project_lanxiu:demo_a 每日预算 0 发不出钥;跑完不收尾)。管理后台只听 127.0.0.1。吊销不可逆 → 汇总第 8 问等用户拍;拍了再写清理脚本(dry-run 默认)+ 测试 atexit 收尾
 - (03:3x)🔴 **shift_eval「退步」是我 W09 的 bug**:evaldb 切库时 check_copy 只认 DB / DB_PATH,评测自己读库的变量叫 DBP(10 套都是)→ 写口 / 工具服务写副本、**判分读真库**,8 挂 5「草稿期望 35 实际 0」;拍 / 还原也打在真库上(真库这几张表那段时间没别人写,应无损,早上核一眼 roster / schedule 行数)。**今晚 shift / workshop / order 三套的分不作数**。修:evaldb 不看变量名,本项目还指着真库的模块级路径一律改指副本;自测加「叫 DBP 的也指副本」;真入口验三套都切到了;咬合规格已加,**重放要等 4:55 后**(bite_run 夜跑期间拒跑)。本地提交未推
 - (02:1x)oppo 0/24 —— **eureka-fc 的兜底 3ee2fb8f 不在主线**(它 22 笔没推),工具顺序 Skill→start_workflow 14 / Skill→call_opportunity→start_workflow 4 / 只 Skill 3 / Skill→start_workflow→call_opportunity 3,和修前一样;已告诉它
 - (01:5x)growth / liability 判红**不是整晚环境性失败**:逐晚看每晚挂 1–3 道、挂的题轮换 → 真是「时对时错」的题碰上「全对才算过」;nightly_stats 显示把「时对时错」标成 ❌ 的 bug 修了(按档名整比)
 - [~] (00:51 中途:factory_eval 过、12.8 分钟 → 有题在跑;triage_shadow 0.5 分钟过;tool_eval 判红 14 分钟 —— 早上看原因)看今晚夜跑:factory_eval 有没有题(W48)、triage 两套不是 0 秒(W49)、oppo 回没回到有分;结论回给 eureka-fc
-- [~] 早上汇总发飞书:**草稿已写** `澜绣云裳agent-夜间汇总-20261113.md`(00:10,7 个待拍问题已列);08:40 前补「早上合并结果 / 夜跑结论 / 两处放宽补丁命令(00:1x 已问 eureka-fc)」再 `python3 tools/feishu_publish.py` 发,发完删 cron 455cc583、停循环
+- [x] ✅ 早上汇总发飞书(06:5x 定稿发出,链接见下一行提交)。原草稿记录:**草稿已写** `澜绣云裳agent-夜间汇总-20261113.md`(00:10,7 个待拍问题已列);08:40 前补「早上合并结果 / 夜跑结论 / 两处放宽补丁命令(00:1x 已问 eureka-fc)」再 `python3 tools/feishu_publish.py` 发,发完删 cron 455cc583、停循环
 
 ### 📍 11-12 夜 · 还债开工(模型换成 Opus 5.5 接着做)
 **已做(提交 aad72534 / 73f7be95 / f430da52,门禁链 chain_d1 在跑,绿了自动推)**:
