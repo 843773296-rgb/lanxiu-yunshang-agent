@@ -6090,7 +6090,7 @@ async function 画工具详情(tid) {
 function 报工具(文, 坏) {
   if ($("#tdmsg")) {
     $("#tdmsg").innerHTML = 文
-      ? `<div class="state ${坏 ? "err" : ""}"><p>${md(文)}</p></div>` : "";
+      ? (坏 ? `<div class="state err">` : `<div class="state">`) + `<p>${md(文)}</p></div>` : "";
   }
 }
 
@@ -8048,7 +8048,7 @@ async function 页_应用详情(aid) {
 
 function 报(文, 坏) {
   $("#msg").innerHTML = 文
-    ? `<div class="state ${坏 ? "err" : ""}"><p>${md(文)}</p></div>` : "";
+    ? (坏 ? `<div class="state err">` : `<div class="state">`) + `<p>${md(文)}</p></div>` : "";
 }
 
 /* 把服务端逐条给的「闸」显示出来。
@@ -8401,7 +8401,7 @@ async function 页_模型与连接() {
 function 报2(文, 坏) {
   if ($("#msg2")) {
     $("#msg2").innerHTML = 文
-      ? `<div class="state ${坏 ? "err" : ""}"><p>${md(文)}</p></div>` : "";
+      ? (坏 ? `<div class="state err">` : `<div class="state">`) + `<p>${md(文)}</p></div>` : "";
   }
 }
 

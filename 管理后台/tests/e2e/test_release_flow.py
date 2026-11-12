@@ -70,7 +70,7 @@ def 打(方法, 路, 体=None, 谁=None, 头=None):
 
 
 from sqlalchemy import text            # noqa: E402
-from db import 连接                     # noqa: E402
+from db import 事务, 连接               # noqa: E402
 
 
 def 一个(表, 条件=""):
@@ -211,6 +211,13 @@ def main():
     ck("同一个幂等键再跑 → 不跑第二次",
        (run2 or {}).get("id") == (run or {}).get("id")
        and (run2 or {}).get("新建了吗") is False, (run2 or {}).get("新建了吗"))
+    # 收尾:应用调用口现在只登记、不入队(没有 Worker 会接),留着就是一条永远「排队中」的运行,
+    # 被监测页当成在排队(2026-11-12 数出 23 条)。测完归档,原因写明是测试留下的。
+    if (run or {}).get("id"):
+        with 事务() as c:
+            c.execute(text("""update execution_runs set status='cancelled', completion_reason='TEST_RESIDUE',
+                                     ended_at=now(), archived_at=now(), revision=revision+1
+                               where project_id=:p and id=:i"""), {"p": 项目, "i": run["id"]})
     码, 体 = 打("POST", f"{P}/applications/{aid}/runs",
               {"环境": "staging", "输入": {}}, 头={"Idempotency-Key": K()})
     ck("没绑定的环境 → 422 NO_BINDING(**不回落到「最新的那一版」**)",

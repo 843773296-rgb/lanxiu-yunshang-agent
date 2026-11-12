@@ -9721,6 +9721,30 @@
   "预期红": "按官方规则对得上"
  },
  {
+  "script": "agentsite/cost_check.py",
+  "改坏": "长提示不分档(单次超过 10 万 token 仍按便宜档算)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        贵 = [u for u in 每次调用 if _提示(u) > 长[\"门槛\"]]\n",
+    "new": "        贵 = [u for u in 每次调用 if False]\n"
+   }
+  ],
+  "预期红": "Haiku 5.5 单次提示超过 10 万 token → 整次按贵档"
+ },
+ {
+  "script": "agentsite/cost_check.py",
+  "改坏": "按整轮总量分档(三次各 6 万被当成一次 18 万)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        贵 = [u for u in 每次调用 if _提示(u) > 长[\"门槛\"]]\n",
+    "new": "        贵 = [u for u in 每次调用 if sum(_提示(x) for x in 每次调用) > 长[\"门槛\"]]\n"
+   }
+  ],
+  "预期红": "Haiku 5.5 三次调用各 6 万 → 仍是便宜档"
+ },
+ {
   "script": "backend/credit_check.py",
   "改坏": "把库里「影响力分成总和超过 100%」的样本压到 100 以下(155 单 → 0 单)。⚠️ 攻击点在**数据**而不是实现:这条判据验的是「库里真有这种样本」,因为没有样本的话,一个把影响力分成也当成「必须=100」的实现**会全绿通过**",
   "sql": [

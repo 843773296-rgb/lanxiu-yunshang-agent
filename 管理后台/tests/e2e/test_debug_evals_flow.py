@@ -202,6 +202,13 @@ def main():
     码, fk2 = 打("POST", f"{P}/execution-runs/{R}/fork-test", {"从第几步": 3},
                 键=f"fk-{尾}-1")
     ck("同幂等键再 fork → 不新建", (fk2 or {}).get("新建了吗") is False)
+    # 收尾:分叉调试只登记、不入队(没有 Worker 会接),留着就是一条永远「排队中」的运行,
+    # 被监测页当成在排队(2026-11-12 数出 23 条)。测完归档,原因写明是测试留下的。
+    if (fk or {}).get("id"):
+        with 事务() as c:
+            c.execute(text("""update execution_runs set status='cancelled', completion_reason='TEST_RESIDUE',
+                                     ended_at=now(), archived_at=now(), revision=revision+1
+                               where project_id=:p and id=:i"""), {"p": 项目, "i": fk["id"]})
 
     # ── 四、事件补拉:空的时候说清是哪一种空 ────────────────────────
     码, ev = 打("GET", f"{P}/execution-runs/{R}/events?after_seq=0")

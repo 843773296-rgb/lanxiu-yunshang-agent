@@ -42,7 +42,9 @@ sys.path.insert(0, HERE)
         ("deepseek-v4-pro",  dict(input_tokens=35055, cache_creation_input_tokens=0,
                                   cache_read_input_tokens=43834, output_tokens=1458))]
 
-咬合 = [("把 cost_of 改回「输入减缓存命中、不算缓存写入」", "按官方规则对得上")]
+咬合 = [("把 cost_of 改回「输入减缓存命中、不算缓存写入」", "按官方规则对得上"),
+        ("长提示不分档(单次超过 10 万 token 仍按便宜档算)", "Haiku 5.5 单次提示超过 10 万 token → 整次按贵档"),
+        ("按整轮总量分档(三次各 6 万被当成一次 18 万)", "Haiku 5.5 三次调用各 6 万 → 仍是便宜档")]
 
 
 def 应为(m, u):
@@ -68,7 +70,44 @@ def main():
             坏.append(m)
     print("\033[31m❌ 按官方规则对得上 —— %s 对不上\033[0m" % "、".join(坏) if 坏
           else "\033[32m✅ 按官方规则对得上\033[0m")
+    长提示(坏)
     return 1 if 坏 else 0
+
+
+# ── 长提示分档(11-12,执行手册 W04)──────────────────────────────────────
+# Haiku 5.5 官方价(查于 2026-10-25,Claude API 资料 Current Models 表):单次提示 ≤10 万 token
+# 输入 $0.10 / 输出 $0.50;超过 10 万这一次整个按 $0.50 / $2.50。缓存命中按输入 0.1 倍、写入 1.25 倍。
+# 手抄常数,不从 v1.LONG_PRICE 现算(同源谬误,见文件头)。
+H55_短 = (0.10, 0.125, 0.010, 0.50)
+H55_长 = (0.50, 0.625, 0.050, 2.50)
+
+
+def _按档(u, 价):
+    a, b, c, d = 价
+    return (u["input_tokens"] * a + u["cache_creation_input_tokens"] * b
+            + u["cache_read_input_tokens"] * c + u["output_tokens"] * d) / 1e6
+
+
+def 长提示(坏):
+    import sdk
+    零出 = lambda u: dict(u, output_tokens=0)
+    # ① 顾问助手实测画像:单次 13.9 万(体检 B 报告 spans 实测),一次调用、输出 1000
+    u = dict(input_tokens=20, cache_creation_input_tokens=9000, cache_read_input_tokens=130000, output_tokens=1000)
+    实, 期 = sdk.cost_of(u, "claude-haiku-5-5", 每次调用=[零出(u)]), _按档(u, H55_长)
+    ok = 实 is not None and abs(实 - 期) < 1e-6
+    print(f"  {'✅' if ok else '❌'} Haiku 5.5 单次提示超过 10 万 token → 整次按贵档:项目算 {实} · 官方 {期:.6f}")
+    if not ok: 坏.append("长提示贵档")
+    # ② 三次调用各 6 万:每次都在便宜档,合起来 18 万也不该按贵档
+    c = dict(input_tokens=10, cache_creation_input_tokens=5000, cache_read_input_tokens=55000, output_tokens=0)
+    合 = {k: c[k] * 3 for k in c}; 合["output_tokens"] = 900
+    实2, 期2 = sdk.cost_of(合, "claude-haiku-5-5", 每次调用=[c, c, c]), _按档(合, H55_短)
+    ok2 = 实2 is not None and abs(实2 - 期2) < 1e-6
+    print(f"  {'✅' if ok2 else '❌'} Haiku 5.5 三次调用各 6 万 → 仍是便宜档:项目算 {实2} · 官方 {期2:.6f}")
+    if not ok2: 坏.append("按次分档")
+    # ③ 给不了每次调用的用量 → 不猜(返回 None,页面显示「—」)
+    ok3 = sdk.cost_of(u, "claude-haiku-5-5") is None
+    print(f"  {'✅' if ok3 else '❌'} 有贵档的模型、没给每次调用的用量 → 不猜(None)")
+    if not ok3: 坏.append("不猜")
 
 
 if __name__ == "__main__":

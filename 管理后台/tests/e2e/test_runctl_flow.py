@@ -79,6 +79,38 @@ if not rid:
     print("❌ 库里没有 execution_run —— **这不叫跳过**")
     sys.exit(1)
 
+# ⚠️ **借来的运行要还回去。** 这份测试拿「最新一条真运行」当夹具、直接改库造状态,
+# 原来从不还原 —— 最后一步停在 running,于是每跑一次共享库里就多一条「正在跑、背后没有活物」的运行
+# (2026-11-12 数出 122 条,监测页「在跑」的分子全是它)。还有重试那一节新建的步骤,也一起删掉。
+# 用 atexit:脚本里好几条路径直接 sys.exit,try/finally 盖不全。
+import atexit
+with 连接() as c:
+    _原 = c.execute(text("""select status, completion_reason, ended_at from execution_runs
+                          where project_id=:p and id=:i"""), {"p": 项目, "i": rid}).mappings().first()
+    _原步 = {r["id"]: r["status"] for r in c.execute(text(
+        "select id, status from run_steps where project_id=:p and execution_run_id=:r"),
+        {"p": 项目, "r": rid}).mappings()}
+
+
+def _还原():
+    with 事务() as c:
+        c.execute(text("""update execution_runs set status=:s, completion_reason=:cr, ended_at=:e,
+                                 pause_requested=false, cancel_requested=false, revision=revision+1
+                           where project_id=:p and id=:i"""),
+                  {"s": _原["status"], "cr": _原["completion_reason"], "e": _原["ended_at"],
+                   "p": 项目, "i": rid})
+        for 步id, 状态 in _原步.items():
+            c.execute(text("update run_steps set status=:s where id=:i"), {"s": 状态, "i": 步id})
+        if _原步:
+            c.execute(text("""delete from run_steps where project_id=:p and execution_run_id=:r
+                              and not (id = any(:ids))"""), {"p": 项目, "r": rid, "ids": list(_原步)})
+    with 连接() as c:
+        现 = c.execute(text("select status from execution_runs where id=:i"), {"i": rid}).scalar()
+    print(f"   ↩ 借来的运行 {rid} 已还原成「{现}」(原来是「{_原['status']}」)")
+
+
+atexit.register(_还原)
+
 print("▸ ① 要幂等键 + 要 revision")
 rev = 设状态(rid, "running")
 码, r = 打("POST", f"{P}/execution-runs/{rid}/pause", 体={"revision": rev})
@@ -186,6 +218,19 @@ rev7 = 设状态(rid, "running")
 码, r = 打("POST", f"{P}/execution-runs/{rid}/pause", 体={"revision": rev7},
          键=f"v{唯一}", 谁="U003")
 ck("viewer 暂停 → 403", 码 == 403, 码)
+
+print("▸ ⑩ 借来的运行还回去了(原来不还,共享库里攒出 122 条假的「正在跑」)")
+atexit.unregister(_还原)
+_还原()
+with 连接() as c:
+    _现 = c.execute(text("select status, completion_reason from execution_runs where id=:i"),
+                   {"i": rid}).mappings().first()
+    _多的步 = c.execute(text("""select count(*) from run_steps where project_id=:p and execution_run_id=:r
+                              and not (id = any(:ids))"""),
+                       {"p": 项目, "r": rid, "ids": list(_原步) or [""]}).scalar()
+ck("运行状态还原成借之前的样子", _现["status"] == _原["status"]
+   and _现["completion_reason"] == _原["completion_reason"], (dict(_现), dict(_原)))
+ck("重试新建的步骤删干净了", _多的步 == 0, _多的步)
 
 print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}")
 if 挂:

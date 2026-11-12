@@ -269,7 +269,7 @@ def _tool_result_text(content):
     return content
 
 
-def cost_of(usage, model, ts=None):
+def cost_of(usage, model, ts=None, 每次调用=None):
     """按 **DeepSeek 的**价目表算这次花了多少钱。
 
     为什么不用 SDK 自己给的 total_cost_usd:它是 CLI 按 **Claude 的**单价算的,
@@ -301,8 +301,26 @@ def cost_of(usage, model, ts=None):
     写 = usage.get("cache_creation_input_tokens", 0) or 0
     inp = usage.get("input_tokens", 0) or 0
     out = usage.get("output_tokens", 0) or 0
-    写价 = pr["inp"] * (1.0 if model in v1.DEEPSEEK_PRICE else 1.25)
-    return round((inp * pr["inp"] + cache * pr["cache"] + 写 * 写价 + out * pr["out"]) / 1e6, 6)
+    写倍 = 1.0 if model in v1.DEEPSEEK_PRICE else 1.25
+    长 = getattr(v1, "LONG_PRICE", {}).get(model)
+    # ⚠️ **长提示分档按「每一次调用」判,不按整轮总量**(11-12,执行手册 W04)。
+    # Haiku 5.5 单次提示超过 10 万 token,这一次调用整个按贵档(输入 / 缓存 / 输出都 ×5)。
+    # 整轮总量判不了:一轮 3 次调用各 6 万是便宜档,加起来 18 万却会被当成贵档 —— 反过来也一样。
+    # 所以调用方能给每次调用的输入侧用量(`每次调用`)就逐次判;给不了又碰上有贵档的模型 → 不猜,返回 None。
+    # 输出 token 逐次拿不到真值(流式开头恒报 1),按「贵档调用占几成」分摊 —— 这一项是估的,输入侧是准的。
+    if 长 and 每次调用 is None:
+        return None
+    if 长:
+        def _段(u, p):
+            return ((u.get("input_tokens") or 0) * p["inp"] + (u.get("cache_read_input_tokens") or 0) * p["cache"]
+                    + (u.get("cache_creation_input_tokens") or 0) * p["inp"] * 写倍)
+        def _提示(u):
+            return sum((u.get(k) or 0) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+        贵 = [u for u in 每次调用 if _提示(u) > 长["门槛"]]
+        入 = sum(_段(u, 长 if u in 贵 else pr) for u in 每次调用)
+        份 = (len(贵) / len(每次调用)) if 每次调用 else 0.0
+        return round((入 + out * (份 * 长["out"] + (1 - 份) * pr["out"])) / 1e6, 6)
+    return round((inp * pr["inp"] + cache * pr["cache"] + 写 * pr["inp"] * 写倍 + out * pr["out"]) / 1e6, 6)
 
 
 def 生效工具(kind, 收窄=None):
@@ -1302,6 +1320,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 原来对所有消息都读 content,结果 text 里混进了反馈原文和被打回的那版答案,
     # 客户会看到「Stop hook feedback: ...」。**最终答案取最后一段。**
     turns, traj, usage, cost, res = [], [], {}, None, None
+    _每次 = []      # 每次模型调用的输入侧用量 + 价表名(长提示分档按次判,见 cost_of)
     t0 = time.time()
     # ── 树状记录仪:开一棵 ───────────────────────────────────────────
     # **根 span 现在就开**,不等结果 —— 跑崩了的那一轮恰恰是最需要看的,
@@ -1393,11 +1412,12 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                         # 输入侧的钱**是算得准的**,而且在这个项目里它就是大头
                         # (这一轮:缓存写入 8.9 万 token vs 输出 934)。
                         "lanxiu.cost_usd.input_side": cost_of(
-                            dict(_可信, output_tokens=0), _m名) if _m名 else None,
+                            dict(_可信, output_tokens=0), _m名, 每次调用=[_可信]) if _m名 else None,
                         "lanxiu.usage.output_unknown": True if (_出 or 0) <= 1 else None,
                         "lanxiu.price_model": _m名,
                     })
                     if _mid: _模型span[_mid] = _当前模型span
+                    _每次.append((_m名, _可信))
                 for b in getattr(m, "content", []) or []:
                     bt = type(b).__name__
                     if bt == "TextBlock" and getattr(b, "text", ""):
@@ -1521,7 +1541,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 而且不报错 —— 文件还在、还有数据,只是日期不动了。
     # 「换了车,仪表盘留在旧车上」是升代最容易漏的一项,补上并加了结构检查防复发。
     ms = (time.time() - t0) * 1000
-    real = cost_of(usage, model)
+    # 每次调用的输入侧逐次分档(只取这一轮主模型的调用);一次都没记到(老路径 / 测试桩)→ None,cost_of 对有贵档的模型就不猜
+    _本模型 = [u for n, u in _每次 if n == _价表里的名字(model)]
+    real = cost_of(usage, model, 每次调用=_本模型 or None)
     try:
         sys.path.insert(0, os.path.join(ROOT, "agent"))
         import v1 as _v1

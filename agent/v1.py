@@ -56,6 +56,17 @@ def price_now(pv, ts=None):
         return {k: v*2 for k, v in p.items()}
     return p
 
+def price_for_call(pv, usage, ts=None):
+    """**一次请求**的单价:在 price_now 之上按这次的提示长度分档(Haiku 5.5 单次超 10 万 token 走贵档,见 LONG_PRICE)。
+    usage 是这次请求的原始用量;拿不到就按便宜档(这条路的请求是单次的、一般远小于门槛)。"""
+    p=price_now(pv, ts)
+    长=LONG_PRICE.get(pv.get("model")) if isinstance(usage, dict) else None
+    if 长:
+        提示=sum((usage.get(k) or 0) for k in ("input_tokens","cache_read_input_tokens","cache_creation_input_tokens"))
+        if 提示>长["门槛"]:
+            return {k: 长[k] for k in ("inp","cache","out")}
+    return p
+
 # Anthropic 官方单价(美元 / 百万 token),缓存读取按输入的 0.1 倍
 # 10-25 加新一代三个(官方价,查于 Claude API 资料 2026-10-25):Opus 5.5 缓存读是输入的 0.05 倍(不是常见的 0.1 倍)。
 # ⚠️ Haiku 5.5 有两档:单次提示 ≤10 万 token 按 $0.10 / $0.50,超过按 $0.50 / $2.50。这里只记了 ≤10 万那档 ——
@@ -68,6 +79,10 @@ PRICE={"claude-opus-5-5":dict(inp=4.0, cache=0.2,  out=20.0),
        "claude-opus-4-8":dict(inp=5.0, cache=0.5,  out=25.0),
        "claude-sonnet-5":dict(inp=2.0, cache=0.2,  out=10.0),
        "claude-haiku-4-5":dict(inp=1.0,cache=0.1,  out=5.0)}
+# 长提示那一档(11-12 补,执行手册 W04):**单次调用**的提示(未命中输入 + 缓存命中 + 缓存写入)超过门槛,
+# 这一次调用整个按贵档算。官方价查于 2026-10-25(见上);贵档缓存读按同一倍率(输入的 0.1 倍)推出,官方表未单列。
+# 顾问 / 店长助手每次 13.9 万 / 16.5 万 token(体检 B 报告,spans 实测)—— 全在这一档,原来少算 5 倍。
+LONG_PRICE={"claude-haiku-5-5":dict(门槛=100_000, inp=0.5, cache=0.05, out=2.5)}
 def price_of(model):
     if model in PRICE: return PRICE[model]
     raise SystemExit(f"没有 {model} 的单价,拒绝用错误单价算成本(帕鲁项目踩过:虚高 12.5 倍)")
@@ -143,7 +158,7 @@ def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None, gen="V
             # 但它必须记成 V2,否则三代对照表就把它算进 V1 里了。
             # A1 上报的三个字段:**从 provider() 拿,不从模型名猜** ——
             # 模型名和供应商是两件事,而猜错了成本口径整个是错的(实测差过 135 倍)。
-            try: _trace.record(gen=gen,model=pv.get("model"),purpose=purpose,price=price_now(pv),
+            try: _trace.record(gen=gen,model=pv.get("model"),purpose=purpose,price=price_for_call(pv,kw.get("usage")),
                                provider=pv.get("id"),is_mock=False,resource="generate",
                                latency_ms=ms,turn=turn,attempt=att,body=body,
                                cache_on=not isinstance(body.get("system"),str),
