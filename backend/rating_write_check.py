@@ -39,6 +39,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("让 rating.处理方式能不能用() 不比批准人和处理人是不是同一个",
      "批准人填成处理人自己 → 拒"),
     ("让 customer_edit_rating() 在差评改好评时把工单关掉", "差评改好评 → 工单不撤,还在待处理"),
+    ("追评顺手把差评工单摘掉(差评就此从清单里看不见)", "追评落进追评两列,星级和工单原样(不改星、不进差评清单)"),
     ("customer_rate() 不核标签,顾客给什么存什么(「面料手感好」也进来了)",
      "不认识的标签(「面料手感好」挂不上四个分项)→ 整份退回,不静默丢掉"),
     ("在 seed_rating 的建表里加一句 ALTER,给 rating 加个 status 列",
@@ -226,6 +227,21 @@ def run(T):
        not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name LIKE '%rating%todo%'").fetchone())
     ck("工单号是定的(TR+包裹号,重跑不会重复建)", t["id"] == f"TR{包}")
     ck("再改一次 → 拒(最多改一次)", not rt.customer_edit_rating(oid, 尾, 5)["ok"])
+
+    # ── 追评(11-12 接写口):不带星、不改星级、不动差评清单、一个包裹一次 ──────────
+    星前 = c.execute("SELECT star, task_id FROM rating WHERE pkg_id=?", (包,)).fetchone()
+    工单前 = c.execute("SELECT status, summary FROM task WHERE ref_id=?", (包,)).fetchone()
+    ck("追评空着 → 拒(要写点什么)", rt.customer_followup(oid, 尾, "  ")["code"] == "NO_NOTE")
+    r = rt.customer_followup(oid, 尾, "穿了两个月,领口有点起毛")
+    ck("评过之后追评 → 收下", r["ok"] and r["code"] == "RATING_FOLLOWUP", r.get("reason"))
+    行2 = c.execute("SELECT star, task_id, followup_note, followup_at FROM rating WHERE pkg_id=?", (包,)).fetchone()
+    工单后 = c.execute("SELECT status, summary FROM task WHERE ref_id=?", (包,)).fetchone()
+    ck("追评落进追评两列,星级和工单原样(不改星、不进差评清单)",
+       行2 and 行2["followup_note"] == "穿了两个月,领口有点起毛" and 行2["followup_at"]
+       and (行2["star"], 行2["task_id"]) == (星前["star"], 星前["task_id"]) and tuple(工单后) == tuple(工单前),
+       (dict(行2) if 行2 else None, tuple(工单前), tuple(工单后)))
+    ck("同一个包裹再追评 → 拒(一个包裹一次)", rt.customer_followup(oid, 尾, "再说一句", pkg=包)["code"] == "CANNOT_FOLLOWUP")
+    ck("手机尾号不对 → 追评也拒(和评价同一道门)", not rt.customer_followup(oid, "0000" if 尾 != "0000" else "1111", "x")["ok"])
 
     # ── 店长处理 ─────────────────────────────────────────────────────
     ck("顾问关差评 → 拒", rt.close_bad_rating({"pkg": 包, "note": "已联系顾客并补送"}, 顾问)["code"] == "ROLE")
