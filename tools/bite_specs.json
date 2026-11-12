@@ -19513,7 +19513,7 @@
    {
     "path": "knowledge/ownership_protection.py",
     "old": "    if 知 is None or 知 < 维:\n",
-    "new": "    if 天 < 释放天 and (知 is None or 知 < 维):\n"
+    "new": "    if 知 is None and 天 > 释放天:\n        return dict(动作=\"释放\", 已过天数=天, 理由=\"没知会过,但已过 180 天 —— 直接放\")\n    if 知 is None or 知 < 维:\n"
    }
   ],
   "预期红": "过了 180 天但没知会过:先知会,不直接放"
