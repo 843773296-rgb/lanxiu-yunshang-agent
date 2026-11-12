@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.lanxiu.backup</string>
+  <!-- 每天 05:00 备份 + 恢复演练(执行手册 W03,台账第三条)。排在 04:55 夜跑强停之后、05:10 世界平移之前:
+       夜跑会在真库上写评测数据(W09 之前),平移会整库改日期 —— 两头都避开,备的是「一天的业务状态」。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/eureka/Desktop/澜绣云裳agent &amp;&amp; /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 tools/backup.py &amp;&amp; /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 tools/backup.py --演练</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/eureka/Desktop/澜绣云裳agent</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>5</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/eureka/Desktop/澜绣云裳agent/.feynman/backup-launchd.log</string>
+  <key>StandardErrorPath</key><string>/Users/eureka/Desktop/澜绣云裳agent/.feynman/backup-launchd.log</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+</dict>
+</plist>
