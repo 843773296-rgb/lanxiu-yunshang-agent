@@ -30,8 +30,8 @@ def _店长(c, 店):
     return r[0] if r else None
 
 
-def _派知会(c, 给谁, 客户, 店, 说明, 今天):
-    """派一条「归属转移」知会任务 → 任务号。给谁为空(那家店没有在职店长)就不派。"""
+def _派知会(c, 给谁, 客户, 店, 说明, 今天, 类型="归属转移"):
+    """派一条知会任务(默认「归属转移」;公海释放用「公海知会」「公海指派」) → 任务号。给谁为空(那家店没有在职店长)就不派。"""
     if not 给谁:
         return None
     import shop_key as SK
@@ -41,7 +41,7 @@ def _派知会(c, 给谁, 客户, 店, 说明, 今天):
         n += 1; sid = f"SC{9000 + n + 1}"
     c.execute("INSERT INTO schedule(id, type, advisor_no, customer_id, start_ts, end_ts, status, shop, shop_code, "
               "assignee_no, assigned_by, assigned_at, note, ref_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-              (sid, "归属转移", 给谁, 客户, f"{今天} 09:00", f"{今天} 18:00", "有效", 店, SK.码(c, 店),
+              (sid, 类型, 给谁, 客户, f"{今天} 09:00", f"{今天} 18:00", "有效", 店, SK.码(c, 店),
                给谁, "SYS", f"{今天} 09:00", 说明, 客户))
     return sid
 

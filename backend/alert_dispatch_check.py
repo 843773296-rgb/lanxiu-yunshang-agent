@@ -279,7 +279,7 @@ ck("「归属转移」通用口手工建 → 拒(SYSTEM_ONLY)", _r.get("code") =
 _r = TK.assign_task(dict(type="待改派", assignee_no=店长["no"], note="手工试一下", end=止), 店长)
 ck("「待改派」通用口手工建 → 拒(SYSTEM_ONLY)", _r.get("code") == "SYSTEM_ONLY", _r)
 ck("类型清单标出哪些能手工派(页面照它过滤,不自己写一份)",
-   {t["name"] for t in TT.catalog() if not t["手工能派"]} == {"补货跟进", "归属转移", "待改派"},
+   {t["name"] for t in TT.catalog() if not t["手工能派"]} == {"补货跟进", "归属转移", "待改派", "公海知会", "公海指派"},
    [t["name"] for t in TT.catalog() if not t["手工能派"]])
 
 # ── HTTP 层:身份只从 Cookie 换 ─────────────────────────────────────

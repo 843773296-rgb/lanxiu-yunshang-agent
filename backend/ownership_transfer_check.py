@@ -21,6 +21,8 @@ import ownership_protection as OP      # noqa: E402
     ("保护期边界改成「满 180 天就转」(第 180 天也转)", "第 180 天成交:还在保护期,不转"),
     ("定制单确认下单后不再判归属", "接线:定制单确认下单之后判归属(事务之外)"),
     ("没知会过也直接释放(上线第一天一批老客一夜被收走)", "过了 180 天但没知会过:先知会,不直接放"),
+    ("已预约不算接触(客户约了下周来,这周被收走)", "公海 · 约在未来的已预约算接触:不动"),
+    ("释放到公海不记归属变更日志(「凭什么不是他的了」答不上)", "公海 · 释放落地:导购置空 + 日志记「进公海」+ 给店长派「公海指派」"),
 ]
 过, 挂 = [], []
 
@@ -91,6 +93,47 @@ def main():
             ck("转了:整户改到成交店 + 接待导购", 出["转了吗"] and 现 == (出["成交店"], 出["接待导购"]), (出.get("理由"), 现))
             n1 = c.execute("SELECT COUNT(*) FROM schedule WHERE type='归属转移'").fetchone()[0]
             ck("派了知会:原导购 + 原店店长 + 新店店长(在职的都派)", n1 - n0 == len(出.get("知会任务") or []) >= 2, (n0, n1, 出.get("知会任务")))
+
+        # ②b 长期没接触 → 知会 → 满 7 天 → 释放(台账第十四条),同一份副本上真走一遍落地。夹具自己造。
+        import ownership_release as ORL
+        if 两店:
+            原店, 原导购 = 两店[0], 两店[1]
+            for cid, 号 in (("C99000002", "19900000002"), ("C99000003", "19900000003"), ("C99000004", "19900000004")):
+                c.execute("INSERT INTO customer(id, name, shop, advisor_no, created, phone) VALUES(?,?,?,?,?,?)",
+                          (cid, "公海检查", 原店, 原导购, "2025-01-01", 号))
+            c.execute("INSERT INTO appointment(id, customer_id, shop, advisor_no, start_ts, status) VALUES(?,?,?,?,?,?)",
+                      ("APCHKPOOL", "C99000004", 原店, 原导购, "2026-11-20 10:00", "已预约"))
+            c.commit()
+            d0, d3, d8 = "2026-11-12", "2026-11-15", "2026-11-20"
+            r = ORL.判一户(c, "C99000002", d0)
+            ck("公海 · 建档快两年、一次接触都没有:今天先知会", r["动作"] == "知会", r)
+            ck("公海 · 约在未来的已预约算接触:不动", ORL.判一户(c, "C99000004", d0)["动作"] == "不动",
+               ORL.判一户(c, "C99000004", d0))
+            with c:
+                出 = ORL.执行(c, d0, "检查", 行们=[r, ORL.判一户(c, "C99000003", d0)])
+            任务 = c.execute("SELECT assignee_no, customer_id FROM schedule WHERE type='公海知会' AND customer_id IN "
+                             "('C99000002','C99000003')").fetchall()
+            ck("公海 · 知会落地:给原导购派了「公海知会」任务(两户各一条)",
+               len(出["知会"]) == 2 and sorted(任务) == [(原导购, "C99000002"), (原导购, "C99000003")], (出, 任务))
+            ck("公海 · 知会当天再扫:不动(没满 7 天)", ORL.判一户(c, "C99000002", d0)["动作"] == "不动")
+            # 原导购第 3 天联系了 C99000003 并登记跟进 → 最后接触刷新 → 第 8 天不放
+            c.execute("INSERT INTO followup(id, customer_id, ts, channel, content, advisor_no) VALUES(?,?,?,?,?,?)",
+                      ("FUCHKPOOL", "C99000003", f"{d3} 15:00", "电话", "回访", 原导购))
+            c.commit()
+            ck("公海 · 知会后原导购登记了跟进:第 8 天不放", ORL.判一户(c, "C99000003", d8)["动作"] == "不动",
+               ORL.判一户(c, "C99000003", d8))
+            r8 = ORL.判一户(c, "C99000002", d8)
+            ck("公海 · 知会满 7 天仍没接触:释放", r8["动作"] == "释放", r8)
+            with c:
+                出 = ORL.执行(c, d8, "检查", 行们=[r8])
+            现 = c.execute("SELECT advisor_no FROM customer WHERE id='C99000002'").fetchone()[0]
+            日志 = c.execute("SELECT frm, too, action, basis FROM cust_owner_log WHERE customer_id='C99000002'").fetchall()
+            指派 = c.execute("SELECT COUNT(*) FROM schedule WHERE type='公海指派' AND customer_id='C99000002'").fetchone()[0]
+            ck("公海 · 释放落地:导购置空 + 日志记「进公海」+ 给店长派「公海指派」",
+               现 is None and 日志 == [(原导购, None, "进公海", ORL.释放依据)] and 指派 == 1 and 出["释放"] == ["C99000002"],
+               (现, 日志, 指派, 出))
+            import ownership
+            ck("公海 · 释放依据是登记过的归属依据", ORL.释放依据 in ownership.依据)
         dst.close()
 
     # ③ 接线
