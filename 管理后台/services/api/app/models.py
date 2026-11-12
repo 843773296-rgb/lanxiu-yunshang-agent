@@ -41,6 +41,9 @@ _能 = _ilu.module_from_spec(_能spec); _能spec.loader.exec_module(_能)
 # 改进验证记录 / 发布记录的状态 / 种类只在 improvement_flow.py 写一次(11-12)—— 同一个加载法
 _改spec = _ilu.spec_from_file_location("改进验证口径", os.path.join(os.path.dirname(os.path.abspath(__file__)), "improvement_flow.py"))
 _改 = _ilu.module_from_spec(_改spec); _改spec.loader.exec_module(_改)
+# 上线验收的结论 / 时间线动作只在 acceptance_flow.py 写一次(11-12,W41)—— 同一个加载法
+_验spec = _ilu.spec_from_file_location("上线验收口径", os.path.join(os.path.dirname(os.path.abspath(__file__)), "acceptance_flow.py"))
+_验 = _ilu.module_from_spec(_验spec); _验spec.loader.exec_module(_验)
 
 from sqlalchemy import (Date, MetaData, Table, Column, Text, Integer, BigInteger, Boolean,
                         Numeric, TIMESTAMP, Index, UniqueConstraint,
@@ -317,6 +320,10 @@ _额外唯一 = {
     "trace_incidents": [("project_id", "trace_id")],
     # 能力档案(11-12):同项目里名字不重复 —— 两份同名档案,问题单挂哪一份、看板按哪一份数都说不清
     "capability_profiles": [("project_id", "name")],
+    # 上线验收(11-12,W41):同项目里一个场景编号一行 —— 两行 S3 的话「S3 签了没有」有两个答案;
+    # 试点设置一个项目一行 —— 两行的话「从哪天算两周」有两个答案。种子写入靠这两条做 on conflict do nothing
+    "acceptance_items": [("project_id", "scenario_code")],
+    "acceptance_pilots": [("project_id",)],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
     # 第二个撞唯一键 → 返回冲突和最新状态,而不是两条都记下来。
     # 「要求补充」之后 revision 前进,于是下一轮还能再批 —— 这正是想要的。
@@ -402,6 +409,23 @@ _额外检查 = {
     "issue_events": [
         ("ck_issue_events_action", "action_code in " + _问.sql_枚举(_问.全部事件动作)),
         ("ck_issue_events_note", "action_code not in " + _问.sql_枚举(_问.要说明的动作) + " or note is not null"),
+    ],
+    # 上线验收(11-12,W41):结论 / 动作从 acceptance_flow.py 拼。接口里也拦(422 / 409),
+    # 库这一层再钉一次:下一个写入方(补数据的 SQL、脚本)不经过接口那个 if,而一条没签字人的「已签」在页面上和真签了的长得一样
+    "acceptance_items": [
+        ("ck_acceptance_items_verdict", "verdict in " + _验.sql_枚举(_验.结论们)),
+        # 下了结论要说清谁在哪天验的
+        ("ck_acceptance_items_tested", "verdict = '待验' or (tested_by is not null and tested_date is not null)"),
+        # 签字人和签字时间成对
+        ("ck_acceptance_items_signed_pair", "(signed_by is null) = (signed_at is null)"),
+        # 只签「通过」的
+        ("ck_acceptance_items_signed_passed", "signed_by is null or verdict = '通过'"),
+    ],
+    "acceptance_events": [
+        ("ck_acceptance_events_action", "action_code in " + _验.sql_枚举(_验.事件动作们)),
+        ("ck_acceptance_events_note", "action_code not in " + _验.sql_枚举(_验.要说明的动作) + " or note is not null"),
+        # 只有「设试点起算日」不挂场景;其余每一步都得说清是哪一条
+        ("ck_acceptance_events_item", "(action_code = '设试点起算日') = (acceptance_item_id is null)"),
     ],
     # 能力档案(11-12,PRD §4.4):枚举从 capability_flow.py 拼。依赖清单要是数组(空清单 [] 也行,不许塞个对象 / 裸串)
     "capability_profiles": [

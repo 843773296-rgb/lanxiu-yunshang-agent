@@ -266,6 +266,8 @@ setTimeout(() => {
     // > 一个把自己的错报成被测对象的错的判据,会把人送去查一个没坏的东西。
     "#/training": { 接口: "/training-jobs", 列表: "任务" },
     "#/kb": { 接口: "/knowledge-bases", 列表: "items" },
+    // 上线验收(11-12,W41):十条场景各一行,行上带 id(data-accrow);演示项目里没有场景,走空列表那一档(要有状态块)
+    "#/acceptance": { 接口: "/acceptance", 列表: "items" },
   };
   const 声明 = 对账表[global.location.hash];
   if (声明) {

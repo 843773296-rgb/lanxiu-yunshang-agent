@@ -124,6 +124,7 @@ const 导航 = [
   ["#/issues", "问题单", true, true],
   ["#/capabilities", "能力档案", true, true],
   ["#/capability-board", "改进看板", true, true],
+  ["#/acceptance", "上线验收", true, true],
   ["#/monitoring", "监测", true, true],
   ["#/alerts", "告警", true, true],
   ["#/traces", "调用链", true, true],
@@ -1907,6 +1908,105 @@ async function 页_问题单详情(id) {
       await 请求(`${P()}/issues/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
       页_问题单详情(id);
     } catch (e) { $("#is-e-save").disabled = false; $("#is-e-why").textContent = "没保存上:" + 错话(e); }
+  };
+}
+
+/* ── 上线验收(11-12,执行手册 W41;业务拍板 11-12 第一条「做完 = 试点两周 + 十条验收签字 + 费用上限」)──
+ * 三项状态、能不能签、能不能填全由接口算(acceptance_flow.py),页面只照画;**只有「通过」画成绿**,
+ * 未开始 / 拿不到 / 进行中 / 不通过 一律不绿,而且每项底下照写接口给的那句话(里面写着「拿不到 ≠ 通过」)。
+ * 十条场景和通过标准是接口种的(抄自 PRD 13.4),页面不另抄一份。 */
+async function 页_上线验收() {
+  const 头 = `<div class="crumb">上线验收</div>
+    <div class="head"><div><h1>上线验收</h1>
+      <div class="sub">${md("十条核心场景(产品需求文档 13.4)逐条验、店长逐条签字;顶上算「做完了没有」—— **三项都通过才算,拿不到数据的不算通过**。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/acceptance`); }
+  catch (e) { const s = 错误块(e, 页_上线验收); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 判 = d.做完判定 || { 三项: [] };
+  const 绿 = (状) => 状 === "通过" ? '<span class="pill ok">' : (状 === "不通过" ? '<span class="pill warn">' : '<span class="pill">');
+  const 总 = (判.做完了吗 ? `<div class="note">` : `<div class="state">`)
+    + `<h3>${判.做完了吗 ? "做完了" : "还没做完"}</h3><p>${md(判.说明 || "")}</p></div>`;
+  const 三项 = `<table><thead><tr><th>判定项</th><th>状态</th><th>依据</th></tr></thead><tbody>`
+    + (判.三项 || []).map((x) => `<tr><td>${esc(x.项)}</td><td>${绿(x.状态)}${esc(x.状态)}</span></td><td>${md(x.说明 || "")}</td></tr>`).join("")
+    + `</tbody></table>`;
+  const 试 = d.试点;
+  const 试点块 = !试 ? "" : `<h2>真数据导入日(试点从这天算两周)</h2>
+    <div>现在:<b>${esc(试.真数据导入日 || "没设 —— 真实试点还没开始")}</b>${试.说明 ? ` <span class="k">${esc(试.说明)}</span>` : ""}</div>`
+    + (d.我能签吗 ? `<div><input id="acc-pilot-date" type="date" value="${esc(试.真数据导入日 || "")}">
+        <input id="acc-pilot-note" placeholder="说明(必填:哪天导入的真数据、谁确认的)" style="width:60%">
+        <button id="acc-pilot-save">保存</button> <span class="k" id="acc-pilot-why"></span></div>
+        <div class="k">${md("清空日期再保存 = 回到「未开始」。不能填将来的日子。")}</div>`
+      : `<div class="k">${md(`设这个日子要「${d.签字要的权限}」权限(和店长签字同一道闸)。`)}</div>`);
+  const 费 = d.本月费用 || {};
+  const 费块 = `<div class="k">${md(`本月(${费.月份 || ""})用量账:真调用 ${费.行数 ?? "—"} 行,`
+    + `参考价合计 ${费.已知金额 ?? "—"} 美元,算不出参考价的 ${费.金额未知的行数 ?? "—"} 行 —— 和「用量与成本」页同一份账,参考价不是账单。`)}</div>`;
+  const 框 = (x, 名, 类型) => 名 === "结论"
+    ? `<select data-accf="${esc(x.id)}" data-acck="结论">` + (d.可选结论 || []).map((t) =>
+        `<option value="${esc(t)}"${t === x.结论 ? " selected" : ""}>${esc(t)}</option>`).join("") + `</select>`
+    : `<input data-accf="${esc(x.id)}" data-acck="${esc(名)}"${类型 ? ` type="${类型}"` : ""} value="${esc(x[名] || "")}" style="width:100%">`;
+  const 签字格 = (x) => x.签字人
+    ? `${esc(x.签字人)}<div class="k">${esc(String(x.签字时间 || "").slice(0, 16).replace("T", " "))}${x.签于真实试点前 ? " · 签于真实试点前" : ""}</div>`
+    : (d.我能签吗 && x.结论 === "通过" && x.验的人 && x.验的日期 ? `<button data-accsign="${esc(x.id)}">签字</button>` : `<span class="k">未签</span>`);
+  const 表 = !(d.items || []).length ? 状态("", "这个项目没有上线验收场景", d.note || "十条场景只种在澜绣项目里。").html
+    : `<table><thead><tr><th>编号</th><th>场景 / 通过标准</th><th>验的人</th><th>验的日期</th><th>结论</th><th>证据链接</th><th>备注</th><th>店长签字</th><th></th></tr></thead><tbody>`
+      + d.items.map((x) => `<tr data-accrow="${esc(x.id)}">
+          <td>${esc(x.编号)}</td>
+          <td>${esc(x.场景)}<div class="k">${esc(x.通过标准)}</div></td>`
+        + (d.我能填吗
+          ? `<td>${框(x, "验的人")}</td><td>${框(x, "验的日期", "date")}</td><td>${框(x, "结论")}</td><td>${框(x, "证据链接")}</td><td>${框(x, "备注")}</td>`
+          : `<td>${esc(x.验的人 || "—")}</td><td>${esc(x.验的日期 || "—")}</td><td>${绿(x.结论)}${esc(x.结论)}</span></td>
+             <td>${x.证据链接 ? esc(x.证据链接) : "—"}</td><td>${esc(x.备注 || "")}</td>`)
+        + `<td>${签字格(x)}</td>
+          <td>${d.我能填吗 ? `<button data-accsave="${esc(x.id)}">保存</button>` : ""}<div class="k" data-accwhy="${esc(x.id)}"></div></td></tr>`).join("")
+      + `</tbody></table>
+      <div class="k">${md(`填记录要「${d.填记录要的权限}」,签字要「${d.签字要的权限}」。**签过字之后改结论 / 验的人 / 日期 / 证据,签字会作废**,要店长重签。`)}</div>`;
+  const 线 = (d.时间线 || []).length ? `<table><thead><tr><th>什么时候</th><th>谁</th><th>动作</th><th>场景</th><th>说明</th><th>改了什么</th></tr></thead><tbody>`
+      + d.时间线.map((e) => `<tr><td class="k">${esc(String(e.时间).slice(5, 16).replace("T", " "))}</td><td>${esc(e.谁 || "")}</td>
+          <td>${esc(e.动作)}</td><td>${esc(e.场景 || "—")}</td><td>${esc(e.说明 || "")}</td>
+          <td class="k">${e.变化 ? esc(JSON.stringify(e.变化)) : ""}</td></tr>`).join("") + `</tbody></table>`
+    : `<div class="note">还没有记录。</div>`;
+  $("#main").innerHTML = 头 + 总 + 三项 + 费块 + 试点块 + `<h2>十条核心场景</h2>` + 表 + `<h2>时间线(最近 50 条)</h2>` + 线;
+  const 错话 = (e) => (e.体 && (e.体.message + " " + (e.体.advice || "") + (e.体.field_errors ? " " + JSON.stringify(e.体.field_errors) : ""))) || e.message;
+  const 行 = (id) => (d.items || []).find((x) => x.id === id) || {};
+  $("#main").querySelectorAll("[data-accsave]").forEach((b) => {
+    b.onclick = async () => {
+      const id = b.dataset.accsave, 原 = 行(id), 体 = {};
+      $("#main").querySelectorAll(`[data-accf="${id}"]`).forEach((el) => {
+        const v = (el.value || "").trim();
+        if (v !== (原[el.dataset.acck] || "")) 体[el.dataset.acck] = v;
+      });
+      const 提示 = $("#main").querySelector(`[data-accwhy="${id}"]`);
+      if (!Object.keys(体).length) { 提示.textContent = "没有改动"; return; }
+      if (原.签字人 && ["结论", "验的人", "验的日期", "证据链接"].some((k) => k in 体)
+          && !(await 问一句("这一条已经签过字", "改了结论 / 验的人 / 日期 / 证据,店长的签字会作废,要重新签。", { 确定: "改,签字作废" }))) return;
+      b.disabled = true;
+      try {
+        await 请求(`${P()}/acceptance/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "If-Match": String(原.revision) }, body: JSON.stringify(体) });
+        页_上线验收();
+      } catch (e) { b.disabled = false; 提示.textContent = "没保存上:" + 错话(e); }
+    };
+  });
+  $("#main").querySelectorAll("[data-accsign]").forEach((b) => {
+    b.onclick = async () => {
+      const id = b.dataset.accsign, 原 = 行(id);
+      if (!(await 问一句(`签 ${原.编号}「${原.场景}」?`, `结论「${原.结论}」,${原.验的人} 在 ${原.验的日期} 验的。签字人记成你、时间记成现在。`, { 确定: "签字" }))) return;
+      b.disabled = true;
+      try {
+        await 请求(`${P()}/acceptance/${encodeURIComponent(id)}/sign`, { method: "POST", headers: { "If-Match": String(原.revision) }, body: JSON.stringify({}) });
+        页_上线验收();
+      } catch (e) { b.disabled = false; const 提示 = $("#main").querySelector(`[data-accwhy="${id}"]`); if (提示) 提示.textContent = "没签上:" + 错话(e); }
+    };
+  });
+  if ($("#acc-pilot-save")) $("#acc-pilot-save").onclick = async () => {
+    const 日 = ($("#acc-pilot-date").value || "").trim(), 说 = ($("#acc-pilot-note").value || "").trim();
+    if (!说) { $("#acc-pilot-why").textContent = "说明要写"; return; }
+    $("#acc-pilot-save").disabled = true;
+    try {
+      await 请求(`${P()}/acceptance-pilot`, { method: "PATCH", headers: { "If-Match": String(试.revision) },
+        body: JSON.stringify({ 真数据导入日: 日 || null, 说明: 说 }) });
+      页_上线验收();
+    } catch (e) { $("#acc-pilot-save").disabled = false; $("#acc-pilot-why").textContent = "没保存上:" + 错话(e); }
   };
 }
 
@@ -9217,6 +9317,7 @@ async function 路由() {
     if (h.startsWith("#/rollout/")) return await 页_发布记录详情(decodeURIComponent(h.slice(10)));
     if (h === "#/capabilities") return await 页_能力档案清单();
     if (h === "#/capability-board") return await 页_改进看板();
+    if (h === "#/acceptance") return await 页_上线验收();
     if (h.startsWith("#/capability/")) return await 页_能力档案详情(decodeURIComponent(h.slice(13)));
     if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));

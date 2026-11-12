@@ -324,6 +324,10 @@ export const ENDPOINTS = [
   { method: "PATCH", path: "/capability-profiles/{id}", summary: "改能力档案字段(业务目标 / 输入输出 / 角色 / 负责人 / 已验证范围 / 依赖 …)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/capability-profiles/{id}/actions", summary: "能力档案改状态(提交验证 / 试点 / 启用 / 限制 / 停用 …)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "GET", path: "/capability-board", summary: "改进看板:问题单按根因 / 能力 / 状态的数", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/acceptance", summary: "上线验收:十条核心场景(PRD 13.4)+ 顶部「做完」三项判定", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/acceptance/{id}", summary: "改一条验收记录(验的人 / 日期 / 结论 / 证据链接 / 备注)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/acceptance/{id}/sign", summary: "店长签字(只签结论「通过」的)", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "PATCH", path: "/acceptance-pilot", summary: "设真数据导入日(试点起算日)", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/opinions/{id}/promote", summary: "把意见提成待复核的评测样本(总部运营提)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "GET", path: "/opinion-samples/pending", summary: "待我复核的样本(店长在聊天站看)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/opinion-samples/{id}/review", summary: "店长复核样本(通过 / 退回)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -349,4 +353,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 261 条接口 · 24 条异步 · 32 条要幂等键 · 36 条要 If-Match */
+/** 共 265 条接口 · 24 条异步 · 32 条要幂等键 · 39 条要 If-Match */

@@ -248,6 +248,8 @@
     # 问题单(11-12):标题套不上后缀约定;处理时限 / 重新评估是**日历日不是时刻**(和 world_date 同一个理由:
     # 存成 timestamp 会带一个看起来像真时刻的 00:00)—— 点名登记成 DATE
     "title": "TEXT", "due_date": "DATE", "reevaluate_date": "DATE",
+    # 上线验收(11-12):验的日期 / 真数据导入日也是**日历日不是时刻** —— 同上一行的理由,点名登记成 DATE
+    "tested_date": "DATE", "pilot_start_date": "DATE",
     # 告警规则(11-04):阈值 / 窗口 / 去重周期 —— 套不上后缀约定,点名登记
     "threshold_value": "NUMERIC(20,6)", "window_minutes": "INTEGER", "dedupe_minutes": "INTEGER",
     # 评测派发(11-05):超时分钟 —— 套不上后缀约定,点名登记
@@ -363,6 +365,9 @@
     # 问题单(11-12):叫什么 / 走到哪 / 根因核实到哪 —— 少一样清单就没法筛;重开次数从 0 数(不许 NULL 冒充 0)
     "issues": {"title", "status", "root_cause_status", "reopen_count"},
     "issue_events": {"issue_id", "action_code", "to_status"},
+    # 上线验收(11-12):哪一条 / 叫什么 / 标准是什么 / 排第几 / 结论 —— 少一样这一行就说不清验的是什么
+    "acceptance_items": {"scenario_code", "scenario_name", "expected_note", "sort_no", "verdict"},
+    "acceptance_events": {"action_code"},
     # 能力档案(11-12):叫什么 / 走到哪 / 依赖清单(空清单是 [],不许 NULL 冒充「没依赖」)
     "capability_profiles": {"name", "status", "dependencies"},
     "capability_profile_events": {"capability_profile_id", "action_code", "to_status"},

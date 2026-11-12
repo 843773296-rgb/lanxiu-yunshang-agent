@@ -993,6 +993,28 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "change_snapshot 记这一步改了哪些字段的前后值(改根因 / 搁置的日期 / 指向哪个主问题 / 关闭的说明和证据)",
        "暂不处理 / 标为重复 / 验证失败 / 发布失败 / 复发 / 重新评估 必须带 note;**发布失败是一行 待发布 → 待发布**,状态不动、记录留下"],
       依赖=["issues"]),
+    # ②'''''' 上线验收(2026-11-12,执行手册 W41;业务拍板 11-12 第一条「做完 = 试点两周 + 十条验收签字 + 费用上限」)
+    E("acceptance_items", "上线验收记录", 项目级, 可改,
+      ["scenario_code", "scenario_name", "expected_note", "sort_no", "tested_by", "tested_date", "verdict",
+       "evidence_ref", "note", "signed_by", "signed_at"],
+      ["**十条核心场景各一行**(PRD 13.4 S1–S10;场景名和通过标准原样抄自 PRD,口径在 services/api/app/acceptance_flow.py),"
+       "同项目里编号唯一;第一次打开上线验收页时种上(只种澜绣项目)",
+       "结论只收 待验 / 通过 / 不通过(库 CHECK,从 acceptance_flow 拼);下了结论(通过 / 不通过)必须写验的人和验的日期",
+       "**店长签字** signed_by + signed_at 要么都有要么都没有;签了字的结论必须是「通过」且有验的人和日期(库 CHECK)。"
+       "签字权限复用「审批工具动作」(approver 默认有、管理员要专项授权)",
+       "签过字之后改结论 / 验的人 / 日期 / 证据 → **签字作废**(清空 signed_*,时间线记一行「签字作废」带原签字人和时间)"],
+      依赖=[]),
+    E("acceptance_events", "上线验收时间线", 子对象, 只追加,
+      ["acceptance_item_id", "action_code", "note", "change_snapshot"],
+      ["**每一步追加一行,不改不删**:改记录(带前后值)/ 签字 / 签字作废 / 设试点起算日;同一个事务里另写一行 audit_events",
+       "设试点起算日不挂任何一条场景(acceptance_item_id 为空),而且必须带 note —— 那个日子决定「满两周」从哪天算"],
+      依赖=["acceptance_items"]),
+    E("acceptance_pilots", "试点设置", 项目级, 可改,
+      ["pilot_start_date", "note"],
+      ["一个项目一行(唯一);pilot_start_date = **真数据导入日**,「试点满两周」从这天算",
+       "**为空 = 真实试点还没开始**,页面显示「未开始」—— 不默认成今天(默认成今天等于两周从打开页面那天自己开始走)",
+       "日期是日历日,存 DATE 不存时刻;改它走「审批工具动作」,说明必填,时间线 + 审计各一行"],
+      依赖=[]),
     # ②''''' 能力档案(2026-11-12;口径照《意见收集与能力持续改进 PRD》10-24 §4.4 / §7.1「能力档案」那一行)
     E("capability_profiles", "能力档案", 项目级, 可改,
       ["name", "business_goal_note", "input_note", "output_note", "applicable_roles", "owner", "status",

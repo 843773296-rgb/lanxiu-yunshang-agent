@@ -125,6 +125,14 @@ P = f"{基址}/api/v1/projects/{项目}"
         取id=("/issue-releases", "items[0].id"), 读="/issue-releases/{id}", 字段="revision", 项目="project_demo_a"),
     "POST /issue-releases/{id}/rollbacks": dict(
         取id=("/issue-releases", "items[0].id"), 读="/issue-releases/{id}", 字段="revision", 项目="project_demo_a"),
+    # 上线验收(11-12,W41):每一行的 revision 在清单行里,试点设置的在清单顶层「试点」里。
+    # 十条场景只种在澜绣项目(第一次 GET 时种),所以样例从 project_lanxiu 取 —— CI 里它由「灌演示数据」那步的 import_lanxiu_prompts 建
+    "PATCH /acceptance/{id}": dict(
+        取id=None, 读="/acceptance", 字段="items[0].revision", 项目="project_lanxiu"),
+    "POST /acceptance/{id}/sign": dict(
+        取id=None, 读="/acceptance", 字段="items[0].revision", 项目="project_lanxiu"),
+    "PATCH /acceptance-pilot": dict(
+        取id=None, 读="/acceptance", 字段="试点.revision", 项目="project_lanxiu"),
     # 轮换(11-04)和改小上限同一个 revision 来源
     "POST /access-keys/{id}/rotate": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),
