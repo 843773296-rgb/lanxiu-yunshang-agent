@@ -2206,6 +2206,18 @@ def create_appointment(d, actor, _role=None):
     if not ok:
         log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
         return dict(ok=False, code=code, reason=why)
+    # 客户点名了谁 / 预约渠道(W21,用户 11-12 拍第十二条)。**点名 ≠ 派单**:只记客户意愿,
+    # 派单建议读它(booking.suggest_why)、店长确认。表单里可能填「A01 林岚」这种显示串 ——
+    # 先认成工号;认不出就原样交给校验,让它**拒并说清**,不静默丢掉(丢掉就成了「不详」)。
+    import booking as _bk
+    _点 = dict(d)
+    _raw = str(d.get("named_advisor_no") or "").strip()
+    if _raw and not rows("SELECT 1 FROM staff WHERE no=?", _raw):
+        _点["named_advisor_no"] = 顾问工号(_raw) or _raw
+    ok, code, why, 点名列 = _bk.校验点名(d.get("shop"), _点)
+    if not ok:
+        log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
+        return dict(ok=False, code=code, reason=why)
     n = rows("SELECT COUNT(*) c FROM appointment")[0]["c"]
     aid = f"AP{_wnow():%y%m%d}{n + 1:04d}"
     # 列名以**表**为准:appointment 是 start_ts / end_ts,不是 appt_at。
@@ -2229,7 +2241,9 @@ def create_appointment(d, actor, _role=None):
              "shop_code": _门店码,
              "advisor_no": 顾问工号(d.get("advisor")), "status": "待确认",
              "start_ts": (d.get("start") or "").replace("T", " "),
-             "end_ts": (d.get("end") or "").replace("T", " ")},
+             "end_ts": (d.get("end") or "").replace("T", " "),
+             "named_advisor_no": 点名列["named_advisor_no"],
+             "named_state": 点名列["named_state"], "channel": 点名列["channel"]},
             required=["id", "customer_id", "start_ts", "end_ts", "status"])
     log_op(actor, "appointment", aid, "—", "待确认", True, "CREATE",
            f"新建预约 {aid},客户 {d.get('customer_id')},"

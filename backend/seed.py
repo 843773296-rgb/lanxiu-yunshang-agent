@@ -46,7 +46,9 @@ CREATE TABLE customer(id TEXT PRIMARY KEY, name TEXT, phone TEXT, phone_tail TEX
   account_id TEXT,
   -- **软合并**(用户 2026-10-14 拍):这条档案并入了哪条(主档的 id);空 = 独立。数据不搬、能撤。
   -- 谁在什么时候并的看 op_log(machine='customer-merge');这一列不含日期,世界平移不用登记。
-  merged_into TEXT);
+  merged_into TEXT,
+  -- 来源渠道(W21,用户 11-12 拍第十二条:先存不分析)。已有的库由 tools/migrate_appt_columns.py 加列,两边定义一致。
+  source_channel TEXT);
 -- 积分流水(设计稿 积分行为:账户调加/账户调减/积分消费/积分返还/确认款样/完成定购)
 CREATE TABLE points_log(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, behavior TEXT,
   delta INT, balance INT, ref_id TEXT, reason TEXT, actor TEXT, ts TEXT);
@@ -60,7 +62,13 @@ CREATE TABLE refund_trace(id INTEGER PRIMARY KEY AUTOINCREMENT, deposit_id TEXT,
 CREATE TABLE payment_flow(id TEXT PRIMARY KEY, deposit_id TEXT, direction TEXT, amount REAL,
   channel TEXT, channel_serial TEXT, status TEXT, ts TEXT);
 CREATE TABLE appointment(id TEXT PRIMARY KEY, customer_id TEXT, shop TEXT, advisor_no TEXT,
-  start_ts TEXT, end_ts TEXT, status TEXT, deposit_id TEXT, checkin_ts TEXT);
+  start_ts TEXT, end_ts TEXT, status TEXT, deposit_id TEXT, checkin_ts TEXT,
+  -- 客户点名了谁(W21,用户 11-12 拍第十二条)。三态:点名 / 没点 / 不详;NULL = 加列之前建的,当时没问。
+  -- 「工号空」同时可能是没点和不详,所以三态单独一列。点名 ≠ 派单:派单建议读它(booking.suggest_why),店长确认。
+  -- 已有的库由 tools/migrate_appt_columns.py 加列 —— **两边列定义逐字一致**,改一边要改另一边。
+  named_advisor_no TEXT,
+  named_state TEXT CHECK(named_state IS NULL OR named_state IN ('点名','没点','不详')),
+  channel TEXT);   -- 预约渠道(先存不分析)
 CREATE TABLE followup(id TEXT PRIMARY KEY, customer_id TEXT, appt_id TEXT, ts TEXT,
   channel TEXT, content TEXT, advisor_no TEXT);
 CREATE TABLE task(id TEXT PRIMARY KEY, type TEXT, ref_id TEXT, status TEXT, created TEXT, summary TEXT,

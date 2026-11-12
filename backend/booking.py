@@ -76,6 +76,67 @@ def route(cust):
     return st["no"], "BOUND", f"已自动派给归属顾问 {st['name']}"
 
 
+# ── 客户点名了谁 · 预约渠道(W21,用户 11-12 拍第十二条)─────────────────
+#
+# **点名 ≠ 派单。** 点名只是记下客户的意愿;派给谁仍由 suggest_why 算、店长确认 ——
+# book() 文档里那条「请求里说了不算派给谁」不变。点名在派单建议里是**同层最强**的依据
+# (排在接触史前面),不做加权打分(09-20 拍的「分层排序、不做加权总分」)。
+#
+# 三态单独一列,因为「工号空」同时可能是「没点」和「不详」:
+#     点名  客户说了要谁            没点  问过了,谁都行            不详  没问 / 没说清
+# 库上有 CHECK 挡非法值(tools/migrate_appt_columns.py / seed.py);这里是写入口那一道,
+# 两道叠加 —— 库那道挡的是绕开写入口的写。
+点名三态 = ("点名", "没点", "不详")
+渠道最长 = 20
+
+
+def 校验点名(shop, d, 对外=False):
+    """写预约前校验「点名谁 / 点名三态 / 渠道」三个可选字段。
+
+    → (ok, code, reason, 列值)。列值是 {named_advisor_no, named_state, channel},直接写库。
+
+    · 三态只认 点名 / 没点 / 不详;没给三态时:给了工号 → 点名,都没给 → 不详(**没问就是不详,不猜成没点**)
+    · 点名了却没给人、给了人却说没点 → 拒(自相矛盾,不替他挑一边)
+    · 点名的工号必须是**这家店的在职顾问**,否则拒并说清是哪一种
+    · `对外=True`(顾客自助预约那个不登录的口):拒的理由不分「离职 / 别的店 / 查无此人」——
+      分开说等于让匿名请求逐个试出谁在哪家店上班
+    """
+    no = str(d.get("named_advisor_no") or "").strip()
+    st = str(d.get("named_state") or "").strip()
+    ch = str(d.get("channel") or "").strip() or None
+    if st and st not in 点名三态:
+        return False, "BAD_NAMED_STATE", f"「客户点名了没有」只认 {' / '.join(点名三态)},收到的是「{st}」", None
+    if not st:
+        st = "点名" if no else "不详"
+    if st == "点名" and not no:
+        return False, "NAMED_NO_ADVISOR", "选了「点名」但没说点的是谁 —— 填上那位顾问,或改成「没点 / 不详」", None
+    if st != "点名" and no:
+        return False, "NAMED_STATE_CONFLICT", f"填了点名的顾问,三态却是「{st}」—— 两者对不上,改一边", None
+    if ch and len(ch) > 渠道最长:
+        return False, "BAD_CHANNEL", f"预约渠道太长了(最多 {渠道最长} 个字)", None
+    if no:
+        import shop_key as _SK
+        with closing(sqlite3.connect(DB)) as c:
+            c.row_factory = sqlite3.Row
+            r = c.execute("SELECT no,name,role,status,shop FROM staff WHERE no=?", (no,)).fetchone()
+            _片, _参 = _SK.门店条件(c, shop) if shop else ("", [])
+            本店 = bool(r) and bool(_片) and c.execute(
+                f"SELECT 1 FROM staff WHERE no=? AND {_片}", (no, *_参)).fetchone() is not None
+        if not (r and r["role"] == "顾问" and r["status"] == "启用" and 本店):
+            if 对外:
+                why = "点名的顾问不是这家店的在职顾问,换一位或者不点名"
+            elif not r:
+                why = f"点名的工号「{no}」员工表里没有"
+            elif r["role"] != "顾问":
+                why = f"点名的 {r['name']} 是{r['role']},不是顾问"
+            elif r["status"] != "启用":
+                why = f"点名的 {r['name']} 已{r['status']} —— 不在职的人接不了待"
+            else:
+                why = f"点名的 {r['name']} 在 {r['shop']},不是这家店({shop or '未填门店'})的顾问"
+            return False, "BAD_NAMED_ADVISOR", why, None
+    return True, "OK", "", dict(named_advisor_no=no or None, named_state=st, channel=ch)
+
+
 # ── 手机端自助预约 ──────────────────────────────────────────────────
 MAX_PENDING = 3          # 同一个手机号最多挂 3 张没做完的预约
 OPEN_HOUR = (10, 21)     # 门店营业时间,预约只能落在这个区间
@@ -105,6 +166,9 @@ def book(d):
       ③ **它只能建预约,建不了别的**;派给谁由 route() 定,请求里说了不算
 
     ③ 最要紧:如果让请求体带 advisor,那随便谁都能把单子塞进任意顾问的列表里。
+
+    请求可以带「点名谁 / 点名三态 / 渠道」(W21)—— **点名只记意愿,不改派单**:
+    派给谁照旧由 route() 定、落池的由 suggest_why 出建议、店长确认。点名的人必须是本店在职顾问。
     """
     phone = "".join(ch for ch in (d.get("phone") or "") if ch.isdigit())
     if len(phone) != 11 or not phone.startswith("1"):
@@ -148,6 +212,12 @@ def book(d):
         return dict(ok=False, code="TOO_MANY",
                     reason=f"你还有 {len(pend)} 个预约没完成,先完成或取消一个再约")
 
+    ok_n, code_n, why_n, 点名列 = 校验点名(cust.get("shop"), d, 对外=True)
+    if not ok_n:
+        return dict(ok=False, code=code_n, reason=why_n)
+    if not 点名列["channel"]:
+        点名列["channel"] = "手机端自助"      # 这个口子本身就是一个渠道,不填也知道
+
     need = (d.get("need") or "").strip() or "到店咨询"
     assignee, code, why = route(cust)
 
@@ -167,9 +237,11 @@ def book(d):
         # 预约单(客户视角:我约了几点)
         import shop_key as _SK          # 门店码的唯一入口
         c.execute("INSERT INTO appointment(id,customer_id,shop,shop_code,advisor_no,"
-                  "start_ts,end_ts,status) VALUES(?,?,?,?,?,?,?,?)",
+                  "start_ts,end_ts,status,named_advisor_no,named_state,channel) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                   (aid, cust["id"], cust.get("shop"), _SK.码(c, cust.get("shop")), adv_no,
-                   t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"), "待确认"))
+                   t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"), "待确认",
+                   点名列["named_advisor_no"], 点名列["named_state"], 点名列["channel"]))
         # 任务单(门店视角:谁去接待)—— **两张表是两个视角,不是冗余**:
         # 客户取消预约,任务单要留痕说明为什么白排了一小时。
         c.execute("""INSERT INTO schedule(id,type,advisor_no,customer_id,
@@ -246,6 +318,42 @@ def _busy(no, start, end):
     return _rows("SELECT id,start_ts,end_ts,note FROM schedule "
                  "WHERE assignee_no=? AND status='有效' "
                  "AND start_ts < ? AND end_ts > ?", no, end, start)
+
+
+# 派单任务(schedule)对上预约(appointment):**按 客户号 + 开始时间(到分钟)对**。
+#
+# 为什么不用 schedule.ref_id:客户族任务的 ref_id **按类型约定装客户号**(tasktypes.REF_SOURCE
+# 那张表:「类型决定它是哪种单」),往里写预约号会让 resolve_ref 解不出客户;而库里现存 38 条
+# 「预约到店」的 ref_id 全是空的。不新加一列,因为用户这次只拍了三列。
+# book() 两张表的客户号和开始时间是**同一个变量**写进去的,所以这条路对新单是精确的;
+# 只认还在走的预约(取消 / 过期 / 爽约 / 已完成的不算)—— 库里历史预约有 367 组「同客户同时刻」重复,
+# 全落在已完成那些里,活着的这几态里 0 组。对上多条而点名不一致时**不猜**,当作没点名并说出来。
+活着的预约态 = ("待确认", "已预约", "已到店")
+
+
+def 任务的点名(task):
+    """→ (点名 dict 或 None, 说明或 None)。点名 dict = {appt, no, name}。只有三态是「点名」才返回 dict。"""
+    cid, start = task.get("customer_id"), task.get("start_ts")
+    if not (cid and start):
+        return None, None
+    try:
+        rs = _rows("SELECT a.id,a.named_state,a.named_advisor_no,s.name FROM appointment a "
+                   "LEFT JOIN staff s ON s.no=a.named_advisor_no "
+                   "WHERE a.customer_id=? AND substr(a.start_ts,1,16)=substr(?,1,16) "
+                   f"AND a.status IN ({','.join('?' * len(活着的预约态))})", cid, start, *活着的预约态)
+    except sqlite3.OperationalError as e:
+        if "named_" not in str(e):
+            raise
+        # 库还没跑 tools/migrate_appt_columns.py —— 店长首页的待分配池不能因此整页挂掉
+        return None, "库里还没有点名列(迁移没跑),这次没按点名排"
+    点 = {(r["named_advisor_no"], r["name"]) for r in rs if r["named_state"] == "点名" and r["named_advisor_no"]}
+    if not 点:
+        return None, None
+    if len(点) > 1:
+        return None, (f"这个时段对上了 {len(rs)} 条预约、点名的人不一致"
+                      f"({'、'.join(n or k for k, n in sorted(点))})—— 不猜,这次没按点名排")
+    no, name = 点.pop()
+    return dict(appt=[r["id"] for r in rs if r["named_advisor_no"] == no][0], no=no, name=name or no), None
 
 
 新人保底条数 = 2          # 建议值(台账第十五条),试点后按数据调
@@ -345,6 +453,7 @@ def suggest_why(task):
     cid = task.get("customer_id")
     start, end = task.get("start_ts"), task.get("end_ts")
     # 排班层先过:**不在班的人不进候选**(D2「时段有空」是硬条件,排班是它的另一半)
+    在职池 = {p["no"] for p in pool}
     pool, 不在班, 没发布 = _排班过滤(pool, shop, start, end)
     if 没发布:
         return None, 没发布
@@ -368,6 +477,30 @@ def suggest_why(task):
         if not b: free.append(p)
     cands = free or pool          # 全都冲突时不弃权,但要在理由里说出来
 
+    # ⓪ 客户点名(W21,用户 11-12 拍):点名的人在班、没被预留、那个时段没别的活 → **同层最强,直接推荐他**;
+    #    没空 → 调 roster.点名的人没空 拿业务定的三步给人看(**不替客户选**:换人还是改时间由客户定),
+    #    下面照常排出来的人选是「换人接待」时的备选。不做加权:点名只是排序键最前面那一位。
+    点名, 点名说明 = 任务的点名(task)
+    点名可派 = None
+    if 点名:
+        if any(p["no"] == 点名["no"] for p in free):
+            点名可派 = 点名["no"]
+            点名.update(可派=True)
+        else:
+            import roster as _R
+            # 排班层不在班 → 不传原因,让 roster 自己判(码带 OUT_OF_SHIFT / OFF 之类);
+            # 在班却出局的(那天被预留给别的客户)、有别的活、不在本店了 → 原因在排班层之外,传进去
+            if 点名["no"] in 不在班:
+                没空因 = (None if not _R.时段在班(点名["no"], start, end or start, db=DB)[0]
+                        else 不在班[点名["no"]])
+            else:
+                没空因 = (("那个时段已经有别的安排(" + "、".join(b["id"] for b in clash.get(点名["no"], [])) + ")"
+                        if clash.get(点名["no"]) else None)
+                    or (None if 点名["no"] in 在职池 else "已不是本店在职顾问"))
+            能, 码, 三步 = _R.点名的人没空(dict(id=cid), 点名["no"], start, end or start,
+                                       db=DB, 没空的原因=没空因)
+            点名.update(可派=False, 码=码, 三步=三步)
+
     # ③ 负载:手上还有几件没做完
     load = {p["no"]: _rows("SELECT COUNT(*) c FROM schedule "
                            "WHERE assignee_no=? AND status='有效'", p["no"])[0]["c"]
@@ -376,21 +509,29 @@ def suggest_why(task):
     # ④ 新人保底(用户 11-12 拍,台账第十五条):**只在新客单上**(这个客户谁都没接触过)起作用 ——
     #    入职不满三个月、本周新客还不到「保底条数」的顾问,排到同层最前。有接触史的单照旧谁接待过给谁,
     #    不改 09-20 拍的「分层排序、不做加权总分」。保底条数 2 是**建议值**,试点后按数据调。
-    保底 = _新人保底(pool, start) if not seen else {}
+    保底 = _新人保底(pool, start) if not (seen or 点名可派) else {}
 
     def rank(p):
-        return (-seen.get(p["no"], 0), 0 if p["no"] in 保底 else 1, load[p["no"]], p["no"])
+        return (0 if p["no"] == 点名可派 else 1, -seen.get(p["no"], 0), 0 if p["no"] in 保底 else 1,
+                load[p["no"]], p["no"])
 
     cands = sorted(cands, key=rank)
     pick = cands[0]
 
     why = []
     n = seen.get(pick["no"], 0)
+    if 点名 and 点名["可派"] and pick["no"] == 点名["no"]:
+        why.append(f"客户点名了 {点名['name']}(预约 {点名['appt']}),他那个时段在班、没有别的安排 —— 直接推荐他")
+    elif 点名:
+        why.append(f"⚠️ 客户点名了 {点名['name']},但他那个时段没空 —— 按下面三步跟客户谈;"
+                   f"这里推荐的是「换人接待」时的人选,**不替客户决定**")
+    if 点名说明:
+        why.append(点名说明)
     if pick["no"] in 保底:
         why.append(f"新人保底:{pick['name']} 入职不满三个月,本周新客才 {保底[pick['no']]} 条(保底每周 {新人保底条数} 条,建议值)")
     if n:
         why.append(f"这个客户以前由 {pick['name']} 接待过 {n} 次 —— 他知道上次聊到哪儿")
-    else:
+    elif pick["no"] != 点名可派:
         why.append(f"这个客户没有接触史,{pick['name']} 手上活最少({load[pick['no']]} 件在办)")
     if 不在班:
         名 = {r["no"]: r["name"] for r in _rows("SELECT no,name FROM staff")}
@@ -400,11 +541,12 @@ def suggest_why(task):
     elif clash:
         who = [p["name"] for p in pool if clash.get(p["no"])]
         why.append(f"{'、'.join(who)} 在这个时间段已经有别的安排,已排除")
-    if len(cands) > 1 and rank(cands[0])[:2] == rank(cands[1])[:2]:
+    if len(cands) > 1 and rank(cands[0])[:3] == rank(cands[1])[:3]:
         why.append(f"⚠️ {pick['name']} 和 {cands[1]['name']} 依据完全一样 —— "
                    f"**这一条是按工号先后挑的,不是算出来的**,请你来定")
 
     return dict(no=pick["no"], name=pick["name"], why=why,
+                点名=点名,
                 不在班={k: v for k, v in 不在班.items()},
                 load=load[pick["no"]], history=n,
                 alts=[dict(no=p["no"], name=p["name"], load=load[p["no"]],

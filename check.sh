@@ -289,6 +289,7 @@ run "边界夹具 · 还是不是原来那个夹具(名下0单 / 名字 / 档位
     python3 backend/fixture_intact_check.py
 run "会员生命周期 · 14 条边界标注对账" python3 backend/member_check.py
 run "预约派单 · 逐例标真值(派错和派对长得一样)" python3 backend/booking_check.py
+run "客户点名了谁 · 有空推荐他、没空给三步、没点不改排序、非法点名写不进去(W21,3 条咬合)" python3 backend/named_advisor_check.py
 run "促活判断 · 逐例标真值 + 覆盖报告(没有样本不叫通过)" python3 backend/revive_check.py
 run "流失预警取数 · 列名/只读/转发对账 + 覆盖报告(没有样本不叫通过)" python3 backend/slipping_check.py
 run "简体闸 · 业务数据一律简体(外来文本进来前先查)" python3 backend/simplified.py

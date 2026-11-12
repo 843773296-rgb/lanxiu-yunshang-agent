@@ -1614,6 +1614,8 @@ async function custDetail(cid){
 const SHOPS=["SH001 静安旗舰店","SH002 徐汇店","SH003 杭州湖滨店"];
 const ADVS=["A01 林岚","A02 周叙","A03 沈砚","A04 陆微"];
 const WAYS=["到店量体","到店试衣","上门沟通","电话回电"];
+const NAMED_STATES=["","不详","没点","点名"];   // 三态只认后三个(后端 booking.点名三态 + 库上 CHECK);空 = 填了点名顾问就算点名,没填算不详
+const APPT_CHANNELS=["","电话","微信","到店","小程序","其他"];   // 渠道先存不分析;空 = 没填
 function nowPlus(h){const d=new Date(Date.now()+h*3600e3);
   const p=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:00`}
@@ -1636,6 +1638,10 @@ function formAppt(cid,after){
     {k:"end",label:"结束时间",req:1,val:nowPlus(27),ph:"2026-09-01 10:00"},
     {k:"shop",type:"select",label:"归属店铺",req:1,opts:SHOPS},
     {k:"advisor",type:"select",label:"销售顾问",req:1,opts:ADVS},
+    // W21(用户 11-12 拍):客户点名了谁 + 预约渠道。点名只记意愿,派给谁仍由派单建议算、店长确认
+    {k:"named_state",type:"select",label:"客户点名了吗",opts:NAMED_STATES},
+    {k:"named_advisor_no",label:"点名的顾问",ph:"点名时填工号或「A01 林岚」;没点名留空"},
+    {k:"channel",type:"select",label:"预约渠道",opts:APPT_CHANNELS},
   ],v=>doOp("/api/appt-create",v,after),true);
 }
 function formFollowup(cid,after){

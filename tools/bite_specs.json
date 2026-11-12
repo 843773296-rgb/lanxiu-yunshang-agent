@@ -11066,18 +11066,6 @@
   "预期红": "接待任务:展示归企业、派单归客户"
  },
  {
-  "script": "backend/booking_check.py",
-  "改坏": "新人保底不进排序(新客单照旧按负载挑)",
-  "file": [
-   {
-    "path": "backend/booking.py",
-    "old": "        return (-seen.get(p[\"no\"], 0), 0 if p[\"no\"] in 保底 else 1, load[p[\"no\"]], p[\"no\"])\n",
-    "new": "        return (-seen.get(p[\"no\"], 0), load[p[\"no\"]], p[\"no\"])\n"
-   }
-  ],
-  "预期红": "新客单:本周新客不到保底的新人排到最前,理由写明新人保底"
- },
- {
   "script": "backend/alert_dispatch_check.py",
   "改坏": "防重复派不看「还有没办完的」(只看同一个键办完没有)",
   "file": [
@@ -12346,18 +12334,6 @@
    }
   ],
   "预期红": "backend/seed.py 里真的有人调 建索引()(从零建库)"
- },
- {
-  "script": "backend/query_index_check.py",
-  "改坏": "把 seed.py 的 SCHEMA 里 customer 那一列改个名 —— **调 建索引() 那一步还在**,而从零建库会当场抛 no such column。这正是「有人调」这个文本判据漏掉的那一半:`customer.advisor_no` 真有过这个病(事后 ALTER 加的列,seed 的世界里压根不存在)。⚠️ 攻击点故意挑在 SCHEMA 的列名上:碰登记的 DDL 会先触发「库里的 DDL 和登记逐字一致」那条,就不是点名这一条了",
-  "file": [
-   {
-    "path": "backend/seed.py",
-    "old": "  merged_into TEXT);",
-    "new": "  merged_into_x TEXT);"
-   }
-  ],
-  "预期红": "从零建库(seed.py 的 SCHEMA)上这三条索引建得出来"
  },
  {
   "file": [
@@ -20446,5 +20422,65 @@
    }
   ],
   "预期红": "评测自己读库的变量(叫 DBP,不叫 DB)也指副本"
+ },
+ {
+  "script": "backend/booking_check.py",
+  "改坏": "新人保底不进排序(新客单照旧按负载挑)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "-seen.get(p[\"no\"], 0), 0 if p[\"no\"] in 保底 else 1,\n",
+    "new": "-seen.get(p[\"no\"], 0),\n"
+   }
+  ],
+  "预期红": "新客单:本周新客不到保底的新人排到最前,理由写明新人保底"
+ },
+ {
+  "script": "backend/query_index_check.py",
+  "改坏": "把 seed.py 的 SCHEMA 里 customer 那一列改个名 —— **调 建索引() 那一步还在**,而从零建库会当场抛 no such column。这正是「有人调」这个文本判据漏掉的那一半:`customer.advisor_no` 真有过这个病(事后 ALTER 加的列,seed 的世界里压根不存在)。⚠️ 攻击点故意挑在 SCHEMA 的列名上:碰登记的 DDL 会先触发「库里的 DDL 和登记逐字一致」那条,就不是点名这一条了",
+  "file": [
+   {
+    "path": "backend/seed.py",
+    "old": "  merged_into TEXT,\n",
+    "new": "  merged_into_x TEXT,\n"
+   }
+  ],
+  "预期红": "从零建库(seed.py 的 SCHEMA)上这三条索引建得出来"
+ },
+ {
+  "script": "backend/named_advisor_check.py",
+  "改坏": "点名的人有空却不优先(排序键里去掉点名那一层,照旧按接触史 / 负载挑)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "        return (0 if p[\"no\"] == 点名可派 else 1, -seen.get(p[\"no\"], 0),",
+    "new": "        return (1, -seen.get(p[\"no\"], 0),"
+   }
+  ],
+  "预期红": "点名的人有空 → 推荐他,理由里写着他"
+ },
+ {
+  "script": "backend/named_advisor_check.py",
+  "改坏": "点名的人在班但那个时段有别的活,不把原因传给 roster.点名的人没空(它只查在不在班,于是判成「直接派给他」)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "                                       db=DB, 没空的原因=没空因)",
+    "new": "                                       db=DB, 没空的原因=None)"
+   }
+  ],
+  "预期红": "点名的人那个时段有别的活 → 返回里有三步,推荐的不是他"
+ },
+ {
+  "script": "backend/named_advisor_check.py",
+  "改坏": "写入口校验点名时不再要求「本店」(别家店的在职顾问也能被点名)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "        if not (r and r[\"role\"] == \"顾问\" and r[\"status\"] == \"启用\" and 本店):",
+    "new": "        if not (r and r[\"role\"] == \"顾问\" and r[\"status\"] == \"启用\"):"
+   }
+  ],
+  "预期红": "点名非本店 / 不在职 / 查无此人 → 两个写口都拒,库里一行没多"
  }
 ]
