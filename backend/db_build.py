@@ -88,9 +88,11 @@ knowledge/linkage.py knowledge/margin.py knowledge/measure.py knowledge/member.p
 knowledge/oppo_obj.py knowledge/order_gate.py knowledge/order_place.py knowledge/owner.py knowledge/part.py knowledge/pickup.py
 knowledge/piece_ratio.py knowledge/purchase_pref.py knowledge/rating.py knowledge/recording_terms.py knowledge/refund_replay.py knowledge/repair.py
 knowledge/rfm.py knowledge/shift.py knowledge/source.py knowledge/stockalert.py knowledge/traits.py
+knowledge/recovery.py
 """.split())
 # 10-27 第二批:knowledge/ 下被造数脚本 import 到的口径模块(原来整目录都算,现在逐个认领;motif.py 除外,见「不算」)、
 # 以及 motif_review(纹样核定的建表实现,ensure_tables 只是 import 它)等
+# 11-12:knowledge/recovery.py(未成交挽回的口径)—— alert_dispatch 的「挽回」一类 import 它,造数路径走得到
 
 
 def 指纹算法版本():

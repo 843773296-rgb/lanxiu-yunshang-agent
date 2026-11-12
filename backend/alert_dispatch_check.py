@@ -267,10 +267,11 @@ ck("顾问建不了(店长及以上)", (rr3.get("分") or {}).get("派不了") =
 ck("一次最多 30 行", AD.批量挽回([{"号": str(i)} for i in range(31)], 店长).get("code") == "TOO_MANY")
 
 # ── 系统派的知会不能手工建(11-12):手工建的「归属转移」和系统真建的长得一模一样 ──
-for _类 in ("归属转移", "待改派"):
-    _r = TK.assign_task(dict(type=_类, assignee_no=店长["no"], ref_id=客[0]["id"] if _类 == "归属转移" else None,
-                             note="手工试一下", end=止), 店长)
-    ck(f"「{_类}」通用口手工建 → 拒(SYSTEM_ONLY)", _r.get("code") == "SYSTEM_ONLY", _r)
+# 两条写成字面,不拼字符串:咬合规格要能在脚本里原样找到「预期红」那句话(拼出来的找不到 —— 11-12 门禁红过一次)
+_r = TK.assign_task(dict(type="归属转移", assignee_no=店长["no"], ref_id=客[0]["id"], note="手工试一下", end=止), 店长)
+ck("「归属转移」通用口手工建 → 拒(SYSTEM_ONLY)", _r.get("code") == "SYSTEM_ONLY", _r)
+_r = TK.assign_task(dict(type="待改派", assignee_no=店长["no"], note="手工试一下", end=止), 店长)
+ck("「待改派」通用口手工建 → 拒(SYSTEM_ONLY)", _r.get("code") == "SYSTEM_ONLY", _r)
 ck("类型清单标出哪些能手工派(页面照它过滤,不自己写一份)",
    {t["name"] for t in TT.catalog() if not t["手工能派"]} == {"补货跟进", "归属转移", "待改派"},
    [t["name"] for t in TT.catalog() if not t["手工能派"]])
