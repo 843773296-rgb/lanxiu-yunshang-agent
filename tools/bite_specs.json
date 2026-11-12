@@ -793,8 +793,8 @@
   "file": [
    {
     "path": "backend/api.py",
-    "old": "    c=sqlite3.connect(f\"file:{DB}?mode=ro\", uri=True)",
-    "new": "    c=sqlite3.connect(f\"file:{DB}?mode=rw\", uri=True)"
+    "old": "    c=sqlite3.connect(f\"file:{DB}?mode=ro\", uri=True, factory=_用完就关)",
+    "new": "    c=sqlite3.connect(f\"file:{DB}?mode=rw\", uri=True, factory=_用完就关)"
    }
   ],
   "预期红": "工具层的读连接写不了库"
@@ -17132,8 +17132,8 @@
   "file": [
    {
     "path": "agent/rounds.py",
-    "old": "        因.append({r[键]: ([r[理由]] if isinstance(r.get(理由), str)\n                           else list(r.get(理由) or [])) for r in 行们})",
-    "new": "        因.append({r[键]: (list(r.get(理由) or [])) for r in 行们})"
+    "old": "        因.append({r[键]: ([r[理由]] if isinstance(r.get(理由), str)\n                           else list(r.get(理由) or [])) for r in 计分})",
+    "new": "        因.append({r[键]: (list(r.get(理由) or [])) for r in 计分})"
    }
   ],
   "预期红": "理由是字符串时也要分得了类"
@@ -21029,7 +21029,7 @@
   "预期红": "「已知连续失败」名单里没有过期的"
  },
  {
-  "script": "agent/rounds.py --自测",
+  "script": "agent/rounds.py",
   "改坏": "把 `环境性失败()` 的判断改成永假(搜了 6 次一个业务工具都没调也不标)",
   "file": [
    {
@@ -21038,6 +21038,30 @@
     "new": "    return False\n"
    }
   ],
-  "预期红": "环境性失败 · 搜 6 次一个业务工具都没调 → 是"
+  "预期红": "搜 6 次一个业务工具都没调 → 是"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "把 `发起()` 里兜底那支的 `记兜底(技能)` 删掉(返回值照旧说交还,但钩子那边看不见 → 死循环)",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "    记兜底(技能)\n    原因 = ",
+    "new": "    原因 = "
+   }
+  ],
+  "预期红": "兜底之后同一技能在窗口内当没接管"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "把 `接管中()` 里 `if 在兜底中(技能): return None` 删掉(兜底只剩返回值那一半)",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "    if 在兜底中(技能):\n        return None\n    return 清单()",
+    "new": "    return 清单()"
+   }
+  ],
+  "预期红": "兜底之后同一技能在窗口内当没接管"
  }
 ]

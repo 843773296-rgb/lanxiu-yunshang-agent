@@ -157,7 +157,13 @@
    换回老 `_c()` 压到 256 照样过。四种环境都复现不出,**根因没查到**。这正是 CLAUDE.md 第 7 节第 8 条:符合预期的数会被信。
    → 下一晚看 `.feynman/nightly-eval/2026-11-13-store_report_eval.py.崩.log`(新加的落盘),**先看完整 traceback 再猜**。
 
-**⏳ 等用户拍**:接管开着但工作流没发布/出错时,技能兜不兜底(fail-open / fail-closed)。
+**✅ 用户 11-12 晚拍了「技能兜底 + 把工作流配好」,兜底这半已落地**(`takeover_client` 非 TAKEOVER_OFF 的失败
+一律回 `交还 + 兜底` 并**落盘** `.takeover_fallback.json`;`接管中()` 15 分钟窗口内返回 None;TL76 最后一条改成兜底;
+`takeover_check` 翻了 fail-closed 那条期望 + 加四条,两条咬合规格手跑三关全过)。
+⚠️ **为什么要落盘**:拦技能的钩子在聊天站进程,`发起()` 在工具服务进程,只回「交还」模型重调技能会被**再拦一次** → 死循环。
+⚠️ 配工作流那半归并行会话(发布「录音跟进」生产版或关掉 call-notes 的接管)。
+⚠️ 顺带:`api._c()` 加 `factory=` 之后,`bite_specs` 里 boundary_audit 那条「ro→rw」规格的 old 我改成了新写法,
+**没手验** —— 手验要把工具层只读连接临时改成可写,自动模式拦住了(拦得对)。等 `bite_run` 在副本上重放。
 **⏳ 等证据**:经营报告崩的完整 traceback(下一晚)。
 **⏳ 待定**:排产套夹具(库里 357 张生产中的单承诺日全在今天之后,「逾期」不存在)自己造还是改造数;
 triage_shadow 该进 `秒退正常` 还是配 `--跑 N`。
@@ -18560,19 +18566,15 @@ A  intent/rare-tier-six-faces-feasibility.md
 ?? .wip-muslin/
 ?? .wip-store-report-SKILL.md
 M HANDOFF.md
- M agent/factory_eval.py
- M agent/rounds.py
  M agentsite/evals/funnel.jsonl
- M backend/api.py
- M intent/nightly-toolsearch-churn.md
+ M agentsite/takeover_check.py
+ M backend/takeover_client.py
+ M intent/optimization-program-2026-11.md
+ M prompts.py
  M tools/bite_specs.json
- M tools/nightly_check.py
- M tools/nightly_eval.py
- M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
 ?? .feynman/bite-all-20261016.log
 ?? .feynman/nightly-eval.log
 ?? ".feynman/\345\205\250\351\241\271\347\233\256\345\277\253\347\205\247-20261109.md"
-?? intent/optimization-program-2026-11.md
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
@@ -18594,11 +18596,11 @@ be4e22a9 交接:压缩前停在安全点 —— 今天上线清单、拍板卡�
 fc7bfe28 咬合重放补上 JS:.js 测试用 node 跑 —— 原来一律交给 python,对照恒红
 f4e76879 交接:列表迭代在上线;工作流剩下的缺口都要用户拍
 f9961f41 工作流「列表迭代」节点从「未实现」做成能跑(用户 10-26 拍「workflow 直接复刻 dify」)
+2bc8b463 优化方向 ①「夜跑成绩单撒谎」落地:连续失败分两类、环境性失败不计分、崩了的套落完整日志
 b6d4cd97 全项目审读:优化方向(六个切面并行只读审,头牌数字独立抽查)
 b76cd191 送小件判据认全角句读(**用户亲手跑的放宽**)+ 字符集欠债棘轮 43→42
 19381095 交接:封存机制落地(换文件名隔离,一条守卫没动);记下 B 方案那个错理由 —— 一条未验证的预判和一条验过的结论,在交接文档里长得一模一样
 f828a88f 封存机制落地:每面 5 道故意不跑的题(用户 11-11 拍)—— **换文件名隔离,一条守卫都不用动**
-65cc804e 夜跑分数里混着一个模型行为造成的假失败 —— 并行会话报的,我用 1179 轮确认(等用户拍)
 ```
 <!--/AUTO-->
 ## 一句话在做什么

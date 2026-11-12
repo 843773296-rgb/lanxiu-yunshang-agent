@@ -25,6 +25,48 @@ _缓存秒 = 30
 _落盘 = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".takeover_last.json")
 _内存 = {"at": 0.0, "items": None}
 
+# ── 兜底(用户 2026-11-12 拍「技能兜底 + 把工作流配好」)──────────────────────
+#
+# 11-12 查实:call-notes 被接管 → 模型按 TL76 转 start_workflow → 「录音跟进」工作流没发布 →
+# 这里回「工作流没发起,**也别改用技能自己做**;请稍后再试」。模型每一步都照规矩办了,
+# 而顾问从 11-04 起问「整理一下 TS-002」拿到的就是「稍后再试」—— 商机评测连三夜 0/24,生产同状态。
+# 原来的设计是 fail-closed(「同一件事任何时刻只有一种做法」),用户拍了改成:
+# **接管开着但工作流发不起(没发布 / 连不上 / 任何非 202)→ 这一轮技能照常做,回复里注明是技能直接做的。**
+#
+# ⚠️ 兜底不能只改这里的返回值。拦技能的钩子(`guards.pre_tool_verdict` 的 Skill 分支)在**聊天站进程**,
+#    `发起()` 跑在**工具服务进程**,两边的 `_内存` 不是同一个 —— 只回「交还」的话,模型重调技能
+#    会被钩子**再拦一次**(清单还说接管着),然后再转工作流、再失败……死循环。
+#    所以兜底要**落盘**(两个进程共用这个文件),`接管中()` 读它:窗口内这个技能当没接管。
+# ⚠️ 窗口 15 分钟:够一轮对话用完,又不会让「工作流修好了」之后还在绕着它走太久。
+#    TAKEOVER_OFF 那条不走兜底 —— 它本来就是「交还」,清单重拉即可。
+_兜底文件 = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".takeover_fallback.json")
+兜底窗口秒 = 15 * 60
+
+
+def _读兜底():
+    try:
+        with open(_兜底文件, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def 记兜底(技能, 现在=None):
+    """这个技能这一轮改由技能自己做(工作流发不起)。写盘,给另一个进程里的钩子看。"""
+    d = _读兜底()
+    d[(技能 or "").strip().lstrip("/")] = float(现在 if 现在 is not None else time.time())
+    try:
+        with open(_兜底文件, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+    except OSError:
+        pass            # 写不进盘:钩子那边看不到兜底,会再拦一次 —— 比悄悄放行所有技能安全
+
+
+def 在兜底中(技能, 现在=None):
+    t = _读兜底().get((技能 or "").strip().lstrip("/"))
+    return bool(t) and (float(现在 if 现在 is not None else time.time()) - float(t)) < 兜底窗口秒
+
 
 def 配置():
     c = dict(地址=os.environ.get("LANXIU_USAGE_URL") or None,
@@ -89,7 +131,10 @@ def 清单(强制=False):
 
 
 def 接管中(技能):
-    """这个技能现在被哪条工作流接管;没被接管 → None(交给 harness)。"""
+    """这个技能现在被哪条工作流接管;没被接管 → None(交给 harness)。
+    **兜底窗口内也返回 None**(工作流刚发不起,这一轮技能自己做 —— 见 `记兜底`)。"""
+    if 在兜底中(技能):
+        return None
     return 清单().get((技能 or "").strip().lstrip("/"))
 
 
@@ -118,14 +163,19 @@ def 发起(技能, 澜绣工号, 输入, 幂等键):
                           核对入口=cfg["地址"].rstrip("/") + (体.get("核对入口") or ""),
                           说明=("**这是刚才已经发起的那一条,没有新建**;" if 重放 else "")
                                + "已排队,还没跑完;要等人工核对通过才会写进系统")
-    if 码 is None:
-        return False, dict(error=f"{体} —— 工作流没发起,也别改用技能自己做;请稍后再试或告诉店长")
     码文 = (体 or {}).get("code") if isinstance(体, dict) else None
     话 = (体 or {}).get("message") if isinstance(体, dict) else str(体)[:160]
     if 码文 == "TAKEOVER_OFF":
         _内存["items"] = None            # 清单旧了:下一次重拉
         return False, dict(error=f"{话}。这件事已经交还给你自己做了 —— 照常用技能", 交还=True)
-    return False, dict(error=f"发起失败(HTTP {码}{' ' + 码文 if 码文 else ''}):{话}")
+    # 其余一律**兜底**(用户 11-12 拍):连不上 / 没发布 / 任何非 202。写盘让钩子这一轮放行技能。
+    记兜底(技能)
+    原因 = f"{体}" if 码 is None else f"HTTP {码}{' ' + 码文 if 码文 else ''}:{话}"
+    return False, dict(
+        error=f"工作流没发起({原因})。",
+        交还=True, 兜底=True,
+        说明="**这一轮改由你用技能直接做**(工作流没接上)。做完在回复里注明一句"
+            "「工作流没接上,这是技能直接整理的,没经人工核对」—— **别说成工作流做的**,也别说「稍后再试」让人干等")
 
 
 # 取回复的查询参数名 —— 和管理后台 `聊天取回复(澜绣工号: str)` 那个形参同名。**只写这一处**:
