@@ -51,13 +51,26 @@ def main():
         src = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); dst = sqlite3.connect(副本)
         src.backup(dst); src.close()
         c = dst
+        # ⚠️ **夹具自己造,不靠造数碰巧造出来**(11-12 改):原来在库里找「跨店、过了保护期」的已付款单,
+        # 而 CI 每天从零建库、世界时钟每天挪 —— 11-12 那天一张都没挑到,CI 红在「夹具找不到」,
+        # 而那不是保护期的逻辑坏了。和 alert_dispatch_check 一样:自己造一位建档一年多、一次维护都没有的老客户,
+        # 让她在另一家店付款成交。
+        两店 = c.execute("SELECT a.shop, a.no, b.shop, b.no FROM staff a JOIN staff b ON a.shop<>b.shop "
+                        "WHERE a.role='顾问' AND a.status='启用' AND b.role='顾问' AND b.status='启用' "
+                        "AND a.shop IN (SELECT shop FROM staff WHERE role='店长' AND status='启用') "
+                        "AND b.shop IN (SELECT shop FROM staff WHERE role='店长' AND status='启用') LIMIT 1").fetchone()
         单 = None
-        for (oid,) in c.execute("SELECT o.id FROM ordr o JOIN customer cu ON cu.id=o.customer_id WHERE o.shop<>cu.shop "
-                                "AND o.paid_at IS NOT NULL AND o.advisor_no IS NOT NULL ORDER BY o.paid_at DESC").fetchall():
-            r, _ = OT.判定(c, oid, "2026-11-11")
-            if r["转"]:
-                单 = oid; break
-        ck("夹具:库里找得到一张「跨店、过了保护期」的已付款单", bool(单))
+        if 两店:
+            原店, 原导购, 新店, 接待 = 两店
+            c.execute("INSERT INTO customer(id, name, shop, advisor_no, created, phone) VALUES(?,?,?,?,?,?)",
+                      ("C99000001", "保护期检查", 原店, 原导购, "2025-06-01", "19900000001"))
+            c.execute("INSERT INTO ordr(id, kind, status, shop, customer_id, advisor_no, payable, paid_at, created) "
+                      "VALUES(?,?,?,?,?,?,?,?,?)", ("CHKOWN1", "标品订单", "待发货", 新店, "C99000001", 接待, 500,
+                                                   "2026-11-11 10:00", "2026-11-11 09:00"))
+            c.commit()
+            r, _ = OT.判定(c, "CHKOWN1", "2026-11-11")
+            单 = "CHKOWN1" if r["转"] else None
+        ck("夹具:库里找得到一张「跨店、过了保护期」的已付款单", bool(单), (两店, 单))
         if 单:
             n0 = c.execute("SELECT COUNT(*) FROM schedule WHERE type='归属转移'").fetchone()[0]
             with c:
