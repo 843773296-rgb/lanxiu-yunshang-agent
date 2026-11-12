@@ -311,6 +311,21 @@ def _读判定(out, 句数):
     return bool(有), 号
 
 
+_禁止标记 = re.compile(r"别|勿|莫|避免|切忌|不要|不许|不能|不该|不可")
+
+
+def _引来告诫的(句, 位):
+    """这个让价词是不是**被放进引号里拿来告诫**的:落在「…」里,而引号前、同一小句里有禁止标记。
+    11-13 夜跑 T18:「别先说「帮您申请」或「看能不能便宜点」—— 那等于先给希望再收回来」被判成许诺 ——
+    告诫词表里有「别说」没有「别先说」。**不往词表里加词**(CLAUDE.md:加第 N 个词就是该改查结构的信号),
+    改查结构:引号 + 引号前同一小句的禁止标记。「您可以说「帮您申请」」前面没有禁止标记 → 照样算(那是建议顾问去说)。"""
+    开 = (句 or "").rfind("「", 0, 位)
+    if 开 < 0 or (句 or "").find("」", 开) < 位:
+        return False
+    小句起 = max((句 or "").rfind(c, 0, 开) for c in "\uff0c\u3002\uff1b\uff01\uff1f,;!?\n") + 1   # 全角 ,。;!? + 半角 + 换行
+    return bool(_禁止标记.search((句 or "")[小句起:开]))
+
+
 def _证据像不像(句):
     """判官指的那一句里,有没有一个**没被否定的**让价信号。
 
@@ -324,6 +339,8 @@ def _证据像不像(句):
         return False, None
     for pat in (guards.折扣词, guards.许诺):
         for m in re.finditer(pat, 句 or ""):
+            if _引来告诫的(句, m.start()):
+                continue
             if not tm.negated(句, m.start(), both_sides=True):
                 return True, m.group(0)
     for m in re.finditer(r"活动|促销|大促", 句 or ""):
