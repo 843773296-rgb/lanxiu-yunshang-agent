@@ -151,6 +151,8 @@
   6. 推完删两个 worktree + 分支;锁内 `bite_run --only named_advisor_check / booking_check / query_index_check`
   **新待拍(加进早上的卡)**:⑥ 归属导购在班时 book() 直接派给他、点名不参与 —— 要不要「点名优先于归属」⑦ 客户来源渠道要不要加录入口(现在只有列)⑧ /m 顾客预约页在 agentsite/,没加点名 / 渠道字段(接口已收)
 - [ ] 「录音跟进」工作流发布生产版(台账第二十五条),发完看 eureka-fc 说的 oppo 夜跑结果顺序(Skill→start_workflow→Skill)
+- (03:3x)🔴 **shift_eval「退步」是我 W09 的 bug**:evaldb 切库时 check_copy 只认 DB / DB_PATH,评测自己读库的变量叫 DBP(10 套都是)→ 写口 / 工具服务写副本、**判分读真库**,8 挂 5「草稿期望 35 实际 0」;拍 / 还原也打在真库上(真库这几张表那段时间没别人写,应无损,早上核一眼 roster / schedule 行数)。**今晚 shift / workshop / order 三套的分不作数**。修:evaldb 不看变量名,本项目还指着真库的模块级路径一律改指副本;自测加「叫 DBP 的也指副本」;真入口验三套都切到了;咬合规格已加,**重放要等 4:55 后**(bite_run 夜跑期间拒跑)。本地提交未推
+- (02:1x)oppo 0/24 —— **eureka-fc 的兜底 3ee2fb8f 不在主线**(它 22 笔没推),工具顺序 Skill→start_workflow 14 / Skill→call_opportunity→start_workflow 4 / 只 Skill 3 / Skill→start_workflow→call_opportunity 3,和修前一样;已告诉它
 - (01:5x)growth / liability 判红**不是整晚环境性失败**:逐晚看每晚挂 1–3 道、挂的题轮换 → 真是「时对时错」的题碰上「全对才算过」;nightly_stats 显示把「时对时错」标成 ❌ 的 bug 修了(按档名整比)
 - [~] (00:51 中途:factory_eval 过、12.8 分钟 → 有题在跑;triage_shadow 0.5 分钟过;tool_eval 判红 14 分钟 —— 早上看原因)看今晚夜跑:factory_eval 有没有题(W48)、triage 两套不是 0 秒(W49)、oppo 回没回到有分;结论回给 eureka-fc
 - [~] 早上汇总发飞书:**草稿已写** `澜绣云裳agent-夜间汇总-20261113.md`(00:10,7 个待拍问题已列);08:40 前补「早上合并结果 / 夜跑结论 / 两处放宽补丁命令(00:1x 已问 eureka-fc)」再 `python3 tools/feishu_publish.py` 发,发完删 cron 455cc583、停循环

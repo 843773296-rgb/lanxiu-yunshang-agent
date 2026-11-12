@@ -31,13 +31,25 @@ def 用副本(前缀="eval-", 先导入=()):
     for 名 in 先导入:
         importlib.import_module(名)
     import check_copy
+    真 = os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
     副本 = check_copy.用副本(前缀=前缀)
     os.environ["LANXIU_DB"] = 副本
-    print(f"  🗄  评测跑在库副本上:{副本}(真库不碰;工具服务子进程经 LANXIU_DB 跟着切)")
+    # ⚠️ check_copy 只认叫 DB / DB_PATH 的模块变量,而评测自己读库用的变量叫 DBP(10 套都是)——
+    # 11-13 夜跑:排班评测的写口和工具服务都切到了副本,**判分还读真库**,8 道挂 5 道「草稿期望 35 实际 0」,
+    # 被判成「退步」。所以这里**不看变量名**:本项目里还指着真库的模块级路径,一律改指副本(含 __main__)
+    补 = []
+    for m in check_copy._本项目的模块():
+        for 名, 值 in list(vars(m).items()):
+            if not 名.startswith("__") and check_copy._是这个库(值, 真):
+                setattr(m, 名, 副本)
+                补.append(f"{getattr(m, '__name__', '?')}.{名}")
+    print(f"  🗄  评测跑在库副本上:{副本}(真库不碰;工具服务子进程经 LANXIU_DB 跟着切)"
+          + (f";另改指 {len(补)} 处别名变量:{'、'.join(补[:6])}" if 补 else ""))
     return 副本
 
 
-咬合 = [("用副本() 不设 LANXIU_DB(工具服务子进程照旧写真库)", "工具服务子进程拿得到副本路径(LANXIU_DB)")]
+咬合 = [("用副本() 不设 LANXIU_DB(工具服务子进程照旧写真库)", "工具服务子进程拿得到副本路径(LANXIU_DB)"),
+        ("用副本() 只切 DB / DB_PATH,不管别的名字(评测的 DBP 照旧读真库)", "评测自己读库的变量(叫 DBP,不叫 DB)也指副本")]
 
 
 def _自测():
@@ -54,7 +66,13 @@ def _自测():
     import roster_write  # noqa: F401
     真 = os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
     os.environ.pop("LANXIU_DB", None)
+    # 照评测的样子造一个模块:读库变量叫 DBP(11-13 夜跑栽在这里:check_copy 只认 DB / DB_PATH)
+    import types
+    假评测 = types.ModuleType("evaldb_假评测"); 假评测.__file__ = os.path.join(HERE, "evaldb_假评测.py")
+    假评测.DBP = os.path.join(ROOT, "backend", "lanxiu.db")
+    sys.modules["evaldb_假评测"] = 假评测
     副本 = 用副本("evaldb-selftest-")
+    ck("评测自己读库的变量(叫 DBP,不叫 DB)也指副本", os.path.realpath(假评测.DBP) == os.path.realpath(副本), 假评测.DBP)
     ck("工具服务子进程拿得到副本路径(LANXIU_DB)", os.environ.get("LANXIU_DB") == 副本, os.environ.get("LANXIU_DB"))
     import api as _a
     with closing(_a._c()) as c:

@@ -20434,5 +20434,17 @@
    }
   ],
   "预期红": "店长拿别家店的客户号换说明:拒(403)"
+ },
+ {
+  "script": "agent/evaldb.py",
+  "改坏": "用副本() 只切 DB / DB_PATH,不管别的名字(评测的 DBP 照旧读真库)",
+  "file": [
+   {
+    "path": "agent/evaldb.py",
+    "old": "            if not 名.startswith(\"__\") and check_copy._是这个库(值, 真):\n",
+    "new": "            if 名 in (\"DB\", \"DB_PATH\") and check_copy._是这个库(值, 真):\n"
+   }
+  ],
+  "预期红": "评测自己读库的变量(叫 DBP,不叫 DB)也指副本"
  }
 ]
