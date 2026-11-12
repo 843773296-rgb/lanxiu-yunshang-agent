@@ -19778,6 +19778,18 @@
   "预期红": "「归属转移」通用口手工建 → 拒(SYSTEM_ONLY)"
  },
  {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "过了 17 点默认截止不往后挪(退回写死今天 18:00)",
+  "file": [
+   {
+    "path": "backend/alert_dispatch.py",
+    "old": "    日 = now.date() + _dt.timedelta(days=1 if now.hour >= 17 else 0)\n",
+    "new": "    日 = now.date() + _dt.timedelta(days=0)\n"
+   }
+  ],
+  "预期红": "过了 17 点建跟进,默认截止落到明天 18:00"
+ },
+ {
   "script": "管理后台/tests/orchestration/test_list_operator_node.py",
   "改坏": "过滤不短路(且)(11-12 工作流补节点)",
   "file": [

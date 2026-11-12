@@ -279,6 +279,20 @@ def 派(d, me):
     return r
 
 
+def 默认截止(现在=None):
+    """一键建跟进不给截止时的默认值:**当天 18:00;过了 17:00 就落到明天 18:00**。
+
+    11-12 门禁 18:01 跑到这条,写死的「今天 18:00」比开始时间还早,整批「派不了」——
+    截止在过去的任务不是「今天要做」,是一条没人能完成的任务。留一小时是让顾问打得完电话。
+    `现在` 可传 datetime 或 'YYYY-MM-DD HH:MM'(给判据用);不传取世界的当下。
+    """
+    import datetime as _dt
+    from worldclock import 当下
+    now = 现在 if isinstance(现在, _dt.datetime) else (_dt.datetime.fromisoformat(现在) if 现在 else 当下())
+    日 = now.date() + _dt.timedelta(days=1 if now.hour >= 17 else 0)
+    return f"{日} 18:00"
+
+
 def 批量挽回(行们, me):
     """未成交挽回清单**一键建跟进**(业务需求池 D2)。行们 = [{号: 订单号或预约号, assignee_no?, end?, note?}…]。
 
@@ -290,8 +304,7 @@ def 批量挽回(行们, me):
         return dict(ok=False, code="EMPTY", reason="没给要跟进的行(订单号或预约号)")
     if len(行们) > 30:
         return dict(ok=False, code="TOO_MANY", reason=f"一次最多 30 行,你给了 {len(行们)} 行 —— 分几次建")
-    from seed import TODAY
-    默认止 = f"{TODAY[:10]} 18:00"
+    默认止 = 默认截止()
     结果, 分 = [], {"建了": 0, "已经有人在跟": 0, "不在清单里": 0, "派不了": 0}
     for it in 行们:
         号 = str(it.get("号") or it.get("obj") or it.get("订单") or it.get("预约") or "").strip()
