@@ -38,6 +38,10 @@
       return [{ port: "loop_body", branch_key: null, 名: "进循环体" }, { port: "loop_exit", branch_key: null, 名: "循环结束后" },
               { port: "error", branch_key: null, 名: "失败时" }];
     }
+    if (n.type === "foreach") {   // 11-12 列表迭代:每一项做 / 全部做完后 / 失败时(端口和有界循环同一套)
+      return [{ port: "loop_body", branch_key: null, 名: "每一项做" }, { port: "loop_exit", branch_key: null, 名: "全部做完后" },
+              { port: "error", branch_key: null, 名: "失败时" }];
+    }
     const 口 = [{ port: "success", branch_key: null, 名: "完成后" }];
     if (((元(n.type) || {})["端口"] || []).includes("error")) 口.push({ port: "error", branch_key: null, 名: "失败时" });
     return 口;

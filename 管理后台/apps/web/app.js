@@ -2295,7 +2295,7 @@ const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本�
 // 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
   condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值",
-  list_operator: "列表操作", doc_extractor: "文档提取器" };
+  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -2754,7 +2754,8 @@ const 字段中文 = { connection_version_id: "用哪个模型", prompt_version_
   candidate_roles: "谁来处理", expires_at_policy: "多久没处理就结束", operations: "怎么整理",
   knowledge_base_id: "查哪个资料库", retrieval_config_version_id: "怎么查", candidates: "汇合哪几路",
   output_field: "汇合后叫什么", agent_version_id: "用哪个 Agent", task_binding: "交给它的任务",
-  sub_limits: "这一步的上限", bindings: "用到的数据", filter: "过滤", sort: "排序", limit: "只要前几个" };
+  sub_limits: "这一步的上限", bindings: "用到的数据", filter: "过滤", sort: "排序", limit: "只要前几个",
+  item_output: "每一项交出什么", item_failure_policy: "某一项失败时", max_items: "最多做几项" };
 const 中文名 = (f) => 字段中文[f] || f;
 
 /* 执行顺序:从开始沿边走;条件的每一路缩进一层。没接进流程的放最后 */
@@ -2912,7 +2913,7 @@ function 出口们(n) {
     return [...(n.config.branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: 图逻辑.分支名(b.key) })),
             { port: "branch", branch_key: "else", 名: "都不满足" }];
   }
-  if (n.type === "loop" || n.type === "classifier") return 图逻辑.出口们(n, 元);   // 进循环体 / 循环结束后 / 失败时 —— 和画布同一份
+  if (n.type === "loop" || n.type === "foreach" || n.type === "classifier") return 图逻辑.出口们(n, 元);   // 进循环体 / 循环结束后 / 失败时 —— 和画布同一份
   const 口 = [{ port: "success", branch_key: null, 名: "完成后" }];
   if ((元(n.type)["端口"] || []).includes("error")) 口.push({ port: "error", branch_key: null, 名: "失败时" });
   return 口;
@@ -2921,7 +2922,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor"]
+  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor", "foreach"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -2955,6 +2956,7 @@ function 默认配置(类型) {
            assigner: { assignments: [] },
            list_operator: { bindings: {} },
            doc_extractor: { bindings: {} },
+           foreach: { bindings: {}, item_failure_policy: "fail" },
            extractor: { parameters: [{ name: "", type: "string", description: "", required: false }], bindings: {}, instruction: "" },
            classifier: { classes: [{ key: "类别一", 说明: "" }, { key: "类别二", 说明: "" }], bindings: {}, instruction: "" },
            transform: { operations: [], output_schema: { type: "object" } },
@@ -3445,6 +3447,21 @@ function 表_设置(n) {
          <div class="k">一样大的保持原来的先后。那一项要么全是数字、要么全是文字;有的没有、或者混着,这一步会失败(不猜顺序)。</div>
          <button class="danger" data-k="${挂控件(() => { delete c.sort; 重画(); })}">不排序了</button>`);
     体 += `<label class="f">只要前几个(选填)</label>` + 数字框(c.limit, (v) => { if (v === undefined) delete c.limit; else c.limit = v; }, { 整数: true, 最小: 1, 提示: "留空 = 全都要" });
+  } else if (n.type === "foreach") {
+    // 列表迭代(11-12,照 Dify「迭代」):一次一项跑里面的步骤,收每一项交出的结果 —— 规则和后端 runtime/列表迭代.py 同一套
+    const 里面 = g.定义.nodes.filter((x) => x.container === n.id);
+    const 可交 = 里面.flatMap((x) => 结果字段名(x).map((f) => [`n:${x.id}:${f}`, `${业务名(x)} → ${f}`]));
+    体 += `<div class="note">对「用到的数据」里的<b>列表</b>逐项跑一遍里面的步骤,<b>一次一项</b>;每一项交出的东西按原来的顺序收成「结果」。
+      里面的步骤在「用到的数据」里能选 <b>迭代 · 当前项</b>(这一项本身,是记录的话可以往下取一项)和 <b>迭代 · 下标</b>(从 0 数)。</div>`;
+    体 += `<label class="f">每一项做完交出什么</label>` + (里面.length
+      ? 下拉(引用值(c.item_output), 可交, (el) => { c.item_output = 解引用(el.value) || undefined; 重画(); }, "选里面某一步的一项结果")
+      : `<div class="ferr">迭代里面还没有步骤 —— 先往里面放步骤(在那一步的「高级」里选「放在哪个循环 / 迭代里」),再回来选</div>`);
+    体 += `<label class="f">某一项失败时</label>` + 下拉(c.item_failure_policy || "", [["fail", "整步失败(走「失败时」那条线,记下是第几项、为什么)"],
+        ["continue", "这一项留空位,接着做下一项"]], (el) => { c.item_failure_policy = el.value || undefined; 重画(); }, "选一种")
+      + `<div class="k">留空位:那一项在「结果」里是空(null)、原因记进「失败项」—— 失败的那一项<b>不会被删掉</b>,删了后面会全体错位。</div>`;
+    体 += `<label class="f">最多做几项(1–100)</label>` + 数字框(c.max_items ?? "", (v) => { if (v === undefined) delete c.max_items; else c.max_items = v; }, { 整数: true, 最小: 1, 提示: "按这条流程一次该处理多少条填" })
+      + `<div class="k">列表比这个长,<b>一项都不做</b>,这一步直接失败(不会只做前几项交出一份缺尾巴的结果)。100 是一步里能装下的运行记录的技术上限,不是业务建议。
+        里面不能再放循环或迭代。</div>`;
   } else if (n.type === "doc_extractor") {
     // 文档提取器(11-12,照 Dify):文件在下面「用到的数据」里选
     体 += `<div class="note">从前面给的<b>已上传文件</b>里取出文字,交给后面的步骤(比如交给 AI 处理去总结)。
@@ -3489,6 +3506,9 @@ function 上游字段(id) {
   // 循环里的步骤(和循环自己的继续条件)能取「循环状态」(10-27)
   const 本 = g.定义.nodes.find((x) => x.id === id), 环 = 本 && (本.type === "loop" ? 本 : 本.container && 节点(本.container));
   if (环) Object.keys((环.config || {}).loop_state || {}).forEach((k) => 出.push([`s:${k}`, `循环状态 · ${k}`]));
+  // 列表迭代里面的步骤能取「当前项」「下标」(11-12);迭代自己不能取 —— 它在逐项开始之前就要拿到列表
+  const 迭 = 本 && 本.container && 节点(本.container);
+  if (迭 && 迭.type === "foreach") 出.push(["s:当前项", "迭代 · 当前项"], ["s:下标", "迭代 · 下标(从 0 数)"]);
   // 只列**在它之前**的步骤(沿边倒着走)—— 列它之后的步骤,运行时一定取不到。
   // 而「在它之前」≠「一定走过」:分支 A 的结果在分支 B 那条路上没有值 —— 标出来,不悄悄当成必有(§8.2)
   const { 前驱: 前, 必经 } = 图逻辑.前驱与必经(g.定义, id);
@@ -3504,6 +3524,7 @@ function 结果字段名(n) {
   if (n.type === "template") return ["文本"];
   if (n.type === "list_operator") return ["结果", "个数", "第一个", "最后一个"];
   if (n.type === "doc_extractor") return ["文本", "文件名"];
+  if (n.type === "foreach") return ["结果", "个数", "失败项"];
   if (n.type === "assigner") return [...new Set((c.assignments || []).map((a) => a.variable).filter(Boolean))];
   if (n.type === "extractor") return (c.parameters || []).map((p) => p.name).filter(Boolean);
   if (n.type === "classifier") return ["类别", "理由"];
@@ -3575,11 +3596,11 @@ function 表_输入(n) {
   if (n.type === "human") return `<div class="k">审核人会看到这些(左边原文、右边摘要)。「摘要」就是通过时默认的定稿。</div>`
     + 绑定编辑(n, "payload_binding");
   if (n.type === "condition") return `<div class="k">条件用到的值在上面「基本」里每一路单独选。</div>`;
-  if (n.type === "list_operator" || n.type === "doc_extractor") {
+  if (n.type === "list_operator" || n.type === "doc_extractor" || n.type === "foreach") {
     // 列表操作 / 文档提取器(11-12):只读固定的那一项(列表 / 文件),多出来的绑定不会被读 —— 检查配置会拦
-    const 键 = n.type === "list_operator" ? "列表" : "文件", 绑 = n.config.bindings = n.config.bindings || {};
+    const 键 = n.type === "doc_extractor" ? "文件" : "列表", 绑 = n.config.bindings = n.config.bindings || {};
     const 多 = Object.keys(绑).filter((k) => k !== 键);
-    return `<div class="k">${n.type === "list_operator" ? "要处理的列表从哪来(选一个列表类型的结果)" : "文件从哪来(上传记录的编号,一个或一组;一般是「开始」里让使用者给的)"}:</div>
+    return `<div class="k">${n.type === "foreach" ? "要逐项处理的列表从哪来(选一个列表类型的结果,比如 列表操作 → 结果)" : n.type === "list_operator" ? "要处理的列表从哪来(选一个列表类型的结果)" : "文件从哪来(上传记录的编号,一个或一组;一般是「开始」里让使用者给的)"}:</div>
       <div class="fieldrow"><label>${键}</label>${下拉(引用值(绑[键]), 上游字段(n.id), (el) => { if (el.value) 绑[键] = 解引用(el.value); else delete 绑[键]; 重画(); }, "选一个来源")}</div>`
       + (多.length ? `<div class="ferr">「用到的数据」里多了 ${多.map((k) => `「${esc(k)}」`).join("、")},这一步不读它们 ·
           <button data-k="${挂控件(() => { 多.forEach((k) => delete 绑[k]); 重画(); })}">删掉多出来的</button></div>` : "")
@@ -3658,6 +3679,7 @@ function 表_结果(n) {
   if (n.type === "extractor") return `<div class="k">返回上面「基本」里列的每一项参数;<b>原文没提到的那一项是空</b>,必填的没抽到这一步就失败。</div>`;
   if (n.type === "assigner") return `<div class="k">返回改完之后的值(每一项一个)。循环里后面的步骤直接取「循环状态 · 名字」就是新值。</div>`;
   if (n.type === "list_operator") return `<div class="k">固定返回:<b>结果</b>(处理完的列表)、<b>个数</b>、<b>第一个</b>、<b>最后一个</b>。一个都不剩时结果是空列表,第一个 / 最后一个是空(null)—— 后面可以用条件分支判「个数 等于 0」。</div>`;
+  if (n.type === "foreach") return `<div class="k">固定返回:<b>结果</b>(每一项交出的东西,顺序和给进来的列表一样)、<b>个数</b>、<b>失败项</b>(选了「留空位」时,哪一项、哪一步、为什么)。空列表时结果是空列表。</div>`;
   if (n.type === "doc_extractor") return `<div class="k">固定返回:<b>文本</b>(取出来的文字)、<b>文件名</b>。给的是一组文件时,两个都是列表、顺序和给进来的一样。</div>`;
   if (n.type === "template") return `<div class="k">固定返回:<b>文本</b>(填好名字之后的那一段)。后面的步骤在「用到的数据」里选它。</div>`;
   if (n.type === "answer") return `<div class="k">固定返回:<b>回复</b>(填好名字之后的那一句)。后面的步骤也能取它。</div>`;
@@ -3676,12 +3698,12 @@ function 表_结果(n) {
 function 表_高级(n) {
   const c = n.config, g = 图态, p = g.布局[n.id] || { x: 0, y: 0 };
   let 体 = "";
-  // 放在哪个循环里(10-27):循环里的步骤每一轮都跑;循环本身、开始、输出不能放进去(不支持循环套循环)
-  const 环们 = g.定义.nodes.filter((x) => x.type === "loop" && x.id !== n.id);
-  if (环们.length && !["start", "end", "loop"].includes(n.type)) {
-    体 += `<label class="f">放在哪个循环里</label>` + 下拉(n.container || "", 环们.map((x) => [x.id, 业务名(x)]), (el) => {
-      if (el.value) n.container = el.value; else delete n.container; 重画(); }, "不在循环里")
-      + `<div class="k">放进去之后:从循环的「进循环体」出口连到第一步;循环里走到头(或连回循环)= 这一轮做完。</div>`;
+  // 放在哪个循环 / 迭代里(10-27 循环,11-12 迭代):里面的步骤每一轮 / 每一项都跑;循环、迭代、开始、输出不能放进去(不支持套着用)
+  const 环们 = g.定义.nodes.filter((x) => (x.type === "loop" || x.type === "foreach") && x.id !== n.id);
+  if (环们.length && !["start", "end", "loop", "foreach"].includes(n.type)) {
+    体 += `<label class="f">放在哪个循环 / 迭代里</label>` + 下拉(n.container || "", 环们.map((x) => [x.id, 业务名(x)]), (el) => {
+      if (el.value) n.container = el.value; else delete n.container; 重画(); }, "不在循环 / 迭代里")
+      + `<div class="k">放进去之后:从循环的「进循环体」(迭代的「每一项做」)出口连到第一步;里面走到头 = 这一轮 / 这一项做完。</div>`;
   }
   if ((元(n.type)["端口"] || []).includes("error")) {
     体 += `<label class="f">失败后怎么办</label>` + 下拉(c.failure_policy || "fail_run",

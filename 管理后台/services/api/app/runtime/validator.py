@@ -48,6 +48,7 @@ import dsl as DS  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import 列表操作 as LO  # noqa: E402
 import 文档提取 as DE  # noqa: E402
+import 列表迭代 as FE  # noqa: E402
 
 阻断 = "blocking"     # 不修不许冻结版本
 警告 = "warning"      # 可以冻结,但要显示
@@ -115,6 +116,11 @@ _缺项说法 = {
     # 同一个字段在不同步骤里缺的是不同的东西(11-12):按 (步骤类型, 字段) 先找,找不到再按字段
     ("list_operator", "bindings"): ("还没选要处理哪个列表", "在右侧「用到的数据」里给「列表」选一个前面步骤给的列表"),
     ("doc_extractor", "bindings"): ("还没选从哪个文件取文字", "在右侧「用到的数据」里给「文件」选上传文件的那一项(比如开始节点里让使用者给的文件编号)"),
+    ("foreach", "bindings"): ("还没选要逐项处理哪个列表", "在右侧「用到的数据」里给「列表」选一个前面步骤给的列表"),
+    "item_output": ("还没选每一项做完交出什么", "在右侧「基本」里从下拉选迭代里面那一步的一项结果(比如 AI 处理 → text)"),
+    "item_failure_policy": ("还没选某一项失败时怎么办", "在右侧「基本」里选:整步失败,或者留空位接着做下一项"),
+    "max_items": ("还没填最多做几项", f"在右侧「基本」里填 1 到 {FE.技术上限} 的整数 —— 按这条流程一次该处理多少条来填,"
+                  f"{FE.技术上限} 只是技术上限"),
 }
 
 # 引用的资源找不到时怎么叫它
@@ -150,6 +156,37 @@ def _祖先域(容器id, 属于):
         见过.add(当前)
         当前 = 属于.get(当前)
     return 出
+
+
+# 结果字段固定的几类步骤,各字段的类型(11-12 列表迭代要判「选的是不是列表」)。认不出就是 None = 不知道,不猜
+_固定结果类型 = {"list_operator": {"结果": "array", "个数": "integer"},
+               "foreach": {"结果": "array", "个数": "integer", "失败项": "array"},
+               "template": {"文本": "string"}, "answer": {"回复": "string"},
+               "classifier": {"类别": "string", "理由": "string"}}
+
+
+def _声明类型(引用, 按id):
+    """一个引用指向的那一项**声明了**什么类型(只看定义,不看数据)。只认一层的 pointer;说不清就返回 None。"""
+    if not isinstance(引用, dict):
+        return None
+    p = str(引用.get("pointer") or "").lstrip("/")
+    if not p or "/" in p:
+        return None
+    if 引用.get("source") == "input":
+        起 = next((n for n in 按id.values() if n.get("type") == "start"), None)
+        props = (((起 or {}).get("config") or {}).get("input_schema") or {}).get("properties") or {}
+        t = (props.get(p) or {}).get("type") if isinstance(props.get(p), dict) else None
+        return t if isinstance(t, str) else None
+    if 引用.get("source") == "node":
+        m = 按id.get(引用.get("node_id"))
+        if not m:
+            return None
+        if m.get("type") in _固定结果类型:
+            return _固定结果类型[m["type"]].get(p)
+        props = (((m.get("config") or {}).get("output_schema") or {}).get("properties") or {})
+        t = (props.get(p) or {}).get("type") if isinstance(props.get(p), dict) else None
+        return t if isinstance(t, str) else None
+    return None
 
 
 # ── 可达性与支配关系 ───────────────────────────────────────────────
@@ -409,6 +446,60 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
         if n.get("container"):
             出.append(问(阻断, "LOOP_NESTED", "循环里面又放了一个循环,现在还不支持",
                        "把里面那个循环挪到外面,或者拆成两条流程", node_id=n.get("id")))
+
+    # 列表迭代(11-12,照 Dify):配置形状 + 不许套娃 + 里面的步骤只能取「当前项 / 下标」——
+    # 自己配置的形状查法和执行器同一份(runtime/列表迭代.py);要看整张图的几条在这里
+    for n in 节点们:
+        if n.get("type") != "foreach":
+            continue
+        i, cfg = n.get("id"), (n.get("config") or {})
+        for code, 消息, 建议, fp in FE.配置问题(cfg):
+            出.append(问(阻断, code, 消息, 建议, node_id=i, field_path=fp))
+        if n.get("container"):
+            # 检查点只存一层循环帧(和有界循环同一条);迭代套迭代 / 套循环,先不支持
+            出.append(问(阻断, "FOREACH_NESTED", "迭代被放进了另一个循环 / 迭代里面,现在还不支持套着用",
+                       "把它挪到外面;真要两层,拆成两条流程(外面那条逐项调用里面那条)", node_id=i))
+        列 = (cfg.get("bindings") or {}).get("列表") if isinstance(cfg.get("bindings"), dict) else None
+        t声 = _声明类型(列, 按id)
+        if t声 is not None and t声 != "array":
+            出.append(问(阻断, "FOREACH_NOT_LIST", f"「列表」选的那一项声明的类型是「{t声}」,不是列表 —— 没有可以逐项做的东西",
+                       "在右侧「用到的数据」里给「列表」改选一个列表类型的结果(比如 列表操作 → 结果)",
+                       node_id=i, field_path="config.bindings.列表"))
+        o = cfg.get("item_output")
+        if isinstance(o, dict) and o.get("source") == "node" and o.get("node_id"):
+            m = 按id.get(o["node_id"])
+            if m is None:
+                出.append(问(阻断, "FOREACH_OUTPUT_NOT_FOUND", "「每一项交出什么」选的那一步已经被删掉了",
+                           "在右侧「基本」里重新选迭代里面那一步的一项结果", node_id=i, field_path="config.item_output"))
+            elif m.get("container") != i:
+                出.append(问(阻断, "FOREACH_OUTPUT_NOT_INSIDE",
+                           f"「每一项交出什么」选的是{_称(m)}的结果,它不在这个迭代里面 —— 每一项交出的东西要是这一项里面做出来的",
+                           "在右侧「基本」里改选迭代里面那一步的一项结果", node_id=i, field_path="config.item_output"))
+    for n in 节点们:
+        容 = 按id.get(n.get("container") or "")
+        if not 容 or 容.get("type") != "foreach":
+            continue
+        i, cfg = n.get("id"), (n.get("config") or {})
+        if n.get("type") in ("loop", "foreach"):
+            continue                                   # 套娃上面已经报了,不再报第二条
+        报过 = set()
+        # 「用到的数据」里取了被删掉的步骤,下面 ⑤ 报 BIND_NODE_NOT_FOUND;条件 / 赋值这些里面的引用没人查,在这里查
+        绑定外 = {id(r) for r in FE.所有引用({k: v for k, v in cfg.items() if k != "bindings"})}
+        for r in FE.所有引用(cfg):
+            名 = FE.单项变量名(r)
+            if 名 is not None and 名 not in FE.单项变量 and 名 not in 报过:
+                报过.add(名)
+                出.append(问(阻断, "FOREACH_SCOPE_UNKNOWN",
+                           f"取的「{名 or '(没写名字)'}」不是迭代给的 —— 迭代里面只能取「当前项」和「下标」",
+                           "在「用到的数据」里改选「迭代 · 当前项」或「迭代 · 下标」", node_id=i))
+            if r.get("source") == "node" and r.get("node_id") == 容.get("id") and "self" not in 报过:
+                报过.add("self")
+                出.append(问(阻断, "FOREACH_SELF_REF",
+                           f"取的是{_称(容)}自己的结果,可它要等所有项都做完才有 —— 这一项做的时候还取不到",
+                           "要这一项的数据,改选「迭代 · 当前项」", node_id=i))
+            if r.get("source") == "node" and r.get("node_id") not in 按id and id(r) in 绑定外:
+                出.append(问(阻断, "FOREACH_REF_NOT_FOUND", "这一步取数的那一步已经被删掉了",
+                           "在右侧重新选一个来源", node_id=i))
 
     可达, dom = {}, {}
     for 容器, ns in 按域.items():

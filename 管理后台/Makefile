@@ -434,7 +434,7 @@ E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_artifact_page_actions.js test_member_page_actions.js \
              test_release_page_actions.js test_workflow_save_gate.js \
              test_workflow_graph_logic.js test_workflow_editor_actions.js \
-             test_workflow_new_nodes_panel.js
+             test_workflow_new_nodes_panel.js test_workflow_foreach_panel.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
 	@echo "▸ 端到端(CI 版):$(words $(E2E_CI)) 份 Python + $(words $(E2E_CI_JS)) 份 JS"
@@ -524,6 +524,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo ""
 	@echo "▸ 编排页 · 列表操作 / 文档提取器的配置面板(写进定义的形状和后端校验器认的一致,不起服务)"
 	@node tests/e2e/test_workflow_new_nodes_panel.js
+	@echo ""
+	@echo "▸ 编排页 · 列表迭代的配置面板(列表 / 每一项交出什么 / 某一项失败时 / 最多做几项;里面的步骤能选当前项、下标;不许套娃)"
+	@node tests/e2e/test_workflow_foreach_panel.js
 	@echo ""
 	@echo "▸ 任务事件流 SSE(17 条:按 seq 续传、终态要发结束、流开着也重新鉴权)"
 	@echo "  **全后台最后一条「已实现未验」** —— 主要在打「空流和什么都没发生长得一样」"
@@ -769,6 +772,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_workflow_new_nodes_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_workflow_new_nodes_panel.log; exit 1; }
 	@tail -1 /tmp/prog-test_workflow_new_nodes_panel.log
+	@node tests/e2e/test_workflow_foreach_panel.js > /tmp/prog-test_workflow_foreach_panel.log 2>&1 \
+	  || { echo "  ❌ test_workflow_foreach_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_foreach_panel.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_foreach_panel.log
 	@./.venv/bin/python tests/e2e/test_job_events_sse.py > /tmp/prog-test_job_events_sse.log 2>&1 \
 	  || { echo "  ❌ test_job_events_sse 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_job_events_sse.log; exit 1; }
@@ -1116,6 +1123,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 文档提取器:只认本项目校验过的上传;格式取不了 / 没校验 / 解不开 / 空文件 这一步失败,不给空串"
 	@./.venv/bin/python tests/orchestration/test_doc_extractor_node.py
+	@echo ""
+	@echo "▸ 列表迭代:逐项串行跑、结果和输入同顺序;空列表 / 超上限 / 某项失败(整步失败或留空位)/ 等人恢复;套娃和取没给的变量 检查配置就拦"
+	@./.venv/bin/python tests/orchestration/test_foreach_node.py
 	@echo ""
 	@echo "▸ 定时触发的时间口径:日报前一天 / 周报上一个自然周 / 月报上一个自然月;同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py

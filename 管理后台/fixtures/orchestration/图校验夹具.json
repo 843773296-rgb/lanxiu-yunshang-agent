@@ -1734,7 +1734,7 @@
       }
     },
     "非法_用了未实现的节点": {
-      "为什么": "§6.1 结尾:『阶段中未完成的节点标未实现,**不得摆空按钮冒充可用**』。让它能冻结、能发布,然后运行时才发现跑不了 —— 比现在拦住贵得多。顺带钉一条 CONTAINER_EMPTY:这个列表迭代容器里是**空的**,而空容器跑起来什么都不做 —— 这一条是「集合相等」判据抓出来的漏报(10-27 有界循环实现了,这条改用仍未实现的「列表迭代」当例子)",
+      "为什么": "§6.1 结尾:『阶段中未完成的节点标未实现,**不得摆空按钮冒充可用**』。让它能冻结、能发布,然后运行时才发现跑不了 —— 比现在拦住贵得多。顺带钉一条 CONTAINER_EMPTY:这个并行容器里是**空的**,而空容器跑起来什么都不做 —— 这一条是「集合相等」判据抓出来的漏报(10-27 有界循环实现了,改用「列表迭代」当例子;11-12 列表迭代也实现了,再改用仍未实现的「并行与汇总」)",
       "期望阻断": [
         "NODE_NOT_IMPLEMENTED",
         "CONTAINER_EMPTY"
@@ -1774,13 +1774,14 @@
           },
           {
             "id": "lp",
-            "type": "foreach",
+            "type": "parallel",
             "config": {
-              "array_binding": {
-                "source": "input",
-                "pointer": "/items"
-              },
-              "item_failure_policy": "fail"
+              "branches": [
+                "a",
+                "b"
+              ],
+              "max_concurrency": 2,
+              "wait_policy": "all"
             }
           },
           {
@@ -1838,7 +1839,7 @@
           {
             "source": "lp",
             "target": "sum",
-            "port": "loop_exit"
+            "port": "success"
           },
           {
             "source": "sum",
@@ -2701,6 +2702,511 @@
             "source": "doc",
             "target": "end",
             "port": "success"
+          }
+        ]
+      }
+    },
+    "合法_列表迭代_逐项调模型收结果": {
+      "为什么": "11-12 列表迭代(照 Dify「迭代」):对输入的列表逐项调一次模型,里面取「当前项」「下标」,每一项交出模型的 text,结束取迭代的「结果」—— 正向对照(期望阻断为空)",
+      "期望阻断": [],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "r": {}
+          },
+          "required": [
+            "r"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          },
+          {
+            "id": "fe",
+            "type": "foreach",
+            "config": {
+              "bindings": {
+                "列表": {
+                  "source": "input",
+                  "pointer": "/items"
+                }
+              },
+              "item_output": {
+                "source": "node",
+                "node_id": "sum",
+                "pointer": "/text"
+              },
+              "item_failure_policy": "fail",
+              "max_items": 20
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "container": "fe",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "这一条": {
+                  "source": "scope",
+                  "pointer": "/当前项"
+                },
+                "第几条": {
+                  "source": "scope",
+                  "pointer": "/下标"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "r": {}
+                },
+                "required": [
+                  "r"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "r": {
+                  "source": "node",
+                  "node_id": "fe",
+                  "pointer": "/结果"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "fe",
+            "port": "success"
+          },
+          {
+            "source": "fe",
+            "target": "sum",
+            "port": "loop_body"
+          },
+          {
+            "source": "fe",
+            "target": "end",
+            "port": "loop_exit"
+          }
+        ]
+      }
+    },
+    "非法_列表迭代_套在循环里": {
+      "为什么": "11-12:迭代放进循环里 —— 检查点只存一层循环帧,套着用先不支持,检查配置就拦(只报 FOREACH_NESTED 一条,不连带别的)",
+      "期望阻断": [
+        "FOREACH_NESTED"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "r": {}
+          },
+          "required": [
+            "r"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          },
+          {
+            "id": "lp",
+            "type": "loop",
+            "config": {
+              "max_iterations": 2,
+              "condition": {
+                "op": "exists",
+                "left": {
+                  "source": "scope",
+                  "pointer": "/还要"
+                }
+              },
+              "loop_state": {
+                "还要": {
+                  "initial": true
+                }
+              }
+            }
+          },
+          {
+            "id": "fe",
+            "type": "foreach",
+            "config": {
+              "bindings": {
+                "列表": {
+                  "source": "input",
+                  "pointer": "/items"
+                }
+              },
+              "item_output": {
+                "source": "node",
+                "node_id": "sum",
+                "pointer": "/text"
+              },
+              "item_failure_policy": "fail",
+              "max_items": 20
+            },
+            "container": "lp"
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "container": "fe",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "这一条": {
+                  "source": "scope",
+                  "pointer": "/当前项"
+                },
+                "第几条": {
+                  "source": "scope",
+                  "pointer": "/下标"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "r": {}
+                },
+                "required": [
+                  "r"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "r": {
+                  "source": "node",
+                  "node_id": "lp",
+                  "pointer": "/轮数"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "lp",
+            "port": "success"
+          },
+          {
+            "source": "lp",
+            "target": "fe",
+            "port": "loop_body"
+          },
+          {
+            "source": "fe",
+            "target": "sum",
+            "port": "loop_body"
+          },
+          {
+            "source": "lp",
+            "target": "end",
+            "port": "loop_exit"
+          }
+        ]
+      }
+    },
+    "非法_列表迭代_里面取了迭代没给的变量": {
+      "为什么": "11-12:迭代里面只有「当前项」「下标」两个变量;照抄 Dify 写成 item,运行时取不到 —— 检查配置就拦",
+      "期望阻断": [
+        "FOREACH_SCOPE_UNKNOWN"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "r": {}
+          },
+          "required": [
+            "r"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          },
+          {
+            "id": "fe",
+            "type": "foreach",
+            "config": {
+              "bindings": {
+                "列表": {
+                  "source": "input",
+                  "pointer": "/items"
+                }
+              },
+              "item_output": {
+                "source": "node",
+                "node_id": "sum",
+                "pointer": "/text"
+              },
+              "item_failure_policy": "fail",
+              "max_items": 20
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "container": "fe",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "这一条": {
+                  "source": "scope",
+                  "pointer": "/item"
+                },
+                "第几条": {
+                  "source": "scope",
+                  "pointer": "/下标"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "r": {}
+                },
+                "required": [
+                  "r"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "r": {
+                  "source": "node",
+                  "node_id": "fe",
+                  "pointer": "/结果"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "fe",
+            "port": "success"
+          },
+          {
+            "source": "fe",
+            "target": "sum",
+            "port": "loop_body"
+          },
+          {
+            "source": "fe",
+            "target": "end",
+            "port": "loop_exit"
+          }
+        ]
+      }
+    },
+    "非法_列表迭代_列表是文字且里面是空的": {
+      "为什么": "11-12:「列表」填成一段固定文字(没有可逐项做的东西)、迭代里面一步都没有(跑起来什么都不做,交出的那一步也不在了)—— 三条一起报,各指各的",
+      "期望阻断": [
+        "FOREACH_NOT_LIST",
+        "CONTAINER_EMPTY",
+        "FOREACH_OUTPUT_NOT_FOUND"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "r": {}
+          },
+          "required": [
+            "r"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          },
+          {
+            "id": "fe",
+            "type": "foreach",
+            "config": {
+              "bindings": {
+                "列表": {
+                  "source": "constant",
+                  "value": "一段文字"
+                }
+              },
+              "item_output": {
+                "source": "node",
+                "node_id": "sum",
+                "pointer": "/text"
+              },
+              "item_failure_policy": "fail",
+              "max_items": 20
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "r": {}
+                },
+                "required": [
+                  "r"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "r": {
+                  "source": "node",
+                  "node_id": "fe",
+                  "pointer": "/结果"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "fe",
+            "port": "success"
+          },
+          {
+            "source": "fe",
+            "target": "end",
+            "port": "loop_exit"
           }
         ]
       }

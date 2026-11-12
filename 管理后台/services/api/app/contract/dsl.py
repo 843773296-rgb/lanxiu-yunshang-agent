@@ -199,14 +199,16 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
            "达到上限但任务没达标,返回**受限停止**,不是成功"),
 
     N("foreach", "列表迭代",
-      端口=[循环体, 循环出, 失败], 配置=["array_binding", "max_concurrency",
-                                       "item_failure_policy"],
-      调用外部=False, 实现=未实现, 可含子图=True,
-      不适用=["timeout_seconds", "retryable_errors", "max_retries"],
-      必填=["array_binding", "item_failure_policy"],
-      说明="**输出保持输入索引**(§6.3):并发完成顺序不同,但第 3 项的结果必须在第 3 位。"
-           "失败项**保留占位和原因**,不默默删除 —— 删掉一项会让后面全体错位,"
-           "而错位之后的数据看起来完全正常"),
+      端口=[循环体, 循环出, 失败], 配置=["bindings", "item_output", "item_failure_policy", "max_items"],
+      调用外部=False, 实现=已实现, 可含子图=True,   # 11-12 实现(用户 10-26 拍「workflow 直接复刻 dify」);规则在 runtime/列表迭代.py
+      不适用=["timeout_seconds", "retryable_errors", "max_retries", "output_schema"],
+      必填=["bindings", "item_output", "item_failure_policy", "max_items"],
+      说明="**对前面给的一个列表逐项跑一遍里面的步骤,把每一项交出的结果收成一个列表**(照 Dify「迭代」)。"
+           "里面的步骤能取「当前项」和「下标」(从 0 数)。**一次做一项**(并行是「并行与汇总」的事)。"
+           "**输出保持输入索引**(§6.3):第 3 项的结果一定在第 3 位。"
+           "某一项失败时二选一:整步失败(走「失败时」出口,记下是第几项、为什么),"
+           "或者那一位留空(null)、原因记进「失败项」接着做 —— **不默默删掉失败项**:删掉一项会让后面全体错位,"
+           "而错位之后的数据看起来完全正常。「最多做几项」超了一项都不做;里面不能再放循环或迭代"),
 
     N("human", "人工输入/审核",
       端口=[成功, 失败], 配置=["request_kind", "payload_binding", "allowed_fields",

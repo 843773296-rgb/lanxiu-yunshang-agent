@@ -292,7 +292,7 @@ function 循环框() {
     ns.forEach((n) => { const p = 位(n.id); x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + 画布.W); y1 = Math.max(y1, p.y + 节点高(n)); });
     const x = x0 - 边, y = y0 - 边 - 头, w = x1 - x0 + 边 * 2, h = y1 - y0 + 边 * 2 + 头;
     return `<g class="loopbox" data-loopbox="${esc(cid)}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10"/>
-      <text x="${x + 10}" y="${y + 15}">循环 · ${esc(业务名(节点(cid)))}(${ns.length} 步)</text></g>`;
+      <text x="${x + 10}" y="${y + 15}">${节点(cid).type === "foreach" ? "迭代" : "循环"} · ${esc(业务名(节点(cid)))}(${ns.length} 步)</text></g>`;
   }).join("");
 }
 

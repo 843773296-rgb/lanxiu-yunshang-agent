@@ -19932,5 +19932,185 @@
    }
   ],
   "预期红": "绑定里没有「文件」只有别的"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "收结果时插到最前面(顺序和输入不一致)(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "                    if 坏 is None:\n                        帧[\"结果\"].append(v)",
+    "new": "                    if 坏 is None:\n                        帧[\"结果\"].insert(0, v)"
+   }
+  ],
+  "预期红": "成功,结果 [A#0, B#1, C#2]"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "新的一项不清掉里面上一项的结果(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "                # 新的一项:里面上一项的结果清掉 —— 这一项引用的必须是这一项跑出来的(没跑到就是取不到,不拿上一项的冒充)\n                for i2, n2 in 节点.items():\n                    if n2.get(\"container\") == 当前:\n                        状态[\"节点\"].pop(i2, None)\n                记事(\"foreach.item\"",
+    "new": "                记事(\"foreach.item\""
+   }
+  ],
+  "预期红": "不拿上一项的 A#0 冒充"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "下标从 1 数(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "帧[\"状态\"] = {\"当前项\": 帧[\"列表\"][k], \"下标\": k}",
+    "new": "帧[\"状态\"] = {\"当前项\": 帧[\"列表\"][k], \"下标\": k + 1}"
+   }
+  ],
+  "预期红": "取得到「下标」(从 0 数)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "超过最多做几项也照做(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/列表迭代.py",
+    "old": "    if len(值) > 上:\n        raise 做不了(\"FOREACH_TOO_MANY\"",
+    "new": "    if False:\n        raise 做不了(\"FOREACH_TOO_MANY\""
+   }
+  ],
+  "预期红": "给 3 项、最多 2 项"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "留空位接着做时把失败项删掉(不占位)(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "                    elif cfg.get(\"item_failure_policy\") == \"continue\":\n                        帧[\"结果\"].append(None)\n",
+    "new": "                    elif cfg.get(\"item_failure_policy\") == \"continue\":\n"
+   }
+  ],
+  "预期红": "结果 [A#0, null, C#2]"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "里面某一步失败不交给迭代处理(直接整次失败,不说第几项)(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "            if 帧们 and 帧们[-1].get(\"种类\") == \"foreach\" and n.get(\"container\") == 帧们[-1][\"循环\"]:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "完成原因 FOREACH_ITEM_FAILED"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "迭代放进循环不拦(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "        if n.get(\"container\"):\n            # 检查点只存一层循环帧(和有界循环同一条);迭代套迭代",
+    "new": "        if False:\n            # 检查点只存一层循环帧(和有界循环同一条);迭代套迭代"
+   }
+  ],
+  "预期红": "循环里面放迭代 → FOREACH_NESTED"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "里面取迭代没给的变量不拦(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "            if 名 is not None and 名 not in FE.单项变量 and 名 not in 报过:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "里面取了迭代没给的变量"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "「列表」选了声明成文字的那一项不拦(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "        if t声 is not None and t声 != \"array\":",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "声明成文字的输入"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "「每一项交出什么」选了外面的步骤不拦(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "            elif m.get(\"container\") != i:",
+    "new": "            elif False:"
+   }
+  ],
+  "预期红": "选了迭代外面的步骤"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "里面取迭代自己的结果不拦(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "            if r.get(\"source\") == \"node\" and r.get(\"node_id\") == 容.get(\"id\") and \"self\" not in 报过:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "里面取迭代自己的结果"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_foreach_node.py",
+  "改坏": "运行记录截断了却不说还有几项(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/列表迭代.py",
+    "old": "    if len(结果) > 记录里列几项:\n        出[\"没列出\"]",
+    "new": "    if False:\n        出[\"没列出\"]"
+   }
+  ],
+  "预期红": "还有 5 项"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_workflow_foreach_panel.js",
+  "改坏": "迭代里面的步骤选不到当前项 / 下标(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/apps/web/app.js",
+    "old": "  if (迭 && 迭.type === \"foreach\") 出.push(",
+    "new": "  if (false) 出.push("
+   }
+  ],
+  "预期红": "迭代里面的步骤能选「迭代 · 当前项」"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_workflow_foreach_panel.js",
+  "改坏": "迭代自己也给「放进循环」的选项(套娃)(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/apps/web/app.js",
+    "old": "![\"start\", \"end\", \"loop\", \"foreach\"].includes(n.type)",
+    "new": "![\"start\", \"end\", \"loop\"].includes(n.type)"
+   }
+  ],
+  "预期红": "迭代自己不给「放进循环」的选项"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_workflow_foreach_panel.js",
+  "改坏": "默认配置替人填了最多做几项(11-12 列表迭代)",
+  "file": [
+   {
+    "path": "管理后台/apps/web/app.js",
+    "old": "           foreach: { bindings: {}, item_failure_policy: \"fail\" },",
+    "new": "           foreach: { bindings: {}, item_failure_policy: \"fail\", max_items: 100 },"
+   }
+  ],
+  "预期红": "最多做几项不给默认值"
  }
 ]
