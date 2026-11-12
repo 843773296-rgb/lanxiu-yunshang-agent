@@ -1680,6 +1680,11 @@ def _write_tools():
                 "assign_batch", "dispatch_batch")
 
 
+# 「一轮只写成一件」管的范围:派任务的这 5 个。其余写工具只受「同参数不重试 / 试 3 次停」管 ——
+# 判责后接着推进返修、开单后接着录量体,这种链式写是一件事的几步,拦了就做不完。
+_一轮一件 = ("assign_task", "dispatch_task", "reassign_task", "finish_task", "assign_batch")
+
+
 def _arg_key(tool, args):
     """给一次工具调用算个指纹 —— 用来认出「一模一样的参数又试了一次」。"""
     import hashlib
@@ -1844,7 +1849,8 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
         # 抄 Accio 的 skill-executor-attempt-ledger:记每次尝试和它的结果,
         # 按**尝试的性质**分别处理。
         ledger = state_writes or []          # [{tool, key, ok}]
-        succeeded = [x for x in ledger if isinstance(x, dict) and x.get("ok")]
+        succeeded = [x for x in ledger if isinstance(x, dict) and x.get("ok")
+                     and x.get("tool") in _一轮一件 and short in _一轮一件]
         tried = [x for x in ledger if isinstance(x, dict)]
         key = _arg_key(short, args)
 
@@ -2284,8 +2290,11 @@ def make_hooks(state, 注日期=True):
         # 只记工具名的话,分不出「改正参数重试」和「又要做一件新的」——
         # 而这两件的处理方式完全不同(前者该放,后者该拦)。
         short2 = name.rsplit("__", 1)[-1]
-        if short2 in ("assign_task", "dispatch_task", "reassign_task",
-                      "finish_task", "assign_batch"):
+        # ⚠️ 原来只给 5 个派任务的工具记账(11-12 体检 B 查出):其余 27 个写工具
+        # (开单 / 量体 / 签收 / 报修 / 关差评 / 排班 …)「同参数不重试」「试 3 次停」都不生效 ——
+        # 台账是空的,闸永远看不见它们。现在所有写工具都记;「一轮只写成一件」仍只管派任务那 5 个
+        # (`_一轮一件`),因为判责后接着推进返修这类链式写是正当的(repair N05)。
+        if short2 in _write_tools():
             state.setdefault("wrote", []).append(
                 dict(tool=short2, key=_arg_key(short2, args), ok=None))
         return {}

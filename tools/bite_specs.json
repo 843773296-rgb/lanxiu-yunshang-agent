@@ -9714,7 +9714,7 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "    return round((inp * pr[\"inp\"] + cache * pr[\"cache\"] + 写 * 写价 + out * pr[\"out\"]) / 1e6, 6)",
+    "old": "    return round((inp * pr[\"inp\"] + cache * pr[\"cache\"] + 写 * pr[\"inp\"] * 写倍 + out * pr[\"out\"]) / 1e6, 6)",
     "new": "    return round(((inp - cache) * pr[\"inp\"] + cache * pr[\"cache\"] + out * pr[\"out\"]) / 1e6, 6)"
    }
   ],
@@ -9928,6 +9928,30 @@
    }
   ],
   "预期红": "试了三次都没成"
+ },
+ {
+  "script": "agentsite/gate_test.py",
+  "改坏": "台账退回只给派任务那 5 个工具记账(开单等写工具又不进台账)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if short2 in _write_tools():\n",
+    "new": "        if short2 in _一轮一件:\n"
+   }
+  ],
+  "预期红": "真 hook:开单也进了台账"
+ },
+ {
+  "script": "agentsite/gate_test.py",
+  "改坏": "「一轮只写成一件」放宽到所有写工具(判责后推进返修被拦)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "                     and x.get(\"tool\") in _一轮一件 and short in _一轮一件]",
+    "new": "                     ]"
+   }
+  ],
+  "预期红": "判责成功后接着推进返修(链式写放行)"
  },
  {
   "script": "backend/advisor_write_check.py",

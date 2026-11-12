@@ -29,6 +29,10 @@
      "「写之前先读」点名的工具都在架上"),
     ("让 MCP 服务端忽略 LANXIU_TOOLS(又整包挂上)",
      "服务端只给名单里的工具"),
+    ("台账退回只给派任务那 5 个工具记账(开单等写工具又不进台账)",
+     "真 hook:开单也进了台账"),
+    ("「一轮只写成一件」放宽到所有写工具(判责后推进返修被拦)",
+     "判责成功后接着推进返修(链式写放行)"),
 ]
 
 import os, sys, json
@@ -77,6 +81,30 @@ def main():
        [att("assign_task", {"a": i}) for i in range(3)]), True, "别再猜了")
     ck("换个写工具也算一次", g.pre_tool_verdict(F, {"task_id": "SC1"}, "完成", READ,
        [att("assign_task", A1, ok=True)]), True, "一次只做一件")
+
+    # ── 11-12:台账从 5 个派任务工具扩到全部写工具(执行手册 W40①)────────────
+    # 原来开单 / 量体 / 签收 / 报修…这 27 个写工具根本不进台账,「同参数不重试」「试 3 次停」对它们都不生效。
+    OO, DR, AR = "mcp__shop__open_order", "mcp__work__decide_repair", "mcp__work__advance_repair"
+    OA = {"customer_id": "C10001", "items": [{"sku": "x", "wearer_id": "W1"}]}   # 带着装人,别被「开单要指明给谁做」那道闸先拦下
+    ck("开单:一模一样的参数再试", g.pre_tool_verdict(OO, OA, "开单", READ, [att("open_order", OA)]),
+       True, "不会有不同结果")
+    ck("开单:试了三次都没成", g.pre_tool_verdict(OO, {"customer_id": "C9"}, "开单", READ,
+       [att("open_order", {"n": i}) for i in range(3)]), True, "别再猜了")
+    ck("判责成功后接着推进返修(链式写放行)", g.pre_tool_verdict(AR, {"id": "R1"}, "判完推进", READ,
+       [att("decide_repair", {"id": "R1"}, ok=True)]), False)
+    # 真 hook 走一遍:纯函数之外,**记账那一步**才是原来的漏洞所在(台账是空的,闸就永远看不见)
+    import asyncio
+    st = {"prompt": "开单"}
+    try:
+        hk = g.make_hooks(st)
+        asyncio.run(hk["PreToolUse"][0].hooks[0]({"tool_name": OO, "tool_input": OA}, "t1", None))
+        记 = [x.get("tool") for x in st.get("wrote") or []]
+        ok = 记 == ["open_order"]
+    except Exception as e:
+        记, ok = f"崩了:{e}", False
+    global bad
+    if not ok: bad += 1
+    print(f"  {G+'✅'+D if ok else R+'❌'+D} 真 hook:开单也进了台账  记下的:{记}")
 
     print("\n\033[1m▸ 计划先行 · 复合请求不许一条一条派\033[0m")
     print("  " + "=" * 78)
