@@ -268,14 +268,20 @@ rid10 = r["resource_id"]
 打("POST", P + f"/bridge-calls/{单(rid10)[0]['id']}/ack", "U004",
   体={"结果": "已执行", "输出": {"text": "随便一段", "call_id": "TS-010"}})
 等到(rid10, ("waiting_approval",))
+# 先记下这条待办自己的编号:过期后按编号查,不去「已过期」列表里捞 ——
+# 那个列表按最早过期排、最多 200 条、不翻页,测试残留攒过 200 条后新那条永远排在后面(11-13 凌晨实测 201 条,这里红了)
+c, _pb = 打("GET", P + "/human-requests?status=pending&limit=200", "U006")
+_待办10 = [x["id"] for x in (_pb or {}).get("items") or [] if x.get("execution_run_id") == rid10]
 import time as _t
 _t.sleep(2.5)
 st, _ = 等到(rid10, ("expired", "succeeded", "failed"))
 c, r = 打("GET", P + f"/execution-runs/{rid10}", "U004")
 ck("到点 → 运行终态「已过期」,原因 HUMAN_REVIEW_EXPIRED", st == "expired" and r.get("停止原因") == "HUMAN_REVIEW_EXPIRED",
    (st, r.get("停止原因")))
-c, b = 打("GET", P + "/human-requests?status=expired&limit=200", "U006")
-ck("待办也标成过期了", any(x.get("execution_run_id") == rid10 for x in (b or {}).get("items") or []))
+ck("这条运行挂着一条待办(按编号找得到,样本量 0 不叫通过)", len(_待办10) == 1, _待办10)
+_后 = [打("GET", P + f"/human-requests/{i}", "U006")[1] for i in _待办10]
+_态 = [((x or {}).get("请求") or {}).get("status") for x in _后]   # 详情把这一行放在「请求」底下
+ck("待办也标成过期了", bool(_态) and all(t == "expired" for t in _态), _态)
 ck("**什么都没写**:写跟进一张单都没有",
    not [x for s in ("待执行", "已执行", "执行失败") for x in 单(rid10, s) if x["工具"] == "写跟进"])
 

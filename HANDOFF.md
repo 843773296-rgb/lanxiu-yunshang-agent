@@ -119,13 +119,14 @@
 > **22:4x W47 挑回本地(未推)**:子任务 893e8da3 → 本地挑回(咬合规格冲突用脚本合:以我为准,套它新增 7 条、去掉它改掉的 1 条,1705→1711,bite_check 过)。92 条读路由全部归类(要登录 46 / 自查身份 29 / 匿名 17,带理由),**15 条真漏收紧**:ops-detail(研判根因原文带姓名生日地址,加门店范围)/ ops-manual / ops-backlog / ops-health(按 /api/ops- 前缀)/ craft-doc(着装人生日 + 量体,加门店范围)/ task-ref / shop/(花名册 + 日志)/ shops / activity/ / product/ / stock / stock-log / invites / downloads / agent-run(匿名能真调模型花钱)。新检查 read_route_registry_check(15 条判据,挂了 check.sh)。**风险已核**:8770 页面取 ops-* 走通用反代、cookie 照转;仓库里没有不带 cookie 调这些口的进程。**没验**:js_smoke 真打 8770 页面(全量门禁里会跑)。子任务 worktree agent-a4d163443c943ff33 推完后删。⑤ **待用户拍**:/api/agent-run 登录后回包仍带 truth 根因(CLAUDE.md 第 6 节红线)。
 > **22:3x**:W47(读接口门店范围核完)交给 worktree 子任务:61 条不在「要登录的读」里的 GET 逐条分类 + 写 read_route_registry_check + 挂门禁 + 咬合(它在改 server.py —— **它回来前我不碰 server.py**)。本地未推:f982737d(公海筛选)、f66c2fbb(导出限店长),推时要重启 8760。
 
-> **📍 22:0x 压缩前六项(压缩后从这里接)**
-> - **下一步第一个动作**:看 eureka-fc 回没回(21:5x 问它推送时间:20 分钟内推我等;22:00 没回音按 ② 我先拿锁跑全量推)。走 ② 时:`./tools/gate_lock.sh --who "主会话 B段" sh -c '…同时重启 8760+8770(launchctl kickstart 或 ./start.sh 两个一起)… curl --noproxy "*" 两个首页 + 内部口带 X-Lanxiu-Internal 令牌应 200 … git fetch && rev-list 0 && ./check.sh > /tmp/gate_B.log && git push && echo PUSHED'`,只认「被包的命令退出码」。之后 `git worktree remove .claude/worktrees/agent-a619b6548193b10d9` + 删分支 worktree-agent-a619b6548193b10d9。
-> - **未验证的预判**:① W02(门禁跑库副本)**从没跑过全量** —— 红了先看是不是某条检查依赖「连真库路径时 PRAGMA 报真库」;② W01 挑回(7b8b066a)本地**没跑 js_smoke / 全量**,只重启一个服务研判线程会全 401;③ 本晚新咬合**一条都没重放**:ownership_transfer_check 3、repair_write_check 1、rating_write_check 1、authgate_check 1(+W01 带来的 3)、加上 gate_db_check / nightly_stats / evaldb / booking_check / shift_eval_judgetest / workshop_eval_judgetest / alert_dispatch_check —— 推完后锁内 `bite_run --only` 逐个跑;④ booking_check、alert_dispatch_check 改了计数后**没在副本上跑通**(那时真库被占,备份拷不出 —— 不是检查红)。
-> - **判据**:公海「已知会日」= 「公海知会」任务日(所以只系统派);已预约算接触;没知会过不直接放。开关判在白名单之后、读库前。标品返修检查必须挑一件的标品单(多件先被「哪一件」挡住 → 验不到)。
-> - **作废的**:摘要里「W41 迁移已写」「预约三列迁移已写」都是错的,两项都没开始;「定制签收已生成交付告知单」是假的(没有写口写 delivery_notice)。清单里「目标/实际版本并排」11-11 已做(d3914443)。
-> - **禁区**:不碰 eureka-fc 的 rounds / textmatch / nightly_eval / nightly_check / agent/nightly/;夜跑 00:00–04:55 不拿锁、不重启;子任务(W41,worktree)在改 管理后台/ 的 issues 同类文件 —— 它回来前我不碰 管理后台/services 和 app.js;W41 迁移、预约三列迁移只在 05:20 后锁内跑。
-> - **悬而未决(早上问用户,一张卡)**:顾问代录追评 vs 09-27「顾问不能替顾客评」;公海首次真写 1768 条知会要不要分批 / 先一家店。
+> **📍 04:0x 进度(覆盖下面「下一步」)**:夜跑 03:40 提前结束(过 16 / 判红 7 / 退步 3 / 超时 1;退步 = shift、order 是 evaldb bug,repair P02 是 14 晚 50% 的时对时错题)。真库 roster / schedule 行数和 19:11 备份完全一致(evaldb bug 没伤真库)。已做:bite_run evaldb 2/2 ✅;挑回 599dacb0(本地新号见 git log,咬合规格冲突脚本合 1712→1715)→ 真库备份 ~/lanxiu-backups/pre-W21-*.db → 迁移加 4 列 + 幂等 ✅;挑回 54b68e0d → PG 备份 ~/lanxiu-backups/pre-W41-aimc_dev-11130355.dump → alembic 2cd9c9bf1587→f112450e5aa7 ✅ → 重启 aimc 探活 200 ✅ → **make test-e2e-ci 在跑**(后台 b64czx6lj,日志 /tmp/e2e_w41.log)。**下一步第一个动作**:看 e2e 结果 → 绿了跑 chain_B.sh(重启 8760/8770 + 全量 + 推)→ 删 worktree agent-a252eecae5fc16a61 / agent-ac1bb8f62ad38d5fb 及分支 → bite_run --only named_advisor_check / query_index_check → 补汇总发飞书。注意 HEAD 下有一笔夜跑自动提交 47bfe33b。
+> **📍 03:4x 压缩前六项(压缩后从这里接;替换 22:0x 那版)**
+> - **下一步第一个动作**:4:55 夜跑结束后(看 `.nightly-eval.pid` 进程没了 / 日志收尾),**锁内**:① `bite_run --only evaldb`(1f343ea5 那条新咬合)② 照下面 D 段第 1–6 步:备份真库 → `git show 599dacb0:tools/migrate_appt_columns.py` 跑 dry-run(4 列)→ `--go` → 挑回 599dacb0 和 54b68e0d → 管理后台 alembic upgrade + 重启 aimc + make test-e2e-ci → 重启 8760/8770 → 全量 → 推(连同本地 81b3749b / d0eb3480 / 1f343ea5)→ 删两个 worktree。推送脚本 `scratchpad/chain_B.sh`(8770 首页 302 算起来了)。
+> - **未验证的预判**:① 今晚 shift / workshop / order 夜跑分不作数(evaldb 判分读真库那个 bug),修后**没真跑过一轮**,下一晚才知道 ② evaldb bug 期间拍 / 还原打在真库 roster / schedule / op_log 上 —— 判断应无损(那段时间没别人写这几张表),早上核一眼行数 ③ W41 / W21 两个分支都没在主检出跑过全量 ④ scheme_eval 判红、store_report_eval 0.1 分钟判红、select_eval 0 分钟过 —— **没查原因**(store_report 可能是 eureka-fc 说的 unable to open database file;select 可能是指纹没变跳过)。
+> - **判据**:bite_run 夜跑期间拒跑是对的(拷库拖慢夜跑耗时,那个数进版本库);夜跑不登记 gate_lock,锁空 ≠ 能写库。
+> - **作废的**:22:0x 那版「下一步」作废(B 段已推完两批);「growth / liability 是环境性失败」作废 —— 是时对时错轮流挂。
+> - **禁区**:4:55 前不拷库、不跑门禁 / 迁移 / 重启;eureka-fc 的 22 笔在它 worktree「工」里(b14aba10)没进 main,别碰;guards.py 归它(g23 补丁命令已在汇总里,用户跑)。
+> - **悬而未决**:汇总草稿 `澜绣云裳agent-夜间汇总-20261113.md` 里 7 个待拍 + 「今晚三套分不作数」;08:40 前补早上结果再发,发完删 cron 455cc583、停循环(cron 3ea1fc38 08:43 会兜底)。
 
 **C 段 · 夜跑占锁期间(00:00–04:55,只改代码)**
 - [ ] W07 补评测场景:接管关着 / 工作流没发布 / 兜底窗口内三种(call-notes);「录音跟进」发布生产版的步骤写清,放到 D 段做
@@ -18136,14 +18137,14 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-12 21:32。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-13 04:00。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 049f0a0d · 2026-11-12 · 后台启用 / 停用开关限店长以上(台账第二十七条) |
-| 代码量 | 1081 个 Python 文件 / 198473 行(不含 .venv) |
-| 验收 | `./check.sh` 共 406 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 42308e82 · 2026-11-12 · 管理后台上线验收页(W41):十条场景逐条记录 + 店长签字,顶部算「做完」三项,拿不到数据的不算通过 |
+| 代码量 | 1088 个 Python 文件 / 199359 行(不含 .venv) |
+| 验收 | `./check.sh` 共 408 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
@@ -18153,6 +18154,7 @@ M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
  M .feynman/tool-eval.json
  M HANDOFF.md
  M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
@@ -18168,18 +18170,17 @@ M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
 ?? .feynman/world-shift-launchd.log
 ?? .wip-glossary/
 ?? .wip-muslin/
-?? .wip-store-report-SKILL.md
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-049f0a0d 后台启用 / 停用开关限店长以上(台账第二十七条)
-7b8b066a W01 管理后台写口统一身份闸:do_POST 默认要登录,角色只从会话取,toggle 加白名单
-effd6eab PRD 附录 A 补两条:新人保底(A-296)、公海回收(A-297)
-6cb2bae5 顾客追评写口(口径 09-29 早有,只差写口)+ 本晚四条咬合规格
-ed67be37 标品不开返修(台账第十七条):建返修单口按订单类型拦,理由指向换货
+42308e82 管理后台上线验收页(W41):十条场景逐条记录 + 店长签字,顶部算「做完」三项,拿不到数据的不算通过
+e2af62e6 W21 预约记下「客户点名了谁」三态 + 预约渠道、客户加来源渠道;派单建议读点名
+47bfe33b 夜跑评测结果 2026-11-13(自动提交:评测结果、报告、压缩过的运行日志)
+1f343ea5 修评测切库漏掉判分那一头:评测读库的变量叫 DBP,check_copy 只认 DB / DB_PATH
+d0eb3480 夜跑历史分档:「时对时错」的题不再标成 ❌
 ```
 <!--/AUTO-->
 ## 一句话在做什么
