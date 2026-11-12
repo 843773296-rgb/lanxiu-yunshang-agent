@@ -363,6 +363,9 @@
     # 问题单(11-12):叫什么 / 走到哪 / 根因核实到哪 —— 少一样清单就没法筛;重开次数从 0 数(不许 NULL 冒充 0)
     "issues": {"title", "status", "root_cause_status", "reopen_count"},
     "issue_events": {"issue_id", "action_code", "to_status"},
+    # 能力档案(11-12):叫什么 / 走到哪 / 依赖清单(空清单是 [],不许 NULL 冒充「没依赖」)
+    "capability_profiles": {"name", "status", "dependencies"},
+    "capability_profile_events": {"capability_profile_id", "action_code", "to_status"},
     # 告警(11-04):少一样规则就判不了 / 待办就说不清是哪条规则、什么状态
     "alert_rules": {"name", "filter_snapshot", "metric_code", "direction_code", "threshold_value", "window_minutes",
                     "min_sample_count", "trigger_count", "recover_count", "dedupe_minutes", "owner", "breach_count", "normal_count"},

@@ -43,6 +43,8 @@ router = APIRouter()
     "标题": "title", "业务影响": "impact_note", "复现条件": "repro_note", "根因类别": "root_cause_type",
     "根因核实": "root_cause_status", "方案": "solution_note", "验收标准": "acceptance_note", "目标版本": "target_version",
     "依赖": "dependency_note", "负责人": "owner", "处理时限": "due_date",
+    # 11-12 能力档案(PRD §4.4):挂到哪项能力上,可空;给的是能力档案编号,同项目里要真有(_核能力)
+    "能力": "capability_profile_id",
 }
 日期字段 = ("处理时限",)
 短字段上限 = {"标题": 200, "目标版本": 100, "负责人": 100}
@@ -111,6 +113,15 @@ def _项目组织(c, project_id):
     return org
 
 
+def _核能力(c, project_id, 出):
+    """问题单要挂的能力在这个项目里真有吗 —— 外键也会拒,但那是 500;这里给 422 定位到字段。"""
+    cid = 出.get("capability_profile_id")
+    if cid and not c.execute(text("select count(*) from capability_profiles where project_id=:p and id=:i and archived_at is null"),
+                             {"p": project_id, "i": cid}).scalar():
+        raise _错(422, "VALIDATION", "这个项目里没有这份能力档案", "确认编号(只能挂同一个项目里的能力)",
+                  field_errors={"能力": "不存在"})
+
+
 def _记一步(c, org, project_id, me, issue_id, 动作, 从, 到, 说明, 变化=None):
     c.execute(text("""insert into issue_events (id, organization_id, project_id, created_at, created_by,
                           issue_id, action_code, from_status, to_status, note, change_snapshot)
@@ -149,6 +160,7 @@ async def 建问题单(project_id: str, request: Request, me: 身份 = Depends(�
     iid = f"is_{_uuid.uuid4().hex[:12]}"
     with 事务() as c:
         org = _项目组织(c, project_id)
+        _核能力(c, project_id, 出)
         列 = ["title", "root_cause_status"] + [k for k in 出 if k not in ("title", "root_cause_status")]
         c.execute(text(f"""insert into issues (id, organization_id, project_id, created_at, created_by, updated_at, revision,
                                status, reopen_count, {", ".join(列)})
@@ -167,9 +179,10 @@ async def 建问题单(project_id: str, request: Request, me: 身份 = Depends(�
 # ── 清单 ────────────────────────────────────────────────────────────────
 @router.get(前缀 + "/issues")
 def 问题单清单(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
-          status: str = Query(None), root_cause: str = Query(None),
+          status: str = Query(None), root_cause: str = Query(None), capability: str = Query(None),
           limit: int = Query(30, ge=1, le=200), page: int = Query(1, ge=1)):
-    """按状态 / 根因类别筛。没关的排前面(已验证关闭 / 已重复 沉底),同一档里最近动过的在前。"""
+    """按状态 / 根因类别 / 能力(能力档案编号,或「未关联」)筛 —— 看板点进来走 capability。
+    没关的排前面(已验证关闭 / 已重复 沉底),同一档里最近动过的在前。"""
     坏 = {}
     if status and status not in F.状态们:
         坏["status"] = f"只收 {list(F.状态们)}"
@@ -185,6 +198,10 @@ def 问题单清单(project_id: str, me: 身份 = Depends(要权限("查看有�
         条件 += " and i.root_cause_type is null"
     elif root_cause:
         条件 += " and i.root_cause_type=:rc"; 参["rc"] = root_cause
+    if capability == "未关联":
+        条件 += " and i.capability_profile_id is null"
+    elif capability:
+        条件 += " and i.capability_profile_id=:cap"; 参["cap"] = capability
     with 连接() as c:
         rs = c.execute(text(f"""
             select count(*) over () 全量, i.*,
@@ -197,7 +214,8 @@ def 问题单清单(project_id: str, me: 身份 = Depends(要权限("查看有�
     出 = [{"id": x["id"], "标题": x["title"], "状态": x["status"], "根因类别": x["root_cause_type"],
           "根因核实": x["root_cause_status"], "负责人": x["owner"], "处理时限": _给人看(x["due_date"]),
           "目标版本": x["target_version"], "关联意见数": int(x["意见数"]), "重开次数": x["reopen_count"],
-          "指向主问题": x["duplicate_of_issue_id"], "最近更新": _给人看(x["updated_at"]), "revision": x["revision"]}
+          "指向主问题": x["duplicate_of_issue_id"], "能力": x["capability_profile_id"],
+          "最近更新": _给人看(x["updated_at"]), "revision": x["revision"]}
          for x in rs]
     from workflows_api import 分页信封
     return {"items": 出, **分页信封(rs, page, limit), "汇总": [dict(x) for x in 汇总],
@@ -239,7 +257,10 @@ def 问题单详情(project_id: str, issue_id: str, me: 身份 = Depends(要权�
         主 = (c.execute(text("select id, title, status from issues where project_id=:p and id=:m"),
                        {"p": project_id, "m": x["duplicate_of_issue_id"]}).mappings().first()
              if x["duplicate_of_issue_id"] else None)
-    return {"id": x["id"], "标题": x["title"], "状态": x["status"], "已解决": x["status"] in F.算已解决的状态,
+        能力 = (c.execute(text("select id, name, status from capability_profiles where project_id=:p and id=:c"),
+                         {"p": project_id, "c": x["capability_profile_id"]}).mappings().first()
+              if x["capability_profile_id"] else None)
+    return {"能力": ({"id": 能力["id"], "名字": 能力["name"], "状态": 能力["status"]} if 能力 else None),"id": x["id"], "标题": x["title"], "状态": x["status"], "已解决": x["status"] in F.算已解决的状态,
             "业务影响": x["impact_note"], "复现条件": x["repro_note"], "根因类别": x["root_cause_type"],
             "根因核实": x["root_cause_status"], "方案": x["solution_note"], "验收标准": x["acceptance_note"],
             "目标版本": x["target_version"], "依赖": x["dependency_note"], "负责人": x["owner"],
@@ -302,6 +323,7 @@ async def 改问题单(project_id: str, issue_id: str, request: Request,
         变化 = {中: [_给人看(x[列]), _给人看(出[列])] for 中, 列 in 可改字段.items() if 列 in 出 and x[列] != 出[列]}
         if not 变化:
             raise _错(422, "VALIDATION", "给的值和现在一样,没有要改的", "改了再保存", field_errors={"字段": "没有变化"})
+        _核能力(c, project_id, 出)
         if any(k in 变化 for k in 根因字段) and not 说明:
             raise _错(422, "VALIDATION", "改根因要写说明", "PRD §4.2:人工调整分类,调整理由入日志",
                       field_errors={"说明": "改根因类别 / 核实状态时必填"})

@@ -122,6 +122,8 @@ const 导航 = [
   ["#/runs", "运行记录", true, true],
   ["#/opinions", "意见受理", true, true],
   ["#/issues", "问题单", true, true],
+  ["#/capabilities", "能力档案", true, true],
+  ["#/capability-board", "改进看板", true, true],
   ["#/monitoring", "监测", true, true],
   ["#/alerts", "告警", true, true],
   ["#/traces", "调用链", true, true],
@@ -1771,8 +1773,11 @@ async function 页_问题单详情(id) {
   // 「能改的字段」:页面上的输入框 ↔ 请求体里的名字;只把改了的那几样发出去
   const 改 = [["标题", "is-e-title"], ["业务影响", "is-e-impact"], ["复现条件", "is-e-repro"], ["方案", "is-e-solution"],
     ["验收标准", "is-e-accept"], ["目标版本", "is-e-version"], ["依赖", "is-e-dep"], ["负责人", "is-e-owner"],
-    ["处理时限", "is-e-due"], ["根因类别", "is-e-rc"], ["根因核实", "is-e-rcs"]];
-  const 框 = (名, fid) => 名 === "根因类别" ? 选(fid, d.可选根因类别, d.根因类别, true)
+    ["处理时限", "is-e-due"], ["根因类别", "is-e-rc"], ["根因核实", "is-e-rcs"], ["能力", "is-e-cap"]];
+  // 11-12 能力档案:详情给的「能力」是 {id, 名字, 状态},改的时候只发编号
+  const 现值 = (名) => 名 === "能力" ? ((d.能力 || {}).id || "") : (d[名] || "");
+  const 框 = (名, fid) => 名 === "能力" ? `<input id="${fid}" value="${esc(现值(名))}" placeholder="能力档案编号(cp_…),空着 = 不挂" style="width:100%">`
+    : 名 === "根因类别" ? 选(fid, d.可选根因类别, d.根因类别, true)
     : 名 === "根因核实" ? 选(fid, d.可选核实状态, d.根因核实, false)
     : 名 === "处理时限" ? `<input id="${fid}" type="date" value="${esc(d.处理时限 || "")}">`
     : `<input id="${fid}" value="${esc(d[名] || "")}" style="width:100%">`;
@@ -1797,6 +1802,7 @@ async function 页_问题单详情(id) {
   $("#main").innerHTML = 头 + `<div class="head"><div><h1>${esc(d.标题)}</h1>
       <div class="sub">状态 <b>${esc(d.状态)}</b>${d.已解决 ? ' · <span class="pill ok">已解决</span>' : ""}
         · ${esc(d.根因类别 || "根因未分类")} · ${esc(d.根因核实)}${d.重开次数 ? ` · 重开过 ${esc(String(d.重开次数))} 次` : ""}</div></div></div>
+    ${d.能力 ? `<div class="note">挂在能力 <a href="#/capability/${encodeURIComponent(d.能力.id)}">${esc(d.能力.名字)}</a>(${esc(d.能力.状态)})上。</div>` : ""}
     ${d.主问题 ? `<div class="note">这是重复单,指向主问题 <a href="#/issue/${encodeURIComponent(d.主问题.id)}">${esc(d.主问题.标题)}</a>(${esc(d.主问题.状态)})。关联在这张单上的意见留在这里(保留来源)。</div>` : ""}
     <table><tbody>${kv("业务影响", d.业务影响)}${kv("复现条件", d.复现条件)}${kv("方案", d.方案)}${kv("验收标准", d.验收标准)}
       ${kv("目标版本", d.目标版本)}${kv("依赖", d.依赖)}${kv("负责人", d.负责人)}${kv("处理时限(过了不标超时:几天算超时待定)", d.处理时限)}
@@ -1832,7 +1838,7 @@ async function 页_问题单详情(id) {
   });
   if ($("#is-e-save")) $("#is-e-save").onclick = async () => {
     const 体 = {};
-    改.forEach(([名, fid]) => { const v = ($("#" + fid).value || "").trim(); if (v !== (d[名] || "")) 体[名] = v; });
+    改.forEach(([名, fid]) => { const v = ($("#" + fid).value || "").trim(); if (v !== 现值(名)) 体[名] = v; });
     if (!Object.keys(体).length) { $("#is-e-why").textContent = "没有改动"; return; }
     体.说明 = ($("#is-e-note").value || "").trim();
     $("#is-e-save").disabled = true;
@@ -1841,6 +1847,163 @@ async function 页_问题单详情(id) {
       页_问题单详情(id);
     } catch (e) { $("#is-e-save").disabled = false; $("#is-e-why").textContent = "没保存上:" + 错话(e); }
   };
+}
+
+/* ── 能力档案与改进看板(11-12;意见收集 PRD §4.4)──
+ * 状态流转表只在后端 capability_flow.py:按钮照详情接口给的「能做的动作」画,筛选条照清单接口给的「可选状态」画 ——
+ * 页面不另抄一份。**没有任何「智能度」分数**:验过什么看「已验证范围」那句话。
+ * 评测结果 / 样本数量 / 实际运行量是接口现查的,查不到它给「没有数据」—— 页面照抄那四个字,不把它画成 0。 */
+async function 页_能力档案清单(页 = 1, 筛 = "") {
+  const 头 = `<div class="crumb">能力档案</div>
+    <div class="head"><div><h1>能力档案</h1>
+      <div class="sub">${md("每项业务能力验过什么、靠哪些智能体 / 工作流 / Skill / 工具、还有多少问题没解决。**不打「智能度」分**。")}
+        <a href="#/capability-board">看改进看板</a></div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/capability-profiles?limit=30&page=${页}` + (筛 ? `&status=${encodeURIComponent(筛)}` : "")); }
+  catch (e) { const s = 错误块(e, () => 页_能力档案清单(页, 筛)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 条 = `<div>状态:` + [""].concat(d.可选状态 || []).map((t) =>
+    `<button data-cpf="${esc(t)}"${t === 筛 ? ' class="on"' : ""}>${esc(t || "全部")}</button>`).join("") + `</div>`;
+  const 表 = !d.items.length ? 状态("", "还没有能力档案", "在下面建一份:写清这项能力做什么、给谁用、验过什么。").html
+    : `<table><thead><tr><th>能力</th><th>状态</th><th>已验证范围</th><th>负责人</th><th>依赖</th><th>问题单(未解决 / 关联)</th><th></th></tr></thead><tbody>`
+      + d.items.map((x) => `<tr>
+          <td>${esc(x.名字)}<div class="k">${esc((x.适用角色 || []).join("、"))}</div></td>
+          <td><span class="pill">${esc(x.状态)}</span></td>
+          <td>${esc(x.已验证范围 || "还没写")}</td>
+          <td>${esc(x.负责人 || "—")}</td>
+          <td>${esc(String(x.依赖数))}</td>
+          <td>${esc(String(x.未解决问题单数))} / ${esc(String(x.关联问题单数))}</td>
+          <td><button data-cpopen="${esc(x.id)}">打开</button></td></tr>`).join("") + `</tbody></table>`;
+  const 建 = `<h2>新建能力档案</h2>
+    <input id="cp-new-name" placeholder="名字:这项能力叫什么(必填)" style="width:100%">
+    <textarea id="cp-new-goal" rows="2" placeholder="业务目标(选填)" style="width:100%"></textarea>
+    <div><button id="cp-new-send">建档案</button> <span class="k" id="cp-new-why"></span></div>`;
+  $("#main").innerHTML = 头 + 条 + 表 + 页码条(d) + 建;
+  $("#main").querySelectorAll("[data-cpf]").forEach((b) => { b.onclick = () => 页_能力档案清单(1, b.dataset.cpf); });
+  $("#main").querySelectorAll("[data-cpopen]").forEach((b) => { b.onclick = () => { location.hash = "#/capability/" + encodeURIComponent(b.dataset.cpopen); }; });
+  挂页码($("#main"), (n) => 页_能力档案清单(n, 筛));
+  $("#cp-new-send").onclick = async () => {
+    const 名 = ($("#cp-new-name").value || "").trim(), 目标 = ($("#cp-new-goal").value || "").trim();
+    if (!名) { $("#cp-new-why").textContent = "名字要写"; return; }
+    $("#cp-new-send").disabled = true;
+    try {
+      const r = await 请求(`${P()}/capability-profiles`, { method: "POST", body: JSON.stringify({ 名字: 名, 业务目标: 目标 || null }) });
+      location.hash = "#/capability/" + encodeURIComponent(r.id);
+    } catch (e) { $("#cp-new-send").disabled = false; $("#cp-new-why").textContent = "没建上:" + ((e.体 && (e.体.message + " " + (e.体.advice || ""))) || e.message); }
+  };
+}
+
+async function 页_能力档案详情(id) {
+  const 头 = `<div class="crumb"><a href="#/capabilities">能力档案</a> / ${esc(id)}</div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/capability-profiles/${encodeURIComponent(id)}`); }
+  catch (e) { const s = 错误块(e, () => 页_能力档案详情(id)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const kv = (k, v) => `<tr><td class="k">${esc(k)}</td><td>${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
+  // 现查的三样:接口说「没有数据」就照写「没有数据」+ 为什么,**不画成 0**
+  const 没有 = (块) => `<div class="note">${esc(块.显示 || "没有数据")}:${esc(块.为什么 || "")}</div>`;
+  const 评测块 = !(d.评测结果 || {}).有数据 ? 没有(d.评测结果 || {})
+    : `<table><thead><tr><th>评测</th><th>状态</th><th>候选 / 基线</th><th>这项能力在哪一边</th><th>数据集版本</th><th>逐题结果</th><th>能当结论吗</th></tr></thead><tbody>`
+      + d.评测结果.评测.map((e) => `<tr><td class="k">${esc(e.id)}</td><td>${esc(e.状态)}</td><td>${esc(e.候选 || "")} / ${esc(e.基线 || "")}</td>
+          <td>${esc(e.这项能力的工作流在哪一边)}</td><td class="k">${esc(e.数据集版本 || "")}</td><td>${esc(String(e.逐题结果数))}</td>
+          <td>${e.能当结论吗 ? "能" : "不能"}</td></tr>`).join("") + `</tbody></table><div class="k">${esc(d.评测结果.说明 || "")}</div>`;
+  const 样本块 = !(d.样本数量 || {}).有数据 ? 没有(d.样本数量 || {})
+    : `<table><thead><tr><th>数据集版本</th><th>题数</th><th>用在几次评测</th></tr></thead><tbody>`
+      + d.样本数量.按数据集版本.map((s) => `<tr><td class="k">${esc(s.数据集版本 || "")}</td><td>${s.题数 == null ? "没存下题目清单" : esc(String(s.题数))}</td>
+          <td>${esc(String(s.用在几次评测))}</td></tr>`).join("") + `</tbody></table><div class="k">${esc(d.样本数量.说明 || "")}</div>`;
+  const 运行块 = !(d.实际运行量 || {}).有数据 ? 没有(d.实际运行量 || {})
+    : `<table><thead><tr><th>依赖</th><th>业务</th><th>调试</th><th>最早 / 最近</th></tr></thead><tbody>`
+      + d.实际运行量.按依赖.map((r) => `<tr><td>${esc(r.种类)} <span class="k">${esc(r.引用)}</span></td><td>${esc(String(r.业务))}</td><td>${esc(String(r.调试))}</td>
+          <td class="k">${esc(String(r.最早 || "").slice(0, 10))} / ${esc(String(r.最近 || "").slice(0, 10))}</td></tr>`).join("") + `</tbody></table><div class="k">${esc(d.实际运行量.说明 || "")}</div>`;
+  const 依赖表 = (d.依赖 || []).length ? `<table><thead><tr><th>种类</th><th>引用</th><th>名字</th><th>现在的状态</th></tr></thead><tbody>`
+      + d.依赖.map((x) => `<tr><td>${esc(x.种类)}</td><td class="k">${esc(x.引用)}</td><td>${esc(x.名字 || "—")}</td><td>${esc(x.状态 || "")}${x.最新版本 ? " · " + esc(x.最新版本) : ""}</td></tr>`).join("") + `</tbody></table>`
+    : `<div class="note">还没有登记依赖。</div>`;
+  const 问 = d.问题单数 || {};
+  const 单表 = (d.关联的问题单 || []).length ? `<table><thead><tr><th>问题单</th><th>状态</th><th>根因</th><th></th></tr></thead><tbody>`
+      + d.关联的问题单.map((s) => `<tr><td><a href="#/issue/${encodeURIComponent(s.id)}">${esc(s.标题)}</a>${s.重开次数 ? `<div class="k">重开过 ${esc(String(s.重开次数))} 次</div>` : ""}</td>
+          <td>${esc(s.状态)}</td><td>${esc(s.根因类别 || "未分类")}</td><td>${s.未解决 ? "未解决" : ""}</td></tr>`).join("") + `</tbody></table>`
+    : `<div class="note">还没有问题单挂到这项能力上(在问题单详情的「能力」里填这份档案的编号)。</div>`;
+  const 钮 = (d.能做的动作 || []).map((a) => `<button data-cpact="${esc(a.动作)}">${esc(a.动作)} → ${esc(a.到)}</button>`).join(" ");
+  // 能改的字段:页面上的输入框 ↔ 请求体里的名字;只发改了的。适用角色用顿号分隔;依赖一行一条「种类:引用」
+  const 角色文 = (d.适用角色 || []).join("、");
+  const 依赖文 = (d.依赖 || []).map((x) => `${x.种类}:${x.引用}`).join("\n");
+  const 改 = [["名字", "cp-e-name"], ["业务目标", "cp-e-goal"], ["输入", "cp-e-in"], ["输出", "cp-e-out"], ["负责人", "cp-e-owner"],
+    ["已验证范围", "cp-e-scope"], ["下次验证事项", "cp-e-next"]];
+  $("#main").innerHTML = 头 + `<div class="head"><div><h1>${esc(d.名字)}</h1>
+      <div class="sub">状态 <b>${esc(d.状态)}</b> · 负责人 ${esc(d.负责人 || "未定")} · 未解决问题单 ${esc(String(问.未解决))} / 关联 ${esc(String(问.关联))}</div></div></div>
+    <table><tbody>${kv("业务目标", d.业务目标)}${kv("输入", d.输入)}${kv("输出", d.输出)}${kv("适用角色", 角色文)}
+      ${kv("已验证范围", d.已验证范围 || "还没写 —— 写了才能进试点 / 启用")}${kv("下次验证事项", d.下次验证事项)}
+      ${kv("最近改进", d.最近改进 && `${d.最近改进.标题}(${String(d.最近改进.关闭于 || "").slice(0, 10)} 关闭)`)}</tbody></table>
+    <h2>改状态</h2>
+    ${钮 ? `<textarea id="cp-act-note" rows="2" placeholder="说明(必填):为什么改这个状态" style="width:100%"></textarea><div>${钮}</div><div class="k" id="cp-act-why"></div>`
+      : `<div class="note">这一步没有能做的动作。</div>`}
+    <h2>依赖(只存引用,名字和状态是现取的)</h2>${依赖表}
+    <h2>关联的问题单</h2><div class="k">${esc(问.口径 || "")}</div>${单表}
+    <h2>评测结果</h2>${评测块}
+    <h2>样本数量</h2>${样本块}
+    <h2>实际运行量</h2>${运行块}
+    <h2>改字段</h2><table><tbody>`
+      + 改.map(([名, fid]) => `<tr><td class="k">${esc(名)}</td><td><input id="${fid}" value="${esc(d[名] || "")}" style="width:100%"></td></tr>`).join("")
+      + `<tr><td class="k">适用角色</td><td><input id="cp-e-roles" value="${esc(角色文)}" placeholder="用顿号分开:店长、顾问" style="width:100%"></td></tr>
+      <tr><td class="k">依赖</td><td><textarea id="cp-e-deps" rows="3" placeholder="一行一条「种类:引用」,种类:${esc((d.可选依赖种类 || []).join(" / "))};Skill 写名字,其余写编号" style="width:100%">${esc(依赖文)}</textarea></td></tr>
+    </tbody></table><input id="cp-e-note" placeholder="说明(选填)" style="width:100%">
+    <div><button id="cp-e-save">保存</button> <span class="k" id="cp-e-why"></span></div>
+    <h2>时间线</h2>
+    ${(d.时间线 || []).length ? `<table><thead><tr><th>什么时候</th><th>谁</th><th>动作</th><th>从 → 到</th><th>说明</th><th>改了什么</th></tr></thead><tbody>`
+      + d.时间线.map((e) => `<tr><td class="k">${esc(String(e.时间).slice(5, 16).replace("T", " "))}</td><td>${esc(e.谁 || "")}</td>
+          <td>${esc(e.动作)}</td><td>${esc(e.从 || "")} → ${esc(e.到)}</td><td>${esc(e.说明 || "")}</td>
+          <td class="k">${e.变化 ? esc(JSON.stringify(e.变化)) : ""}</td></tr>`).join("") + `</tbody></table>`
+      : `<div class="note">还没有记录。</div>`}`;
+  const 错话 = (e) => (e.体 && (e.体.message + " " + (e.体.advice || "") + (e.体.field_errors ? " " + JSON.stringify(e.体.field_errors) : ""))) || e.message;
+  $("#main").querySelectorAll("[data-cpact]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await 请求(`${P()}/capability-profiles/${encodeURIComponent(id)}/actions`,
+          { method: "POST", headers: { "If-Match": String(d.revision) }, body: JSON.stringify({ 动作: b.dataset.cpact, 说明: ($("#cp-act-note") || {}).value || "" }) });
+        页_能力档案详情(id);
+      } catch (e) { b.disabled = false; $("#cp-act-why").textContent = "没改上:" + 错话(e); }
+    };
+  });
+  $("#cp-e-save").onclick = async () => {
+    const 体 = {};
+    改.forEach(([名, fid]) => { const v = ($("#" + fid).value || "").trim(); if (v !== (d[名] || "")) 体[名] = v; });
+    const 角色 = ($("#cp-e-roles").value || "").trim();
+    if (角色 !== 角色文) 体.适用角色 = 角色 ? 角色.split(/[、,,]/).map((s) => s.trim()).filter(Boolean) : [];
+    const 依 = ($("#cp-e-deps").value || "").trim();
+    if (依 !== 依赖文) 体.依赖 = 依 ? 依.split("\n").map((s) => s.trim()).filter(Boolean).map((s) => {
+      const i = s.search(/[::]/); return i < 0 ? { 种类: s, 引用: "" } : { 种类: s.slice(0, i).trim(), 引用: s.slice(i + 1).trim() };
+    }) : [];
+    if (!Object.keys(体).length) { $("#cp-e-why").textContent = "没有改动"; return; }
+    体.说明 = ($("#cp-e-note").value || "").trim() || null;
+    $("#cp-e-save").disabled = true;
+    try {
+      await 请求(`${P()}/capability-profiles/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
+      页_能力档案详情(id);
+    } catch (e) { $("#cp-e-save").disabled = false; $("#cp-e-why").textContent = "没保存上:" + 错话(e); }
+  };
+}
+
+async function 页_改进看板() {
+  const 头 = `<div class="crumb"><a href="#/capabilities">能力档案</a> / 改进看板</div>
+    <div class="head"><div><h1>改进看板</h1>
+      <div class="sub">${md("问题单按根因、能力、状态的数。**只出数和分母,不出结论、不排名、不打分**;行按固定顺序排,不按数量排。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/capability-board`); }
+  catch (e) { const s = 错误块(e, () => 页_改进看板()); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 列 = `<th>总数</th><th>未解决</th><th>观察期复发过</th><th>关闭后重开过</th><th>分母</th>`;
+  const 数 = (r) => ["总数", "未解决", "观察期复发过", "关闭后重开过", "分母"].map((k) => `<td>${esc(String(r[k]))}</td>`).join("");
+  const 口 = d.口径 || {};
+  $("#main").innerHTML = 头 + `<div class="note">${md(`分母 **${d.分母}** 张问题单;已重复的 ${d["已重复(不计入)"]} 张不计入(算在它指向的主问题上)。`)}</div>
+    <h2>按根因</h2><table><thead><tr><th>根因类别</th>${列}</tr></thead><tbody>`
+      + (d.按根因 || []).map((r) => `<tr><td>${esc(r.根因类别)}</td>${数(r)}</tr>`).join("") + `</tbody></table>
+    <h2>按能力</h2><table><thead><tr><th>能力</th>${列}</tr></thead><tbody>`
+      + (d.按能力 || []).map((r) => `<tr><td>${r.能力 ? `<a href="#/capability/${encodeURIComponent(r.能力.id)}">${esc(r.能力.名字)}</a> <span class="k">${esc(r.能力.状态)}</span>` : esc(r.说明 || "没关联能力")}</td>${数(r)}</tr>`).join("") + `</tbody></table>
+    <h2>按状态</h2><table><thead><tr><th>状态</th><th>总数</th><th>分母</th></tr></thead><tbody>`
+      + (d.按状态 || []).map((r) => `<tr><td>${esc(r.状态)}</td><td>${esc(String(r.总数))}</td><td>${esc(String(r.分母))}</td></tr>`).join("") + `</tbody></table>
+    <h2>口径</h2><table><tbody>` + Object.keys(口).map((k) => `<tr><td class="k">${esc(k)}</td><td>${md(口[k])}</td></tr>`).join("") + `</tbody></table>
+    <div class="k">${esc(d.note || "")}</div>`;
 }
 
 /* ── 运行记录(占位:列表已有接口,详情页还没做)────────────────── */
@@ -8778,6 +8941,9 @@ async function 路由() {
     if (h.startsWith("#/opinion/")) return await 页_意见详情(decodeURIComponent(h.slice(10)));
     if (h === "#/issues") return await 页_问题单清单();
     if (h.startsWith("#/issue/")) return await 页_问题单详情(decodeURIComponent(h.slice(8)));
+    if (h === "#/capabilities") return await 页_能力档案清单();
+    if (h === "#/capability-board") return await 页_改进看板();
+    if (h.startsWith("#/capability/")) return await 页_能力档案详情(decodeURIComponent(h.slice(13)));
     if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));

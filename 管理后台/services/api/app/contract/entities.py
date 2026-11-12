@@ -972,7 +972,8 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     E("issues", "问题单", 项目级, 可改,
       ["title", "impact_note", "repro_note", "root_cause_type", "root_cause_status", "solution_note", "acceptance_note",
        "target_version", "dependency_note", "owner", "due_date", "completion_evidence_note", "resolution_note",
-       "shelve_reason", "reevaluate_date", "duplicate_of_issue_id", "status", "last_closed_at", "reopen_count"],
+       "shelve_reason", "reevaluate_date", "duplicate_of_issue_id", "status", "last_closed_at", "reopen_count",
+       "capability_profile_id"],
       ["**意见是用的人说的话,问题单是要修的那件事**:多条意见可以并进同一张问题单(opinions.issue_id),原意见保留(PRD §5.1)",
        "根因类别(§4.2 那 9 类)和核实状态(原因待核实 / 原因已证实)**分两列** —— PRD「两者分开」;"
        "没分类就不许标「已证实」(库 CHECK)",
@@ -983,14 +984,35 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "**已验证关闭**必须有处理说明 + 完成证据(库 CHECK)。⚠️ 这次的完成证据是一段文字 —— "
        "PRD §4.3「修复版本已实际生效、原案例与回归通过」的**真绑定(版本 / 验证记录)这次没做**",
        "关闭后复发 → 重开回处理中:**关闭记录不抹掉**(last_closed_at 不清空、时间线里那一行「关闭」还在,reopen_count +1)",
-       "处理时限 due_date 可空:**几天算超时 PRD §10 待定**,这里不替业务定数"],
-      依赖=["issues"]),
+       "处理时限 due_date 可空:**几天算超时 PRD §10 待定**,这里不替业务定数",
+       "**关联能力**(11-12,PRD §4.4):capability_profile_id 可空(同项目复合外键)—— 能力档案详情里列出关联的问题单、单独数未解决的"],
+      依赖=["issues", "capability_profiles"]),
     E("issue_events", "问题处理时间线", 子对象, 只追加,
       ["issue_id", "action_code", "from_status", "to_status", "note", "change_snapshot"],
       ["**每一步追加一行,不改不删**(PRD §7.1「操作者、动作、前后值、原因、时间,追加留痕」):建单、改字段、每一次流转",
        "change_snapshot 记这一步改了哪些字段的前后值(改根因 / 搁置的日期 / 指向哪个主问题 / 关闭的说明和证据)",
        "暂不处理 / 标为重复 / 验证失败 / 发布失败 / 复发 / 重新评估 必须带 note;**发布失败是一行 待发布 → 待发布**,状态不动、记录留下"],
       依赖=["issues"]),
+    # ②''''' 能力档案(2026-11-12;口径照《意见收集与能力持续改进 PRD》10-24 §4.4 / §7.1「能力档案」那一行)
+    E("capability_profiles", "能力档案", 项目级, 可改,
+      ["name", "business_goal_note", "input_note", "output_note", "applicable_roles", "owner", "status",
+       "verified_scope_note", "dependencies", "next_verification_note"],
+      ["**一项业务能力一份档案**:业务目标、输入输出、适用角色、负责人、状态、已验证范围、依赖清单、下次验证事项(PRD §4.4)",
+       "状态照 PRD §4.4 六个:配置中 / 待验证 / 试点中 / 已启用 / 受限 / 已停用。流转表只在 services/api/app/capability_flow.py "
+       "写一次(PRD 没给边,这次定的边写在那里),接口和库 CHECK 都从那里来;**改状态一律要写说明**",
+       "**已验证范围是一段文字**(例:「已验证单笔订单风险分析,批量巡检未验证」)—— **不存任何「智能度 xx 分」**(PRD 原话:"
+       "不使用没有测量依据的分数);试点中 / 已启用 必须写了已验证范围(库 CHECK),写得够不够是 PRD §10 的验证门槛,没拍",
+       "**依赖清单只存引用**(dependencies = [{种类, 引用}],种类:智能体 / 工作流 / Skill / 工具),**不复制定义**;"
+       "写入时核同项目里真有这个东西,读的时候现取名字和状态 —— 被删了就显示「找不到」。JSONB 里的引用加不了外键",
+       "评测结果 / 样本数量 / 实际运行量**不存在这张表里**:详情读的时候从 evaluations / dataset_versions / execution_runs 现查,"
+       "查不到写「没有数据」,不给 0",
+       "同项目里能力名字不重复(两份同名档案,问题单该挂哪一份说不清)"],
+      依赖=["capability_profiles"]),
+    E("capability_profile_events", "能力档案时间线", 子对象, 只追加,
+      ["capability_profile_id", "action_code", "from_status", "to_status", "note", "change_snapshot"],
+      ["**每一步追加一行,不改不删**(PRD §7.1 处理时间线:操作者、动作、前后值、原因、时间):建档、改字段、每一次改状态",
+       "改状态必须带 note(库 CHECK);change_snapshot 记改字段的前后值(已验证范围、依赖清单改了什么都在这里)"],
+      依赖=["capability_profiles"]),
 
     # ③ 工具 / 连接 / 指南 / 规则
     E("tool_definitions", "工具", 项目级, 可改,

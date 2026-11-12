@@ -203,6 +203,7 @@ import chat_handoffs_api as _HO  # 聊天转人工(11-09)
 import routes_api as _RT  # 查询路由(11-08 第二期):路由草稿 / 冻结版本 / 试一句
 import opinions_api as _AF  # 意见单(11-04,DF-03 第 2 步):聊天站每条问答都能提意见,记提问人工号
 import issues_api as _ISS  # 问题单(11-12,意见收集 PRD §4.2 / §5.2):多条意见并进一张要修的单,流转表在 issue_flow.py
+import capabilities_api as _CAP  # 能力档案与改进看板(11-12,意见收集 PRD §4.4):状态流转表在 capability_flow.py,评测 / 样本 / 运行量现查不存
 import open_api as _OA              # 访问 API(11-03):外部系统带密钥跑应用的生产版;先工作流,聊天那一半还没做
 app.include_router(_WF.router)
 app.include_router(_AG.router)
@@ -236,6 +237,7 @@ app.include_router(_RT.router)
 app.include_router(_INT.router)
 app.include_router(_HO.router)
 app.include_router(_ISS.router)
+app.include_router(_CAP.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

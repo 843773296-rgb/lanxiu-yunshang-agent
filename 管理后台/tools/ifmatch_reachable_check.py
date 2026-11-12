@@ -111,6 +111,12 @@ P = f"{基址}/api/v1/projects/{项目}"
         取id=("/issues", "items[0].id"), 读="/issues/{id}", 字段="revision", 项目="project_demo_a"),
     "POST /issues/{id}/actions": dict(
         取id=("/issues", "items[0].id"), 读="/issues/{id}", 字段="revision", 项目="project_demo_a"),
+    # 能力档案(11-12):改字段和改状态要的 revision 都在档案详情顶层。样例由 test-e2e-ci 里的
+    # test_capability_profiles_flow 在**演示项目**留的那一份提供(正式项目里不留)
+    "PATCH /capability-profiles/{id}": dict(
+        取id=("/capability-profiles", "items[0].id"), 读="/capability-profiles/{id}", 字段="revision", 项目="project_demo_a"),
+    "POST /capability-profiles/{id}/actions": dict(
+        取id=("/capability-profiles", "items[0].id"), 读="/capability-profiles/{id}", 字段="revision", 项目="project_demo_a"),
     # 轮换(11-04)和改小上限同一个 revision 来源
     "POST /access-keys/{id}/rotate": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),

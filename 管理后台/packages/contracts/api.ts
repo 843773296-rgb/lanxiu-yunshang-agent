@@ -309,6 +309,12 @@ export const ENDPOINTS = [
   { method: "GET", path: "/issues/{id}", summary: "一张问题单 + 时间线 + 这一步能做的动作 + 关联的意见", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/issues/{id}", summary: "改问题单字段(根因 / 方案 / 验收 / 负责人 / 时限 …)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/issues/{id}/actions", summary: "问题单流转一步(确认 / 处理 / 验证 / 发布 / 关闭 / 复发 / 搁置 / 重复)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/capability-profiles", summary: "建能力档案(在「配置中」)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/capability-profiles", summary: "能力档案清单(按状态筛)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/capability-profiles/{id}", summary: "一份能力档案 + 依赖 + 关联问题单 + 评测 / 样本 / 运行量 + 时间线", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/capability-profiles/{id}", summary: "改能力档案字段(业务目标 / 输入输出 / 角色 / 负责人 / 已验证范围 / 依赖 …)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/capability-profiles/{id}/actions", summary: "能力档案改状态(提交验证 / 试点 / 启用 / 限制 / 停用 …)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "GET", path: "/capability-board", summary: "改进看板:问题单按根因 / 能力 / 状态的数", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/opinions/{id}/promote", summary: "把意见提成待复核的评测样本(总部运营提)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "GET", path: "/opinion-samples/pending", summary: "待我复核的样本(店长在聊天站看)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/opinion-samples/{id}/review", summary: "店长复核样本(通过 / 退回)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -334,4 +340,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 246 条接口 · 24 条异步 · 32 条要幂等键 · 31 条要 If-Match */
+/** 共 252 条接口 · 24 条异步 · 32 条要幂等键 · 33 条要 If-Match */

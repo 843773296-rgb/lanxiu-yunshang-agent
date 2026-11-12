@@ -35,6 +35,9 @@ _桥 = _ilu.module_from_spec(_桥spec); _桥spec.loader.exec_module(_桥)
 # 问题单的状态 / 根因类别 / 时间线动作只在 issue_flow.py 写一次(11-12)—— 库 CHECK 从那里拼,和上面桥工具名单同一个做法
 _问spec = _ilu.spec_from_file_location("问题单口径", os.path.join(os.path.dirname(os.path.abspath(__file__)), "issue_flow.py"))
 _问 = _ilu.module_from_spec(_问spec); _问spec.loader.exec_module(_问)
+# 能力档案的状态 / 时间线动作只在 capability_flow.py 写一次(11-12)—— 同一个加载法
+_能spec = _ilu.spec_from_file_location("能力档案口径", os.path.join(os.path.dirname(os.path.abspath(__file__)), "capability_flow.py"))
+_能 = _ilu.module_from_spec(_能spec); _能spec.loader.exec_module(_能)
 
 from sqlalchemy import (Date, MetaData, Table, Column, Text, Integer, BigInteger, Boolean,
                         Numeric, TIMESTAMP, Index, UniqueConstraint,
@@ -306,6 +309,8 @@ _额外唯一 = {
     "opinions": [("project_id", "chat_trace_ref", "asker_staff_code"), ("project_id", "asker_staff_code", "submit_ref")],
     # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
     "trace_incidents": [("project_id", "trace_id")],
+    # 能力档案(11-12):同项目里名字不重复 —— 两份同名档案,问题单挂哪一份、看板按哪一份数都说不清
+    "capability_profiles": [("project_id", "name")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
     # 第二个撞唯一键 → 返回冲突和最新状态,而不是两条都记下来。
     # 「要求补充」之后 revision 前进,于是下一轮还能再批 —— 这正是想要的。
@@ -390,6 +395,17 @@ _额外检查 = {
     "issue_events": [
         ("ck_issue_events_action", "action_code in " + _问.sql_枚举(_问.全部事件动作)),
         ("ck_issue_events_note", "action_code not in " + _问.sql_枚举(_问.要说明的动作) + " or note is not null"),
+    ],
+    # 能力档案(11-12,PRD §4.4):枚举从 capability_flow.py 拼。依赖清单要是数组(空清单 [] 也行,不许塞个对象 / 裸串)
+    "capability_profiles": [
+        ("ck_capability_profiles_status", "status in " + _能.sql_枚举(_能.状态们)),
+        # 试点中 / 已启用 必须说得出验过什么 —— 只钉「写了」,写得够不够是 PRD §10 的验证门槛(没拍)
+        ("ck_capability_profiles_scope", "status not in ('试点中', '已启用') or verified_scope_note is not null"),
+        ("ck_capability_profiles_deps", "jsonb_typeof(dependencies) = 'array'"),
+    ],
+    "capability_profile_events": [
+        ("ck_capability_profile_events_action", "action_code in " + _能.sql_枚举(_能.全部事件动作)),
+        ("ck_capability_profile_events_note", "action_code not in " + _能.sql_枚举(_能.要说明的动作) + " or note is not null"),
     ],
     "chat_handoffs": [
         ("ck_chat_handoffs_status", "status in ('待处理', '已处理')"),
