@@ -22,6 +22,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("把金额授权那一档去掉(谁能拍板 一律返回店长)", "我方出 1200、没总部批 → 停在待确认"),
     ("让 decide() 不查顾客同意就放进待入库", "判给顾客、没同意 → 停在待确认"),
     ("去掉状态机上的返修开工闸", "状态机:没判完 → 拒"),
+    ("标品也能建返修单(台账第十七条否决的那条路)", "标品单报修 → 拒(STANDARD_NO_REPAIR),不落返修单,理由指向换货"),
 ]
 
 FAIL, N = [], [0]
@@ -78,6 +79,16 @@ def run(T):
     版师 = dict(c.execute("SELECT no,name,role,shop FROM staff WHERE role='版师' AND status='启用' LIMIT 1").fetchone())
     # ── 新建 ──
     ck("版师 → 不能报修", rw.create({"order_id": 一件["id"], "issue": "下摆开线"}, 版师)["code"] == "ROLE")
+    # 台账第十七条:标品不开返修 —— 本店一张标品单,顾问来报修 → 拒,理由里指向换货
+    标 = c.execute("SELECT o.id FROM ordr o WHERE o.shop=? AND o.kind='标品订单' "
+                  "AND (SELECT COUNT(*) FROM ordr_item i WHERE i.order_id=o.id)=1 ORDER BY o.id LIMIT 1", (shop,)).fetchone()
+    ck("夹具:本店有一张只有一件的标品单(多件会先被「哪一件」挡住,验不到这条)", bool(标))
+    if 标:
+        n0 = c.execute("SELECT COUNT(*) FROM maintain WHERE order_id=?", (标["id"],)).fetchone()[0]
+        r = rw.create({"order_id": 标["id"], "issue": "下摆开线"}, 顾问)
+        n1 = c.execute("SELECT COUNT(*) FROM maintain WHERE order_id=?", (标["id"],)).fetchone()[0]
+        ck("标品单报修 → 拒(STANDARD_NO_REPAIR),不落返修单,理由指向换货",
+           r.get("code") == "STANDARD_NO_REPAIR" and n1 == n0 and "换货" in r.get("reason", ""), r)
     r = rw.create({"order_id": 多件["id"], "issue": "下摆开线"}, 顾问)
     ck("一张单好几件、没说哪件 → 反问", r["code"] == "WHICH_ITEM", r.get("reason"))
     r = rw.create({"order_id": 一件["id"], "issue": "下摆开线"}, 顾问)

@@ -133,6 +133,12 @@ def create(d, me, 来源="售后"):
         return _deny(me, "ROLE", f"新建返修单须由顾问或店长操作,你是「{me.get('role')}」")
     it, err = _找件(d.get("order_id"), d.get("item"))
     if err: return err
+    # 标品不开返修(用户 11-12 拍,台账第十七条;否决「标品也开返修」,3–4 人日):返修的判责表、下单量体核对、
+    # 回店核验合身码全是按定制件设计的 —— 标品没有下单量体,判责会一路走到「判不了」。标品售后走换货。
+    if it["kind"] != "定制品订单":
+        return _deny(me, "STANDARD_NO_REPAIR",
+                     f"订单 {d.get('order_id')} 是{it['kind'] or '标品订单'} —— 标品不开返修单(只给定制品)。"
+                     "标品有问题走换货:先判能不能换、提换货审批,批了寄回、原件入库再发新的", d.get("order_id"))
     if it["shop"] != me.get("shop"):
         return _deny(me, "OTHER_SHOP", f"这一单是「{it['shop']}」的,只能给本店的单报修", d.get("order_id"))
     issue = (d.get("issue") or "").strip()
