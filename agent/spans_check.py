@@ -248,6 +248,20 @@ if __name__ == "__main__":
         sys.exit(_自测())
     print("树状记录仪 · 结构检查\n" + "=" * 84)
     棵 = _sp.读(LOG)
+    # 记录文件满了会轮转成 .1(11-13 凌晨 01:19 那次):轮转那一刻正在长的那棵树被劈成两半 ——
+    # 树根和前 13 个 span 在 .1,最后 1 个在新文件。只读新文件就会报「根有 0 个」,而记录本身没坏。
+    # 所以:新文件里出现的树,在 .1 里也有 span 的,拼回去再验(只拼新文件里有的,不把 .1 整个拉进来当样本)
+    _前 = LOG + ".1"
+    if os.path.exists(_前):
+        旧 = _sp.读(_前)
+        跨 = [t for t in 棵 if t in 旧]
+        for t in 跨:
+            # 同一个 span 轮转前后各落了一笔时按 span_id 去重,留新文件那条(它是后写的)
+            新号 = {x.get("span_id") for x in 棵[t]}
+            棵[t] = sorted([x for x in 旧[t] if x.get("span_id") not in 新号] + 棵[t],
+                          key=lambda x: x.get("start") or 0)
+        if 跨:
+            print(f"  ℹ 有 {len(跨)} 棵树跨在记录轮转两边,已从 {os.path.basename(_前)} 拼回去再验")
     跑(棵)
     rc = _自测()
     print()

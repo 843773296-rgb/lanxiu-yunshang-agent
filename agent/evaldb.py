@@ -44,7 +44,8 @@ def 用副本(前缀="eval-", 先导入=()):
                 setattr(m, 名, 副本)
                 补.append(f"{getattr(m, '__name__', '?')}.{名}")
     print(f"  🗄  评测跑在库副本上:{副本}(真库不碰;工具服务子进程经 LANXIU_DB 跟着切)"
-          + (f";另改指 {len(补)} 处别名变量:{'、'.join(补[:6])}" if 补 else ""))
+          + (f";另改指 {len(补)} 处别名变量:{'、'.join(补[:6])}"
+             + (f" …还有 {len(补) - 6} 处" if len(补) > 6 else "") if 补 else ""))
     return 副本
 
 
