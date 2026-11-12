@@ -20323,18 +20323,6 @@
   "预期红": "标品单报修 → 拒(STANDARD_NO_REPAIR),不落返修单,理由指向换货"
  },
  {
-  "script": "backend/rating_write_check.py",
-  "改坏": "追评顺手把差评工单摘掉(差评就此从清单里看不见)",
-  "file": [
-   {
-    "path": "backend/rating_write.py",
-    "old": "UPDATE rating SET followup_note=?, followup_at=? WHERE",
-    "new": "UPDATE rating SET followup_note=?, followup_at=?, task_id=NULL WHERE"
-   }
-  ],
-  "预期红": "追评落进追评两列,星级和工单原样(不改星、不进差评清单)"
- },
- {
   "script": "backend/authgate_check.py",
   "改坏": "把 toggle() 的店长以上判定删掉(顾问又能停用全店的量体项 / 编码)",
   "file": [

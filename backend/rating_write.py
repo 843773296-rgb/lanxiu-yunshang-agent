@@ -239,44 +239,6 @@ def customer_edit_rating(order_id, phone_tail, star, note=None, pkg=None):
                 清单=动作, 工单=tid, reason=为什么)
 
 
-def customer_followup(order_id, phone_tail, note, pkg=None):
-    """顾客追评(11-12 接写口;口径 09-29 立:签收后 R.能追评几天 天内、一个包裹一次、不带星、不进差评清单)。
-
-    只给顾客自己写 —— 和提交评价同一道门。「顾问代录追评」**没做**:09-27 定过顾问不能替顾客评,
-    代录要不要开是业务的事(记在 HANDOFF 待拍)。
-    追评前必须先评过:追评挂在那一条评价上,没有评价就没有「追」。"""
-    o, err = _顾客的单(order_id, phone_tail)
-    if err: return err
-    包 = [k["pkg_id"] for k in _这一单的包裹(o["id"])]
-    pid = str(pkg or "").strip()
-    if pid and pid not in 包:
-        return dict(ok=False, code="NO_SUCH_PKG", reason=f"这一单没有包裹 {pid}(有的是:{'、'.join(包) or '无'})")
-    if not pid:
-        可追 = [p for p in 包 if (_评过的(p) or {}).get("rated_at") and not (_评过的(p) or {}).get("followup_note")]
-        if len(可追) != 1:
-            return dict(ok=False, code="WHICH_PKG" if 可追 else "NOTHING_TO_FOLLOW",
-                        reason=(f"这一单有 {len(可追)} 个包裹可以追评,说清是哪一个:{'、'.join(可追)}" if 可追
-                                else "这一单没有能追评的包裹(还没评过,或者都追评过了)"))
-        pid = 可追[0]
-    旧 = _评过的(pid)
-    if not 旧:
-        return dict(ok=False, code="NOT_RATED", reason=f"包裹 {pid} 还没评过 —— 先评价,穿过之后再追评")
-    文 = str(note or "").strip()
-    if not 文:
-        return dict(ok=False, code="NO_NOTE", reason="追评要写点什么(穿过之后的感受)—— 追评不带星级")
-    能, 话 = R.能不能追评(R.签收于(_包里的件(pid)), _now(), 追评过了吗=bool(旧["followup_note"]))
-    if not 能:
-        return _deny("顾客", "CANNOT_FOLLOWUP", 话, pid)
-    now = _now()
-    with closing(sqlite3.connect(DB)) as c, c:
-        # 只写追评两列:**不碰 star、不碰 task_id**(R.追评改星级吗 / R.追评进差评清单吗 都是 False)
-        c.execute("UPDATE rating SET followup_note=?, followup_at=? WHERE pkg_id=? AND followup_note IS NULL",
-                  (文, now, pid))
-    log_op("顾客", "rating", pid, "—", "追评", True, "RATING_FOLLOWUP", f"订单 {o['id']} 包裹 {pid} 追评:{文[:40]}", {})
-    return dict(ok=True, code="RATING_FOLLOWUP", 订单=o["id"], 包裹=pid,
-                reason="谢谢,追评已收到(不改原来的星级;穿后有质量问题请到店报修)")
-
-
 # ── 店长端 ────────────────────────────────────────────────────────────
 def close_bad_rating(d, me):
     """店长处理完一张差评工单。**必须写处理记录。**

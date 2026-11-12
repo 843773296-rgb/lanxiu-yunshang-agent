@@ -129,7 +129,7 @@ def main():
                   "改了之后数值一个都没动,含义全变了,而没有任何东西会报错")
 
         # ⑧ **停用**一个还被模版引用的测量项:要挡住,并说清是哪几个模版
-        r8 = server.toggle("measure_item", "code", mi, actor="检查")
+        r8 = server.toggle("measure_item", "code", mi, actor="检查", role="店长")   # 开关限店长以上(11-12 台账第二十七条);这里验的是模版守卫,用店长
         说清了 = (not r8.get("ok")) and ("模版引用着它" in (r8.get("reason") or ""))
         ck("停用还被模版引用的测量项要挡住,并说清是哪几个", 说清了, 1,
            "" if 说清了 else f"实得:{r8}")

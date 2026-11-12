@@ -49,7 +49,7 @@ try:
 except Exception as e:
     out['api'] = '崩了:' + str(e)[:80]
 if len(sys.argv) > 1:
-    c = sqlite3.connect('backend/lanxiu.db'); c.execute('create table if not exists _gate_probe(x)'); c.execute("insert into _gate_probe values('门禁探针')"); c.commit(); c.close()
+    c = sqlite3.connect('backend/lanxiu.db'); c.execute('create table if not exists _gate_probe(x)'); c.execute("insert into _gate_probe(x) values('门禁探针')"); c.commit(); c.close()
 print(json.dumps(out, ensure_ascii=False))
 """
 
