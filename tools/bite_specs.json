@@ -1931,15 +1931,39 @@
  },
  {
   "script": "backend/authgate_check.py",
-  "改坏": "把 /api/transit 的身份检查去掉(回到审阅发现漏洞时的样子)",
+  "改坏": "把 do_POST 入口身份闸的「没登录就 401」删掉(登录人照取,取不到也往下走 —— 回到每个分支自己决定拦不拦的样子)",
   "file": [
    {
     "path": "backend/server.py",
-    "old": "            _ut = _me(self)\n            if not _ut:\n                return self._send({\"error\": \"请先登录\", \"code\": \"NO_AUTH\"}, 401)\n            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {},\n                                      actor=_ut.get(\"name\") or \"?\", me=_ut))",
-    "new": "            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {}))"
+    "old": "            登录人 = _me(self)\n            if not 登录人:\n                return self._send({\"error\": \"没登录\", \"code\": \"NO_LOGIN\",\n                                   \"reason\": \"请先登录 —— 写操作要记下是谁做的,不替任何人署名\"}, 401)\n",
+    "new": "            登录人 = _me(self)\n"
    }
   ],
-  "预期红": "没登录的流转请求被拒"
+  "预期红": "不登录打 do_POST 的每一条路径 → 必须 401(豁免名单除外)"
+ },
+ {
+  "script": "backend/authgate_check.py",
+  "改坏": "把 toggle() 里的 TOGGLE_ALLOW 白名单判断删掉(表名 / 键名又从请求体拼进 SQL)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if (table, key, col) not in TOGGLE_ALLOW:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "toggle 表名不在白名单 → 拒,员工状态一个字没动"
+ },
+ {
+  "script": "backend/authgate_check.py",
+  "改坏": "把 /api/template-save 的 role 改回读请求体(body.get(\"role\"))",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "save_template(body,登录人[\"name\"],role=登录人.get(\"role\"))",
+    "new": "save_template(body,登录人[\"name\"],role=body.get(\"role\") or \"顾问\")"
+   }
+  ],
+  "预期红": "角色只从会话取:顾问登录、请求体自称总部运营 → 三个口都按顾问拒"
  },
  {
   "script": "backend/draft_check.py",
@@ -11117,6 +11141,11 @@
   "script": "backend/alert_dispatch_check.py",
   "改坏": "从预警派单的 HTTP 口不取会话身份(谁都能派)",
   "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            登录人 = _me(self)\n            if not 登录人:\n                return self._send({\"error\": \"没登录\", \"code\": \"NO_LOGIN\",\n                                   \"reason\": \"请先登录 —— 写操作要记下是谁做的,不替任何人署名\"}, 401)\n",
+    "new": "            登录人 = _me(self)\n"
+   },
    {
     "path": "backend/server.py",
     "old": "            return self._send(_ad.派(body, _me(self)))",

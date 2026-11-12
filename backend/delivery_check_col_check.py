@@ -66,6 +66,8 @@ def ck(名, ok, 附=""):
 tmp = tempfile.mkdtemp(prefix="lanxiu-delivery-")
 copy = os.path.join(tmp, "lanxiu.db")
 shutil.copy(REAL, copy)          # shutil.copy **跟随软链**,所以这是一份真副本(cp -R 不是)
+# /api/ops-triage 从 11-12(W01)起是内部口,只认本机令牌头 —— 令牌文件指到临时目录,不碰家目录那一份
+os.environ["LANXIU_INTERNAL_TOKEN_FILE"] = os.path.join(tmp, "internal-token")
 
 import ops, server                                            # noqa: E402
 ops.DB = copy
@@ -115,7 +117,9 @@ else:
         # do_POST 读请求体的方式各版本不同 —— 让它拿到我们这份,其余原样走
         import io as _io
         h.rfile = _io.BytesIO(h._体)
-        h.headers = {"content-length": str(len(h._体)), "cookie": ""}
+        import internal_token as _it
+        h.headers = {"content-length": str(len(h._体)), "cookie": "",
+                     _it.请求头.lower(): _it.读()}     # 和 agentsite/app.py 的 _post() 同一个头
         try:
             server.H.do_POST(h)
         except Exception as e:                       # noqa: BLE001

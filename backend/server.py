@@ -12,6 +12,7 @@ import lifecycle as _lc     # 生命周期口径的唯一源头,页面不再自�
 import stockalert as _sa     # 「快没了」件数线的唯一源头(业务 2026-09-22 定 ≤5),页面不再自己写一个数
 import auth                     # 员工登录:**角色只从服务端会话取,不从请求体读**
 import source as _src            # 来源档位的口径(README 那张表是唯一源头),页面不再自己抄一份
+import internal_token as _内部令牌  # 内部口(8770 研判线程调的两个)只认本机令牌头,见 do_POST 入口身份闸
 
 
 
@@ -199,7 +200,10 @@ def _role_of(handler, fallback="顾问"):
     return (u or {}).get("role") or fallback
 
 
-def _actor_of(handler, fallback="魏欣新"):
+# ⚠️ 2026-11-12(W01)起 **do_POST 里不再用这两个兜底** —— 写口一律先过入口身份闸,
+# 角色和操作人从闸放进来的那个会话取。它俩只剩 do_GET 在用(导出记台账),
+# 兜底也从真实员工名「魏欣新」改成「未登录」:没人登录时不替一个真人署名。
+def _actor_of(handler, fallback="未登录"):
     u = _me(handler)
     return (u or {}).get("name") or fallback
 
@@ -443,7 +447,7 @@ def log_edit(actor, actor_no, obj, target, title, changes, source="后台"):
               "status": "上架状态", "img_main": "主图",
               "img_detail": "轮播图", "img_intro": "详情图"}
 
-def transit(mid, target, to, ctx, actor="魏欣新", me=None):
+def transit(mid, target, to, ctx, actor, me=None):
     """统一入口:先过引擎,允许才落库,拒绝也留痕。
 
     me = 会话里的人。**给了就用它的角色覆盖 ctx 里的 role** —— ctx 来自请求体,角色写在那儿谁都能报
@@ -604,7 +608,7 @@ def transit(mid, target, to, ctx, actor="魏欣新", me=None):
     return dict(ok=True,code="OK",frm=cur,to=to,reason=f"已从「{cur}」流转到「{to}」",
                 **({"客户归属": {k: 归属.get(k) for k in ("转了吗", "理由", "知会任务", "指定导购任务") if 归属.get(k) is not None}} if 归属 else {}))
 
-def adjust_lifecycle(cid,to,reason,actor="魏欣新"):
+def adjust_lifecycle(cid,to,reason,actor):
     r=rows("SELECT lifecycle,matched FROM customer WHERE id=?",cid)
     if not r: return {"error":"客户不存在"}
     cur=r[0]["lifecycle"]
@@ -615,7 +619,7 @@ def adjust_lifecycle(cid,to,reason,actor="魏欣新"):
            f"人工调整,30 天内优先。原因:{reason or '未填写'}",{"reason":reason})
     return dict(ok=True,frm=cur,to=to,reason="人工调整已生效,30 天内优先于每日重算")
 
-def close_task(tid,result,note,actor="魏欣新"):
+def close_task(tid,result,note,actor):
     r=rows("SELECT * FROM task WHERE id=?",tid)
     if not r: return {"error":"任务不存在"}
     if r[0]["status"]!="待处理":
@@ -1658,7 +1662,24 @@ def _guard_measure_item(code, cur, to):
 TOGGLE_GUARD = {"measure_item": _guard_measure_item}
 
 
-def toggle(table,key,val,col="status",on="启用",off="停用",actor="魏欣新"):
+# 哪几对(表, 键, 列)允许经通用开关翻状态(W01,2026-11-12)。
+# ⚠️ 原来表名 / 键名 / 列名**直接从请求体拼进 SQL**,没有白名单、也不要登录 ——
+# 一个不带 Cookie 的 `{"table":"staff","key":"no","val":"<工号>"}` 就能把任何员工停用
+# (`staff.status` 恰好也用「启用 / 停用」,`auth.login` 看到不是「启用」就拒登),
+# 而 `key` 拼进 WHERE 还是一个现成的 SQL 注入口。
+# 这四对是页面上 `data-tgl` 实际用到的**全部**(index.html 量体项 / 量体模版 / 系统编码 / 标签四页);
+# 要加一对,先想清楚那张表的「停用」会连带什么(参照下面 TOGGLE_GUARD 对量体项的守卫)。
+TOGGLE_ALLOW = {("measure_item", "code", "status"), ("measure_tpl", "code", "status"),
+                ("sys_code", "code", "status"), ("tag", "code", "status")}
+
+
+def toggle(table,key,val,col="status",on="启用",off="停用",*,actor):
+    # 不在白名单里**直接拒,一个字都不拼进 SQL** —— 判在拼之前,不是拼完再看
+    if (table, key, col) not in TOGGLE_ALLOW:
+        log_op(actor, str(table)[:40], str(val)[:40], "—", "—", False, "TOGGLE_NOT_ALLOWED",
+               f"这一对不在通用开关白名单里:{str(table)[:40]}.{str(key)[:40]}.{str(col)[:40]}", {})
+        return dict(ok=False, code="TOGGLE_NOT_ALLOWED",
+                    reason="这张表 / 这一列不能经通用开关切换 —— 只有量体项、量体模版、系统编码、标签四类")
     r=rows(f"SELECT {col} s FROM {table} WHERE {key}=?",val)
     if not r: return {"error":"记录不存在"}
     cur=r[0]["s"]; to=off if cur==on else on
@@ -1673,7 +1694,7 @@ def toggle(table,key,val,col="status",on="启用",off="停用",actor="魏欣新"
     return dict(ok=True,code="TOGGLE",frm=cur,to=to,reason=f"已从「{cur}」切换为「{to}」")
 
 
-def save_measure_item(d,actor="魏欣新",role="顾问"):
+def save_measure_item(d,actor,role="顾问"):
     """新建或编辑测量项。
 
     ⚠️ **改单位是这一页最危险的动作。**
@@ -1894,7 +1915,7 @@ def syscode_list(q):
 def download_list(q):
     return _simple("download_task",q,["id","kind"],{"id","created"},["kind","status"],"created DESC")
 
-def create_download(kind,filters,actor="魏欣新"):
+def create_download(kind,filters,actor):
     import datetime
     n=rows("SELECT COUNT(*) c FROM download_task")[0]["c"]
     did=f"DL{_wnow():%y%m%d}{n+1:04d}"
@@ -1967,7 +1988,7 @@ def _insert(table, vals, required):
                   [vals[k] for k in use])
 
 
-def resolve_combo(d, actor="魏欣新", _role=None):
+def resolve_combo(d, actor, _role=None):
     """**核实回填** —— 工艺负责人打样确认之后,把结论写回相容矩阵。
 
     这是待核实队列的另一半。队列只说「谁被问了」,答案要人去打样;
@@ -2057,7 +2078,7 @@ from tasks import (MANAGER_ROLES, my_staff, assign_task, dispatch, reassign,   #
                    my_tasks, finish_task, visible_scope)
 
 
-def create_customer(d, actor="魏欣新", _role=None):
+def create_customer(d, actor, _role=None):
     """新建客户档案。PRD 6.2:姓名必填、手机号唯一、疑似重复要提示。"""
     import datetime
     # role 由调用方(路由)从**会话**取好传进来;d 里的 role 一律忽略。
@@ -2096,7 +2117,7 @@ def create_customer(d, actor="魏欣新", _role=None):
                 reason=f"已建档 {cid}。**生命周期初始是「潜在」** —— 它由每日重算决定,不接受手工流转")
 
 
-def create_appointment(d, actor="魏欣新", _role=None):
+def create_appointment(d, actor, _role=None):
     """新建预约。PRD:早于当前时间的补录只有店长及以上能做 —— 判据在 rules.py。"""
     import datetime
     role = _role or "顾问"
@@ -2135,7 +2156,7 @@ def create_appointment(d, actor="魏欣新", _role=None):
     return dict(ok=True, code="CREATE", id=aid, reason=f"已建预约 {aid},状态「待确认」")
 
 
-def create_followup(d, actor="魏欣新", ctx=None):
+def create_followup(d, actor, ctx=None):
     """新建跟进记录。跟进是**只增不改**的流水 —— 改跟进等于改历史。
 
     `ctx` 进台账(2026-10-24):AI 管理后台的工作流来写时带着幂等键,
@@ -2189,7 +2210,7 @@ _EXPORT = {
                   "ORDER BY ts DESC LIMIT 5000"),
 }
 
-def export_csv(kind, q=None, actor="魏欣新", 本店=None):
+def export_csv(kind, q=None, actor="未登录", 本店=None):
     """导出 CSV。kind 见 _EXPORT;未知 kind 返回可选清单,不静默给空文件。"""
     import csv, io
     if kind not in _EXPORT:
@@ -2211,7 +2232,7 @@ def export_csv(kind, q=None, actor="魏欣新", 本店=None):
     return buf.getvalue()
 
 
-def update_customer(cid,d,actor="魏欣新",role="顾问"):
+def update_customer(cid,d,actor,role="顾问"):
     r=rows("SELECT * FROM customer WHERE id=?",cid)
     if not r: return {"error":"客户不存在"}
     old=r[0]
@@ -2244,7 +2265,7 @@ def update_customer(cid,d,actor="魏欣新",role="顾问"):
     log_op(actor,"customer",cid,"编辑","编辑",True,"UPDATE","; ".join(diff),{"role":role})
     return dict(ok=True,code="UPDATE",reason=f"已更新 {len(diff)} 个字段:"+"; ".join(diff[:3]))
 
-def import_customers(text,actor="魏欣新",role="顾问",dry=True):
+def import_customers(text,actor,role="顾问",dry=True):
     """批量导入。后台 PRD 6.2:结构错误整批拒绝;行级错误部分成功;重复跳过;疑似重复进人工确认。"""
     import csv, io, datetime
     if role not in ("店长","总部运营"):
@@ -2300,7 +2321,7 @@ def import_customers(text,actor="魏欣新",role="顾问",dry=True):
               f"{len(review)} 条进入人工确认队列"))
 
 import json as _j
-def apply_approval(kind,target,payload,note,actor="魏欣新",role="顾问"):
+def apply_approval(kind,target,payload,note,actor,role="顾问"):
     """发起高风险操作审批(PRD 第 8 章:等级调整/积分调整/客户批量转移)"""
     if role not in ("店长","总部运营"):
         log_op(actor,"approval",target,"—","申请",False,"WRONG_ROLE",
@@ -2319,7 +2340,7 @@ def apply_approval(kind,target,payload,note,actor="魏欣新",role="顾问"):
     return dict(ok=True,code="APPLY",id=aid,
       reason=f"{kind}申请 {aid} 已提交,等待总部运营审批")
 
-def decide_approval(aid,to,note,actor="魏欣新",role="顾问",me=None):
+def decide_approval(aid,to,note,actor,role="顾问",me=None):
     r=rows("SELECT * FROM approval WHERE id=?",aid)
     if not r: return {"error":"审批单不存在"}
     a=r[0]; cur=a["status"]
@@ -2699,7 +2720,7 @@ def maintain_detail(mid):
     m["idx"]=m["chain"].index(m["status"]) if m["status"] in m["chain"] else -1
     return m
 
-def save_product(d,actor="魏欣新",role="顾问"):
+def save_product(d,actor,role="顾问"):
     """新建或编辑商品。下架不影响历史订单(见 bk-product 状态机 notes)。
 
     ⚠️ **只有总部运营。** 原来是「店长及以上」,那是个漏洞:
@@ -2864,7 +2885,7 @@ def save_product(d,actor="魏欣新",role="顾问"):
       reason=(f"商品 {spu} 已创建,默认状态为「下架」,补齐 SKU 与库存后再上架" if new
               else f"商品 {spu} 已更新"))
 
-def save_block(d,actor="魏欣新"):
+def save_block(d,actor):
     """页面区块增删改与排序"""
     act=d.get("act"); page=d.get("page")
     if not rows("SELECT 1 FROM page WHERE code=?",page): return {"error":"页面不存在"}
@@ -2905,7 +2926,7 @@ def tpl_impact(code):
         量体记录=rows("SELECT COUNT(*) c FROM measure_rec WHERE tpl=?",code)[0]["c"])
 
 
-def save_template(d,actor="魏欣新",role="顾问"):
+def save_template(d,actor,role="顾问"):
     """新建或编辑量体模版。
 
     ⚠️ **编辑一个已经被引用的模版是这块最危险的动作。**
@@ -2987,7 +3008,7 @@ def save_template(d,actor="魏欣新",role="顾问"):
     return dict(ok=True,code="CREATE",reason=f"量体模版 {code} 已创建,含 {len(items)} 个测量项")
 
 
-def del_template(d,actor="魏欣新",role="顾问"):
+def del_template(d,actor,role="顾问"):
     """删模版 —— **被引用就不许删**,而且要说清被谁引用。
 
     「删不了」这三个字没用:看的人还要自己去翻是哪几个商品挂着它。
@@ -3015,7 +3036,7 @@ def del_template(d,actor="魏欣新",role="顾问"):
     log_op(actor,"measure_tpl",code,"—","删除",True,"DELETE","没有任何引用"+(f";原因:{why}" if why else ""),{})
     return dict(ok=True,code="DELETE",reason=f"量体模版 {code} 已删除(它没有被任何商品或量体记录引用)")
 
-def save_syscode(d,actor="魏欣新",role="顾问"):
+def save_syscode(d,actor,role="顾问"):
     if role!="总部运营":
         return dict(ok=False,code="WRONG_ROLE",reason=f"系统编码维护须由总部运营操作,当前角色:{role}")
     for k in ("category","name","val"):
@@ -3033,7 +3054,7 @@ def save_syscode(d,actor="魏欣新",role="顾问"):
     log_op(actor,"sys_code",code,"—","新建",True,"CREATE",f"{d['category']} · {d['name']}={d['val']}",{"role":role})
     return dict(ok=True,code="CREATE",reason=f"系统编码 {code} 已创建")
 
-def save_content(d,actor="魏欣新"):
+def save_content(d,actor):
     ti=(d.get("title") or "").strip()
     if not ti: return dict(ok=False,code="NEED_TITLE",reason="标题必填")
     n=rows("SELECT COUNT(*) c FROM content")[0]["c"]
@@ -3492,6 +3513,31 @@ def _u(x):
 # 图名解析:`{spu}-{图位}`,而 spu 是 `lxys_<数字>`(346 款实测没有一个含连字符)。
 # 图位可以是一段(`main` / `sku2`)也可以是两段(`sku2-main` —— 第 2 个 SKU 那一套的主图)。
 _re_img = __import__("re").compile(r"^(lxys_\d+)-(.+)$")
+
+# ── do_POST 入口身份闸(W01,2026-11-12)──────────────────────────────────
+# 原来 do_POST 没有统一的闸:每个 `if p==` 分支自己决定取不取身份,于是三种写口并存 ——
+# 从会话取并拒匿名的(对的)、`_role_of` 兜底成「顾问」的(匿名能建客户 / 建预约)、
+# 什么都不取 actor 写死「魏欣新」的(匿名能停用任意员工、改方案状态、伪造研判)。
+# 还有三处 role 直接读请求体(量体模版 / 量体项)—— 浏览器说自己是店长就是店长。
+#
+# > **「每个分支都记得取身份」是约定;「没登录走不到任何分支」才是结构。**
+# > 一个新加的写口忘了取身份,前者下静默放行,后者下它根本收不到请求。
+#
+# 所以改成**默认要登录**,例外只有下面两张表,每条带理由(authgate_check 会验理由不为空,
+# 并逐条打一遍:不在表里的路径不带 cookie 必须 401)。
+POST_匿名放行 = {
+    "/api/login":  "登录口本身 —— 登录之前当然没有会话",
+    "/api/logout": "退出口 —— 会话可能已经过期,退出不该被拦;它只作废请求自己 cookie 里的那个 token,碰不到别人",
+    "/api/book":   "顾客手机端自助预约 —— 顾客没有员工账号,要他先注册等于不让约;"
+                   "敞开的代价由 booking.book() 自己的三道闸兜(格式 / 频次 / 派给谁不由请求决定)",
+}
+POST_内部口 = {
+    "/api/triage-run-worker": "智能运维平台(8770)研判执行线程领活 / 心跳 / 收尾 —— 服务端线程调用,没有浏览器 cookie;"
+                              "改认本机令牌头(internal_token),不带或带错一律 401",
+    "/api/ops-triage":        "智能运维平台跑完一条研判,把结果寄存回后台 —— 服务端线程调用,没有浏览器 cookie;"
+                              "改认本机令牌头(internal_token),不带或带错一律 401",
+}
+
 
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
@@ -4077,6 +4123,19 @@ class H(BaseHTTPRequestHandler):
         p=_u(unquote(urlparse(self.path).path))
         n=int(self.headers.get("content-length") or 0)
         body=json.loads(self.rfile.read(n) or "{}") if n else {}
+        # ── 入口身份闸(W01):默认要登录;例外只有 POST_匿名放行 / POST_内部口 两张表 ──
+        # ⚠️ 局部名别用 _u / _b / _r / me 这类短名:这个文件里 _u 是全局函数,
+        #    一赋值整个 do_POST 都当它局部(10-15 栽过,11-11 又栽一次,所有请求挂掉)
+        登录人 = None
+        if p in POST_内部口:
+            if not _内部令牌.对得上(self.headers.get(_内部令牌.请求头.lower())
+                                    or self.headers.get(_内部令牌.请求头)):
+                return self._send({"error": "没登录", "code": "NO_LOGIN", "reason": "内部口只认本机令牌头"}, 401)
+        elif p not in POST_匿名放行:
+            登录人 = _me(self)
+            if not 登录人:
+                return self._send({"error": "没登录", "code": "NO_LOGIN",
+                                   "reason": "请先登录 —— 写操作要记下是谁做的,不替任何人署名"}, 401)
         if p == "/api/reveal-contact":
             # 卡片上点「看完整号码」—— 身份只从 Cookie 换;每点一次进操作台账(用户 10-10 定)
             import arrival_card as _ac
@@ -4137,7 +4196,9 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/scheme-transit":
             if scheme_status(body.get("id")) is None:
                 return self._send(dict(ok=False,reason="方案不存在"),404)
-            return self._send(transit("fe-scheme",body.get("id"),body.get("to"),body))
+            # 操作人和角色从会话取(W01):原来不传 me,ctx 整个是请求体 —— 角色写在请求体里谁都能报
+            return self._send(transit("fe-scheme",body.get("id"),body.get("to"),body,
+                                      actor=登录人.get("name") or "?", me=登录人))
         if p=="/api/ops-triage":
             # 智能体站跑完一条,把研判结果寄存到后台。**数据的家在后台**,
             # 站上不复制一份库 —— 否则两边一定会漂。
@@ -4237,6 +4298,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
         if p=="/api/triage-run-worker":
             # 智能运维平台的执行线程用(同 /api/ops-triage:站上不留库,进度写回后台)
+            # 内部口:入口身份闸只认本机令牌头(POST_内部口),不认 cookie —— 调它的是服务端线程
             import triage_run as _tr
             op = body.get("op")
             try:
@@ -4453,7 +4515,7 @@ class H(BaseHTTPRequestHandler):
             self.send_header("content-length", str(len(data))); self.end_headers()
             self.wfile.write(data); return
         if p=="/api/combo-resolve":
-            return self._send(resolve_combo(body, _actor_of(self), _role_of(self)))
+            return self._send(resolve_combo(body, 登录人["name"], 登录人.get("role")))
         if p=="/api/task-assign": return self._send(assign_task(body, _me(self)))
         # 从预警那一行派单(复审第 4 节 D):身份只认会话;超期日期 / 档位由服务端现算,请求体里的不收
         if p=="/api/alert-dispatch":
@@ -4486,48 +4548,50 @@ class H(BaseHTTPRequestHandler):
             import booking as _bk
             return self._send(_bk.book(body))
         if p=="/api/freight-save":
-            return self._send(save_freight(body, _actor_of(self), _role_of(self)))
+            return self._send(save_freight(body, 登录人["name"], 登录人.get("role")))
         if p=="/api/customer-create":
-            return self._send(create_customer(body, _actor_of(self), _role_of(self)))
+            return self._send(create_customer(body, 登录人["name"], 登录人.get("role")))
         if p.startswith("/api/customer-update/"):
             return self._send(update_customer(p.split("/api/customer-update/")[1],body,
-                                              role=_role_of(self)))
+                                              登录人["name"], role=登录人.get("role")))
         if p=="/api/approval-apply":
             return self._send(apply_approval(body.get("kind"),body.get("target"),
-                body.get("payload") or {},body.get("note"),role=_role_of(self)))
+                body.get("payload") or {},body.get("note"),登录人["name"],role=登录人.get("role")))
         if p=="/api/approval-decide":
             # 批注必填(和智能体那条路一样):同意不写理由,出事之后没人说得清当时看了什么
             if len((body.get("note") or "").strip())<4:
                 return self._send(dict(ok=False,code="NEED_NOTE",reason="批注必填,至少 4 个字"))
             return self._send(decide_approval(body.get("id"),body.get("to"),body.get("note"),
-                                              actor=_actor_of(self),role=_role_of(self),me=_me(self)))
+                                              actor=登录人["name"],role=登录人.get("role"),me=登录人))
         if p=="/api/import":
-            return self._send(import_customers(body.get("text"),role=_role_of(self),
+            return self._send(import_customers(body.get("text"),登录人["name"],role=登录人.get("role"),
                                                dry=bool(body.get("dry",True))))
         if p=="/api/appt-create":
-            return self._send(create_appointment(body, _actor_of(self), _role_of(self)))
+            return self._send(create_appointment(body, 登录人["name"], 登录人.get("role")))
         if p=="/api/followup-create":
-            return self._send(create_followup(body, _actor_of(self)))
+            return self._send(create_followup(body, 登录人["name"]))
         if p=="/api/factory-rollback": return self._send(factory_rollback(body, _me(self)))
         if p=="/api/workshop-report": return self._send(工坊报工(body, _me(self)))
         if p=="/api/delay-told":       return self._send(delay_told(body, _me(self)))
         if p=="/api/download-create":
-            return self._send(create_download(body.get("kind"),body.get("filters")))
+            return self._send(create_download(body.get("kind"),body.get("filters"),登录人["name"]))
         if p=="/api/product-save":
-            return self._send(save_product(body,role=_role_of(self)))
-        if p=="/api/block-save": return self._send(save_block(body))
-        if p=="/api/template-save": return self._send(save_template(body,role=body.get("role") or "顾问"))
-        if p=="/api/template-del": return self._send(del_template(body,role=body.get("role") or "顾问"))
-        if p=="/api/mitem-save": return self._send(save_measure_item(body,role=body.get("role") or "顾问"))
+            return self._send(save_product(body,登录人["name"],role=登录人.get("role")))
+        if p=="/api/block-save": return self._send(save_block(body,登录人["name"]))
+        # 角色只从会话取(W01):这三处原来读请求体里的 role —— 浏览器说自己是店长就是店长
+        if p=="/api/template-save": return self._send(save_template(body,登录人["name"],role=登录人.get("role")))
+        if p=="/api/template-del": return self._send(del_template(body,登录人["name"],role=登录人.get("role")))
+        if p=="/api/mitem-save": return self._send(save_measure_item(body,登录人["name"],role=登录人.get("role")))
         if p=="/api/syscode-save":
-            return self._send(save_syscode(body,role=_role_of(self)))
-        if p=="/api/content-save": return self._send(save_content(body))
+            return self._send(save_syscode(body,登录人["name"],role=登录人.get("role")))
+        if p=="/api/content-save": return self._send(save_content(body,登录人["name"]))
         if p=="/api/toggle":
-            return self._send(toggle(body.get("table"),body.get("key"),body.get("val")))
+            # 表 / 键只认 TOGGLE_ALLOW 那四对(在 toggle 里判);列不收请求体的,固定 status
+            return self._send(toggle(body.get("table"),body.get("key"),body.get("val"),actor=登录人["name"]))
         if p=="/api/transfer":
-            ids=body.get("ids") or []; adv=body.get("advisor"); role=_role_of(self)
+            ids=body.get("ids") or []; adv=body.get("advisor"); role=登录人.get("role")
             if role not in ("店长","总部运营"):
-                log_op("魏欣新","customer","|".join(ids[:3]),"—","转移",False,"WRONG_ROLE",
+                log_op(登录人["name"],"customer","|".join(ids[:3]),"—","转移",False,"WRONG_ROLE",
                        f"客户转移须由店长及以上操作,当前角色:{role}",{})
                 return self._send(dict(ok=False,code="WRONG_ROLE",
                     reason=f"客户转移须由店长及以上操作,当前角色:{role}"))
@@ -4536,7 +4600,7 @@ class H(BaseHTTPRequestHandler):
                 # 整户转(10-26):同一账户下的档案一起走。顺手修:预约原来写的是显示串 adv,不是工号
                 import account_owner as _AO
                 ids = _AO.改导购(c, ids, _adv_no)
-            log_op("魏欣新","customer","|".join(ids[:5]),"—","转移",True,"TRANSFER",
+            log_op(登录人["name"],"customer","|".join(ids[:5]),"—","转移",True,"TRANSFER",
                    f"{len(ids)} 人转至 {adv};同店转移已迁移未完成预约。{body.get('note','')}",{})
             return self._send(dict(ok=True,code="TRANSFER",
                 reason=f"{len(ids)} 位客户已转至 {adv},未完成预约同步迁移"))
@@ -4544,18 +4608,18 @@ class H(BaseHTTPRequestHandler):
             tid=body.get("id"); nt=body.get("note") or ""
             with _conn() as c:
                 c.execute("UPDATE task SET summary=? WHERE id=?",(nt,tid))
-            log_op("魏欣新","task",tid,"—","备注",True,"NOTE",nt[:80],{})
+            log_op(登录人["name"],"task",tid,"—","备注",True,"NOTE",nt[:80],{})
             return self._send(dict(ok=True,code="NOTE",reason="备注已保存"))
         if p=="/api/task-close":
-            return self._send(close_task(body.get("id"),body.get("result"),body.get("note")))
+            return self._send(close_task(body.get("id"),body.get("result"),body.get("note"),登录人["name"]))
         if p=="/api/merge":
-            # 身份只从登录态取(10-14):没登录就是空身份,FSM 按「顾问」最低权限判、合并执行拒
+            # 身份只从登录态取(10-14);没登录的 11-12 起在入口身份闸就 401 了,走不到这里
             return self._send(merge_transit(body.get("id"),body.get("to"),
-                                            body.get("note"),me=_me(self) or {}))
+                                            body.get("note"),me=登录人))
         if p=="/api/customer-unmerge":
-            return self._send(customer_unmerge(body.get("id"),body.get("note"),me=_me(self) or {}))
+            return self._send(customer_unmerge(body.get("id"),body.get("note"),me=登录人))
         if p=="/api/lifecycle-adjust":
-            return self._send(adjust_lifecycle(body.get("id"),body.get("to"),body.get("reason")))
+            return self._send(adjust_lifecycle(body.get("id"),body.get("to"),body.get("reason"),登录人["name"]))
         if p.startswith("/api/draft/"): return self._send(gen_draft(p.split("/api/draft/")[1]))
         if p.startswith("/api/draft-status/"):
             return self._send(set_draft_status(p.split("/api/draft-status/")[1],

@@ -1014,7 +1014,7 @@ async function customers(){
       {k:"note",type:"text",label:"转移原因(必填,提交后需总部运营审批)",req:1,
        ph:"后台 PRD 6.2:同店转移自动迁移未完成跟进任务与未来预约"}],
       v=>doOp("/api/approval-apply",{kind:"客户转移",target:sel.join("|"),
-        payload:{to_advisor:v.advisor,n:sel.length},note:v.note,role:ROLE},customers))});
+        payload:{to_advisor:v.advisor,n:sel.length},note:v.note},customers))});
   M.querySelectorAll("[data-export]").forEach(e=>e.onclick=()=>dl("/api/export/customers?"+qs(st)));
   bindTable(st,customers);
 }
@@ -2344,7 +2344,7 @@ function formMeasureItem(after,cur){
     {k:"sort",label:"排序",req:1,val:cur?String(cur.sort):"99"},
     {k:"note",type:"text",label:"说明(量的人会看到)",val:cur&&cur.note,
      ph:"例如:必填。要问穿什么鞋,高跟差 5–8cm"},
-  ],v=>doOp("/api/mitem-save",{...v,required:v.required==="是"?"1":"0",code:cur&&cur.code,role:ROLE},after),true);
+  ],v=>doOp("/api/mitem-save",{...v,required:v.required==="是"?"1":"0",code:cur&&cur.code},after),true);
 }
 function bindToggle(reload){
   M.querySelectorAll("[data-tgl]").forEach(e=>e.onclick=async()=>{
@@ -2465,7 +2465,7 @@ async function measureTpls(){
   M.querySelectorAll("[data-deltpl]:not(.dead)").forEach(e=>e.onclick=()=>
     modal(`删除量体模版 · ${e.dataset.deltpl}`,[{k:"why",type:"text",req:1,
       label:"删除原因(删除不可逆;要临时停掉请走「停用」)",ph:"例如:建错了,没用过"}],
-      v=>doOp("/api/template-del",{code:e.dataset.deltpl,why:v.why,role:ROLE},measureTpls),true));   // 11-08:原来没把原因传给后端
+      v=>doOp("/api/template-del",{code:e.dataset.deltpl,why:v.why},measureTpls),true));   // 11-08:原来没把原因传给后端
   bindToggle(measureTpls); bindTable(st,measureTpls);
 }
 function showTpl(r){
@@ -3165,10 +3165,10 @@ async function approvalCenter(定位单){
   M.querySelectorAll("[data-apv]").forEach(e=>e.onclick=()=>view("task",e.dataset.apv));
   M.querySelectorAll("[data-apok]").forEach(e=>e.onclick=()=>
     modal("审批通过并合并",[{k:"note",type:"text",req:1,label:"审批意见"}],
-      v=>doOp("/api/merge",{id:e.dataset.apok,to:"已合并",note:v.note,role:ROLE},approvalCenter)));
+      v=>doOp("/api/merge",{id:e.dataset.apok,to:"已合并",note:v.note},approvalCenter)));
   M.querySelectorAll("[data-apno]").forEach(e=>e.onclick=()=>
     modal("驳回合并",[{k:"note",type:"text",req:1,label:"驳回原因"}],
-      v=>doOp("/api/merge",{id:e.dataset.apno,to:"已驳回",note:v.note,role:ROLE},approvalCenter)));
+      v=>doOp("/api/merge",{id:e.dataset.apno,to:"已驳回",note:v.note},approvalCenter)));
   M.querySelectorAll("[data-dlok]").forEach(e=>e.onclick=async()=>{
     if(!await sure("批准这次导出?","批准后申请人就能下载这份数据(可能含客户信息),24 小时内有效。","批准导出"))return;
     doTransit("bk-download",e.dataset.dlok,"已完成",{},approvalCenter)});
@@ -3176,10 +3176,10 @@ async function approvalCenter(定位单){
     doTransit("bk-download",e.dataset.dlno,"失败",{},approvalCenter));
   M.querySelectorAll("[data-rkok]").forEach(e=>e.onclick=()=>
     modal("审批通过",[{k:"note",type:"text",req:1,label:"审批意见"}],
-      v=>doOp("/api/approval-decide",{id:e.dataset.rkok,to:"已通过",note:v.note,role:ROLE},approvalCenter)));
+      v=>doOp("/api/approval-decide",{id:e.dataset.rkok,to:"已通过",note:v.note},approvalCenter)));
   M.querySelectorAll("[data-rkno]").forEach(e=>e.onclick=()=>
     modal("驳回申请",[{k:"note",type:"text",req:1,label:"驳回原因"}],
-      v=>doOp("/api/approval-decide",{id:e.dataset.rkno,to:"已驳回",note:v.note,role:ROLE},approvalCenter)));
+      v=>doOp("/api/approval-decide",{id:e.dataset.rkno,to:"已驳回",note:v.note},approvalCenter)));
 }
 
 function formImport(after){
@@ -3203,7 +3203,7 @@ function formImport(after){
   const box=m.querySelector("#impres");
   const run=async dry=>{
     const text=m.querySelector("[data-k]").value;
-    const r=await post("/api/import",{text,dry,role:ROLE});
+    const r=await post("/api/import",{text,dry});
     if(!r.ok){box.innerHTML=`<div class="err">${esc(r.code)} · ${esc(r.reason)}</div>`;return}
     const c=r.counts, D=r.detail;
     box.innerHTML=`<div style="margin-top:14px;background:var(--tile);border-radius:6px;padding:14px">
@@ -3237,7 +3237,7 @@ function formEditCustomer(c,after){
     {k:"advisor",type:"select",label:"销售顾问",req:1,opts:ADVS,val:c.advisor},
     {k:"birthday",label:"生日",val:c.birthday},
     {k:"addr",label:"地址",val:c.addr},
-  ],v=>doOp("/api/customer-update/"+c.id,{...v,role:ROLE},after),true);
+  ],v=>doOp("/api/customer-update/"+c.id,{...v},after),true);
 }
 
 Q.tg2={page:1,per:20};
@@ -3279,7 +3279,7 @@ async function levelPage(){
       {k:"to",type:"select",label:"调整为",req:1,opts:["普通","银卡","金卡","黑金"]},
       {k:"note",type:"text",label:"调整原因(必填,将写入审计日志)",req:1,ph:"例如:客户投诉后补偿升级"}],
       v=>doOp("/api/approval-apply",{kind:"等级调整",target:v.target,
-        payload:{to:v.to},note:v.note,role:ROLE},levelPage),true));
+        payload:{to:v.to},note:v.note},levelPage),true));
   M.querySelectorAll("[data-ptapply]").forEach(e=>e.onclick=()=>
     modal("发起积分调整申请",[
       {k:"target",label:"客户编码",req:1,ph:"例如:C10000"},
@@ -3288,7 +3288,7 @@ async function levelPage(){
       v=>{ // 11-08 UI 检查:原来 parseInt(…)||0 —— 填「abc」被悄悄当成 0 提交
         if(!/^-?\d+$/.test(String(v.delta).trim())){res(false,"格式不对","调整积分要填整数,比如 5000 或 -2000");return false}
         return doOp("/api/approval-apply",{kind:"积分调整",target:v.target,
-        payload:{delta:parseInt(v.delta,10)},note:v.note,role:ROLE},levelPage)},true));
+        payload:{delta:parseInt(v.delta,10)},note:v.note},levelPage)},true));
 }
 
 async function tagPage(){
@@ -3806,7 +3806,7 @@ async function formProduct(cur,after){
     // 主图:后台只填路径(没有上传服务)。**不填就不动**,不会被清空。
     {k:"img_main",label:"主图路径",val:cur&&cur.img_main,ph:"留空则不改;图由 backend/img.py 按商品属性合成"},
   ],v=>doOp("/api/product-save",{...v,spu:cur&&cur.spu,
-      category:(v.category||"").split(" ")[0],role:ROLE},after),true);
+      category:(v.category||"").split(" ")[0]},after),true);
 }
 async function formBlock(page,blk,after){
   modal(blk?`编辑区块 · ${blk.kind}`:"新增页面内容",
@@ -3828,7 +3828,7 @@ async function formTemplate(after,cur){
     {k:"items",type:"text",val:cur&&(cur.item_codes||[]).join(","),
      label:`测量项编码(逗号分隔)· 可用:${on.map(x=>x.code+"="+x.name).join(" ")}`,
      req:1,ph:"MI01,MI03,MI06"},
-  ],v=>doOp("/api/template-save",{...v,code:cur&&cur.code,role:ROLE},after),true);
+  ],v=>doOp("/api/template-save",{...v,code:cur&&cur.code},after),true);
 }
 function formSyscode(after){
   modal("新增系统编码",[
@@ -3836,7 +3836,7 @@ function formSyscode(after){
     {k:"name",label:"名称",req:1,ph:"例如:抖音小店"},
     {k:"val",label:"值",req:1,ph:"例如:douyin"},
     {k:"note",type:"text",label:"说明",ph:"选填"},
-  ],v=>doOp("/api/syscode-save",{...v,role:ROLE},after),true);
+  ],v=>doOp("/api/syscode-save",{...v},after),true);
 }
 function formContent(after){
   modal("新建内容",[
@@ -3946,7 +3946,7 @@ function bindOps(tid){
              "已合并":["总部运营审批","审批意见"],"已驳回":["驳回合并","驳回原因"],
              "已核验":["标记为非同一人","核验依据"],"待核验":["退回重新核验","退回说明"]}[to];
     modal(L[0],[{k:"note",type:"text",label:L[1],req:1,ph:"例如:生日与地址一致,判为同一人"}],
-      v=>doOp("/api/merge",{id:tid,to,note:v.note,role:ROLE},()=>view("task",tid)))});
+      v=>doOp("/api/merge",{id:tid,to,note:v.note},()=>view("task",tid)))});
   M.querySelectorAll("[data-retry]").forEach(e=>e.onclick=async()=>{
     if(!await sure("重新发起退款?","会把这笔押金退款重新提交给支付渠道 —— 钱会退出去,提交后不能撤回。","重新退款"))return;
     doTransit("bk-deposit",e.dataset.retry,"退款处理中",{idem_key:e.dataset.idem},()=>view("task",tid))});

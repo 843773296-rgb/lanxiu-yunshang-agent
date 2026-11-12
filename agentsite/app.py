@@ -1232,6 +1232,11 @@ def _ops_mod():
 def _post(path, payload, timeout=60, cookie=None):
     h = {"content-type": "application/json"}
     if cookie: h["cookie"] = cookie
+    # 后台的两个内部口(研判线程领活 / 寄存研判结果)不认 cookie、只认本机令牌头(W01,2026-11-12)。
+    # **只给这两个路径带** —— 别的口照旧凭登录 cookie,令牌不该替任何人顶登录
+    if path in ("/api/triage-run-worker", "/api/ops-triage"):
+        import internal_token as _it      # backend/ 已由 _ops_mod() 放进 sys.path
+        h[_it.请求头] = _it.读()
     r = urllib.request.Request(BACKEND + path, method="POST",
                                data=json.dumps(payload, ensure_ascii=False).encode(), headers=h)
     return json.loads(urllib.request.urlopen(r, timeout=timeout).read())

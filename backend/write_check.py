@@ -87,7 +87,7 @@ print("=" * 92)
 r = server.create_customer(dict(name="检查用·勿动", phone="13900000001",
                                 shop="SH001 静安旗舰店", advisor="A01 林岚",
                                 birthday="1995-03-03", addr="上海市静安区检查路 1 号",
-                                role="店长"))
+                                role="店长"), "检查")
 w1 = []
 if not r.get("ok"): w1.append(f"建档被拒:{r.get('code')} {r.get('reason')}")
 else:
@@ -108,7 +108,7 @@ st = (datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d %
 et = (datetime.datetime.now() + datetime.timedelta(days=3, hours=1)).strftime("%Y-%m-%d %H:%M")
 r2 = server.create_appointment(dict(customer_id="C10000", shop="SH001 静安旗舰店",
                                     advisor="A01 林岚", start=st, end=et,
-                                    way="到店量体", role="店长"))
+                                    way="到店量体", role="店长"), "检查")
 w2 = []
 if not r2.get("ok"): w2.append(f"建预约被拒:{r2.get('code')} {r2.get('reason')}")
 else:
@@ -126,7 +126,7 @@ check("W2", "建预约:校验过的时间必须真的落到 start_ts / end_ts", 
 
 # ── W3 建跟进:时间戳不能空 ────────────────────────────────────
 r3 = server.create_followup(dict(customer_id="C10000", content="检查用跟进,勿动",
-                                 advisor="A01 林岚", channel="电话"))
+                                 advisor="A01 林岚", channel="电话"), "检查")
 w3 = []
 if not r3.get("ok"): w3.append(f"建跟进被拒:{r3.get('code')} {r3.get('reason')}")
 else:
@@ -141,7 +141,7 @@ check("W3", "建跟进:内容和时间戳都要落库", w3, "跟进是只增不�
 
 # ── W4 业务拒绝要**真的没写进去** ─────────────────────────────
 n0 = q("SELECT COUNT(*) c FROM customer")[0]["c"]
-r4 = server.create_customer(dict(name="", phone="13900000002", role="店长"))
+r4 = server.create_customer(dict(name="", phone="13900000002", role="店长"), "检查")
 n1 = q("SELECT COUNT(*) c FROM customer")[0]["c"]
 w4 = []
 if r4.get("ok"): w4.append("空姓名被放行了 —— rules.validate_customer 说姓名必填")

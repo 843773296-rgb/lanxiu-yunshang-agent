@@ -607,7 +607,7 @@ def _journey(cust, dry=False):
                     steps.append(("⑧ 推进", REAL, f"{R}工厂回传没收下({_事}):{rr['理由'][:40]}{D}"))
                     return steps, None
             continue
-        rr = _srv.transit("bk-order", oid, st, {"by": "旅程脚本", "actor_no": adv["no"]})
+        rr = _srv.transit("bk-order", oid, st, {"by": "旅程脚本", "actor_no": adv["no"]}, actor="旅程脚本")
         if not rr.get("ok"):
             steps.append(("⑧ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
             return steps, None

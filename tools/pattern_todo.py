@@ -82,7 +82,7 @@ def main():
         print("⚠️ 这一步要**总部运营**身份。试一下店长:")
         rr = sv.save_product({"spu": spu, "name": r["name"], "kind": r["kind"],
                               "base_price": r["base_price"], "category": r["category"],
-                              "pattern": pt}, role="店长")
+                              "pattern": pt}, actor="排版待办脚本", role="店长")
         print(f"   店长 → {rr.get('code')}: {str(rr.get('reason'))[:70]}")
         print("   用总部运营身份在后台页面上做,或者 role='总部运营' 调 save_product")
         return 0

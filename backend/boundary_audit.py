@@ -755,7 +755,7 @@ def a_product_by_manager():
     import server as _sv
     with 不许留痕():
         r = _sv.save_product({"spu": "lxys_100831495", "name": "越权改的商品",
-                              "base_price": 1, "kind": "标品"}, role="店长")
+                              "base_price": 1, "kind": "标品"}, actor="边界审计", role="店长")
     if r.get("ok"):
         return "店长改成了商品 —— 全国主数据被门店角色改了"
     raise PermissionError(r.get("reason", "")[:90])
@@ -773,7 +773,7 @@ def a_product_template_by_manager():
     with 不许留痕():
         r = _sv.save_product({"spu": "lxys_100974037", "name": "越权改模板",
                               "base_price": 9600, "kind": "定制品",
-                              "template": "LT02 裙装模版"}, role="店长")
+                              "template": "LT02 裙装模版"}, actor="边界审计", role="店长")
     if r.get("ok"):
         return "店长改成了定制品的量体模板 —— 会照着错的口径量尺寸"
     raise PermissionError(r.get("reason", "")[:90])
@@ -906,6 +906,59 @@ def a_card_reveal_unlogged():
         raise PermissionError(r.get("error"))
     finally:
         _ol.log_op = 旧; _sh.rmtree(d, ignore_errors=True)
+
+
+# ── HTTP 写口匿名(W01,2026-11-12):管理后台 do_POST 默认要登录 ──
+def a_http_write_anonymous():
+    """不带 cookie 把管理后台 do_POST 的**每一条**路径打一遍;再挑体检点名的三刀单独看后果。
+
+    2026-11-12 全项目体检查出:do_POST 没有统一身份闸,14 个以上写口匿名可用 ——
+    不登录能停用任意员工(`/api/toggle` 表名从请求体拼进 SQL)、建客户、伪造研判;
+    量体模版三个口的角色读请求体。修法是入口闸(默认要登录,例外两张带理由的表)。
+
+    在**子进程 + 库副本**里打(`check_copy.用副本`):万一闸失效,匿名请求真会写库,
+    而切库会改已加载模块的 DB,不能在审计进程里做。
+    **带对照**:登录了的请求必须过得了闸 —— 不然「条条 401」可能只是闸把所有人都拦了。"""
+    import subprocess as _sp, json as _js
+    src = r"""
+import sys, os, json, importlib
+sys.path[:0] = ['backend', 'knowledge']
+import authgate_check as A          # 借它的假 handler 和抽路径(令牌文件它已指到临时目录)
+精确, 前缀, _, 懒 = A.抽路径()
+for m in sorted(懒):
+    try: importlib.import_module(m)
+    except Exception: pass
+import server, auth, check_copy
+副本 = check_copy.用副本('ba-anon-')
+全部 = sorted(精确 | {x + 'BA-NO-SUCH' for x in 前缀})
+豁免 = set(server.POST_匿名放行) | set(server.POST_内部口)
+漏 = [p for p in 全部 if p not in 豁免 and A.打一次(p, {"id": "BA-NO-SUCH"})[0] != 401]
+员 = server.rows("SELECT no FROM staff WHERE status='启用' ORDER BY no LIMIT 1")[0]["no"]
+停 = A.打一次("/api/toggle", {"table": "staff", "key": "no", "val": 员})[0]
+员后 = server.rows("SELECT status FROM staff WHERE no=?", 员)[0]["status"]
+研 = A.打一次("/api/ops-triage", {"task_id": "BA-NO-SUCH", "text": "伪造的研判"})[0]
+ck, _人 = A.会话(server, auth, "顾问")
+对照 = A.打一次("/api/scheme-check", {"xz": "XZ04", "mt": "MT02"}, cookie=ck)[0] if ck else None
+print(json.dumps({"打了": len(全部) - len(豁免 & set(全部)), "漏": 漏[:6], "漏数": len(漏),
+                  "停员工": [停, 员后], "伪造研判": 研, "对照": 对照}, ensure_ascii=False))
+"""
+    r = _sp.run([sys.executable, "-c", src], capture_output=True, text=True, timeout=180, cwd=ROOT)
+    try:
+        o = _js.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        raise 前提不成立(f"攻击脚本没跑完,什么都没验:{(r.stderr or r.stdout)[-300:]}")
+    if o["对照"] != 200:
+        raise 前提不成立(f"对照没过:登录了的顾问打只读校验口回 {o['对照']} —— 「条条 401」不作数")
+    if o["打了"] < 60:
+        raise 前提不成立(f"只抽到 {o['打了']} 条要登录的路径 —— 抽路径的判据可能瞎了")
+    if o["漏数"]:
+        return f"{o['漏数']} 条写口不登录也走进了业务层:{o['漏']}"
+    if o["停员工"] != [401, "启用"]:
+        return f"不登录停用员工:{o['停员工']}"
+    if o["伪造研判"] != 401:
+        return f"不带本机令牌往 /api/ops-triage 寄存研判回了 {o['伪造研判']}"
+    raise PermissionError(f"不带 cookie 打 {o['打了']} 条路径条条 401;停员工 401 且状态没动;"
+                          f"内部口不带令牌 401;对照:登录了的照常过闸")
 
 
 # ── 预警 → 任务(复审第 4 节 D,10-23):没办完不重派 / 补货跟进只派店长或总部 / 只能从预警那一行派 ──
@@ -1688,6 +1741,14 @@ STRUCT = [
   a_customer_read_no_login, "不带登录翻客户详情;拿店长会话翻别家店的客户",
   "身份只从登录态取,门店范围跟登录走、不跟请求参数走(列表传别家店也被本店覆盖);"
   "总部运营 / 售后跨店,和差评隔离同一个常量。⚠️ 只管这三个接口 —— 订单、预约等页面里带出的客户信息不在这一条里"),
+ ("管理后台 HTTP 写口匿名打不进(默认要登录,角色只从会话取)",
+  "backend/server.py do_POST 入口身份闸 · POST_匿名放行 / POST_内部口 · TOGGLE_ALLOW;backend/internal_token.py",
+  a_http_write_anonymous, "库副本上不带 cookie 把 do_POST 每条路径打一遍;再单看停用员工、不带令牌寄存研判两刀;对照:登录了的照常过闸",
+  "闸在 do_POST 入口,不在各分支 —— 新加一个写口忘了取身份,它也收不到匿名请求。例外只有两张带理由的表:"
+  "匿名放行(登录 / 退出 / 顾客自助预约)、内部口(8770 研判线程调的两个,改认本机令牌头 ~/.lanxiu-internal-token,600)。"
+  "toggle 的表 / 键 / 列只认四对白名单,不在里面的不拼 SQL。authgate_check 逐条打同一批路径。"
+  "⚠️ 只管**有没有登录、角色从哪来**;每个口的权限细则(谁能做哪件事)在各写口自己判。`/api/book` 有意匿名,"
+  "它的「按手机号能探出是不是老客」不在这一条里"),
  ("研判队列要登录(根因文本里有客户姓名 / 生日 / 地址)", "backend/server.py 要登录的读;ops.队列载荷;agentsite/app.py 不绕 HTTP",
   a_triage_queue_no_login, "不带登录取研判队列;并查服务端有没有改回绕 HTTP(绕了就得给这个口留例外)",
   "这一条泄的是**模型写的自由文本**,不是字段 —— 裁字段 / 打码 / 按角色挑列全都不适用,"

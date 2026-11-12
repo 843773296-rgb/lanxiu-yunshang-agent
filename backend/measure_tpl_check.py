@@ -67,7 +67,7 @@ def main():
 
     # ① 已经量过的那一项不许移
     r1 = server.save_template({"code": tc, "name": "试", "items": ",".join(留)},
-                              role="总部运营")
+                              actor="检查", role="总部运营")
     ck("已经量过的测量项不许从模版里移掉", not r1.get("ok") and r1.get("code") == "ITEM_IN_USE",
        len(量过),
        ("" if not r1.get("ok") else "**移掉之后那批记录会悬空,而悬空不违反任何外键**"))
@@ -75,7 +75,7 @@ def main():
         print(f"       挡住了:{r1['reason'][:56]}…")
 
     # ② 被引用的模版不许删,而且要说清**被谁**引用
-    r2 = server.del_template({"code": tc}, role="总部运营")
+    r2 = server.del_template({"code": tc}, actor="检查", role="总部运营")
     说清了 = (not r2.get("ok")) and ("商品挂着它" in (r2.get("reason") or ""))
     ck("被引用的模版不许删,而且要说清被谁引用", 说清了, 1,
        "" if 说清了 else f"实得:{r2}")
@@ -85,7 +85,7 @@ def main():
     # ③ 改名/改描述(不动测量项)要放行,并且**报出影响面**
     nm0 = c.execute("SELECT name FROM measure_tpl WHERE code=?", (tc,)).fetchone()[0]
     r3 = server.save_template({"code": tc, "name": nm0 + "·改", "descr": "改了描述",
-                               "items": ",".join(旧项)}, role="总部运营")
+                               "items": ",".join(旧项)}, actor="检查", role="总部运营")
     有影响面 = r3.get("ok") and "影响面" in (r3.get("reason") or "")
     ck("改名/改描述要放行,并且报出影响面", 有影响面, 1,
        "" if 有影响面 else f"实得:{r3}")
@@ -98,9 +98,9 @@ def main():
 
     # ⑤ 没有引用的模版**要删得掉** —— 只挡不放行,等于这个功能不存在
     r4 = server.save_template({"name": "临时试删模版", "items": 旧项[0]},
-                              role="总部运营")
+                              actor="检查", role="总部运营")
     新码 = c.execute("SELECT code FROM measure_tpl WHERE name='临时试删模版'").fetchone()
-    r5 = server.del_template({"code": 新码[0]}, role="总部运营") if 新码 else {}
+    r5 = server.del_template({"code": 新码[0]}, actor="检查", role="总部运营") if 新码 else {}
     ck("没有引用的模版要删得掉", bool(r5.get("ok")), 1,
        "" if r5.get("ok") else f"建了删不掉:{r4} / {r5}")
     if r5.get("ok"):
@@ -120,7 +120,7 @@ def main():
         # ⑦ **改单位**:有量体记录就不许改 —— 这一页最危险的动作
         r7 = server.save_measure_item(
             {"code": mi, "name": o[0], "unit": "寸", "required": o[2], "sort": o[3]},
-            role="总部运营")
+            actor="检查", role="总部运营")
         ck("有量体记录的测量项不许改单位",
            (not r7.get("ok")) and r7.get("code") == "UNIT_LOCKED", 1,
            "" if not r7.get("ok") else f"改成功了:{r7}")
@@ -129,7 +129,7 @@ def main():
                   "改了之后数值一个都没动,含义全变了,而没有任何东西会报错")
 
         # ⑧ **停用**一个还被模版引用的测量项:要挡住,并说清是哪几个模版
-        r8 = server.toggle("measure_item", "code", mi)
+        r8 = server.toggle("measure_item", "code", mi, actor="检查")
         说清了 = (not r8.get("ok")) and ("模版引用着它" in (r8.get("reason") or ""))
         ck("停用还被模版引用的测量项要挡住,并说清是哪几个", 说清了, 1,
            "" if 说清了 else f"实得:{r8}")
@@ -142,7 +142,7 @@ def main():
                        (mi,)).fetchone()[0]
         r9 = server.save_measure_item(
             {"code": mi, "name": 另, "unit": o[1], "required": o[2], "sort": o[3]},
-            role="总部运营")
+            actor="检查", role="总部运营")
         ck("测量项不许重名", (not r9.get("ok")) and r9.get("code") == "DUP_NAME", 1,
            "" if not r9.get("ok") else f"重名成功了:{r9}")
         if not r9.get("ok"):
@@ -151,14 +151,14 @@ def main():
         # ⑩ 改说明/排序这种无害的要放行 —— **只挡不放行等于这个功能不存在**
         r10 = server.save_measure_item(
             {"code": mi, "name": o[0], "unit": o[1], "required": o[2],
-             "sort": o[3], "note": "改了个说明"}, role="总部运营")
+             "sort": o[3], "note": "改了个说明"}, actor="检查", role="总部运营")
         ck("改说明这种无害的要放行", bool(r10.get("ok")), 1,
            "" if r10.get("ok") else f"实得:{r10}")
 
         # ⑪ 新建的测量项要说清**它还没被任何模版用上**
         r11 = server.save_measure_item(
             {"name": "试建小腿围", "unit": "cm", "required": 0, "sort": 99},
-            role="总部运营")
+            actor="检查", role="总部运营")
         提醒了 = r11.get("ok") and "还没被任何模版引用" in (r11.get("reason") or "")
         ck("新建的测量项要说清它还没被任何模版用上", 提醒了, 1,
            "" if 提醒了 else f"实得:{r11}")
@@ -168,7 +168,7 @@ def main():
 
     # ⑥ 角色:顾问不许动模版
     r6 = server.save_template({"code": tc, "name": "顾问想改", "items": ",".join(旧项)},
-                              role="顾问")
+                              actor="检查", role="顾问")
     ck("顾问不许维护量体模版", (not r6.get("ok")) and r6.get("code") == "WRONG_ROLE", 1,
        "" if not r6.get("ok") else f"顾问改成功了:{r6}")
     c.close()
