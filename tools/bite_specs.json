@@ -13656,18 +13656,6 @@
  },
  {
   "script": "backend/customer_read_auth_check.py",
-  "改坏": "把研判队列从 `要登录的读` 里删掉(回到 10-23 那个例外)",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "    \"/api/ops-queue\",\n)",
-    "new": ")"
-   }
-  ],
-  "预期红": "没登录:点名的带客户信息读接口全拒(401)"
- },
- {
-  "script": "backend/customer_read_auth_check.py",
   "改坏": "让运维平台服务端改回绕 HTTP 取研判队列",
   "file": [
    {
@@ -20357,5 +20345,94 @@
    }
   ],
   "预期红": "顾问导出客户 → 403(EXPORT_ROLE)"
+ },
+ {
+  "script": "backend/customer_read_auth_check.py",
+  "改坏": "把研判队列从 `要登录的读` 里删掉(回到 10-23 那个例外)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    \"/api/ops-queue\",\n    # ── 2026-11-12",
+    "new": "    # ── 2026-11-12"
+   },
+   {
+    "path": "backend/server.py",
+    "old": "    \"/api/ops-\",          # 运维平台读口一整族",
+    "new": "    # 运维平台读口一整族"
+   }
+  ],
+  "预期红": "没登录:点名的带客户信息读接口全拒(401)"
+ },
+ {
+  "script": "backend/read_route_registry_check.py",
+  "改坏": "把 /api/craft-doc/ 从 `要登录的读_前缀` 里删掉(工艺文档又能匿名读)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    \"/api/craft-doc/\",    # 工艺文档",
+    "new": "    # 工艺文档"
+   }
+  ],
+  "预期红": "不带 cookie:11-12 审出来的真漏全拒(401)"
+ },
+ {
+  "script": "backend/read_route_registry_check.py",
+  "改坏": "do_GET 开头那道登录闸关掉(`if _要登录(p) and not _me(self):` → `if False:`)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if _要登录(p) and not _me(self):\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "不带 cookie 打每一条「要登录」路由:全部 401"
+ },
+ {
+  "script": "backend/read_route_registry_check.py",
+  "改坏": "do_GET 里新加一条读路由、不登记",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if p==\"/api/levels\": return",
+    "new": "        if p==\"/api/新口-没登记\": return self._send({})\n        if p==\"/api/levels\": return"
+   }
+  ],
+  "预期红": "每一条读路由都恰好归了一类(要登录 / 自查身份 / 匿名)"
+ },
+ {
+  "script": "backend/read_route_registry_check.py",
+  "改坏": "匿名白名单里登记一条 do_GET 已经没有的路径",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    \"/api/tags\": \"客户标签字典(人数只是计数)\",",
+    "new": "    \"/api/tags\": \"客户标签字典(人数只是计数)\",\n    \"/api/早就删了的口\": \"囤着的豁免\","
+   }
+  ],
+  "预期红": "白名单 / 点名清单里登记的路径在 do_GET 里都还在(豁免不许囤积)"
+ },
+ {
+  "script": "backend/read_route_registry_check.py",
+  "改坏": "门店详情不按店划了(店长看得到别家店的员工花名册)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                if not _我码 or _code != _我码:\n",
+    "new": "                if False:\n"
+   }
+  ],
+  "预期红": "店长看别家店的门店详情:拒(403)"
+ },
+ {
+  "script": "backend/read_route_registry_check.py",
+  "改坏": "单据说明不按店划了(店长拿别家店的客户号换客户姓名)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            if _sh and not _是本店(_本店, _sh):\n",
+    "new": "            if False:\n"
+   }
+  ],
+  "预期红": "店长拿别家店的客户号换说明:拒(403)"
  }
 ]

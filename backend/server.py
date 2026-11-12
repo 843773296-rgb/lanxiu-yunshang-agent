@@ -73,11 +73,85 @@ def _wtoday():
     # 整句写着姓名、生日、详细地址。实测不登录从两个端口都能翻到 40 位客户的这三项。
     # **字段级的脱敏对它无效**(PII 不在结构里,在自由文本里),只有这道闸挡得住。
     "/api/ops-queue",
+    # ── 2026-11-12 逐条审 do_GET 时补的(执行手册 W47;守在 read_route_registry_check)──
+    # 这几条原来**谁都能匿名读**,而返回里有客户 / 员工的个人信息:
+    "/api/task-ref",      # 填任何客户号 / 单号 → 回「李望舒(C10046)」:客户姓名 + 门店,不分店
+    "/api/agent-run",     # 真调一次模型(花钱),回包带研判结论原文、真值(truth)根因
+    "/api/stock",         # 预警「已跟进」里带接活员工的姓名
+    "/api/stock-log",     # 操作人列是「工号 姓名」,ref 是订单号
+    "/api/invites",       # 邀请码核销:哪位客户(客户号)哪天用了哪个活动的码
+    "/api/downloads",     # 导出任务:谁(工号)导了哪批客户档案、按什么条件
+    "/api/shops",         # 每家店的店长姓名(员工)
 )
 要登录的读_前缀 = (
     "/api/task/", "/api/export/", "/api/appt/", "/api/chat-order/", "/api/aftersale/",
     "/api/maintain/", "/api/order-log/",
+    # 2026-11-12 补(同上):
+    "/api/ops-",          # 运维平台读口一整族。ops-detail 回研判全行(ai_root_cause 里有客户姓名生日地址),
+                          # ops-manual 回差评工单行;ops-queue 本来就在上面。ops-backlog / ops-health 只是计数,
+                          # 跟着整族一起收 —— 页面都在登录后的运维平台里调,不收前缀就得一条条记、迟早漏一条
+    "/api/craft-doc/",    # 工艺文档:订单全行 + 着装人姓名 / 性别 / 生日 + 量体数据
+    "/api/shop/",         # 门店详情:本店员工花名册(登录名、最后登录、锁定状态)+ 操作日志(句子里带客户姓名)
+    "/api/activity/",     # 活动详情:操作日志(句子里带客户姓名)+ 活动带来的订单
+    "/api/product/",      # 商品详情:操作日志、编辑记录(员工姓名)、下过这款的订单
 )
+
+# ── 读路由的另外两类(2026-11-12,W47)── 每一条 do_GET 里的 `/api/` 路由**必须**落在
+# 「要登录」「自查身份」「匿名」三类之一,`read_route_registry_check.py` 逐条核,没分类的一条就红;
+# 这两张表里登记了、而 do_GET 里已经没有的路径也红(豁免不许囤积)。
+# 新加读接口时:带客户 / 员工个人信息 → 进上面的 `要登录的读`;别往这两张表里塞。
+自查身份的读 = {
+    # 分支自己调 `_me(self)`,**在取数之前**就拦(没登录回 401,或回一个不带任何数据的壳)
+    "/api/me": "只回登录者自己;没登录回 401",
+    "/api/contract/": "没登录 401;范围在 order_contract._能看",
+    "/api/arrival-calendar": "没登录 401(商品排期本身不含个人信息)",
+    "/api/arrival-cards": "没登录 401;范围在 arrival_card._可见",
+    "/api/reports": "没登录 401;范围在 report_doc.列",
+    "/api/report/": "没登录 401;范围在 report_doc.取",
+    "/api/task-file/": "没登录 401;只给任务负责人 / 本店店长",
+    "/api/unassigned": "没登录 401;非店长回空",
+    "/api/refund-state": "没登录 401",
+    "/api/triage-compare": "没登录 401;只给总部运营 / 店长",
+    "/api/triage-board": "没登录 401;范围在 triage_board.看板",
+    "/api/triage-config": "没登录 401",
+    "/api/triage-run": "没登录 401",
+    "/api/mcp": "没登录 401",
+    "/api/mcp-health": "没登录 401",
+    "/api/kb-issues": "没登录 401;非总部只看自己问的",
+    "/api/kb-issue/": "没登录 401;非总部只看自己问的",
+    "/api/skills": "没登录 401",
+    "/api/skill/": "没登录 401",
+    "/api/report-templates": "没登录 401",
+    "/api/report-template/": "没登录 401",
+    "/api/customers": "没登录 401;按门店码划范围",
+    "/api/customers2": "没登录 401;按门店划范围",
+    "/api/customer/": "没登录 401;别家店客户 403",
+    "/api/my-tasks": "tasks.my_tasks 没登录在查询前回 error",
+    "/api/my-staff": "tasks.my_staff 没登录 / 非店长在查询前回 []",
+    "/api/approval/": "approval_detail 没登录在查询前回「看不到」(和不存在同一句话)",
+    "/api/call-status/": "call_status 没登录在查询前回 401",
+    "/api/workshop-todo": "自有工坊待报工 角色不对(含没登录)在查询前回空",
+}
+匿名的读 = {
+    # 不含任何客户 / 员工个人信息,不登录也能读
+    "/api/task-types": "任务类型清单(规矩表)",
+    "/api/activities": "进行中活动的编码 / 名称 / 类型 / 门店",
+    "/api/fabrics": "面料资料与规格",
+    "/api/scheme-options": "方案页可选的工艺 / 面料 / 版型",
+    "/api/products": "商品列表(库存、销量只是计数)",
+    "/api/categories": "类目树",
+    "/api/measure-items": "量体项目字典",
+    "/api/measure-tpls": "量体模板(客户数只是计数,改动人只有工号)",
+    "/api/freight-zones": "运费分区表(每区客户只是计数)",
+    "/api/contents": "内容运营文章列表(作者只有工号)",
+    "/api/pages": "装修页面列表",
+    "/api/page/": "装修页面区块",
+    "/api/syscodes": "系统编码表",
+    "/api/kb": "工艺 / 材质知识",
+    "/api/kb-matrix": "工艺 × 材质相容矩阵",
+    "/api/levels": "会员等级配置 + 各级人数(计数)",
+    "/api/tags": "客户标签字典(人数只是计数)",
+}
 
 
 def _要登录(p):
@@ -2372,9 +2446,10 @@ def approval_detail(aid,me):
 
     看得到的范围:总部运营看全部;店长只看客户都在他店里的那几张。**别人的单和不存在的单对外是同一句话** ——
     否则这个接口本身就成了「这张单存不存在」的探测器。"""
-    r=rows("SELECT * FROM approval WHERE id=?",aid)
     看不到=dict(看不到=True,为什么="这张审批单不在你能看的范围里(或者不存在)")
-    if not r or not me: return 看不到
+    if not me: return 看不到        # 没登录在取数之前就回(11-12:原来先查了单再判)
+    r=rows("SELECT * FROM approval WHERE id=?",aid)
+    if not r: return 看不到
     a=r[0]
     try: pl=_j.loads(a["payload"] or "{}")
     except Exception: pl={}
@@ -3712,6 +3787,11 @@ class H(BaseHTTPRequestHandler):
             import tasktypes as _tt
             _k = _tt.ref_of((Q.get("type") or [""])[0])
             _ok, _cid, _sh, _dsc = _tt.resolve_ref(_k, (Q.get("id") or [""])[0], rows)
+            # 登录闸在 `要登录的读`(11-12 补:原来匿名就能拿客户号换客户姓名);
+            # 别家店的单 / 客户 → 403(说明里带着客户姓名)。挂不到门店的(SKU 等)照旧给
+            _本店 = _店范围(self)
+            if _sh and not _是本店(_本店, _sh):
+                return self._send(_不是本店(_本店, "这张单据"), 403)
             return self._send(dict(ok=_ok, customer_id=_cid, shop=_sh, desc=_dsc))
         if p == "/api/activities":
             return self._send({"rows": rows(
@@ -3831,11 +3911,19 @@ class H(BaseHTTPRequestHandler):
                 return self._send(_ops.队列载荷((Q.get("state") or [None])[0], 本店=_店范围(self)))
             if p=="/api/ops-manual":
                 # 值班台「差评待店长确认」(用户 10-15 拍)—— 和研判队列同一份 queue() 分出来,不另算
-                return self._send(_ops.待店长确认())
+                # 登录闸在 `要登录的读_前缀` 的 /api/ops-(11-12 补);门店范围和研判队列同一个口径(ops.看得到的工单)
+                _看 = _ops.看得到的工单(_店范围(self))
+                if _看 is None: return self._send(_ops.待店长确认())
+                return self._send(_ops.待店长确认([x for x in _ops.queue() if x["task_id"] in _看]))
             if p=="/api/ops-backlog": return self._send(_ops.backlog())
             if p=="/api/ops-health":  return self._send(_ops.health())
             if p=="/api/ops-detail":
                 d=_ops.get_triage((Q.get("id") or [None])[0])
+                # 门店范围(11-12 补):研判全行里有客户姓名生日地址,别家店的工单 → 403(口径同研判队列)
+                if d:
+                    _看 = _ops.看得到的工单(_店范围(self))
+                    if _看 is not None and d.get("task_id") not in _看:
+                        return self._send(_不是本店(_店范围(self), "这条研判"), 403)
                 # 改判下拉框的选项(10-16 用户拍「选择就行了」):这一类断点预存的根因 + 标准处理
                 if d: d=dict(d, 改判选项=_ops.改判选项(d.get("breakpoint")))
                 # 升级的接收岗位 / 期限 / 谁接了(用户 10-17 拍「升级 = 正式转交」)—— 页面照着它画接单 / 退回
@@ -4050,7 +4138,16 @@ class H(BaseHTTPRequestHandler):
             return self._send(customer_detail(_cid))
         if p=="/api/appts2": return self._send(appt_list_q(Q, _店范围(self)))   # 按门店划范围(用户 10-23 拍;11-11 补齐)
         if p=="/api/shops": return self._send(shop_list(Q))
-        if p.startswith("/api/shop/"): return self._send(shop_detail(p.split("/api/shop/")[1]))
+        if p.startswith("/api/shop/"):
+            # 登录闸在 `要登录的读_前缀`(11-12 补);别家店的详情(员工花名册 + 操作日志)→ 403
+            _code = p.split("/api/shop/")[1]; _本店 = _店范围(self)
+            if _本店 is not None:
+                # 这里拿到的是门店**码**(SH001),`_是本店` 比的是显示串 —— 先把本店换成码再比
+                import shop_key as _SK3
+                with _conn() as _c3: _我码 = _SK3.码(_c3, _本店)
+                if not _我码 or _code != _我码:
+                    return self._send(_不是本店(_本店, "这家店"), 403)
+            return self._send(shop_detail(_code))
         # 按门店划范围(用户 10-23 拍;11-11 补齐)
         if p=="/api/staff": return self._send(staff_list(Q, _店范围(self)))
         if p=="/api/schedule": return self._send(schedule_list(Q, _店范围(self)))
@@ -4075,7 +4172,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(_r, 403 if _r.get("看不到") else 200)
         if p=="/api/products": return self._send(product_list(Q))
         if p.startswith("/api/product/"): return self._send(product_detail(p.split("/api/product/")[1]))
-        if p.startswith("/api/craft-doc/"): return self._send(craft_doc(p.split("/api/craft-doc/")[1]))
+        if p.startswith("/api/craft-doc/"):
+            # 登录闸在 `要登录的读_前缀`(11-12 补);别家店的订单 → 403(工艺文档带着着装人姓名生日和量体数据)
+            _oid = p.split("/api/craft-doc/")[1]; _本店 = _店范围(self)
+            _店 = rows("SELECT shop FROM ordr WHERE id=?", (_oid or "").strip())
+            if _店 and not _是本店(_本店, _店[0]["shop"]):
+                return self._send(_不是本店(_本店, "这张订单"), 403)
+            return self._send(craft_doc(_oid))
         if p=="/api/categories": return self._send(category_tree())
         if p=="/api/stock": return self._send(stock_list(Q, _me(self)))
         if p=="/api/measure-items": return self._send(measure_items(Q))
