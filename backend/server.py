@@ -3159,6 +3159,11 @@ def _人头(别名=""):
         return _mg.人头条件(c, 别名)
 
 
+# 「销售顾问」筛选里的一项:**没有导购的客户 = 本店公海**(长期没接触释放、导购离职重分前,11-12 台账第十四条)。
+# 店长筛出来、勾选、走现有的「转移客户顾问归属」审批指派 —— 不另起一页,也不另写一条改导购的路
+公海标签 = "公海(没有导购)"
+
+
 def customer_list(q):
     kw=(q.get("q") or [""])[0].strip()
     f={k:(q.get(k) or [""])[0] for k in ("lifecycle","shop","advisor","level")}
@@ -3180,7 +3185,10 @@ def customer_list(q):
         p=c["phone"] or ""; c["phone_mask"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
     if kw: rs=[c for c in rs if kw in c["id"] or kw in (c["name"] or "") or kw in (c["phone"] or "")]
     for k,v in f.items():
-        if v: rs=[c for c in rs if c.get(k)==v]
+        if not v: continue
+        if k=="advisor" and v==公海标签:
+            rs=[c for c in rs if not c.get("advisor_no")]; continue
+        rs=[c for c in rs if c.get(k)==v]
     rs=_sort(rs,q,{"id","name","paid_amount","order_cnt","idle_days","last_interact"})
     d=_page(rs,q)
     for c in d["rows"]: c.pop("phone",None)
@@ -3197,7 +3205,8 @@ def customer_list(q):
                        for no in [r["v"] for r in rows(
                            "SELECT DISTINCT advisor_no v FROM customer "
                            "WHERE advisor_no IS NOT NULL AND advisor_no!='' ORDER BY v")]
-                       if no in nm])(_花名册())) if x],
+                       if no in nm])(_花名册())) if x]
+      + ([公海标签] if rows("SELECT 1 FROM customer WHERE advisor_no IS NULL OR advisor_no='' LIMIT 1") else []),
       level=[r["v"] for r in rows("SELECT DISTINCT level v FROM customer ORDER BY v")])
     return d
 
@@ -4012,7 +4021,8 @@ class H(BaseHTTPRequestHandler):
                     _本店导购 = {r["name"] for r in rows(f"SELECT name FROM staff WHERE {_片2}", *_参2)}
                     _d["facets"]["shop"] = [_本店]
                     if "advisor" in _d["facets"]:
-                        _d["facets"]["advisor"] = [x for x in _d["facets"]["advisor"] if str(x).split(" ")[-1] in _本店导购]
+                        _d["facets"]["advisor"] = [x for x in _d["facets"]["advisor"]
+                                                   if x == 公海标签 or str(x).split(" ")[-1] in _本店导购]   # 公海那一项留着(行已按本店筛)
                 return self._send(_d)
             if p=="/api/customers":
                 # 按门店码收范围 —— 店长改过名之后按串筛会**一个客户都看不到**(不报错)

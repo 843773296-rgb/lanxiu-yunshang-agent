@@ -22,6 +22,7 @@ import ownership_protection as OP      # noqa: E402
     ("定制单确认下单后不再判归属", "接线:定制单确认下单之后判归属(事务之外)"),
     ("没知会过也直接释放(上线第一天一批老客一夜被收走)", "过了 180 天但没知会过:先知会,不直接放"),
     ("已预约不算接触(客户约了下周来,这周被收走)", "公海 · 约在未来的已预约算接触:不动"),
+    ("客户页筛「公海」退回按名字比(没有导购的名字是空,一户都筛不出)", "公海 · 客户页「销售顾问」筛「公海」筛得出刚释放的那户,筛不出还有导购的"),
     ("释放到公海不记归属变更日志(「凭什么不是他的了」答不上)", "公海 · 释放落地:导购置空 + 日志记「进公海」+ 给店长派「公海指派」"),
 ]
 过, 挂 = [], []
@@ -134,6 +135,19 @@ def main():
                (现, 日志, 指派, 出))
             import ownership
             ck("公海 · 释放依据是登记过的归属依据", ORL.释放依据 in ownership.依据)
+            # 店长从哪找到公海里的客户:客户页「销售顾问」筛「公海」→ 勾选 → 走现有转移审批指派。
+            # 真调 server.customer_list,库改指这份副本(merge 也指过来,它在列表里会连库补列)
+            import server, merge
+            旧 = (server.DB, merge.DB)
+            server.DB = merge.DB = 副本
+            try:
+                d = server.customer_list({"advisor": [server.公海标签], "per": ["100"]})
+                号们 = {r["id"] for r in d["rows"]}
+                ck("公海 · 客户页「销售顾问」筛「公海」筛得出刚释放的那户,筛不出还有导购的",
+                   "C99000002" in 号们 and "C99000003" not in 号们 and server.公海标签 in d["facets"]["advisor"],
+                   (d["total"], sorted(号们)[:5], d["facets"]["advisor"][-2:]))
+            finally:
+                server.DB, merge.DB = 旧
         dst.close()
 
     # ③ 接线

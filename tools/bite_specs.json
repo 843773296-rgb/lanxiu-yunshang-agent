@@ -20333,5 +20333,17 @@
    }
   ],
   "预期红": "顾问切开关 → 拒(TOGGLE_ROLE),状态没动"
+ },
+ {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "客户页筛「公海」退回按名字比(没有导购的名字是空,一户都筛不出)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            rs=[c for c in rs if not c.get(\"advisor_no\")]; continue",
+    "new": "            rs=[c for c in rs if c.get(\"advisor\")==v]; continue"
+   }
+  ],
+  "预期红": "公海 · 客户页「销售顾问」筛「公海」筛得出刚释放的那户,筛不出还有导购的"
  }
 ]

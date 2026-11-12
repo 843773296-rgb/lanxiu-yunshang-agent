@@ -108,10 +108,10 @@
 - [x] ✅ W09 —— 已接排班 / 报工 / 下单三套,自测进门禁;**还没真跑一轮**(要锁 + 调模型,D 段或锁空时跑);其余九套后续照样接。原文:agent/evaldb.py `用副本()`(.backup → LANXIU_DB → 断言写口已指副本),先接 shift / workshop / order 三套,judgetest 跟上
 
 **B 段 · eureka-fc 还锁并推完之后(22:30–24:00)**
-- [ ] 主检出 `git pull --rebase --autostash`(它请我做,夜跑 00:00 要用上它的兜底修复);HANDOFF 冲突照 scratchpad 那份我的小节贴到它瘦身版顶部
-- [ ] 挑回 W01(b004502f)+ 台账第二十七条开关限店长以上(server.py toggle 加角色判 + authgate_check 一例 + 一条咬合)
-- [ ] 锁内**同时重启 8760 和 8770** → curl 两个首页 + 内部口带令牌 200 → 全量门禁(**W02 第一次在库副本上跑全量**,红了逐条看是不是依赖「连真库」)→ 推;删掉子任务 worktree 和分支
-- [ ] 咬合重放 --only gate_db_check / authgate_check / alert_dispatch_check
+- [~] 主检出 pull:**eureka-fc 还没推**(它让我先推,22:0x 已通知它 rebase;它推完后主检出再 `git pull --rebase --autostash`,夜跑要用上它的修复;它说 23:30 推不上就放弃今晚)
+- [x] ✅ 挑回 W01(7b8b066a)+ 开关限店长以上(049f0a0d,顾问切 → TOGGLE_ROLE)
+- [x] ✅ 22:0x 推上去了:两服务一起重启(8760 首页 200、8770 302 跳登录;内部口带令牌 200、不带 401);W02 首次全量红 3 条全是本晚改动带的(measure_tpl_check 调 toggle 没带角色 / 追评写口没门 7→8 / 探针 INSERT 没列名),修在 9c45ded9,**没有一条是依赖连真库**;第二轮全绿 PUSHED。W01 worktree + 分支已删
+- [ ] 咬合重放(等 eureka-fc 推完再拿锁):gate_db_check / authgate_check / alert_dispatch_check / ownership_transfer_check / repair_write_check / measure_tpl_check / nightly_stats / evaldb / booking_check / shift_eval_judgetest / workshop_eval_judgetest
 
 > **21:5x 状态**:PRD 附录 A 补 A-296 / A-297 并发飞书(effd6eab);W41 验收页交给 worktree 子任务(只 commit 不 push,回来后挑回 → 锁内跑迁移 + e2e);预约三列**挪到 D 段**(派单任务和预约单在库里没连着 —— schedule.ref_id 是空的;新列代码必须和迁移同时上线,否则服务重启就崩);W07 评测场景先不写(兜底是 eureka-fc 19:00 的 3ee2fb8f,要和它对)。后台在等锁(bt23nzned:锁一换人就报)。
 > **早上汇总里要问用户的(攒成一张卡)**:① 顾问代录追评 vs 09-27「顾问不能替顾客评」② 公海第一次真写会给导购派 1768 条知会,要不要分批 / 先只跑一家店。
@@ -131,6 +131,7 @@
 - [x] ✅ W24 新人保底(提交见 git log「派单新人保底」;PRD 附录 A 还没补)
 - [~] 第 5 天收尾:**「目标 / 实际版本并排」11-11 已做(d3914443),清单过期**;追评:**顾客自己追评的写口已做**(rating_write.customer_followup,口径 09-29 早有:90 天、一次、不带星、不进差评清单;rating_write_check 74/74 + 一条咬合),**没接顾客页面**(server.py,等 W01 挑回后);⚠️ **「顾问代录追评」和 09-27「顾问不能替顾客评」冲突 → 待用户拍,没做**;未做按钮 / 导出未做
 - [~] W27 标品:**标品不开返修已做**(repair_write.create 拦 STANDARD_NO_REPAIR,理由指向换货;repair_write_check 36/36 + 一条咬合);⚠️ **查实「定制签收已生成交付告知单」是假的** —— 没有任何写口写 delivery_notice,库里 25 张全是造数;签收告知(定制 + 标品)要在订单流转里补,在 server.py,等 W01 挑回后做
+- 22:1x 公海**店长入口**:不另起页 —— 客户页「销售顾问」筛选加「公海(没有导购)」,筛出来勾选走现有「转移客户顾问归属」审批(本店店长能批);ownership_transfer_check 31/31 真调 customer_list、一条咬合;shop_scope_check 11/11。**本地提交未推,server.py 改了,推时要重启 8760**。⚠️ 签收告知单**不做自动补**:那张单在判责里 = 「已书面告知,特性类问题我方无责」,系统代记等于替顾客签字;要等顾客端签收页(随短信推后)
 - [~] W23 公海:**扫描 + 知会 + 释放写入已做(未提交,见下)**,页面(店长看公海、指派)未做;W27 标品签收告知 + 换货分支未做
   - 11-12 21:3x:新 `backend/ownership_release.py`(默认只看,`--写` 才写;已知会日 = 「公海知会」任务日;放 = advisor_no 置空 + cust_owner_log「进公海/长期没接触释放」+ 店长「公海指派」);任务类型登记两条(只系统派);ownership_transfer_check 30/30、两条新咬合;booking_check 客户类型 6→8、alert_dispatch_check 系统派集合同步、旧咬合锚点改了。**首扫(库副本):8073 户里今天会知会 1768、释放 0** —— 真写前要让用户知道第一天会给导购派 1768 条知会;**没装定时**(装 launchd 要用户)。
 - [~] W41 验收记录表:**子任务做完,提交 54b68e0d 在分支 worktree-agent-ac1bb8f62ad38d5fb(未挑回)**;临时 PG 上 alembic upgrade/check/downgrade 都 0、test_acceptance_flow 74/74、两刀手工咬合。签字复用「审批工具动作」(审核发布者有、管理员默认没有 —— 免得管理员自填自签);费用项读用量账(本月非 mock,现在显示「拿不到」)。**D 段做**:挑回 → 锁内对共享 PG 跑迁移 → 重启管理后台 API → make test-e2e-ci + 全量 → 推;咬合规格没写进 bite_specs(要起服务)。待拍:虚拟试点签的字到真实试点算不算数。
