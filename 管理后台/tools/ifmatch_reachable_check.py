@@ -117,6 +117,14 @@ P = f"{基址}/api/v1/projects/{项目}"
         取id=("/capability-profiles", "items[0].id"), 读="/capability-profiles/{id}", 字段="revision", 项目="project_demo_a"),
     "POST /capability-profiles/{id}/actions": dict(
         取id=("/capability-profiles", "items[0].id"), 读="/capability-profiles/{id}", 字段="revision", 项目="project_demo_a"),
+    # 改进验证记录 / 发布记录(11-12):改 / 记回滚要的 revision 在各自详情顶层(清单行里也带)。样例由 test-e2e-ci 里的
+    # test_issue_improvements_flow 在**演示项目**留的那两条提供(正式项目里不留)。记回滚比的是**被回滚那条**发布记录的 revision
+    "PATCH /issue-verifications/{id}": dict(
+        取id=("/issue-verifications", "items[0].id"), 读="/issue-verifications/{id}", 字段="revision", 项目="project_demo_a"),
+    "PATCH /issue-releases/{id}": dict(
+        取id=("/issue-releases", "items[0].id"), 读="/issue-releases/{id}", 字段="revision", 项目="project_demo_a"),
+    "POST /issue-releases/{id}/rollbacks": dict(
+        取id=("/issue-releases", "items[0].id"), 读="/issue-releases/{id}", 字段="revision", 项目="project_demo_a"),
     # 轮换(11-04)和改小上限同一个 revision 来源
     "POST /access-keys/{id}/rotate": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),

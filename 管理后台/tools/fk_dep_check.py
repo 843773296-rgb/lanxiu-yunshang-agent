@@ -98,6 +98,9 @@ def 算外键(名, 字段, 父, 显式映射):
     if 父 == 名 or 父 in ("projects", "organizations"):
         return "不用建"          # 自引用 / 已被自动规则覆盖
     显式 = 显式映射.get((名, 父))
+    if isinstance(显式, tuple):
+        # 一张父表多列(models.py 每列各建一条);有一列不在字段里 models.py 当场抛,这里也按算不出报
+        return 显式[0] if all(c in 字段 for c in 显式) else None
     if 显式 and 显式 in 字段:
         return 显式
     父字段 = f"{父.rstrip('s')}_id" if not 父.endswith("ies") else 父[:-3] + "y_id"

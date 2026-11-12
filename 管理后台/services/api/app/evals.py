@@ -117,6 +117,29 @@ def 可比吗(甲, 乙):
     return True, "同一套题、同一份判据"
 
 
+def 能当结论吗(评测):
+    """一次评测能不能当结论 → (能不能, [为什么不能])。**不看分数**,只看四样在不在场 + 跑完没有。
+
+    `评测` 是 evaluations 的一行(要 status / baseline_ref / dataset_version_id / scorer_version)。
+    口径就是上面那四样(候选 + 基线 + 冻结的数据版本 + 判据版本),外加「已完成」—— 没跑完的半截分数也不能当结论。
+    ⚠️ 2026-11-12 从 capabilities_api 里那一行搬过来(能力档案现查、问题单「验证通过」的前置条件都用它)——
+    两处各写一份的话,改了一处另一处还按老口径放行。
+
+    **已知盲区**:评审是演示模型判的(scores.value_known = 否)不在这里看 —— 那是逐题分数的事,这里只看评测本身。
+    """
+    e = 评测 or {}
+    问 = []
+    if e.get("status") != "已完成":
+        问.append(f"评测状态是「{e.get('status')}」,不是「已完成」—— 没跑完的分数不能当结论")
+    if not e.get("baseline_ref"):
+        问.append("没有基线 —— 没有基线的分数不能当结论")
+    if not e.get("dataset_version_id"):
+        问.append("没有冻结的数据集版本 —— 两轮跑的可能不是同一套题")
+    if not e.get("scorer_version"):
+        问.append("没有判据版本 —— 换了判据的两轮不可比")
+    return (not 问), 问
+
+
 def 汇总分数(分数们):
     """把一堆评分折成一个结论。**「没打分」不参与平均。**
 

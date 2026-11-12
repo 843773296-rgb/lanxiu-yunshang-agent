@@ -10,6 +10,7 @@
      归并之后 issue_id 清空、回核实中;**意见详情跟随问题单显示状态**
   ④ 主线每条边走一遍(PRD §5.2):确认 → 处理 → 提交验证 → 验证失败(回处理中)→ … → 发布失败(留在待发布,记一行)
      → 发布生效 → 观察期复发(回处理中)→ … → 关闭(缺处理说明 / 缺完成证据 → 422)→ 关闭后复发(重开,**关闭记录不抹掉**)
+     (11-12 起「验证通过 / 发布生效」要带验证记录 / 发布记录,证据用 _改进证据.py 造齐;前置条件本身在 test_issue_improvements_flow 里测)
   ⑤ 非法动作 → 409 TRANSITION_NOT_ALLOWED;⑥ If-Match 不带 / 对不上 → 409
   ⑦ 搁置:缺理由 / 缺重新评估日期 / 日期早于今天 → 422;搁置不计已解决;重新评估回待分析
   ⑧ 重复:缺主问题 / 指自己 / 主问题不存在 → 422;标了之后指向主问题、主问题看得到它;重复单没有出口;
@@ -32,6 +33,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _改进证据 as 证  # noqa: E402
 
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
 项目 = "project_lanxiu"
@@ -96,6 +100,8 @@ def main():
     from sqlalchemy import create_engine, text
     url = os.environ.get("DATABASE_URL") or f"postgresql+psycopg://{os.environ.get('USER')}@localhost:5432/aimc_dev"
     库 = create_engine(url)
+    with 库.connect() as cc:
+        org = cc.execute(text("select organization_id from projects where id=:p"), {"p": 项目}).scalar()
 
     def 提意见(后缀):
         c, b = 打("POST", P + "/opinions", {"来源": "问答", "聊天站trace": f"{标}-{后缀}", "评价": "有问题", "问题类型": "答错",
@@ -200,11 +206,21 @@ def main():
         ck("再关联到主问题", c == 200 and b.get("问题单") == m, (c, b))
 
         print("\n▸ ④ 主线每条边走一遍(PRD §5.2)")
+        # 11-12:验证通过 / 发布生效要带真的验证记录 / 发布记录(三组证据齐、实际采用回执在)—— 两轮各造一套
+        with 库.begin() as cc:
+            复1, 回1, 保1, dv1 = 证.造评测与数据(cc, org, 项目, 标, "1")
+            rm1 = 证.造生产发布(cc, org, 项目, 标, "1")
+            复2, 回2, 保2, dv2 = 证.造评测与数据(cc, org, 项目, 标, "2")
+            rm2 = 证.造生产发布(cc, org, 项目, 标, "2")
+        v1 = 打("POST", P + f"/issues/{m}/verifications", 证.验证记录体(复1, 回1, 保1, dv1))[1]["id"]
+        r1 = 打("POST", P + f"/issues/{m}/releases", 证.发布记录体(rm1))[1]["id"]
+        v2 = 打("POST", P + f"/issues/{m}/verifications", 证.验证记录体(复2, 回2, 保2, dv2))[1]["id"]
+        r2 = 打("POST", P + f"/issues/{m}/releases", 证.发布记录体(rm2))[1]["id"]
         路线 = [("确认问题", {}, "已确认"), ("开始处理", {}, "处理中"), ("提交验证", {}, "待验证"),
               ("验证失败", {"说明": "回归集第 3 题还是错"}, "处理中"), ("提交验证", {}, "待验证"),
-              ("验证通过", {}, "待发布"), ("发布失败", {"说明": "发布清单校验没过:工具版本不存在"}, "待发布"),
-              ("发布生效", {}, "观察中"), ("观察期复发", {"说明": "观察第二天又有人报"}, "处理中"),
-              ("提交验证", {}, "待验证"), ("验证通过", {}, "待发布"), ("发布生效", {}, "观察中")]
+              ("验证通过", {"验证记录": v1}, "待发布"), ("发布失败", {"说明": "发布清单校验没过:工具版本不存在"}, "待发布"),
+              ("发布生效", {"发布记录": r1}, "观察中"), ("观察期复发", {"说明": "观察第二天又有人报"}, "处理中"),
+              ("提交验证", {}, "待验证"), ("验证通过", {"验证记录": v2}, "待发布"), ("发布生效", {"发布记录": r2}, "观察中")]
         坏 = []
         for 动作, 额, 应到 in 路线:
             if 动作 in ("验证失败", "发布失败", "观察期复发"):
@@ -423,6 +439,8 @@ def main():
             ck("演示项目里已经有样例问题单(重复跑不会多出来)", True)
     finally:
         with 库.begin() as cc:
+            for 项 in (项目, "project_demo_a"):
+                证.清掉(cc, 项, 标)
             我的意见 = "select id from opinions where project_id=:p and asker_staff_code=:s"
             cc.execute(text(f"delete from opinion_events where project_id=:p and opinion_id in ({我的意见})"), {"p": 项目, "s": 标})
             cc.execute(text("delete from opinions where project_id=:p and asker_staff_code=:s"), {"p": 项目, "s": 标})

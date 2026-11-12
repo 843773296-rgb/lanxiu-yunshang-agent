@@ -1717,7 +1717,9 @@ async function 页_意见详情(id) {
 /* ── 问题单(11-12;意见收集 PRD §4.2 / §5.2)──
  * 意见是用的人说的话,问题单是要修的那件事。流转表只在后端 issue_flow.py:
  * 按钮照详情接口给的「能做的动作」画(连这一步要写说明 / 要带什么字段也是接口说的),筛选条照清单接口给的「可选状态」画 ——
- * 页面不另抄一份。完成证据现在是文字(绑真实版本 / 验证记录是 PRD §4.3,没做);处理时限过了不标超时(PRD §10 待定)。 */
+ * 页面不另抄一份。处理时限过了不标超时(PRD §10 待定)。
+ * 11-12 改进验证与发布(PRD §4.3):验证通过 / 发布生效 / 关闭 的前置条件由接口查,页面只把它给的那句话写在按钮下面;
+ * 「验证记录」「发布记录」两个字段画成下拉,选项是这张单上待验证 / 待生效的那几条。 */
 async function 页_问题单清单(页 = 1, 筛 = {}) {
   const 头 = `<div class="crumb">问题单</div>
     <div class="head"><div><h1>问题单</h1>
@@ -1786,15 +1788,50 @@ async function 页_问题单详情(id) {
       + `</tbody></table><input id="is-e-note" placeholder="说明(改根因类别 / 核实状态时必填:调整理由入日志)" style="width:100%">
       <div><button id="is-e-save">保存</button> <span class="k" id="is-e-why"></span></div>`
     : `<div class="note">${md(`「${d.状态}」的问题单不能改字段(已关闭的要改先「关闭后复发」;重复的去改主问题)。`)}</div>`;
-  // 动作要带的字段:哪一步要什么由接口说(要的字段),这里只管画成输入框
-  const 要的 = [...new Set((d.能做的动作 || []).flatMap((a) => a.要的字段 || []))];
+  // 动作要带的字段:哪一步要什么由接口说(要的字段 / 可带的字段),这里只管画成输入框
+  const 要的 = [...new Set((d.能做的动作 || []).flatMap((a) => (a.要的字段 || []).concat(a.可带的字段 || [])))];
+  const 待验 = (d.验证记录 || []).filter((v) => v.状态 === "待验证"), 待生 = (d.发布记录 || []).filter((r) => r.事件 === "发布" && r.状态 === "待生效");
+  const 下拉 = (名, 项们, 文) => `<div>${esc(名)}:<select data-isx="${esc(名)}"><option value="">(不选)</option>`
+    + 项们.map((x) => `<option value="${esc(x.id)}">${esc(x.id)} · ${esc(文(x))}</option>`).join("") + `</select></div>`;
   const 字段框 = (名) => 名 === "重新评估日期" ? `<div>${esc(名)}:<input data-isx="${esc(名)}" type="date"></div>`
     : 名 === "主问题" ? `<div>${esc(名)}:<input data-isx="${esc(名)}" placeholder="主问题单编号(is_…)"></div>`
+    : 名 === "验证记录" ? 下拉(名, 待验, (v) => `候选 ${v.候选版本} · 三组关联了 ${v.三组关联了几组} 组`)
+    : 名 === "发布记录" ? 下拉(名, 待生, (r) => `${r.种类} ${r.关联的发布}`)
     : `<div>${esc(名)}:<textarea data-isx="${esc(名)}" rows="2" style="width:100%"></textarea></div>`;
   const 钮 = (d.能做的动作 || []).map((a) => `<button data-isact="${esc(a.动作)}">${esc(a.动作)} → ${esc(a.到)}</button>`).join(" ");
+  const 前置 = (d.能做的动作 || []).filter((a) => a.前置条件).map((a) => `<div class="k">「${esc(a.动作)}」要:${esc(a.前置条件)}</div>`).join("");
   const 处理 = 钮 ? `<textarea id="is-act-note" rows="2" placeholder="说明:暂不处理(理由)/ 标为重复 / 验证失败 / 发布失败(错误)/ 复发 / 重新评估 要写" style="width:100%"></textarea>
-      ${要的.map(字段框).join("")}<div>${钮}</div><div class="k" id="is-act-why"></div>`
+      ${要的.map(字段框).join("")}<div>${钮}</div>${前置}<div class="k" id="is-act-why"></div>`
     : `<div class="note">这一步没有能做的动作(${esc(d.状态)})。</div>`;
+  // 改进验证与发布(PRD §4.3):这张单上的验证记录 / 发布记录,点进去看详情、补三组评测、记回滚
+  const 验表 = (d.验证记录 || []).length ? `<table><thead><tr><th>验证记录</th><th>状态</th><th>候选 / 基线</th><th>三组</th><th>建于</th></tr></thead><tbody>`
+      + d.验证记录.map((v) => `<tr><td><a href="#/verification/${encodeURIComponent(v.id)}">${esc(v.id)}</a></td><td>${esc(v.状态)}</td>
+          <td>${esc(v.候选版本)} / ${esc(v.基线版本)}</td><td>关联了 ${esc(String(v.三组关联了几组))} / 3 组</td>
+          <td class="k">${esc(String(v.建于 || "").slice(5, 16).replace("T", " "))}</td></tr>`).join("") + `</tbody></table>`
+    : `<div class="note">还没有验证记录。</div>`;
+  const 发表 = (d.发布记录 || []).length ? `<table><thead><tr><th>发布记录</th><th>事件 · 状态</th><th>关联的发布</th><th>回滚关系</th><th>建于</th></tr></thead><tbody>`
+      + d.发布记录.map((r) => `<tr><td><a href="#/rollout/${encodeURIComponent(r.id)}">${esc(r.id)}</a></td><td>${esc(r.事件)} · ${esc(r.状态)}</td>
+          <td>${esc(r.种类)} <span class="k">${esc(r.关联的发布)}</span></td>
+          <td class="k">${r.回滚的是 ? "回滚的是 " + esc(r.回滚的是) : ""}${r.被回滚 ? "被 " + esc(r.被回滚) + " 回滚" : ""}</td>
+          <td class="k">${esc(String(r.建于 || "").slice(5, 16).replace("T", " "))}</td></tr>`).join("") + `</tbody></table>`
+    : `<div class="note">还没有发布记录。</div>`;
+  const 验框 = [["原缺陷案例", "必填:原来错在哪(文字)"], ["关联意见", "选填:意见编号"], ["关联trace", "选填:聊天站那一轮"],
+    ["预期结果", "必填"], ["禁止行为", "必填"], ["基线版本", "必填:和评测里的基线一致"], ["候选版本", "必填:和评测里的候选一致"],
+    ["数据集版本", "必填:冻结过的数据集版本编号(复现组用的那份)"], ["判分规则", "必填:复现组评测的判据版本号(只存引用)"],
+    ["复现组评测", "评测编号,可以后补"], ["回归组评测", "评测编号,可以后补"], ["保留组评测", "评测编号,可以后补(别和复现组用同一份数据集版本)"]];
+  const 发框 = [["改了哪些依赖版本", "必填"], ["批准人", "必填"], ["采用新版本的入口", "必填:例如 聊天站店长助手 / 访问 API"],
+    ["试点范围", "必填:先在哪个范围手动启用(后台不支持按门店 / 用户灰度)"], ["观察指标", "选填(观察窗口 / 样本量待定)"],
+    ["回退版本", "必填"], ["回退触发条件", "必填"]];
+  const 建记录 = d.能改字段 ? `<details><summary>建一条验证记录</summary><table><tbody>`
+      + 验框.map(([名, 提示]) => `<tr><td class="k">${esc(名)}</td><td><input data-ivn="${esc(名)}" placeholder="${esc(提示)}" style="width:100%"></td></tr>`).join("")
+      + `</tbody></table><div><button id="is-iv-new">建验证记录</button> <span class="k" id="is-iv-why"></span></div></details>
+    <details><summary>建一条发布记录(只记,不发布 —— 真发布在发布页做)</summary><table><tbody>
+      <tr><td class="k">种类</td><td><select id="is-ir-kind"><option>应用发布清单</option><option>聊天助手版本</option></select></td></tr>
+      <tr><td class="k">发布清单</td><td><input data-irn="发布清单" placeholder="种类是应用发布清单时填清单编号" style="width:100%"></td></tr>
+      <tr><td class="k">聊天助手</td><td><input data-irn="聊天助手" placeholder="种类是聊天助手版本时填助手编号" style="width:100%"></td></tr>
+      <tr><td class="k">聊天助手版本号</td><td><input id="is-ir-vno" type="number" min="0" placeholder="v3 就填 3"></td></tr>`
+      + 发框.map(([名, 提示]) => `<tr><td class="k">${esc(名)}</td><td><input data-irn="${esc(名)}" placeholder="${esc(提示)}" style="width:100%"></td></tr>`).join("")
+      + `</tbody></table><div><button id="is-ir-new">建发布记录</button> <span class="k" id="is-ir-why"></span></div></details>` : "";
   const 意见表 = (d.关联的意见 || []).length ? `<table><thead><tr><th>意见</th><th>谁</th><th>说了什么</th><th>状态</th></tr></thead><tbody>`
       + d.关联的意见.map((o) => `<tr><td><a href="#/opinion/${encodeURIComponent(o.id)}">${esc(o.id)}</a><div class="k">${esc(o.评价)}${o.问题类型 ? " · " + esc(o.问题类型) : ""}</div></td>
           <td>${esc((o.提问人 || {}).姓名 || (o.提问人 || {}).工号 || "")}</td><td>${esc(String(o.说明 || "").slice(0, 60))}</td><td>${esc(o.状态)}</td></tr>`).join("") + `</tbody></table>`
@@ -1807,12 +1844,15 @@ async function 页_问题单详情(id) {
     <table><tbody>${kv("业务影响", d.业务影响)}${kv("复现条件", d.复现条件)}${kv("方案", d.方案)}${kv("验收标准", d.验收标准)}
       ${kv("目标版本", d.目标版本)}${kv("依赖", d.依赖)}${kv("负责人", d.负责人)}${kv("处理时限(过了不标超时:几天算超时待定)", d.处理时限)}
       ${kv("搁置理由", d.搁置理由)}${kv("重新评估日期", d.重新评估日期)}
-      ${kv("处理说明", d.处理说明)}${kv("完成证据(现在是文字;绑真实版本 / 验证记录还没做)", d.完成证据)}
+      ${kv("处理说明", d.处理说明)}${kv("完成证据(文字;关闭时还要这一轮的验证记录 + 发布记录,见下)", d.完成证据)}
       ${kv("最近一次关闭", d.最近一次关闭 && String(d.最近一次关闭).slice(0, 16).replace("T", " "))}
       ${kv("受影响问答数(含重复单,按那一轮去重)", d.受影响问答数)}</tbody></table>
     ${(d.重复指向它的 || []).length ? `<div class="note">重复指向它的:` + d.重复指向它的.map((r) =>
       `<a href="#/issue/${encodeURIComponent(r.id)}">${esc(r.标题)}</a>(${esc(String(r.关联意见数))} 条意见)`).join(" · ") + `</div>` : ""}
     <h2>处理</h2>${处理}
+    <h2>改进验证与发布</h2>
+    <div class="k">${md("验证通过要三组(复现 / 回归 / 保留)都关联能当结论的评测 —— **不按分数判**,齐了由人判;发布生效要从新版本的实际运行回执确认用上了,配置保存成功不算。")}</div>
+    <h3>验证记录</h3>${验表}<h3>发布记录</h3>${发表}${建记录}
     ${编辑}
     <h2>关联的意见</h2>${意见表}
     <h2>时间线</h2>
@@ -1827,6 +1867,7 @@ async function 页_问题单详情(id) {
       const 动作 = b.dataset.isact, 体 = { 动作, 说明: ($("#is-act-note") || {}).value || "" };
       const 这步 = (d.能做的动作 || []).find((a) => a.动作 === 动作) || {};
       (这步.要的字段 || []).forEach((名) => { const el = $("#main").querySelector(`[data-isx="${名}"]`); 体[名] = el ? el.value : ""; });
+      (这步.可带的字段 || []).forEach((名) => { const el = $("#main").querySelector(`[data-isx="${名}"]`); if (el && el.value) 体[名] = el.value; });
       if (动作 === "关闭" && !(await 问一句("确定关闭?", "关闭之后关联的意见会跟着显示「已验证关闭」。复发了可以重开,这次的关闭记录会留着。", { 确定: "关闭" }))) return;
       b.disabled = true;
       try {
@@ -1836,6 +1877,26 @@ async function 页_问题单详情(id) {
       } catch (e) { b.disabled = false; $("#is-act-why").textContent = "没处理上:" + 错话(e); }
     };
   });
+  if ($("#is-iv-new")) $("#is-iv-new").onclick = async () => {
+    const 体 = {};
+    $("#main").querySelectorAll("[data-ivn]").forEach((el) => { const v = (el.value || "").trim(); if (v) 体[el.dataset.ivn] = v; });
+    $("#is-iv-new").disabled = true;
+    try {
+      const r = await 请求(`${P()}/issues/${encodeURIComponent(id)}/verifications`, { method: "POST", body: JSON.stringify(体) });
+      location.hash = "#/verification/" + encodeURIComponent(r.id);
+    } catch (e) { $("#is-iv-new").disabled = false; $("#is-iv-why").textContent = "没建上:" + 错话(e); }
+  };
+  if ($("#is-ir-new")) $("#is-ir-new").onclick = async () => {
+    const 体 = { 种类: $("#is-ir-kind").value };
+    $("#main").querySelectorAll("[data-irn]").forEach((el) => { const v = (el.value || "").trim(); if (v) 体[el.dataset.irn] = v; });
+    const 号 = ($("#is-ir-vno").value || "").trim();
+    if (号) 体.聊天助手版本号 = parseInt(号, 10);
+    $("#is-ir-new").disabled = true;
+    try {
+      const r = await 请求(`${P()}/issues/${encodeURIComponent(id)}/releases`, { method: "POST", body: JSON.stringify(体) });
+      location.hash = "#/rollout/" + encodeURIComponent(r.id);
+    } catch (e) { $("#is-ir-new").disabled = false; $("#is-ir-why").textContent = "没建上:" + 错话(e); }
+  };
   if ($("#is-e-save")) $("#is-e-save").onclick = async () => {
     const 体 = {};
     改.forEach(([名, fid]) => { const v = ($("#" + fid).value || "").trim(); if (v !== 现值(名)) 体[名] = v; });
@@ -1846,6 +1907,123 @@ async function 页_问题单详情(id) {
       await 请求(`${P()}/issues/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
       页_问题单详情(id);
     } catch (e) { $("#is-e-save").disabled = false; $("#is-e-why").textContent = "没保存上:" + 错话(e); }
+  };
+}
+
+/* ── 改进验证记录 / 发布记录(11-12;意见收集 PRD §4.3)──
+ * 三组评测、能不能当结论、实际采用回执全是接口现查的;页面照写它给的「还差什么 / 为什么」,**不按分数画过没过**。
+ * 发布记录页只记、只核:没有「发布」「回滚」按钮去动生产 —— 真发布 / 真回滚在发布页做,这里记回滚前接口会核生产指针。 */
+async function 页_验证记录详情(id) {
+  const 头 = `<div class="crumb"><a href="#/issues">问题单</a> / 验证记录 ${esc(id)}</div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/issue-verifications/${encodeURIComponent(id)}`); }
+  catch (e) { const s = 错误块(e, () => 页_验证记录详情(id)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const kv = (k, v) => `<tr><td class="k">${esc(k)}</td><td>${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
+  const 组表 = `<table><thead><tr><th>组</th><th>证明什么</th><th>评测</th><th>状态</th><th>候选 / 基线</th><th>数据集版本 · 判据</th><th>能当结论吗</th></tr></thead><tbody>`
+    + (d.三组 || []).map((g) => { const e = g.评测; return `<tr><td>${esc(g.组)}</td><td class="k">${esc(g.证明什么)}</td>
+        <td class="k">${e ? esc(e.id) : "没关联"}</td><td>${e && e.找得到 ? esc(e.状态) : (e ? "找不到了" : "—")}</td>
+        <td>${e && e.找得到 ? esc(e.候选 || "") + " / " + esc(e.基线 || "") : ""}</td>
+        <td class="k">${e && e.找得到 ? esc(e.数据集版本 || "") + " · " + esc(e.判据版本 || "") : ""}</td>
+        <td>${e && e.找得到 ? (e.能当结论吗 ? "能" : "不能") : ""}${e && (e.为什么不能 || []).concat(e.和记录对不上的 || []).length
+          ? `<div class="k">${esc((e.为什么不能 || []).concat(e.和记录对不上的 || []).join(";"))}</div>` : ""}</td></tr>`; }).join("") + `</tbody></table>`;
+  const 改 = [["原缺陷案例", "defect"], ["关联意见", "op"], ["关联trace", "trace"], ["预期结果", "expect"], ["禁止行为", "forbid"],
+    ["基线版本", "base"], ["候选版本", "cand"], ["数据集版本", "dv"], ["判分规则", "scorer"],
+    ["复现组评测", "g1"], ["回归组评测", "g2"], ["保留组评测", "g3"]];
+  const 现值 = (名) => 名 === "关联意见" ? ((d.关联意见 || {}).id || "") : 名 === "数据集版本" ? ((d.数据集版本 || {}).id || "")
+    : /组评测$/.test(名) ? ((((d.三组 || []).find((g) => g.组 + "评测" === 名) || {}).评测 || {}).id || "") : (d[名] || "");
+  const 编辑 = d.能改 ? `<h2>改(补三组评测多半在这里)</h2><table><tbody>`
+      + 改.map(([名, k]) => `<tr><td class="k">${esc(名)}</td><td><input id="iv-e-${k}" value="${esc(现值(名))}" style="width:100%"></td></tr>`).join("")
+      + `</tbody></table><input id="iv-e-note" placeholder="说明(选填)" style="width:100%">
+      <div><button id="iv-e-save">保存</button> <span class="k" id="iv-e-why"></span></div>`
+    : `<div class="note">${md(`这条验证记录是「${d.状态}」,不能再改 —— 下了结论的实验原样留着;要重新验证就在问题单上新建一条。`)}</div>`;
+  $("#main").innerHTML = 头 + `<div class="head"><div><h1>改进验证记录</h1>
+      <div class="sub">状态 <b>${esc(d.状态)}</b> · 问题单 <a href="#/issue/${encodeURIComponent(d.问题单.id)}">${esc(d.问题单.标题)}</a>(${esc(d.问题单.状态)})</div></div></div>
+    ${d.状态 === "待验证" ? (d.能点验证通过吗 ? `<div class="note">三组证据齐了 —— 可以去问题单上点「验证通过」(算不算通过由你判,不按分数)。</div>`
+      : `<div class="note">还不能点「验证通过」:${esc((d.还差什么 || []).join(";"))}</div>`) : ""}
+    <table><tbody>${kv("原缺陷案例", d.原缺陷案例)}${kv("关联意见", d.关联意见 && `${d.关联意见.id}(${d.关联意见.评价} · ${d.关联意见.状态})`)}
+      ${kv("关联trace", d.关联trace)}${kv("预期结果", d.预期结果)}${kv("禁止行为", d.禁止行为)}
+      ${kv("基线版本", d.基线版本)}${kv("候选版本", d.候选版本)}
+      ${kv("固定数据集版本", (d.数据集版本 || {}).id && `${d.数据集版本.id}(${d.数据集版本.题数 == null ? "没存下题目清单" : d.数据集版本.题数 + " 题"})`)}
+      ${kv("判分规则(引用)", d.判分规则)}${kv("结论说明", d.结论说明)}${kv("审批人", d.审批人)}
+      ${kv("结论于", d.结论于 && String(d.结论于).slice(0, 16).replace("T", " "))}</tbody></table>
+    <h2>三组评测(现查)</h2>${组表}
+    ${编辑}`;
+  const 错话 = (e) => (e.体 && (e.体.message + " " + (e.体.advice || "") + (e.体.field_errors ? " " + JSON.stringify(e.体.field_errors) : ""))) || e.message;
+  if ($("#iv-e-save")) $("#iv-e-save").onclick = async () => {
+    const 体 = {};
+    改.forEach(([名, k]) => { const v = ($("#iv-e-" + k).value || "").trim(); if (v !== 现值(名)) 体[名] = v; });
+    if (!Object.keys(体).length) { $("#iv-e-why").textContent = "没有改动"; return; }
+    体.说明 = ($("#iv-e-note").value || "").trim() || null;
+    $("#iv-e-save").disabled = true;
+    try {
+      await 请求(`${P()}/issue-verifications/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
+      页_验证记录详情(id);
+    } catch (e) { $("#iv-e-save").disabled = false; $("#iv-e-why").textContent = "没保存上:" + 错话(e); }
+  };
+}
+
+async function 页_发布记录详情(id) {
+  const 头 = `<div class="crumb"><a href="#/issues">问题单</a> / 发布记录 ${esc(id)}</div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/issue-releases/${encodeURIComponent(id)}`); }
+  catch (e) { const s = 错误块(e, () => 页_发布记录详情(id)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const kv = (k, v) => `<tr><td class="k">${esc(k)}</td><td>${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
+  const 对象 = d.关联的发布现在 || {};
+  const 对象块 = !对象.找得到 ? `<div class="note">关联的发布找不到了。</div>` : `<table><tbody>`
+    + (d.种类 === "应用发布清单"
+      ? kv("应用", `${(对象.应用 || {}).名字 || ""}(${(对象.应用 || {}).id || ""})`) + kv("清单", d.发布清单)
+        + kv("清单钉的版本", Object.entries(对象.清单钉的版本 || {}).map(([k, v]) => `${k}:${v}`).join(";"))
+        + kv("清单审核", 对象.清单审核 && `${对象.清单审核.审核人 || ""} · ${对象.清单审核.结论 || ""}`)
+        + kv("生产现在指着", `${对象.生产现在指着 || "(没有)"}${对象.生产指着它吗 ? "(就是它)" : "(不是它)"}`)
+      : kv("聊天助手", `${(对象.聊天助手 || {}).名字 || ""}(${(对象.聊天助手 || {}).角色键 || ""})`) + kv("版本", "v" + d.聊天助手版本号)
+        + kv("这一版挂的", Object.entries(对象.这一版挂的 || {}).filter(([, v]) => v).map(([k, v]) => `${k}:${v}`).join(";"))
+        + kv("生产现在是", `${对象.生产现在是 || "(没有)"}${对象.生产是它吗 ? "(就是它)" : "(不是它)"}`))
+    + `</tbody></table>`;
+  const 采 = d.实际采用 || {};
+  const 采块 = `<div class="note">${采.现查 ? "现查" : "当时记下的"}:${采.确认了 ? "已确认实际用上了" : "还确认不了"}${采.为什么 ? " —— " + esc(采.为什么) : ""}</div>`
+    + (采.回执 ? `<div class="k">回执:${esc(JSON.stringify(采.回执))}</div>` : "");
+  const 文 = ["改了哪些依赖版本", "批准人", "采用新版本的入口", "试点范围", "观察指标", "回退版本", "回退触发条件"];
+  const 编辑 = d.能改 ? `<h2>改</h2><table><tbody>`
+      + 文.map((名, i) => `<tr><td class="k">${esc(名)}</td><td><input id="ir-e-${i}" value="${esc(d[名] || "")}" style="width:100%"></td></tr>`).join("")
+      + `</tbody></table><input id="ir-e-note" placeholder="说明(选填)" style="width:100%">
+      <div><button id="ir-e-save">保存</button> <span class="k" id="ir-e-why"></span></div>` : "";
+  const 回滚 = d.能记回滚 ? `<h2>记一次回滚</h2>
+      <div class="k">${md("**这里不回滚任何东西**:先在发布页 / 聊天助手页把生产真切回去,再来记 —— 接口会核生产指针确实指回去了。已经发生的业务写入不会跟着撤销。")}</div>
+      <input id="ir-rb-to" placeholder="${d.种类 === "应用发布清单" ? "回到哪一份清单(编号)" : "回到哪一版(版本号,数字)"}" style="width:100%">
+      <textarea id="ir-rb-why" rows="2" placeholder="触发原因(必填,对照上面的回退触发条件)" style="width:100%"></textarea>
+      <div><button id="ir-rb-send">记回滚</button> <span class="k" id="ir-rb-err"></span></div>` : "";
+  $("#main").innerHTML = 头 + `<div class="head"><div><h1>改进${esc(d.事件)}记录</h1>
+      <div class="sub">${esc(d.事件)} · <b>${esc(d.状态)}</b> · 问题单 <a href="#/issue/${encodeURIComponent(d.问题单.id)}">${esc(d.问题单.标题)}</a>(${esc(d.问题单.状态)})</div></div></div>
+    ${d.回滚的是 ? `<div class="note">这是一次回滚,回滚的是 <a href="#/rollout/${encodeURIComponent(d.回滚的是)}">${esc(d.回滚的是)}</a>。</div>` : ""}
+    ${d.被回滚 ? `<div class="note">这条发布已经被 <a href="#/rollout/${encodeURIComponent(d.被回滚)}">${esc(d.被回滚)}</a> 回滚(这一行内容没改)。</div>` : ""}
+    <table><tbody>${文.map((名) => kv(名, d[名])).join("")}${kv("生效于", d.生效于 && String(d.生效于).slice(0, 16).replace("T", " "))}
+      ${kv("失败说明", d.失败说明)}</tbody></table>
+    <h2>关联的发布(现在)</h2>${对象块}
+    <h2>实际采用</h2>${采块}
+    ${编辑}${回滚}
+    <div class="k">${md(d.note || "")}</div>`;
+  const 错话 = (e) => (e.体 && (e.体.message + " " + (e.体.advice || "") + (e.体.field_errors ? " " + JSON.stringify(e.体.field_errors) : ""))) || e.message;
+  if ($("#ir-e-save")) $("#ir-e-save").onclick = async () => {
+    const 体 = {};
+    文.forEach((名, i) => { const v = ($("#ir-e-" + i).value || "").trim(); if (v !== (d[名] || "")) 体[名] = v; });
+    if (!Object.keys(体).length) { $("#ir-e-why").textContent = "没有改动"; return; }
+    体.说明 = ($("#ir-e-note").value || "").trim() || null;
+    $("#ir-e-save").disabled = true;
+    try {
+      await 请求(`${P()}/issue-releases/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
+      页_发布记录详情(id);
+    } catch (e) { $("#ir-e-save").disabled = false; $("#ir-e-why").textContent = "没保存上:" + 错话(e); }
+  };
+  if ($("#ir-rb-send")) $("#ir-rb-send").onclick = async () => {
+    const 到原 = ($("#ir-rb-to").value || "").trim();
+    const 体 = { 回到: d.种类 === "应用发布清单" ? 到原 : parseInt(到原, 10), 触发原因: ($("#ir-rb-why").value || "").trim() };
+    $("#ir-rb-send").disabled = true;
+    try {
+      const r = await 请求(`${P()}/issue-releases/${encodeURIComponent(id)}/rollbacks`, { method: "POST", headers: { "If-Match": String(d.revision) }, body: JSON.stringify(体) });
+      location.hash = "#/rollout/" + encodeURIComponent(r.id);
+    } catch (e) { $("#ir-rb-send").disabled = false; $("#ir-rb-err").textContent = "没记上:" + 错话(e); }
   };
 }
 
@@ -8941,6 +9119,8 @@ async function 路由() {
     if (h.startsWith("#/opinion/")) return await 页_意见详情(decodeURIComponent(h.slice(10)));
     if (h === "#/issues") return await 页_问题单清单();
     if (h.startsWith("#/issue/")) return await 页_问题单详情(decodeURIComponent(h.slice(8)));
+    if (h.startsWith("#/verification/")) return await 页_验证记录详情(decodeURIComponent(h.slice(15)));
+    if (h.startsWith("#/rollout/")) return await 页_发布记录详情(decodeURIComponent(h.slice(10)));
     if (h === "#/capabilities") return await 页_能力档案清单();
     if (h === "#/capability-board") return await 页_改进看板();
     if (h.startsWith("#/capability/")) return await 页_能力档案详情(decodeURIComponent(h.slice(13)));

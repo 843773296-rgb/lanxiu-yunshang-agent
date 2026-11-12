@@ -14,8 +14,9 @@
 
 ## 这次没做的(写清楚,别当成做了)
 
-- **关闭的「完成证据」是一段文字。** PRD §4.3 要求「修复版本已实际生效、原案例与回归通过」—— 绑真的发布版本 /
-  验证记录(只接受同项目实际存在的)是下一步的事。现在库 CHECK 只钉「关闭必须有处理说明 + 完成证据」。
+- ~~关闭的「完成证据」是一段文字~~ —— 11-12 接上了 PRD §4.3(`improvements_api.py`):「验证通过」要那条验证记录三组证据齐、
+  「发布生效」要实际采用回执、「关闭」要这一轮的验证记录通过 + 发布记录已生效且没回滚。处理说明 / 完成证据两段文字照旧要写。
+  前置条件的名单在 issue_flow.前置条件,怎么查在 improvements_api.前置检查(和这一步同一个事务)。
 - **处理时限可空,不算超时。** 几天算超时是 PRD §10 的决策项(平台负责人「处理期限」),没拍;这里不替业务定数。
 - **权限暂用「受理意见」**(总部运营那拨人,和意见受理同一个能力)。PRD §10 的负责人分工(业务 / 平台 / 质量 / 发布
   各管哪一步)没拍 —— 拍了之后验证 / 发布那几步大概要换成各自的能力。
@@ -227,7 +228,8 @@ def 问题单清单(project_id: str, me: 身份 = Depends(要权限("查看有�
 
 # ── 详情 ────────────────────────────────────────────────────────────────
 def _能做的动作(状态):
-    return [{"动作": a, "到": 到, "要写说明": a in F.要说明的动作, "要的字段": list(F.动作要的字段.get(a, ()))}
+    return [{"动作": a, "到": 到, "要写说明": a in F.要说明的动作, "要的字段": list(F.动作要的字段.get(a, ())),
+             "可带的字段": list(F.动作可带的字段.get(a, ())), "前置条件": F.前置条件.get(a)}
             for a, 到 in F.能做的动作(状态)]
 
 
@@ -260,7 +262,9 @@ def 问题单详情(project_id: str, issue_id: str, me: 身份 = Depends(要权�
         能力 = (c.execute(text("select id, name, status from capability_profiles where project_id=:p and id=:c"),
                          {"p": project_id, "c": x["capability_profile_id"]}).mappings().first()
               if x["capability_profile_id"] else None)
-    return {"能力": ({"id": 能力["id"], "名字": 能力["name"], "状态": 能力["status"]} if 能力 else None),"id": x["id"], "标题": x["title"], "状态": x["status"], "已解决": x["status"] in F.算已解决的状态,
+        import improvements_api as _IM   # 11-12 改进验证与发布:这张单上的验证记录 / 发布记录(摘要,点进去看详情)
+        验证们, 发布们 = _IM.问题单的记录(c, project_id, issue_id)
+    return {"验证记录": 验证们, "发布记录": 发布们,"能力": ({"id": 能力["id"], "名字": 能力["name"], "状态": 能力["status"]} if 能力 else None),"id": x["id"], "标题": x["title"], "状态": x["status"], "已解决": x["status"] in F.算已解决的状态,
             "业务影响": x["impact_note"], "复现条件": x["repro_note"], "根因类别": x["root_cause_type"],
             "根因核实": x["root_cause_status"], "方案": x["solution_note"], "验收标准": x["acceptance_note"],
             "目标版本": x["target_version"], "依赖": x["dependency_note"], "负责人": x["owner"],
@@ -280,8 +284,8 @@ def 问题单详情(project_id: str, issue_id: str, me: 身份 = Depends(要权�
             "时间线": [{"时间": _给人看(e["created_at"]), "谁": e["created_by"], "动作": e["action_code"],
                       "从": e["from_status"], "到": e["to_status"], "说明": e["note"], "变化": e["change_snapshot"]}
                      for e in 线],
-            "note": ("完成证据现在是一段文字 —— 绑真实发布版本 / 验证记录(PRD §4.3)还没做;"
-                     "处理时限过了不标超时(几天算超时 PRD §10 待定)")}
+            "note": ("「验证通过」要那条验证记录三组证据齐、「发布生效」要实际采用回执、「关闭」要这一轮验证通过 + 发布已生效"
+                     "(PRD §4.3);不按分数判过没过(门槛 PRD §10 待定);处理时限过了不标超时(几天算超时 PRD §10 待定)")}
 
 
 def _锁一张(c, project_id, issue_id, if_match):
@@ -345,12 +349,18 @@ async def 改问题单(project_id: str, issue_id: str, request: Request,
 async def 问题单一步(project_id: str, issue_id: str, request: Request,
                 if_match: str = Header(default=None, alias="If-Match"),
                 me: 身份 = Depends(要权限("受理意见"))):
-    """`{动作, 说明?, 重新评估日期?, 主问题?, 处理说明?, 完成证据?}`,带 If-Match。流转照 issue_flow.流转(PRD §5.2),
-    不在表里的 409;要写说明 / 要带字段的缺了 422。每一步追加一行时间线(带这一步改了的字段前后值)。
+    """`{动作, 说明?, 重新评估日期?, 主问题?, 处理说明?, 完成证据?, 验证记录?, 发布记录?}`,带 If-Match。流转照 issue_flow.流转
+    (PRD §5.2),不在表里的 409;要写说明 / 要带字段的缺了 422;**前置条件**(issue_flow.前置条件)不满足 409。
+    每一步追加一行时间线(带这一步改了的字段前后值,和这一步用的验证记录 / 发布记录)。
+
+    - 验证通过:要「验证记录」(这张单上、待验证的),三组评测都关联了、都能当结论、和记录对得上 —— **不按分数判**,齐了由人判
+    - 验证失败:可带「验证记录」→ 标成未通过(失败的实验留着)
+    - 发布生效:要「发布记录」(这张单上、待生效的),**实际采用回执**取得到才行(生产运行回执 / 聊天站实际加载);配置保存成功不算
+    - 发布失败:可带「发布记录」→ 标成发布失败
 
     - 暂不处理 → 已搁置:说明 = 理由,还要重新评估日期(不早于今天)。不计已解决
     - 标为重复 → 已重复:主问题要是同项目、不是自己、本身不是重复单;这张单关联的意见**留在这张单上**(保留来源)
-    - 关闭 → 已验证关闭:处理说明 + 完成证据必填(⚠️ 证据现在是文字,版本 / 验证记录的真绑定是 PRD §4.3,没做)
+    - 关闭 → 已验证关闭:处理说明 + 完成证据必填,**而且这一轮的验证记录通过 + 发布记录已生效、没被回滚**
     - 发布失败:留在待发布,记一条(说明里写错误)
     - 关闭后复发 → 处理中:重开次数 +1,**上一次关闭的说明 / 证据 / 时刻都不清**,时间线里那行「关闭」也还在"""
     体 = await _json体(request)
@@ -377,6 +387,9 @@ async def 问题单一步(project_id: str, issue_id: str, request: Request,
             raise _错(422, "VALIDATION", f"「{动作}」缺东西", "见字段错误", field_errors=坏)
         到 = 能[动作]
         设, 参, 变化 = {}, {}, {}
+        # 11-12 前置条件(issue_flow.前置条件):验证记录 / 发布记录 —— 不满足 409;同一个事务里顺手把记录标成通过 / 生效 / 失败
+        import improvements_api as _IM
+        变化.update(_IM.前置检查(c, project_id, x, 动作, 体, me, 说明))
         if 动作 == "暂不处理":
             try:
                 日 = _dt.date.fromisoformat(_字(体, "重新评估日期"))

@@ -309,6 +309,15 @@ export const ENDPOINTS = [
   { method: "GET", path: "/issues/{id}", summary: "一张问题单 + 时间线 + 这一步能做的动作 + 关联的意见", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/issues/{id}", summary: "改问题单字段(根因 / 方案 / 验收 / 负责人 / 时限 …)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/issues/{id}/actions", summary: "问题单流转一步(确认 / 处理 / 验证 / 发布 / 关闭 / 复发 / 搁置 / 重复)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/issues/{id}/verifications", summary: "在问题单上建改进验证记录(待验证)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/issue-verifications", summary: "改进验证记录清单(按问题单筛)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/issue-verifications/{id}", summary: "一条验证记录 + 三组评测现查 + 现在能不能点验证通过", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/issue-verifications/{id}", summary: "改验证记录(补三组评测等;只有待验证的能改)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/issues/{id}/releases", summary: "在问题单上建改进发布记录(待生效;只记不发布)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/issue-releases", summary: "改进发布记录清单(按问题单筛)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/issue-releases/{id}", summary: "一条发布记录 + 关联的发布现在什么样 + 实际采用", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/issue-releases/{id}", summary: "改发布记录(只有待生效的发布能改)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/issue-releases/{id}/rollbacks", summary: "记一次回滚(新的一行;不替人回滚)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/capability-profiles", summary: "建能力档案(在「配置中」)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/capability-profiles", summary: "能力档案清单(按状态筛)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/capability-profiles/{id}", summary: "一份能力档案 + 依赖 + 关联问题单 + 评测 / 样本 / 运行量 + 时间线", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -340,4 +349,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 252 条接口 · 24 条异步 · 32 条要幂等键 · 33 条要 If-Match */
+/** 共 261 条接口 · 24 条异步 · 32 条要幂等键 · 36 条要 If-Match */

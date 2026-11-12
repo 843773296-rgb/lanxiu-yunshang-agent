@@ -39,6 +39,7 @@ from sqlalchemy import text
 from db import 连接, 事务
 from deps import 身份, 要权限, _错
 import capability_flow as F
+import evals as EV
 
 router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
@@ -276,7 +277,7 @@ def _评测与样本(c, project_id, 工作流们):
         return _没有数据(原因), _没有数据(原因)
     评测 = []
     for r in rs:
-        能 = r["status"] == "已完成" and bool(r["baseline_ref"]) and bool(r["dataset_version_id"]) and bool(r["scorer_version"])
+        能 = EV.能当结论吗(r)[0]     # 口径只在 evals.py 一处(11-12 问题单「验证通过」也用它)
         评测.append({"id": r["id"], "状态": r["status"], "执行方式": r["executor_code"],
                    "候选": (r["candidate_ref"] or {}).get("名") or (r["candidate_ref"] or {}).get("ref"),
                    "基线": (r["baseline_ref"] or {}).get("名") or (r["baseline_ref"] or {}).get("ref"),

@@ -981,8 +981,8 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "流转表只在 services/api/app/issue_flow.py 写一次,接口和库 CHECK 都从那里来",
        "**已搁置不计已解决**,而且必须有理由 + 重新评估日期(库 CHECK);已重复必须指向主问题(duplicate_of_issue_id,自引用不建外键,"
        "接口校验同项目、不是自己、主问题本身不是重复单)",
-       "**已验证关闭**必须有处理说明 + 完成证据(库 CHECK)。⚠️ 这次的完成证据是一段文字 —— "
-       "PRD §4.3「修复版本已实际生效、原案例与回归通过」的**真绑定(版本 / 验证记录)这次没做**",
+       "**已验证关闭**必须有处理说明 + 完成证据(文字,库 CHECK);11-12 起接口还要**这一轮的验证记录通过 + 发布记录已生效且没回滚**"
+       "(issue_verifications / issue_releases,PRD §4.3;跨表,CHECK 看不到别的行,所以落在接口那一步 + 时间线里记着用的哪两条)",
        "关闭后复发 → 重开回处理中:**关闭记录不抹掉**(last_closed_at 不清空、时间线里那一行「关闭」还在,reopen_count +1)",
        "处理时限 due_date 可空:**几天算超时 PRD §10 待定**,这里不替业务定数",
        "**关联能力**(11-12,PRD §4.4):capability_profile_id 可空(同项目复合外键)—— 能力档案详情里列出关联的问题单、单独数未解决的"],
@@ -1013,6 +1013,34 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       ["**每一步追加一行,不改不删**(PRD §7.1 处理时间线:操作者、动作、前后值、原因、时间):建档、改字段、每一次改状态",
        "改状态必须带 note(库 CHECK);change_snapshot 记改字段的前后值(已验证范围、依赖清单改了什么都在这里)"],
       依赖=["capability_profiles"]),
+    # ②'''''' 改进验证与发布(2026-11-12;口径照《意见收集与能力持续改进 PRD》10-24 §4.3 / §5.2 / §7.1「改进验证记录」那一行)
+    E("issue_verifications", "改进验证记录", 子对象, 可改,
+      ["issue_id", "defect_case_note", "opinion_id", "chat_trace_ref", "expected_result_note", "forbidden_behavior_note",
+       "baseline_version_ref", "candidate_version_ref", "dataset_version_id", "scorer_version_ref",
+       "repro_evaluation_id", "regression_evaluation_id", "holdout_evaluation_id",
+       "status", "conclusion_note", "approver_ref", "concluded_at"],
+      ["**挂在一张问题单上**,绑:原缺陷案例(文字 + 可选关联意见 / 聊天站那一轮)、预期结果、禁止行为、基线版本、候选版本、"
+       "固定数据集版本(dataset_versions,同项目复合外键)、判分规则(只存引用 —— 评测里的判据版本号,不复制判据)",
+       "验证分三组(PRD §4.3):复现组 / 回归组 / 保留组,每组一条**同项目里真有的**评测(evaluations,三条复合外键);"
+       "**复用现有评测,不复制一套评分**;三组不许是同一条评测(库 CHECK)",
+       "状态 待验证 → 通过 / 未通过,**只由问题单的「验证通过 / 验证失败」那一步写**;通过要三组都在、记审批人和时刻(库 CHECK)。"
+       "**不按分数判过没过**(门槛 PRD §10 待定):三组评测都「能当结论」才**允许**人点通过",
+       "失败的实验保留(PRD §5.2「验证失败:保留失败实验」)—— 未通过的那条不删,下一轮新建一条"],
+      依赖=["issues", "opinions", "dataset_versions", "evaluations"]),
+    E("issue_releases", "改进发布记录", 子对象, 可改,
+      ["issue_id", "event_code", "rollback_of_id", "target_type", "release_manifest_id", "chat_assistant_id",
+       "chat_assistant_version_no", "changed_deps_note", "approver_name", "entry_note", "pilot_scope_note",
+       "observe_metrics_note", "rollback_version_note", "rollback_trigger_note", "status", "adoption_snapshot",
+       "effective_at", "failure_note"],
+      ["**挂在一张问题单上,关联一条真实的发布**:应用发布清单(release_manifests)或聊天助手的某一版(chat_assistants + 版本号);"
+       "同项目复合外键 —— 拿别的项目的发布来关联在库这一层就不成立",
+       "发布那一行必须写:改了哪些依赖版本、批准人、采用新版本的入口、试点范围、回退版本及触发条件(PRD §4.3,库 CHECK);"
+       "观察指标可空(观察窗口 / 样本量 PRD §10 待定)。**没有灰度开关字段**:按门店 / 用户灰度后台不支持,不摆(PRD)",
+       "状态 待生效 → 已生效 / 发布失败,只由问题单「发布生效 / 发布失败」那一步写。**已生效必须带实际采用回执**"
+       "(adoption_snapshot,库 CHECK):从新版本真跑出来的运行 / 聊天站报的实际加载核对出来 —— 「配置保存成功」不算(PRD §4.3)",
+       "**回滚是新的一行**(event_code = 回滚,rollback_of_id 指着被回滚的那条发布记录),原来那行一个字不改;"
+       "建回滚那一行时核生产指针确实指回去了 —— 后台**不替人回滚、不改生产配置**(PRD §5.2 末段),真回滚在发布页做"],
+      依赖=["issues", "release_manifests", "chat_assistants", "issue_releases"]),
 
     # ③ 工具 / 连接 / 指南 / 规则
     E("tool_definitions", "工具", 项目级, 可改,

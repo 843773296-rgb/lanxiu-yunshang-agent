@@ -366,6 +366,12 @@
     # 能力档案(11-12):叫什么 / 走到哪 / 依赖清单(空清单是 [],不许 NULL 冒充「没依赖」)
     "capability_profiles": {"name", "status", "dependencies"},
     "capability_profile_events": {"capability_profile_id", "action_code", "to_status"},
+    # 改进验证记录(11-12,PRD §4.3):PRD「至少绑定」的那七样 —— 原缺陷案例、预期结果、禁止行为、基线、候选、固定数据集版本、判分规则;
+    # 三组评测可以后补(评测可能还在跑),所以不进必填 —— 「验证通过」那一步和库 CHECK 要它们都在
+    "issue_verifications": {"issue_id", "defect_case_note", "expected_result_note", "forbidden_behavior_note",
+                            "baseline_version_ref", "candidate_version_ref", "dataset_version_id", "scorer_version_ref", "status"},
+    # 改进发布记录(11-12):发布还是回滚 / 关联的是哪种发布对象 / 走到哪 —— 少一样就说不清这一行是什么
+    "issue_releases": {"issue_id", "event_code", "target_type", "status"},
     # 告警(11-04):少一样规则就判不了 / 待办就说不清是哪条规则、什么状态
     "alert_rules": {"name", "filter_snapshot", "metric_code", "direction_code", "threshold_value", "window_minutes",
                     "min_sample_count", "trigger_count", "recover_count", "dedupe_minutes", "owner", "breach_count", "normal_count"},

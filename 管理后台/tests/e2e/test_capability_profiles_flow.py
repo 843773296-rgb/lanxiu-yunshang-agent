@@ -34,6 +34,9 @@ import urllib.request
 import uuid
 from collections import deque
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _改进证据 as 证  # noqa: E402
+
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
 项目 = "project_lanxiu"
 P = f"/api/v1/projects/{项目}"
@@ -233,11 +236,18 @@ def main():
            and {s["id"] for s in d.get("关联的问题单", [])} == {i1, i2, i3}, d.get("问题单数"))
         单动(i2, "暂不处理", 说明="等下个版本", 重新评估日期="2099-01-01")
         单动(i3, "标为重复", 说明="和漏退款是一件事", 主问题=i1)
+        轮们 = []
         for a, 额 in (("确认问题", {}), ("开始处理", {}), ("提交验证", {}), ("验证通过", {}), ("发布生效", {}),
                      ("观察期复发", {"说明": "又漏了"}), ("提交验证", {}), ("验证通过", {}), ("发布生效", {}),
                      ("关闭", {"处理说明": "补了退款查询", "完成证据": "原案例复跑通过"}), ("关闭后复发", {"说明": "换个店又出现"}),
                      ("提交验证", {}), ("验证通过", {}), ("发布生效", {}),
                      ("关闭", {"处理说明": "第二次修", "完成证据": "两家店复跑通过"})):
+            if a == "验证通过":   # 11-12 起要带真的验证记录 / 发布记录(三组证据、实际采用回执),每一轮造一套
+                轮们.append(f"r{len(轮们)}")
+                v_, r_ = 证.走齐证据(打, 库, org, 项目, P, i1, 标, 轮们[-1])
+                额 = {**额, "验证记录": v_}
+            if a == "发布生效":
+                额 = {**额, "发布记录": r_}
             c, b = 单动(i1, a, **额)
             if c != 200:
                 ck(f"问题单走「{a}」", False, (c, b)); break
@@ -389,6 +399,7 @@ def main():
     finally:
         with 库.begin() as cc:
             for 项 in (项目, "project_demo_a"):
+                证.清掉(cc, 项, 标)     # 挂在问题单上的验证 / 发布记录和它们的夹具(11-12)
                 我的单 = "select id from issues where project_id=:p and title like :t"
                 cc.execute(text(f"delete from issue_events where project_id=:p and issue_id in ({我的单})"), {"p": 项, "t": 标 + "%"})
                 # 重复单指着主问题:先清掉指向,再删

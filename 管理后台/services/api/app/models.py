@@ -38,6 +38,9 @@ _问 = _ilu.module_from_spec(_问spec); _问spec.loader.exec_module(_问)
 # 能力档案的状态 / 时间线动作只在 capability_flow.py 写一次(11-12)—— 同一个加载法
 _能spec = _ilu.spec_from_file_location("能力档案口径", os.path.join(os.path.dirname(os.path.abspath(__file__)), "capability_flow.py"))
 _能 = _ilu.module_from_spec(_能spec); _能spec.loader.exec_module(_能)
+# 改进验证记录 / 发布记录的状态 / 种类只在 improvement_flow.py 写一次(11-12)—— 同一个加载法
+_改spec = _ilu.spec_from_file_location("改进验证口径", os.path.join(os.path.dirname(os.path.abspath(__file__)), "improvement_flow.py"))
+_改 = _ilu.module_from_spec(_改spec); _改spec.loader.exec_module(_改)
 
 from sqlalchemy import (Date, MetaData, Table, Column, Text, Integer, BigInteger, Boolean,
                         Numeric, TIMESTAMP, Index, UniqueConstraint,
@@ -147,6 +150,9 @@ _依赖列 = {
     ("workflow_version_marks", "workflow_versions"): "version_id",
     # 意见单(11-04):审核后升成的那条样本 —— 列名按用途叫 promoted_sample_id(推出来的是 sample_id)
     ("opinions", "samples"): "promoted_sample_id",
+    # 改进验证记录(11-12):**一张父表三列** —— 复现 / 回归 / 保留三组各指一条评测。
+    # 值写成元组 = 每一列各建一条复合外键(名字 fk_{表}_{列},因为同一对表有三条,fk_{表}_{父} 会撞名)
+    ("issue_verifications", "evaluations"): ("repro_evaluation_id", "regression_evaluation_id", "holdout_evaluation_id"),
 }
 
 # ## 唯一约束叫什么名字 —— **这个名字必须和迁移里那个一个字不差**
@@ -388,7 +394,8 @@ _额外检查 = {
         # 重复 ⇔ 指向主问题;不能指自己
         ("ck_issues_duplicate", "(status = '已重复') = (duplicate_of_issue_id is not null)"),
         ("ck_issues_not_self_duplicate", "duplicate_of_issue_id is null or duplicate_of_issue_id <> id"),
-        # 关闭要处理说明 + 完成证据(版本 / 验证记录的真绑定是 PRD §4.3,这次没做 —— 证据先是一段文字)
+        # 关闭要处理说明 + 完成证据(文字)。11-12 起「这一轮的验证记录通过 + 发布记录已生效」由接口在「关闭」那一步查
+        # (跨表,CHECK 看不到别的行);记录 id 记进那一行时间线的变化里
         ("ck_issues_closed", "status <> '已验证关闭' or (resolution_note is not null and completion_evidence_note is not null)"),
         ("ck_issues_reopen_count", "reopen_count >= 0"),
     ],
@@ -406,6 +413,29 @@ _额外检查 = {
     "capability_profile_events": [
         ("ck_capability_profile_events_action", "action_code in " + _能.sql_枚举(_能.全部事件动作)),
         ("ck_capability_profile_events_note", "action_code not in " + _能.sql_枚举(_能.要说明的动作) + " or note is not null"),
+    ],
+    # 改进验证记录(11-12,PRD §4.3):状态从 improvement_flow.py 拼;「通过」必须三组都在、记了审批人和时刻;三组不许是同一条评测
+    "issue_verifications": [
+        ("ck_issue_verifications_status", "status in " + _改.sql_枚举(_改.验证记录状态们)),
+        ("ck_issue_verifications_passed", "status <> '通过' or (repro_evaluation_id is not null and regression_evaluation_id is not null"
+                                          " and holdout_evaluation_id is not null and approver_ref is not null and concluded_at is not null)"),
+        ("ck_issue_verifications_distinct", "(repro_evaluation_id is distinct from regression_evaluation_id or repro_evaluation_id is null)"
+                                            " and (repro_evaluation_id is distinct from holdout_evaluation_id or repro_evaluation_id is null)"
+                                            " and (regression_evaluation_id is distinct from holdout_evaluation_id or regression_evaluation_id is null)"),
+    ],
+    # 改进发布记录(11-12):种类 / 状态从 improvement_flow.py 拼;关联对象和种类对得上;发布那一行 PRD 列的几样必须写;
+    # 已生效必须带实际采用回执;回滚那一行指着被回滚的那条、写了触发原因、一建就是「已回滚」
+    "issue_releases": [
+        ("ck_issue_releases_event", "event_code in " + _改.sql_枚举(_改.发布事件们)),
+        ("ck_issue_releases_target_type", "target_type in " + _改.sql_枚举(_改.发布对象种类们)),
+        ("ck_issue_releases_status", "status in " + _改.sql_枚举(_改.发布记录状态们)),
+        ("ck_issue_releases_target", "(target_type = '应用发布清单') = (release_manifest_id is not null)"
+                                     " and (target_type = '聊天助手版本') = (chat_assistant_id is not null and chat_assistant_version_no is not null)"),
+        ("ck_issue_releases_publish", "event_code <> '发布' or (" + " and ".join(f"{列} is not null" for _, 列 in _改.发布必填) + ")"),
+        ("ck_issue_releases_effective", "status <> '已生效' or (adoption_snapshot is not null and effective_at is not null)"),
+        ("ck_issue_releases_rollback", "(event_code = '回滚') = (rollback_of_id is not null)"
+                                       " and (event_code = '回滚') = (status = '已回滚')"
+                                       " and (event_code <> '回滚' or rollback_trigger_note is not null)"),
     ],
     "chat_handoffs": [
         ("ck_chat_handoffs_status", "status in ('待处理', '已处理')"),
@@ -543,6 +573,15 @@ def _建一张(e):
         # 盯这件事的判据是 `tools/fk_dep_check.py`:
         # 每一处「声明了依赖却没建成外键」都要在那里点名 + 写理由。
         显式 = _依赖列.get((名, 父))
+        if isinstance(显式, tuple):
+            # 一张父表多列(见 `_依赖列` 里 issue_verifications 那条):每列一条,名字带列名免得撞
+            for 本列 in 显式:
+                if 本列 not in 字段:
+                    raise ValueError(f"{名} 的 `_依赖列` 点了 {本列},而它不在字段里 —— **不静默跳过**")
+                约束.append(ForeignKeyConstraint(
+                    ["project_id", 本列], [f"{父}.project_id", f"{父}.id"],
+                    name=f"fk_{名}_{本列}", ondelete="RESTRICT"))
+            continue
         候选 = ([显式] if 显式 and 显式 in 字段
               else [c for c in (父字段, f"{父[:-1]}_id") if c in 字段])
         if not 候选: continue
