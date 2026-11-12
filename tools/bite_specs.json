@@ -20345,5 +20345,17 @@
    }
   ],
   "预期红": "公海 · 客户页「销售顾问」筛「公海」筛得出刚释放的那户,筛不出还有导购的"
+ },
+ {
+  "script": "backend/authgate_check.py",
+  "改坏": "把导出入口的店长以上判定删掉(顾问能把全店客户导成表格带走)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            if not _ue or _ue.get(\"role\") not in MANAGER_ROLES:\n                log_op(_actor_of(self), \"download\", kind,",
+    "new": "            if False:\n                log_op(_actor_of(self), \"download\", kind,"
+   }
+  ],
+  "预期红": "顾问导出客户 → 403(EXPORT_ROLE)"
  }
 ]

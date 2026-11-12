@@ -3987,6 +3987,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(scheme_list(_店范围(self)))   # 按门店划范围(用户 10-23 拍;11-11 补齐)
         if p.startswith("/api/export/"):
             kind=p.split("/api/export/")[1]
+            # 导出限店长以上(用户 11-12 拍,台账第十六条):不走审批,但每次进操作日志、手机号只给尾号(_EXPORT 里本来就只取尾号)。
+            # 判在入口:一份带全店客户的表格出了门就收不回来 —— 顾问要用,找店长导
+            _ue = _me(self)
+            if not _ue or _ue.get("role") not in MANAGER_ROLES:
+                log_op(_actor_of(self), "download", kind, "—", "—", False, "EXPORT_ROLE",
+                       f"「{(_ue or {}).get('role')}」导出被拒(店长以上才能导)", {})
+                return self._send({"error": "导出要店长或总部运营来做 —— 表格出了门就收不回来", "code": "EXPORT_ROLE"}, 403)
             # 按门店划范围(用户 10-23 拍;11-11 补齐):店里的人只导得出本店;台账记真实导出人(原来恒记「魏欣新」)
             data=export_csv(kind,Q,actor=_actor_of(self),本店=_店范围(self)).encode("utf-8-sig")
             self.send_response(200)

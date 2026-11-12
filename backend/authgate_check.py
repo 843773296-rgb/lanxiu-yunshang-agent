@@ -53,6 +53,8 @@ bad = 0
      'toggle 表名不在白名单 → 拒,员工状态一个字没动'),
     ('把 toggle() 的店长以上判定删掉(顾问又能停用全店的量体项 / 编码)',
      '顾问切开关 → 拒(TOGGLE_ROLE),状态没动'),
+    ('把导出入口的店长以上判定删掉(顾问能把全店客户导成表格带走)',
+     '顾问导出客户 → 403(EXPORT_ROLE)'),
     ('把 /api/template-save 的 role 改回读请求体(body.get("role"))',
      '角色只从会话取:顾问登录、请求体自称总部运营 → 三个口都按顾问拒'),
 ]
@@ -132,6 +134,20 @@ def 打一次(path, body, cookie=None, 令牌=None):
     except Exception as e:
         return None, f"{type(e).__name__}: {str(e)[:60]}"
     return h.状态码, h.回了
+
+
+def 打GET(path, cookie=None):
+    """GET 一次 → (状态码, 回包 dict 或写出去的字节)。导出这类直接往 wfile 写文件的也接得住。"""
+    import server
+    h = 假请求(path, {}, cookie)
+    def _send(obj, code=200):
+        h.状态码 = code; h.回了 = obj
+    h._send = _send
+    try:
+        server.H.do_GET(h)
+    except Exception as e:
+        return None, f"{type(e).__name__}: {str(e)[:60]}"
+    return h.状态码, (h.回了 if h.回了 is not None else h.wfile.getvalue())
 
 
 def 码之(回):
@@ -266,6 +282,13 @@ def main():
                 r1 = r1 if isinstance(r1, dict) else {}
                 打一次("/api/toggle", {"table": "sys_code", "key": "code", "val": 码[0]["code"]}, cookie=ck_店)  # 切回去
                 ck("白名单里的(系统编码)店长照样切得动(对照)", bool(r1.get("ok")), str(r1)[:60])
+                # 台账第十六条:导出限店长以上 —— 顾问导客户 → 403;店长导 → 拿到 CSV,手机号只有尾号
+                码g, 回g = 打GET("/api/export/customers", cookie=ck_顾)
+                ck("顾问导出客户 → 403(EXPORT_ROLE)", 码g == 403 and 码之(回g) == "EXPORT_ROLE", f"{码g} {str(回g)[:50]}")
+                码h, 回h = 打GET("/api/export/customers", cookie=ck_店)
+                头 = (回h.decode("utf-8-sig").splitlines() or [""])[0] if isinstance(回h, bytes) else str(回h)
+                ck("店长导出客户 → 拿到 CSV,只有手机尾号没有整号(对照)",
+                   码h == 200 and "客户号" in 头 and "手机尾号" in 头 and "手机号" not in 头.replace("手机尾号", ""), f"{码h} 表头:{头[:60]}")
                 最近 = server.rows("SELECT actor FROM op_log WHERE code='TOGGLE' ORDER BY id DESC LIMIT 1")
                 ck("toggle 的台账署名是登录的人,不是写死的真实员工",
                    bool(最近) and 最近[0]["actor"] == 店长["name"] != "魏欣新",
