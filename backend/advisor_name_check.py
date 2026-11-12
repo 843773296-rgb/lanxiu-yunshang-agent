@@ -138,6 +138,10 @@ def main():
             v = (v or "").strip()
             if not v: continue
             短 = v.split(" ", 1)[-1] if " " in v else v
+            # 「公海(没有导购)」是筛选项里的一档,不是一个人(11-12 公海店长入口)—— **只认 server 里那一个常量**,
+            # 不按「带括号的都放」这种写法放:那样一个真漂掉的名字只要带括号就溜过去了
+            if 路.startswith("/facets/advisor") and v == getattr(__import__("server"), "公海标签", None):
+                continue
             if v not in 带号 and v not in 花名册 and 短 not in 花名册:
                 野.append((n, 路, v))
     ck("页面上的顾问名字都在员工表里", not 野, 总,
