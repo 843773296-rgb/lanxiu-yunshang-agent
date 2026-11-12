@@ -126,14 +126,19 @@ def main():
     print("=" * 84)
     import ops_eval as E
     import ops_eval_judgetest as J
+    import ops_sealed as SE
+    # ⚠️ **封存题的词表也要验备选说法** —— 它们故意不跑,但判据照旧要对。
+    #    只扫 `E.CASES` 会让 10 道封存题的词表**从没被任何对照碰过**,
+    #    而那在解封那天之前看不出来。
+    全部题 = list(E.CASES) + list(SE.SEALED)
 
     # ── ① 判据得把自己的词表记下来 ────────────────────────────────────
     表 = {}
-    for c in E.CASES:
+    for c in 全部题:
         ws = 词表(c["grade"])
         if ws: 表[c["id"]] = ws
-    ck("查得到枚举词表(判据要把自己的词表记下来)", len(表) >= 带词表题数_下限, len(E.CASES),
-       f"{len(表)}/{len(E.CASES)} 道题带着枚举词表(下限 {带词表题数_下限},只许涨)—— "
+    ck("查得到枚举词表(判据要把自己的词表记下来)", len(表) >= 带词表题数_下限, len(全部题),
+       f"{len(表)}/{len(全部题)} 道题带着枚举词表(下限 {带词表题数_下限},只许涨)—— "
        f"**套在 all_of 里的也要透出来**,否则查到的永远是 0")
     if len(表) > 带词表题数_下限:
         print(f"  ℹ️ 带词表的题涨到 {len(表)} 道了 —— 把 `带词表题数_下限` 改成 {len(表)}")
@@ -157,7 +162,7 @@ def main():
     for cid, ws in sorted(表.items()):
         for w in ws:
             if len(w) != 1: continue
-            g = next((x for c in E.CASES if c["id"] == cid
+            g = next((x for c in 全部题 if c["id"] == cid
                       for x in _取判据(c["grade"]) if getattr(x, "needles", None) == w), None)
             if not g or "没有备选" not in (getattr(g, "why", "") or ""):
                 没说明.append((cid, w[0]))

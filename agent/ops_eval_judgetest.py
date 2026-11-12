@@ -13,7 +13,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.dirname(HERE), os.path.join(os.path.dirname(HERE), "backend")]
 import ops_eval as ev
 
-C = {c["id"]: c for c in ev.CASES}
+import ops_sealed as SE                       # **封存题的判据也要过对照**
+# ⚠️ **封存题故意不跑,但它的判据不能跟着隐身。**
+# > 一个「判据验过了」和一个「判据从没被任何对照碰过」,
+# > **在解封那天之前长得一模一样** —— 而解封正是最不能出错的时刻。
+# 所以这份对照集盖的是 `CASES + SEALED`,下面那条零对照棘轮也一样。
+全部题 = list(ev.CASES) + list(SE.SEALED)
+C = {c["id"]: c for c in 全部题}
 T = []   # (用例名, 题号, 轨迹, 答案, 该不该过, 钉的坑)
 
 # ── 轨迹轴:该调的没调,内容再漂亮也不算 ──────────────────────────
@@ -1362,16 +1368,16 @@ if __name__ == "__main__":
     零对照下限, 缺反向下限 = 20, 21      # 实测值;**只许降不许涨**
     题数下限 = 120                        # 地板:防「CASES 空了所有性质自动成立」
     零对照, 缺反向 = [], []
-    for _c in ev.CASES:
+    for _c in 全部题:
         _过 = [t for t in T if t[1] == _c["id"] and t[4]]
         _挂 = [t for t in T if t[1] == _c["id"] and not t[4]]
         if not _过 and not _挂: 零对照.append(_c["id"])
         elif not _挂:          缺反向.append(_c["id"])
-    print(f"  样本量:全套 {len(ev.CASES)} 道题(下限 {题数下限})、"
+    print(f"  样本量:全套 {len(全部题)} 道题(日常 {len(ev.CASES)} + **封存 {len(SE.SEALED)}**,下限 {题数下限})、"
           f"对照 {len(T)} 条;**零对照 {len(零对照)} 道**(上限 {零对照下限})、"
           f"缺「该挂」对照 {len(缺反向)} 道(上限 {缺反向下限})")
-    if len(ev.CASES) < 题数下限:
-        print(f"  ❌ 题数塌到 {len(ev.CASES)} 道 —— **这是没扫到东西,不是都通过**")
+    if len(全部题) < 题数下限:
+        print(f"  ❌ 题数塌到 {len(全部题)} 道 —— **这是没扫到东西,不是都通过**")
         bad += 1
     # ⚠️ **每条的失败句要带一个字面标记**(下面那两个 `红标`)。
     #    `tools/bite_check.py` 要求咬合规格的「预期红」是**脚本源码里的字面串** ——

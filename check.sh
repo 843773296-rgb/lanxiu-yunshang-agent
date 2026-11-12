@@ -780,6 +780,8 @@ run "判分器对照接上标点不变量了没(棘轮:已接的不许变少;还
 run "正则字符集里有半角标点却缺对应全角(NFKC 反查派生,该要求哪些全角由本仓数据决定;棘轮:只许少不许多)" python3 tools/charset_fullwidth_check.py
 run "罕见层时效闸 · 咬合(天数算得对 / 认不出的格式不许当成刚跑过 / 刚跑过的不许报过期)" python3 tools/rare_tier_freshness_check.py --自测
 run "罕见层(长尾)多久没跑了 —— 超 14 天红(用户 11-11 拍;题面依赖当时的库状态,很久不跑就测不到东西了)" python3 tools/rare_tier_freshness_check.py
+run "封存题 · 咬合(三态:认得出 / 不适用 / 读不了 —— 合成两态会拿 12 个无关文件去红,或者把「没验过」读成干净)" python3 tools/sealed_tier_check.py --自测
+run "封存题(写了故意不跑的那批,用户 11-11 拍每面 5 道)—— **出现在任何结果文件里就红**(分数被看过它就只是验证集了);另守每面正好 5 道、每道都有对照、不许同时留在日常题集里" python3 tools/sealed_tier_check.py
 run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judgetest.py
 run "工具选择判分器 · 20 条对照(「全部必需都在」不是「至少一个」)" python3 agent/select_eval_judgetest.py
 run "工具筛选准入线 · 23 条(线随走不走缓存漂 8 倍,所以不许写死)" python3 agent/tool_select_judgetest.py

@@ -20955,5 +20955,41 @@
    }
   ],
   "预期红": "棘轮:零对照的题变多了"
+ },
+ {
+  "script": "tools/sealed_tier_check.py",
+  "改坏": "把一道封存题的题号写进 ops 的结果文件(模拟「说好不跑的题被跑了」)",
+  "file": [
+   {
+    "path": "agent/ops-eval-results.jsonl",
+    "old": "{\"id\": \"W01\"",
+    "new": "{\"id\": \"G09\""
+   }
+  ],
+  "预期红": "封存题一道都没出现在结果文件里"
+ },
+ {
+  "script": "tools/sealed_tier_check.py",
+  "改坏": "把一道封存题的题号改成和日常题撞号(G09→G01,模拟隔离失效)",
+  "file": [
+   {
+    "path": "agent/ops_sealed.py",
+    "old": "dict(id=\"G09\"",
+    "new": "dict(id=\"G01\""
+   }
+  ],
+  "预期红": "封存题不在日常题集里"
+ },
+ {
+  "script": "tools/sealed_tier_check.py",
+  "改坏": "把「每面封存几道」的约定从 5 改成 6,而题一道没补",
+  "file": [
+   {
+    "path": "agent/ops_sealed.py",
+    "old": "每面封存 = 5",
+    "new": "每面封存 = 6"
+   }
+  ],
+  "预期红": "每面正好"
  }
 ]
