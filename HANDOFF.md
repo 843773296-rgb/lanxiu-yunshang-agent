@@ -143,7 +143,7 @@
 - 追评写口**撤出**这次推送(门禁「没有门的写口」7→8 红:顾客端在后台服务里一个接口都没有,挂不上门;上限不许调)。改动存在项目根 `.wip-rating-followup.patch`(未跟踪),顾客端页面做了再 `git apply` 接回
 
 **D 段 · 05:20 之后**
-- [ ] **05:20 后锁内按顺序**(子任务都做完了,都只 commit 在分支上):
+- [x] ✅ **04:38 全部推上去**(夜跑 03:40 提前结束,没等到 05:20):真库备份 → 预约三列迁移 4 列 + 幂等;PG 备份 → alembic 到 f112450e5aa7 → 重启 aimc → e2e(只红 test_audio_flow「待办也标成过期了」:过期列表攒到 201 条看不见新那条 → 改按编号查);全量第一轮红 3(待办清单 / evaldb 静默截断 / spans 跨轮转的树)→ 修 → 第二轮全绿 PUSHED;两个 worktree + 分支已删;咬合重放 named_advisor 3 · booking 5 · query_index 6 · evaldb 2 全过。原计划步骤(留档):
   1. 确认夜跑结束、拿锁;`sqlite3 <真库> ".backup ~/lanxiu-backup/pre-W21-$(date +%m%d%H%M).db"`(先备份)
   2. 预约三列:`python3 tools/migrate_appt_columns.py`(dry-run 要正好 4 列「将加列」)→ `--go`(「✅ 加了 4 列」)→ 再跑一次确认幂等。**迁移脚本在分支 599dacb0 里**,先 `git show 599dacb0:tools/migrate_appt_columns.py > /tmp/m.py` 跑它,或先挑回再跑(挑回后**立刻**跑迁移,中间别重启服务:两个写口会无条件写新列)
   3. 挑回 599dacb0(worktree-agent-a252eecae5fc16a61;它基于 e4da6c9f,改 booking / roster / server / seed / index.html / check.sh / bite_specs,修了两条过期旧规格)
