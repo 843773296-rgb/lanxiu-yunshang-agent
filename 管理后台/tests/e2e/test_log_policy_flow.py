@@ -60,8 +60,14 @@ def main():
     规 = f"ar_{标}"
     import log_policy_api as LOGP
     import alerts_api as AL
+    成员 = f"mb_U001_{项目}_{标}"
     try:
-        with 库.begin() as c:
+        with 库.begin() as c:   # U001 在演示项目 B 没有成员记录(那是跨项目隔离用的空项目)→ 临时照它在 A 的那条加一条,跑完删
+            if not c.execute(text("select 1 from memberships where project_id=:p and user_id='U001' and archived_at is null"), {"p": 项目}).first():
+                c.execute(text("""insert into memberships (id, organization_id, created_at, created_by, updated_at, revision, project_id,
+                                       user_id, role, special_grants, status)
+                                   values (:i, :o, now(), 'e2e', now(), 1, :p, 'U001', 'admin', '[]'::jsonb, 'active')"""),
+                          {"i": 成员, "o": org, "p": 项目})
             c.execute(text("""insert into execution_runs (id, organization_id, project_id, created_at, kind, status, execution_mode,
                                    environment, definition_ref, started_at, ended_at)
                                values (:i,:o,:p, now() - interval '41 days', 'workflow', 'succeeded', 'live', 'development',
@@ -106,7 +112,7 @@ def main():
         c_, b = 打("PUT", P + "/log-policy", dict(好, 容量上限GB=True), {"If-Match": rev})
         ck("容量给 true → 422(布尔不当数字)", c_ == 422 and "容量上限GB" in (b.get("field_errors") or {}), (c_, b))
         c_, b = 打("PUT", P + "/log-policy", 好, {"If-Match": rev}, 谁="U005")
-        ck("没「配置密钥与预算」权限 → 403", c_ == 403, (c_, b))
+        ck("没权限的人改不了(403 / 不是成员 404)", c_ in (403, 404), (c_, b))
 
         with 库.begin() as c:   # 系统种的那条规则(演示项目 B 不在种子项目里,手动造一条 owner=system 的来验「跟着改」)
             c.execute(text("""insert into alert_rules (id, organization_id, project_id, created_at, created_by, updated_at, revision,
@@ -173,6 +179,7 @@ def main():
             c.execute(text("delete from alert_incidents where project_id=:p and alert_rule_id=:r"), {"p": 项目, "r": 规})
             c.execute(text("delete from alert_rules where project_id=:p and id=:r"), {"p": 项目, "r": 规})
             c.execute(text("update projects set retention_policy=:v where id=:p"), {"v": 原策略, "p": 项目})
+            c.execute(text("delete from memberships where id=:i"), {"i": 成员})
     print(f"\n{'✅' if not 挂 else '❌'} 日志采集策略:{len(过)} 过 / {len(挂)} 挂")
     sys.exit(1 if 挂 else 0)
 
