@@ -64,15 +64,23 @@ def 扫描(c, 今天, 只这家店=None):
     """→ [dict(客户, 同户, 店, 导购, 最后接触, 来自, 已知会日, 动作, 已过天数, 理由)]。只读。每个账户一行。
     只这家店:给了就只扫档案在这家店的客户(用户 11-13 拍「公海首跑先挑一家店试」)。"""
     出, 见过 = [], set()
+    # 受保护客户(评测夹具 + 评测真值依赖的客户)不扫:11-13 静安首跑给其中 12 户发了知会,
+    # fixture_intact_check 当场红 ——「名下 0 单 0 触点」是那批夹具存在的意义,一条任务就把它们的边界打穿
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "tools"))
+    import order_mix as _OM
+    保护 = set(_OM.受保护客户(c))
     条件, 参 = "", ()
     if 只这家店:
         条件, 参 = " AND shop=?", (只这家店,)
     for cid, 店, 导购, 建档 in c.execute(
             "SELECT id, shop, advisor_no, created FROM customer "
             "WHERE advisor_no IS NOT NULL AND advisor_no<>''" + 条件 + " ORDER BY id", 参).fetchall():
-        if cid in 见过:
+        if cid in 见过 or cid in 保护:
             continue
         r = 判一户(c, cid, 今天, (店, 导购, 建档))
+        if 保护.intersection(r["同户"]):
+            见过.update(r["同户"])
+            continue
         见过.update(r["同户"])
         出.append(r)
     return 出

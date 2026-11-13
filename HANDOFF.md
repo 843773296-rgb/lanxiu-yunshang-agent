@@ -19,6 +19,11 @@
 
 **交接(11-13 21:0x,压缩前)**
 - 停在:46c7fada 已提交(本地),锁内链 chain_C(管理后台 e2e 全套 → 重启 8760/8770 → 冒烟 → rebase 核对 → 全量门禁 → 推)后台跑,输出 scratchpad/chain_1113n.txt。**只认「被包的命令退出码」和 PUSHED 两行**;红了先看 /tmp/e2eci_C.log、/tmp/gate_B.log。链跑着时别改工作区。
+- **11-13 22:xx 链红 7 条(chain_1113p),都已在修(未提交)**:① fixture_intact / rating 造数 / 世界日期三条 = 公海首跑给 12 户受保护客户(order_mix.受保护客户:E- 夹具 + 真值依赖)发了知会、知会说明带日期 → ownership_release.扫描 跳过受保护客户(同户有一个受保护就整户跳)+ ownership_transfer_check 新增一条 + 咬合 1(重放中 bqbaga2nf);tools/shift_world.py「文字里也挪」登记 schedule.note;**还要在锁内撤掉那 12 条知会**(先存清单到 ~/lanxiu-backups/)② 咬合规格 #939(展示大类那条)锚过期 → 已改 ③ cost_alert_check 连库没 closing → 已改。修完重跑 chain_C。
+- ✅ 咬合 10 条全过;✅ 撤了 12 条误发知会(受保护剩 0,公海知会共 858,清单 ~/lanxiu-backups/公海误发受保护客户-11132139.json)。已提交,重跑 chain_C → scratchpad/chain_1113q.txt。原:**在跑(后台)**:bqbaga2nf = 咬合重放 ownership_transfer_check(含新那条「受保护客户一户都不扫」);bdgxht023 = 锁内撤 12 条误发知会(scratchpad/undo12.py,先存 ~/lanxiu-backups/公海误发受保护客户-*.json,删 schedule + 写 op_log code=UNDO_POOL_NOTICE)。**只认它们自己印的行**(撤了几条 / 受保护剩 0 条 / 咬合全过 + 被包的命令退出码)。
+- 两个都绿 → 提交(ownership_release / ownership_transfer_check / shift_world / cost_alert_check / bite_specs / HANDOFF)→ 重跑 chain_C → PUSHED → 喊 eureka-fc。
+- 未验证:shift_world 登记 schedule.note 后,05:10 平移会把知会说明里的日期一起挪 —— 没真跑过平移;门禁那条世界日期检查会验。
+- eureka-fc 等我推完再 rebase;之后它改 api.py 工具描述区 + prompts.py TL 段,**我别碰这两处**。
 - 下一步第一个动作:看链结果 → **推上去后立刻 SendMessage 喊 eureka-fc**(它停着推送链等我,会 rebase 到 46c7fada 之上只跑一次)→ 绿了把 2、3 改成 ✅ 写提交号;红了修。然后做 3 的总部那头(告警指标「门店月费用」要 alembic 迁移改 ck_alert_rules_metric)。
 - 未验证:门店账 4 笔花费为空的原因(猜 sdk.run 那几轮 res 为空)—— 没核;**不许当 0 算**。~~test_glossary_flow ⑧ 偶发红~~ → **查实不是偶发**:演示项目攒了 238 个 e2e 术语版本,下拉框按名字排取前 200,新冻结的排到外面。改成按冻结时间倒排(术语 / 实体词典 / 意图 / 路由四处同改),四份 e2e 全过。演示项目那 238 个残留**没授权清**,没动。
 - 判据:澜绣项目取不到门店账 = 拿不到、不退回 usage_ledger(退回会把评测费算进门店上限,违背第三十二条);费用提醒查重靠库里那条任务,不靠文件。

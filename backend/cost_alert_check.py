@@ -15,6 +15,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from contextlib import closing
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -37,7 +38,7 @@ def ck(名, ok, 说明=""):
 
 print("=== 费用提醒派给店长(库副本)===")
 副本 = os.path.join(tempfile.mkdtemp(prefix="cost-alert-check-"), "lanxiu.db")
-with sqlite3.connect(CA.DB) as 源, sqlite3.connect(副本) as 目:
+with closing(sqlite3.connect(CA.DB)) as 源, closing(sqlite3.connect(副本)) as 目:
     源.backup(目)
 c = sqlite3.connect(副本)
 店长们 = dict(c.execute("SELECT shop, no FROM staff WHERE role='店长' AND status='启用' ORDER BY no").fetchall()[::-1])

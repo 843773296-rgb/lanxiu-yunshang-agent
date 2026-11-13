@@ -27,6 +27,7 @@ import ownership_protection as OP      # noqa: E402
     ("单店扫描不按店筛", "公海 · 单店试:只扫这家店,别家店的客户不在里面(本店那几户在)"),
     ("执行时不再按店筛传进来的行", "公海 · 单店试:点名别家店时,传进来的本店行也不写"),
     ("命令行真写不点名店也照写", "公海 · 单店试:命令行真写不点名店 → 拒写(退出码非 0,库里一条没多)"),
+    ("公海扫描不跳过受保护客户", "公海 · 受保护客户(评测夹具 / 真值依赖)一户都不扫"),
 ]
 过, 挂 = [], []
 
@@ -123,6 +124,14 @@ def main():
                 扫本 = {x["客户"] for x in ORL.扫描(c, d0, 原店)}
                 ck("公海 · 单店试:只扫这家店,别家店的客户不在里面(本店那几户在)",
                    "C99000002" not in 扫别 and "C99000002" in 扫本, (len(扫别), len(扫本)))
+                # 受保护客户(评测夹具 / 真值依赖)一户都不扫(11-13 静安首跑给 12 户发了知会,夹具检查当场红)
+                sys.path.insert(0, os.path.join(os.path.dirname(HERE), "tools"))
+                import order_mix as _OM
+                保 = set(_OM.受保护客户(c))
+                全扫 = ORL.扫描(c, d0)
+                碰了 = sorted(保 & {h for x in 全扫 for h in x["同户"]})
+                ck("公海 · 受保护客户(评测夹具 / 真值依赖)一户都不扫", len(保) >= 10 and not 碰了,
+                   f"保护 {len(保)} 户,扫到 {碰了[:5]}")
                 n前 = c.execute("SELECT COUNT(*) FROM schedule WHERE type='公海知会'").fetchone()[0]
                 with c:
                     出别 = ORL.执行(c, d0, "检查", 行们=[r], 只这家店=别)
