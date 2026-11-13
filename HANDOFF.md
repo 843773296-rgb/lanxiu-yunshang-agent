@@ -989,6 +989,13 @@ selftest_registry_check / punct_coverage_check)全 rc=0。**还没提交。**
 - **下一步第一个动作**:看 /tmp/chain_1112j.txt 末行 `chain rc=` 和有没有 `PUSHED`(只认这两样)→ 绿了 `gh run list` 看 CI → 然后把报告 5.2 的第一张卡(落地与数据 4 题)用 AskUserQuestion 问用户;他没回之前按 5.1 前 8 条的顺序开工(第 1 条写口身份闸是纯收紧,不碰拍板)。
 - **悬而未决**:HANDOFF 这一节的六项是在门禁跑的中途加的,**还没提交**(工作区改动),要和下一批一起 `commit --only HANDOFF.md`;`.wip-glossary/patch_pickup_eval.py.已应用` 等 eureka-fc 推了 charset 改动再改回原名。
 
+### 🔴 11-14 00:27 · 推送前链红在 ③ 咬合重放(没推;下一步第一个动作就是查这个)
+
+日志 `scratchpad/pre_push3.log`(scratchpad 会被清,先看)。HEAD 已 rebase 到并行会话 0e515765 之上、领先 31 笔、未推。没过的(脚本:没过/总数):
+ops_eval_judgetest 5/18 · muslin_check 1/8 · source_check 1/12 · worldclock_check 1/6 · **bite_check 12/12 · intent_check 5/5 · sealed_tier_check 3/3**(全挂 = 先疑「对照就是红的」/ 环境,不是攻击失效;记忆「咬合没红先疑攻击点」三类)。
+⚠️ 重放期间并行会话在共享 PG 上跑过未推的迁移 7c3e1a9d5b20(已于 00:2x 退回 f112450e5aa7),可能污染了部分规格的对照 —— **先单跑 `python3 tools/bite_run.py --only <脚本>` 复现**,复现不出就是环境;复现得出再读那条规格的「预期红」。
+并行会话不等我,它那批推完会喊;我修完 rebase 到它之上再跑 `./tools/pre_push.sh`。③-b 缩工具说明做了 1/16(churn_watch,1a5e985a)。
+
 ### 🕗 11-13 20:3x 起 · 12 小时长任务(用户要每小时激活提醒,cron :17 每小时,会话内)
 
 - **已做(本地提交,未推)**:8eef7807 推送前重放只在改了检查类文件时跑(用户 11-13 拍)· 0bf7880b 排产评测在库副本造逾期单(实测真库指纹不变)· 9eeb8716 影子研判新量为空时补回溯轨 + 删三条过期「连续失败已知」。
