@@ -139,6 +139,9 @@ P = f"{基址}/api/v1/projects/{项目}"
     # 告警规则暂停(11-04):revision 在规则列表里。样例由 test_alerts_flow 在演示项目 A 留的那一条提供
     "POST /alert-rules/{id}/pause": dict(
         取id=None, 读="/alert-rules", 字段="items[0].revision", 项目="project_demo_a"),
+    # 日志采集策略(11-14,拍板第四十条):revision 就是项目那一行的,设置页「日志采集」卡从 GET /log-policy 拿
+    "PUT /log-policy": dict(
+        取id=None, 读="/log-policy", 字段="revision", 项目="project_lanxiu"),
     # 取消后台派发的评测(11-05,DF-05):revision 在评测进度里(评测中心「看进度」那一屏);任何一条评测的进度都带 revision
     "POST /evaluations/{id}/cancel": dict(
         取id=("/evaluations", "items[0].id"), 读="/evaluations/{id}/progress", 字段="revision", 项目="project_demo_a"),
