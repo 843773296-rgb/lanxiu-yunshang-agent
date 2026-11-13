@@ -53,11 +53,14 @@ import mcp_registry
 import alert_dispatch
 import kb_issue
 import report_template
+import ownership_release   # 公海知会清单的每户记录(11-14)
 import query_index          # 为真实查询加的索引(2026-10-24,只读审计第 4 条)
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
     (ownership, "建表", ["cust_owner_log"]),
+    # 公海知会每户一行(2026-11-14,拍板第三十九条「每人一条清单」):首次派清单 / 合并旧知会时才写 —— 运行时才写
+    (ownership_release, "建表", ["pool_notice"]),
     (asr, "建表", ["call_audio", "call_transcript"]),
     (credit, "建表", ["deal_credit"]),
     (roster, "建表", ["shift_tpl", "roster", "leave_req"]),

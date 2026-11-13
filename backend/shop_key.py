@@ -76,6 +76,7 @@ DB = os.path.join(HERE, "lanxiu.db")
     ("aftersale", "shop"), ("maintain", "shop"), ("fitting", "shop"),
     ("roster", "shop"), ("schedule", "shop"), ("staff", "shop"),
     ("activity", "shop"), ("store_report_doc", "shop"),
+    ("pool_notice", "shop"),   # 11-14 公海知会清单每户一行(拍板第三十九条)
 ]
 
 

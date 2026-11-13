@@ -64,6 +64,7 @@ def 最后接触(c, 同户, 店, 导购, 建档):
   customer_id TEXT NOT NULL,      -- 账户里扫描到的那条档案(读的时候按同户全部档案查)
   advisor_no  TEXT,               -- 知会给谁(原导购)
   shop        TEXT,
+  shop_code   TEXT,               -- 门店码(shop_key.码;写 shop 的地方都同时写码,shop_key_check 守)
   noticed_on  TEXT NOT NULL,      -- 知会日 YYYY-MM-DD(满 7 天才放,口径在 knowledge/ownership_protection)
   schedule_id TEXT,               -- 那条清单任务(一条任务对多户)
   PRIMARY KEY (customer_id, noticed_on))"""
@@ -71,6 +72,13 @@ def 最后接触(c, 同户, 店, 导购, 建档):
 
 def 建表(c):
     c.execute(知会表DDL)
+    # 11-14 前建的表没有 shop_code(首跑合并时建的那张):补列 + 按 shop 回填。幂等
+    if "shop_code" not in [r[1] for r in c.execute("PRAGMA table_info(pool_notice)")]:
+        c.execute("ALTER TABLE pool_notice ADD COLUMN shop_code TEXT")
+        import shop_key as _SK
+        门店 = _SK.门店表(c)
+        for (店,) in c.execute("SELECT DISTINCT shop FROM pool_notice").fetchall():
+            c.execute("UPDATE pool_notice SET shop_code=? WHERE shop IS ?", (_SK.该填的码(店, 门店), 店))
 
 
 def 已知会日(c, 同户):
@@ -95,13 +103,18 @@ def 清单说明(户们, 今天):
             f"继续归你;没联系的会释放到公海、由店长指派。点「知道了」即完成。名单:" + ";".join(行))
 
 
+def _店码(c, 店):
+    import shop_key as _SK
+    return _SK.码(c, 店)
+
+
 def _派清单(c, 导购, 店, 户们, 今天):
     """给一位导购派一条清单任务,每户记一行 pool_notice → 任务号(没派成 = None,pool_notice 也不记:没通知到就不算知会)。"""
     sid = _派(c, 知会类型, 导购, None, 店, 清单说明(户们, 今天), 今天)
     if sid:
         for x in 户们:
-            c.execute("INSERT OR IGNORE INTO pool_notice(customer_id, advisor_no, shop, noticed_on, schedule_id) VALUES(?,?,?,?,?)",
-                      (x["客户"], 导购, 店, str(今天)[:10], sid))
+            c.execute("INSERT OR IGNORE INTO pool_notice(customer_id, advisor_no, shop, shop_code, noticed_on, schedule_id) "
+                      "VALUES(?,?,?,?,?,?)", (x["客户"], 导购, 店, _店码(c, 店), str(今天)[:10], sid))
     return sid
 
 
@@ -204,8 +217,8 @@ def 合并旧知会(c, 写=False):
             户们.append(dict(r, 客户=cid))
         新 = _派(c, 知会类型, 导购, None, 店, 清单说明(户们, 日), 日)
         for sid, cid in 项:
-            c.execute("INSERT OR IGNORE INTO pool_notice(customer_id, advisor_no, shop, noticed_on, schedule_id) VALUES(?,?,?,?,?)",
-                      (cid, 导购, 店, 日, 新))
+            c.execute("INSERT OR IGNORE INTO pool_notice(customer_id, advisor_no, shop, shop_code, noticed_on, schedule_id) "
+                      "VALUES(?,?,?,?,?,?)", (cid, 导购, 店, _店码(c, 店), 日, 新))
             c.execute("DELETE FROM schedule WHERE id=? AND type=?", (sid, 知会类型))
     return dict(旧条数=len(旧), 新条数=len(组), 明细=明细)
 
