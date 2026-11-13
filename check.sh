@@ -36,7 +36,9 @@ export LANXIU_CHECK_LEAK="$(mktemp -t lanxiu-oplog-leak.XXXXXX)"
 LANXIU_REAL_DB="$(python3 -c 'import os;print(os.path.realpath("backend/lanxiu.db"))')"
 LANXIU_GATE_DIR="$(mktemp -d -t lanxiu-gate-db.XXXXXX)"
 LANXIU_GATE_DB="$LANXIU_GATE_DIR/lanxiu.db"
-if [ -f "$LANXIU_REAL_DB" ] && sqlite3 "$LANXIU_REAL_DB" ".backup '$LANXIU_GATE_DB'" 2>/dev/null && [ -s "$LANXIU_GATE_DB" ]; then
+# ⚠️ `.timeout`:真库上 8760 偶尔在写,裸 `.backup` 撞上就当场「database is locked」退出 —— 11-13 实测连拷 6 次败 1 次。
+#    gate_print_check 会嵌套调 6 次本脚本(每次都拷),于是门禁连着两轮红在它身上、单跑又是绿的。等最多 15 秒再拷。
+if [ -f "$LANXIU_REAL_DB" ] && sqlite3 -cmd ".timeout 15000" "$LANXIU_REAL_DB" ".backup '$LANXIU_GATE_DB'" 2>/dev/null && [ -s "$LANXIU_GATE_DB" ]; then
   export LANXIU_REAL_DB LANXIU_GATE_DB
   export PYTHONPATH="$PWD/tools/gate_db${PYTHONPATH:+:$PYTHONPATH}"
   echo "🗄  门禁跑在库副本上($(du -h "$LANXIU_GATE_DB" | cut -f1),真库不碰)"
