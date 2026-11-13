@@ -989,6 +989,18 @@ selftest_registry_check / punct_coverage_check)全 rc=0。**还没提交。**
 - **下一步第一个动作**:看 /tmp/chain_1112j.txt 末行 `chain rc=` 和有没有 `PUSHED`(只认这两样)→ 绿了 `gh run list` 看 CI → 然后把报告 5.2 的第一张卡(落地与数据 4 题)用 AskUserQuestion 问用户;他没回之前按 5.1 前 8 条的顺序开工(第 1 条写口身份闸是纯收紧,不碰拍板)。
 - **悬而未决**:HANDOFF 这一节的六项是在门禁跑的中途加的,**还没提交**(工作区改动),要和下一批一起 `commit --only HANDOFF.md`;`.wip-glossary/patch_pickup_eval.py.已应用` 等 eureka-fc 推了 charset 改动再改回原名。
 
+### 🔴 11-14 04:30 · 第二轮推送前链又红在 ③(**没推**;对方答应我推完前不推 main)
+
+- 状态:已 rebase 到 8dcabc03 + cherry-pick 对方 ccf2f4e9(我这边 5abbd1fe,pool_notice 新表)+ c8b2287d(规则数 102→103)。领先 37 笔。
+- pre_push5.log(scratchpad)收工 rc=1 04:29。没过的:
+  1. ownership_transfer_check 规格 13 锚点过期(对方改了 pool_notice 的 INSERT)—— **已在工作区改好 bite_specs.json,未提交**
+  2. source_check 1/12 —— 输出被截,看不到哪条;03:00 单跑 12/12 全过 → 疑并发/抖动,**未验**,先 `bite_run --only backend/source_check.py` 单跑
+  3. gen_doc_lists 2/2、make_readme 1/1「对照就是红的」—— **未查**;猜是 cherry-pick 后文档表数 132→133 / 规则数变了,生成物没重生成(跑 tools/gen_doc_lists.py、make_readme.py 看)
+  4. bite_check [4/12](vocab_check 撞上的那条)「对照就是红的」—— 可能和 3 同根(bite_check 是对照红,不是判据死)
+  5. nightly_check [18/18]「改坏了却没红」—— **未查**;对照 bite_specs 里 nightly_check 第 18 条,疑我改 nightly_eval(删 连续失败已知 三条)后那条攻击打空
+- **下一步第一个动作**:逐条单跑 bite_run --only 上面 5 个脚本 → 修 → 一笔提交(带 HANDOFF)→ `./tools/pre_push.sh`(~85 分钟)→ 推 → SendMessage 对方(uds:/tmp/cc-socks/35954.sock)让他 rebase,他本地还有 e518f1c7 等着。
+- 推完欠的:对方 tool_eval 18/24 归因(T17 get_aftersale 描述疑说不能按状态筛,在我的 api.py 描述区);④-b 再缩 15 个描述(下一个 get_member)。
+
 ### 🟡 11-14 02:5x · 咬合重放的 7 个红已逐条查清修好(**还没推**)—— 上面 00:27 那段的结论作废
 
 - **已验**(副本里逐条:对照绿 → 改坏 → 红在那一条):7c51fc7c + 03100b04。
