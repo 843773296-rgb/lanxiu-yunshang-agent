@@ -20758,8 +20758,8 @@
   "file": [
    {
     "path": "backend/ownership_release.py",
-    "old": "                      (cid, 导购, 店, 日, 新))\n",
-    "new": "                      (cid, 导购, 店, str(__import__(\"worldclock\").今天()), 新))\n"
+    "old": "(cid, 导购, 店, _店码(c, 店), 日, 新))\n",
+    "new": "(cid, 导购, 店, _店码(c, 店), str(__import__(\"worldclock\").今天()), 新))\n"
    }
   ],
   "预期红": "公海 · 合并旧知会:知会日照旧(从原来那天算 7 天,不因合并重新计时)"
