@@ -389,6 +389,10 @@ def _撤遗留():
     撤造(造)
 
 
+def 在真库上():
+    return os.path.realpath(DBP) == os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
+
+
 def 造过期单():
     """**库里没有「过了承诺完工日还在生产中」的单时,自己造一张**,跑完由 `撤造()` 原样改回。→ 撤造要的信息 或 None。
 
@@ -420,11 +424,12 @@ def 造过期单():
         c.close(); return None
     造 = dict(行=r[0], 原值=r[1], 订单=r[2],
              改后=(_d.date.fromisoformat(TODAY) - _d.timedelta(days=3)).isoformat())
-    json.dump(造, open(_造的记录, "w", encoding="utf-8"), ensure_ascii=False)       # ① 先落盘再改
+    if 在真库上():
+        json.dump(造, open(_造的记录, "w", encoding="utf-8"), ensure_ascii=False)   # ① 先落盘再改(只真库需要)
     c.execute("UPDATE factory_msg SET promise_date=? WHERE rowid=?", (造["改后"], 造["行"]))
     c.commit(); c.close()
     print(f"  (库里没有过期单 —— 造了一张:订单 {造['订单']} 接单回传的承诺日 {造['原值']} → {造['改后']},"
-          f"跑完改回;没改回的话记录在 {os.path.relpath(_造的记录, ROOT)})")
+          (f"跑完改回;没改回的话记录在 {os.path.relpath(_造的记录, ROOT)})" if 在真库上() else "在库副本上,真库不碰)"))
     return 造
 
 
@@ -438,7 +443,8 @@ def 撤造(造):
     if not 回 or 回[0] != 造["原值"]:                 # ② 读回来核
         raise SystemExit(f"❌ 造的过期单没改回去:订单 {造['订单']} 现在是 {回 and 回[0]},应当是 {造['原值']} —— "
                          f"记录留在 {_造的记录},手动改回")
-    os.remove(_造的记录)
+    if os.path.exists(_造的记录) and 在真库上():
+        os.remove(_造的记录)
     print(f"  (造的那张过期单已改回:订单 {造['订单']} 承诺日 {造['原值']},读回核过)")
 
 
@@ -456,7 +462,15 @@ def _全库行数():
 
 
 def main():
-    _撤遗留()
+    _撤遗留()                       # 先清真库里**老版本**(11-13 以前在真库上造单)可能留下的残改
+    # 用户 2026-11-13 拍:**评测自己在库副本里造逾期单**,跑完即丢,共享库不动。
+    # 之前(11-10 起)是在真库上改一张单的承诺日、跑完改回 + 三道保险;改到副本后真库一行都不碰,
+    # 保险留着不拆(副本上照样核「改回」),只是不再往真库旁边落记录。
+    # 先导入写口再切(记忆「检查切库前先 import 写口」),工具服务子进程经 LANXIU_DB 跟着切。
+    import evaldb
+    evaldb.用副本("eval-factory-", 先导入=("factory_inbox", "order_write", "order_place", "fix_order_measure"))
+    assert os.path.realpath(DBP) != os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db")), \
+        "factory_eval 切副本没生效:DBP 还指着真库 —— 别在真库上造单"
     跑前 = _全库行数()
     造 = 造过期单()
     try:
