@@ -327,6 +327,7 @@ def 门禁怎么跑(script):
     和真的数据问题混在同一张报告里。
     """
     sh = open(os.path.join(ROOT, "check.sh"), encoding="utf-8").read()
+    候选 = []
     for line in sh.split("\n"):
         if not line.startswith("run "): continue
         if script not in line: continue
@@ -335,7 +336,15 @@ def 门禁怎么跑(script):
         if rest.startswith('"'):
             rest = rest[rest.index('"', 1) + 1:]
         parts = rest.split()
-        if parts: return parts
+        if parts: 候选.append(parts)
+    # ⚠️ 同一个脚本在门禁里挂两行(一行 `--自测`、一行真跑)时,**取真跑那行**(11-14 加)。
+    #    原来取「第一行」,而 sealed_tier_check 的 `--自测` 行恰好在前 —— 自测只验它自己造的夹具,
+    #    规格改的是真题集 / 真结果文件,于是 3 条规格全报「改坏了却没红」,
+    #    长相和「判据死了」一模一样,实际是**跑错了那一行**。
+    #    自测行只在**只有它**的时候才用(那时它就是门禁验的东西)。
+    if 候选:
+        真跑 = [c for c in 候选 if not ({"--自测", "--selftest"} & set(c))]
+        return (真跑 or 候选)[0]
     # 不在 check.sh 里的管理后台脚本(端到端测试之类):用管理后台自己的 venv 跑 —— 它的依赖(sqlalchemy / alembic)
     # 只装在那里;拿系统 python 跑,红的是 ImportError,和「改坏了之后它红没红」混在一起分不开(11-04 加)
     #

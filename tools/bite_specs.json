@@ -15531,7 +15531,7 @@
   "file": [
    {
     "path": "tools/nightly_eval.py",
-    "old": ",\n            # ⚠️ 影子跑**真调模型、真落账**到影子表(父进程写真库,见 triage_shadow.py:46)。\n            # 落的是评测自己的账、不动业务表结构 → 库章不变,快照整夜钉同一个章仍成立。\n            # 3 条是它文档里的示例量,和下面 15 分钟的限时对得上。\n            \"triage_shadow.py\": [\"--跑\", \"3\"]}",
+    "old": ",\n            # ⚠️ 影子跑**真调模型、真落账**到影子表(父进程写真库,见 triage_shadow.py:46)。\n            # 落的是评测自己的账、不动业务表结构 → 库章不变,快照整夜钉同一个章仍成立。\n            # 3 条是它文档里的示例量,和下面 15 分钟的限时对得上。\n            \"triage_shadow.py\": [\"--跑\", \"3\", \"--新量不足补回溯\"]}",
     "new": ", \"早就改过名的_eval.py\": [\"--x\"]}"
    }
   ],
@@ -16688,7 +16688,7 @@
   "file": [
    {
     "path": "tools/nightly_eval.py",
-    "old": ",\n            # ⚠️ 影子跑**真调模型、真落账**到影子表(父进程写真库,见 triage_shadow.py:46)。\n            # 落的是评测自己的账、不动业务表结构 → 库章不变,快照整夜钉同一个章仍成立。\n            # 3 条是它文档里的示例量,和下面 15 分钟的限时对得上。\n            \"triage_shadow.py\": [\"--跑\", \"3\"]}",
+    "old": ",\n            # ⚠️ 影子跑**真调模型、真落账**到影子表(父进程写真库,见 triage_shadow.py:46)。\n            # 落的是评测自己的账、不动业务表结构 → 库章不变,快照整夜钉同一个章仍成立。\n            # 3 条是它文档里的示例量,和下面 15 分钟的限时对得上。\n            \"triage_shadow.py\": [\"--跑\", \"3\", \"--新量不足补回溯\"]}",
     "new": "}"
    }
   ],
@@ -20934,15 +20934,20 @@
  },
  {
   "script": "backend/authgate_check.py",
-  "改坏": "把 /api/transit 的身份检查去掉(回到审阅发现漏洞时的样子)",
+  "改坏": "把 /api/transit 的身份检查去掉、身份改回从请求体取,**同时**拆掉 do_POST 入口身份闸(回到审阅发现漏洞时的样子) 〔11-14 换过载荷:11-12 加了入口统一闸之后只拆 transit 那一层不再看得见 —— 外层照样 401;原来的「没登录的流转请求被拒」这条判据也已改名〕",
   "file": [
    {
     "path": "backend/server.py",
+    "old": "            登录人 = _me(self)\n            if not 登录人:\n                return self._send({\"error\": \"没登录\", \"code\": \"NO_LOGIN\",\n                                   \"reason\": \"请先登录 —— 写操作要记下是谁做的,不替任何人署名\"}, 401)\n",
+    "new": "            登录人 = _me(self)\n"
+   },
+   {
+    "path": "backend/server.py",
     "old": "            _ut = _me(self)\n            if not _ut:\n                return self._send({\"error\": \"请先登录\", \"code\": \"NO_AUTH\"}, 401)\n            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {},\n                                      actor=_ut.get(\"name\") or \"?\", me=_ut))",
-    "new": "            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {}))"
+    "new": "            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {},\n                                      actor=body.get(\"actor\") or \"?\"))"
    }
   ],
-  "预期红": "没登录的流转请求被拒"
+  "预期红": "请求体里自报的身份不算数"
  },
  {
   "script": "agent/ops_eval_judgetest.py",

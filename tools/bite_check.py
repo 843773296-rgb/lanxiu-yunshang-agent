@@ -671,7 +671,7 @@ def main():
                         if f.get("path")})[:1]
         _旧改过, _旧argv = _M.改过的文件, sys.argv
         try:
-            _M.改过的文件 = lambda c: set(_被钉的)
+            _M.改过的文件 = lambda c, 基线=None: set(_被钉的)   # 签名跟着真函数走(11-14:加了 基线 之后这里 TypeError,探针整条验不了)
             sys.argv = ["bite_replay_touched.py", "--只看", "--提交", "HEAD"]
             _buf = io.StringIO()
             with contextlib.redirect_stdout(_buf):
