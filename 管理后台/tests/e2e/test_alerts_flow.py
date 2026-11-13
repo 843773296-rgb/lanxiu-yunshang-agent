@@ -163,7 +163,7 @@ def main():
             原取 = AL._外部取值
 
             def 评一次(值, 样本):
-                AL._外部取值 = lambda 指标, 取=None: (值, 样本)
+                AL._外部取值 = lambda 指标, 取=None, **k: (值, 样本)
                 try:
                     with _事务() as cc:
                         rr = cc.execute(text("select * from alert_rules where project_id=:p and id=:i for update"),
@@ -192,6 +192,15 @@ def main():
             有项目 = cc.execute(text("select 1 from projects where id='project_lanxiu'")).first()
             门规 = cc.execute(text("""select threshold_value, direction_code, min_sample_count from alert_rules
                                      where project_id='project_lanxiu' and metric_code='门店月费用' and archived_at is null""")).all()
+        with _事务() as cc:
+            AL.种上意见超时规则(cc, "project_lanxiu")
+            二意 = AL.种上意见超时规则(cc, "project_lanxiu")
+            意规 = cc.execute(text("""select threshold_value, direction_code, dedupe_minutes from alert_rules
+                                     where project_id='project_lanxiu' and metric_code='意见超时条数' and archived_at is null""")).all()
+            v意, 样意 = AL._外部取值("意见超时条数", c=cc, project_id=项目)
+        ck("意见超时规则:澜绣项目种一条(高于 0、4 小时再提醒)、再种不重复;取值 = 超时意见条数",
+           ((not 有项目 and not 意规) or (二意 == 0 and len(意规) == 1 and float(意规[0][0]) == 0 and 意规[0][1] == "高于"
+                                         and 意规[0][2] == 240)) and isinstance(v意, float) and 样意 == 1, (二意, 意规, v意))
         import acceptance_flow as _F
         ck("澜绣项目种一条、再种不重复;阈值 = 验收页上限 × 0.8 − 0.0001(高于是严格大于,≥120 才报)",
            (not 有项目 and not 门规) or (二 == 0 and len(门规) == 1 and abs(float(门规[0][0]) - (_F.月费用上限 * 0.8 - 0.0001)) < 1e-9

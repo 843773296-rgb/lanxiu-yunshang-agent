@@ -1566,7 +1566,7 @@ async function 页_告警() {
           <td>连续 ${esc(String(r["连续越线才报"]))} 次才报 · 连续 ${esc(String(r["连续正常才恢复"]))} 次正常才恢复 · ${esc(String(r["去重分钟"]))} 分钟内不重复提醒</td>
           <td>${r["暂停了吗"] ? "暂停中" : r["触发中"] ? '<span class="pill fail">触发中</span>' : "正常"}<div class="k">${esc((r["上次评估结果"] || {})["结论"] || "还没评估过")}</div></td>
           <td><button data-alreval="${esc(r.id)}">立即评估</button> <button data-alrpause="${esc(r.id)}" data-rev="${esc(String(r.revision))}" data-to="${r["暂停了吗"] ? "0" : "1"}">${r["暂停了吗"] ? "恢复评估" : "暂停"}</button></td></tr>`).join("") + `</tbody></table>`;
-  const 指标们 = ["终态成功率", "写入办成率", "失败次数", "端到端P95秒", "每个办成任务成本", "算不出金额笔数", "门店月费用"];   // 门店月费用:值从聊天站门店用量账取(11-13),澜绣项目由 worker 自动种一条
+  const 指标们 = ["终态成功率", "写入办成率", "失败次数", "端到端P95秒", "每个办成任务成本", "算不出金额笔数", "门店月费用", "意见超时条数"];   // 门店月费用:值从聊天站门店用量账取(11-13),澜绣项目由 worker 自动种一条
   $("#main").innerHTML = 头 + `<h2>待办</h2>${单表}<h2>规则</h2>${规表}
     <h3>建一条规则(每一项都要填)</h3>
     <label class="f">名字</label><input id="alr-n" placeholder="比如:回电流程成功率掉了">
@@ -1605,7 +1605,7 @@ async function 页_告警() {
 async function 页_意见受理(页 = 1, 筛 = "") {
   const 头 = `<div class="crumb">意见受理</div>
     <div class="head"><div><h1>意见受理</h1>
-      <div class="sub">${md("聊天站里提的意见。**1 个工作日内要第一次处理**(跳过周末和法定假日),超时标红。「有帮助」是提的人自己的感受,**不是准确率**。")}</div></div></div>`;
+      <div class="sub">${md("聊天站里提的意见。**分三级第一次处理**:紧急(影响业务办理)4 个工作小时、一般 2 个工作日、建议 7 天(工作时间跳过周末和法定假日),超时标红、告警页同时开一条待办。「有帮助」是提的人自己的感受,**不是准确率**。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/opinions?limit=30&page=${页}` + (筛 ? `&status=${encodeURIComponent(筛)}` : "")); }
@@ -1622,7 +1622,7 @@ async function 页_意见受理(页 = 1, 筛 = "") {
           <td>${esc(x.来源)} · ${esc(x.评价)}${x.问题类型 ? `<div class="k">${esc(x.问题类型)}</div>` : ""}</td>
           <td>${esc(String(x.说明 || "").slice(0, 60))}</td>
           <td>${x.状态 === "待受理" ? '<span class="pill warn">' : '<span class="pill">'}${esc(x.状态)}</span></td>
-          <td class="k">${x.超时 ? `<span class="pill fail">超时</span> ` : ""}${esc(String(x.首次处理截止 || "—").slice(5, 16).replace("T", " "))}
+          <td class="k">${x.级别 ? `<span class="pill">${esc(x.级别)}</span> ` : ""}${x.超时 ? `<span class="pill fail">超时</span> ` : ""}${esc(String(x.首次处理截止 || "—").slice(5, 16).replace("T", " "))}
             ${x.截止依据 && x.截止依据 !== "2026放假表" ? `<div class="k">${esc(x.截止依据)}</div>` : ""}</td>
           <td><button data-opopen="${esc(x.id)}">处理</button></td></tr>`).join("") + `</tbody></table>`;
   $("#main").innerHTML = 头 + 筛条 + 表 + 页码条(d);

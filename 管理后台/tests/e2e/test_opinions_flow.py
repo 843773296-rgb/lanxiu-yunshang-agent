@@ -263,14 +263,30 @@ def main():
 
         print("\n▸ ⑪ 首次处理截止:提交那一刻按工作日算好存下")
         with 库.connect() as cc:
-            行2 = cc.execute(text("""select created_at, first_response_due_at, due_basis_code from opinions
+            行2 = cc.execute(text("""select created_at, first_response_due_at, due_basis_code, verdict, problem_type, impact_type from opinions
                                       where project_id=:p and id=:i"""), {"p": 项目, "i": s1["id"]}).mappings().first()
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                                         "services", "api", "app"))
         import workdays as WD
-        应截, 应依 = WD.首次处理截止(行2["created_at"])
-        ck("存下的截止 = 工作日算法按提交时刻算的那个(差不过 1 秒),依据也存了",
-           abs((行2["first_response_due_at"] - 应截).total_seconds()) < 1 and 行2["due_basis_code"] == 应依, (dict(行2), 应截, 应依))
+        import opinions_api as OPN
+        import datetime as _dtm
+        级2 = OPN.分级(行2["verdict"], 行2["problem_type"], 行2["impact_type"])
+        应截, 应依 = OPN.截止(级2, 行2["created_at"])
+        ck("存下的截止 = 按级别算的那个(差不过 1 秒),依据也存了、开头是级别",
+           abs((行2["first_response_due_at"] - 应截).total_seconds()) < 1 and 行2["due_basis_code"] == 应依
+           and 应依.startswith(级2 + " "), (dict(行2), 应截, 应依))
+        # 分三级带时限(用户 11-13 拍第四十一条):紧急 4 工作小时 / 一般 2 个工作日(48 工作小时)/ 建议 7 个自然日
+        ck("分级:影响业务办理 → 紧急;建议 / 新增能力 → 建议;其余 → 一般;紧急压过建议",
+           OPN.分级("有问题", "答错", "影响业务办理") == "紧急" and OPN.分级("建议", "其他", None) == "建议"
+           and OPN.分级("有问题", "新增能力", "仅影响本次") == "建议" and OPN.分级("有问题", "答错", "反复出现") == "一般"
+           and OPN.分级("建议", "新增能力", "影响业务办理") == "紧急")
+        周五 = _dtm.datetime(2026, 11, 13, 16, 0, tzinfo=WD.时区)
+        紧, _ = OPN.截止("紧急", 周五)
+        般, _ = OPN.截止("一般", 周五)
+        建, 建依 = OPN.截止("建议", 周五)
+        ck("时限:周五 16:00 提 → 紧急当天 20:00;一般跳过周末到下周二 16:00;建议 7 天后(自然日)",
+           紧 == 周五 + _dtm.timedelta(hours=4) and 般 == _dtm.datetime(2026, 11, 17, 16, 0, tzinfo=WD.时区)
+           and 建 == 周五 + _dtm.timedelta(days=7) and "自然日" in 建依, (紧, 般, 建))
         c, 详 = 打("GET", P + f"/opinions/{s1['id']}")
         ck("详情给出截止 / 依据 / 超没超(刚提的不超时)", c == 200 and 详.get("首次处理截止") and 详.get("截止依据")
            and 详.get("超时") is False, (c, 详))
@@ -280,6 +296,11 @@ def main():
         c, 详3 = 打("GET", P + f"/opinions/{s3['id']}")
         ck("**过了截止还没处理 → 超时**(只标红,状态还是待受理,不当成已解决)",
            详3.get("超时") is True and 详3.get("状态") == "待受理", 详3)
+        ck("详情带级别", 详.get("级别") in ("紧急", "一般", "建议"), 详)
+        from db import 事务 as _事务
+        with _事务() as cc:
+            n超 = OPN.超时条数(cc, 项目)
+        ck("超时条数数得到这条(告警「意见超时条数」取这个数,超时提醒受理人走告警页待办)", n超 >= 1, n超)
 
         print("\n▸ ⑫ 受理流转(PRD §5.1)")
         动 = lambda oid, 动作, 说明=None, rev=None, 谁="U001": 打("POST", P + f"/opinions/{oid}/actions",

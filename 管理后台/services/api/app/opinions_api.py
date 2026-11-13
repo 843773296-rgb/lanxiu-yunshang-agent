@@ -177,7 +177,10 @@ async def 提交意见(project_id: str, request: Request, me: 身份 = Depends(�
             values (:i, :o, :p, now(), :u, now(), 1, :src, :tr, :ss, :v, :pt, :n, :ex, :im, :sc,
                     cast(:snap as jsonb), '待受理', '[]'::jsonb, :due, :basis)
             on conflict (project_id, chat_trace_ref, asker_staff_code) do update
-               set source = excluded.source, verdict = excluded.verdict, problem_type = excluded.problem_type,
+               set first_response_due_at = least(opinions.first_response_due_at, excluded.first_response_due_at),
+                   due_basis_code = case when excluded.first_response_due_at < opinions.first_response_due_at
+                                         then excluded.due_basis_code else opinions.due_basis_code end,
+                   source = excluded.source, verdict = excluded.verdict, problem_type = excluded.problem_type,
                    note = excluded.note, expected_note = excluded.expected_note, impact_type = excluded.impact_type,
                    session_ref = coalesce(excluded.session_ref, opinions.session_ref),
                    asker_snapshot = excluded.asker_snapshot,
@@ -192,7 +195,7 @@ async def 提交意见(project_id: str, request: Request, me: 身份 = Depends(�
             {"i": f"op_{_uuid.uuid4().hex[:12]}", "o": org, "p": project_id, "u": me.user_id,
              "src": 出["来源"], "tr": 出["聊天站trace"], "ss": 出["会话号"], "v": 出["评价"], "pt": 出["问题类型"],
              "n": 出["说明"], "ex": 出["期望结果"], "im": 出["影响"], "sc": 出["工号"],
-             "snap": _json.dumps(出["快照"], ensure_ascii=False), **_截止()}).mappings().first()
+             "snap": _json.dumps(出["快照"], ensure_ascii=False), **_截止(出)}).mappings().first()
         if not r:
             老 = c.execute(text("""select id, status from opinions
                                   where project_id=:p and chat_trace_ref=:tr and asker_staff_code=:sc"""),
@@ -213,10 +216,40 @@ async def 提交意见(project_id: str, request: Request, me: 身份 = Depends(�
                      + ("" if 后台trace else "。这一轮的执行记录还没推过来,推过来之后清单里会自动对上"))}
 
 
-def _截止():
-    """首次处理截止:提交这一刻按工作日算好存下(用户拍 1 个工作日、跳周末和法定假日;口径在 workdays.py)。"""
-    截止, 依据 = _wd.首次处理截止(_dt.datetime.now(_dt.timezone.utc))
-    return {"due": 截止, "basis": 依据}
+# 分三级带时限(用户 11-13 拍第四十一条;原来一律 1 个工作日):
+#   紧急(影响接单收钱)4 小时 / 一般 2 个工作日 / 建议类 7 天。工作小时口径同 workdays.首次处理截止(跳周末和法定假日);
+#   建议类按自然日。**分级从提的人填的两栏推**:影响「影响业务办理」= 紧急;评价「建议」或问题类型「新增能力」= 建议;其余一般
+时限们 = {"紧急": ("工作小时", 4), "一般": ("工作小时", 48), "建议": ("自然日", 7)}
+
+
+def 分级(评价, 问题类型, 影响):
+    if 影响 == "影响业务办理":
+        return "紧急"
+    if 评价 == "建议" or 问题类型 == "新增能力":
+        return "建议"
+    return "一般"
+
+
+def 截止(级, 提交时刻):
+    """→ (截止时刻, 依据)。纯函数,提交时刻由调用方给(口径函数不自己取当前时间)。依据开头是级别,页面和超时扫描都从这里读。"""
+    单位, 数 = 时限们[级]
+    if 单位 == "自然日":
+        return 提交时刻 + _dt.timedelta(days=数), f"{级} {数} 天·自然日"
+    t, 依 = _wd.首次处理截止(提交时刻, 数)
+    return t, f"{级} {数} 工作小时·{依}"
+
+
+def _截止(出):
+    """首次处理截止:提交这一刻按级别算好存下。"""
+    t, 依据 = 截止(分级(出.get("评价"), 出.get("问题类型"), 出.get("影响")), _dt.datetime.now(_dt.timezone.utc))
+    return {"due": t, "basis": 依据}
+
+
+def 超时条数(c, project_id, 现在=None):
+    """这个项目里过了首次处理截止、还没人动的意见单条数(告警「意见超时条数」取这个数)。"""
+    return int(c.execute(text("""select count(*) from opinions where project_id=:p and first_responded_at is null
+                                   and first_response_due_at is not null and first_response_due_at < :t"""),
+                         {"p": project_id, "t": 现在 or _dt.datetime.now(_dt.timezone.utc)}).scalar() or 0)
 
 
 def _收独立建议(c, org, project_id, me, 出, 键):
@@ -231,7 +264,7 @@ def _收独立建议(c, org, project_id, me, 出, 键):
         returning id, revision"""),
         {"i": f"op_{_uuid.uuid4().hex[:12]}", "o": org, "p": project_id, "u": me.user_id, "pt": 出["问题类型"],
          "n": 出["说明"], "ex": 出["期望结果"], "im": 出["影响"], "sc": 出["工号"],
-         "snap": _json.dumps(出["快照"], ensure_ascii=False), "k": 键, **_截止()}).mappings().first()
+         "snap": _json.dumps(出["快照"], ensure_ascii=False), "k": 键, **_截止(dict(出, 评价="建议"))}).mappings().first()
     if r:
         return {"id": r["id"], "新建": True, "revision": r["revision"], "状态": "待受理", "评价": "建议",
                 "问题类型": 出["问题类型"], "管理后台trace": None,
@@ -336,7 +369,9 @@ def _时限(x, 现在=None):
     """首次处理时限的三样:截止、依据、超没超。**超时只标红,不当成已解决**;处理过了就不再算超时。"""
     现在 = 现在 or _dt.datetime.now(_dt.timezone.utc)
     截止 = x.get("first_response_due_at")
+    依据 = x.get("due_basis_code") or ""
     return {"首次处理截止": 截止.isoformat() if 截止 else None, "截止依据": x.get("due_basis_code"),
+            "级别": next((k for k in 时限们 if 依据.startswith(k + " ")), None),
             "首次处理时刻": x["first_responded_at"].isoformat() if x.get("first_responded_at") else None,
             "超时": bool(截止 and not x.get("first_responded_at") and 现在 > 截止)}
 
