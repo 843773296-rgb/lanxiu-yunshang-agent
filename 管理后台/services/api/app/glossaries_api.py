@@ -45,12 +45,15 @@ def _审计(c, me, action, target):
 
 def 可选术语版本(c, project_id):
     """编辑页「选一版术语」的下拉框用(工作流开始节点 / 智能体 / 聊天助手三处共用,11-06 深夜补):
-    这个项目里**冻结了的**版本,同一张表新版在前。只给冻结的 —— 草稿会变,选了草稿等于没定。"""
+    这个项目里**冻结了的**版本,**最新冻结的在前**。只给冻结的 —— 草稿会变,选了草稿等于没定。
+    ⚠️ 11-13 改排序:原来按名字字母排再取前 200,演示项目攒到 238 个之后,刚冻结的那一版排在 200 名外、
+    下拉框里**悄悄没有** —— 而用户刚冻完最想选的就是它。现在按冻结时间倒排,截断只截最老的。"""
     return [{"id": r["id"], "名称": r["key"], "版本": f"v{r['version_no']}", "条数": r["n"],
              "冻结于": r["created_at"].isoformat() if r["created_at"] else None}
             for r in c.execute(text("""select id, key, version_no, created_at, jsonb_array_length(entries) n
                                          from glossary_versions where project_id=:p and archived_at is null
-                                        order by key, version_no desc limit 200"""), {"p": project_id}).mappings()]
+                                        order by created_at desc nulls last, key, version_no desc limit 200"""),
+                                    {"p": project_id}).mappings()]
 
 
 def 取数口问题(c, project_id, 术语们):

@@ -17,6 +17,14 @@
 > 规矩照旧:写库 / 门禁 / 重启走 gate_lock `--who`;不碰 eureka-fc 的文件(nightly_eval / agent/nightly / rounds / textmatch / guards);改管理后台推前跑 make test-e2e-ci;不开浏览器、不买东西;做完一项打 ✅ + 一句结果 + 提交号;清单做完接着还债,不停。
 > eureka-fc 11-13 晚说:推送前咬合重放以后只在改检查 / 守卫 / 判分器时才跑(pre_push.sh 归它改);triage_shadow 每晚真跑参数它来加。
 
+**交接(11-13 21:0x,压缩前)**
+- 停在:46c7fada 已提交(本地),锁内链 chain_C(管理后台 e2e 全套 → 重启 8760/8770 → 冒烟 → rebase 核对 → 全量门禁 → 推)后台跑,输出 scratchpad/chain_1113n.txt。**只认「被包的命令退出码」和 PUSHED 两行**;红了先看 /tmp/e2eci_C.log、/tmp/gate_B.log。链跑着时别改工作区。
+- 下一步第一个动作:看链结果 → **推上去后立刻 SendMessage 喊 eureka-fc**(它停着推送链等我,会 rebase 到 46c7fada 之上只跑一次)→ 绿了把 2、3 改成 ✅ 写提交号;红了修。然后做 3 的总部那头(告警指标「门店月费用」要 alembic 迁移改 ck_alert_rules_metric)。
+- 未验证:门店账 4 笔花费为空的原因(猜 sdk.run 那几轮 res 为空)—— 没核;**不许当 0 算**。~~test_glossary_flow ⑧ 偶发红~~ → **查实不是偶发**:演示项目攒了 238 个 e2e 术语版本,下拉框按名字排取前 200,新冻结的排到外面。改成按冻结时间倒排(术语 / 实体词典 / 意图 / 路由四处同改),四份 e2e 全过。演示项目那 238 个残留**没授权清**,没动。
+- 判据:澜绣项目取不到门店账 = 拿不到、不退回 usage_ledger(退回会把评测费算进门店上限,违背第三十二条);费用提醒查重靠库里那条任务,不靠文件。
+- 禁区:eureka-fc 只动 agent/ tools/ nightly、api.py 描述区(它动前会喊);triage_shadow 参数、pre_push.sh 归它。公海 870 条合并要先只看再写(锁内)。
+- 每小时 :07 有激活提醒(cron 40eb3bed,会话内有效),08:25 后发飞书汇总并 CronDelete。
+
 1. [x] ✅ 剩下 88 条 e2e 工作流 + 88 把「没上生产那条的」测试密钥(用户「一起清」):吊销 88 / 归档 88 / 核数对得上,清单 ~/lanxiu-backups/e2e残留清理-11132021.json;`clean_e2e_residue.py --连挂着的`
 2. [~] 上线验收页「月费用」改读门店用量账 —— **已提交,链在推(看 scratchpad/chain_1113n.txt 的 PUSHED)**;重启后实测:无凭证 403、带凭证返回本月账;test_acceptance_flow 80 条全过。⚠️ **新发现**:本月门店用量账 4 笔(总部运营 60000008,09:34–11:06)trace_id 和花费都是空 → 本月合计「拿不到」;sdk.run 末尾 cost_usd=real、trace_id=_树.tid,疑似那几轮 res 为空(跑失败)—— 没查,下一步查 sdk.py 1631/1677 附近 real 何时为 None,再决定失败轮怎么记(**别擅自当 0**)。原::agentsite/app.py `GET /internal/store-usage`(先 _ic.核对);管理后台 acceptance_api `门店费用汇总/_问门店用量/本月费用(…, 门店体)`(澜绣项目读门店账、取不到=拿不到、不退回 usage_ledger;别的项目照旧 `账本费用`;网络调用在事务外);acceptance_flow.判_费用 认 `拿不到` 键;app.js 文案;test_acceptance_flow ①b 6 条(未跑);store_usage_check ⑤ + 咬合 1(4 条咬合全过)。**要重启 8770 + aimc 后 curl 验 /internal/store-usage,再跑 make test-e2e-ci**
 3. [~] 80% 提醒 —— **店长那头已提交、check.sh 已登、咬合 3 条全过**(同一条链)。原::backend/cost_alert.py(派/推,按 schedule type+ref_id=月+店 查重)+ tasktypes「费用提醒」(运营、只系统派、派给店长、企业任务组)+ booking_check 9 + alert_dispatch_check 集合 + store_usage.本月工号们 + app.py /run 记账后推;backend/cost_alert_check.py 11 条全过(**还没登 check.sh、没配咬合 3 条 —— 文件里咬合列表已写**)。**总部那头没做**:管理后台告警加指标「门店月费用」(models.py ck_alert_rules_metric 要迁移 + alerts_api.评估一条特判取 8770 + 给澜绣项目种一条规则 高于 上限×0.8、最小样本 1、连续 1)

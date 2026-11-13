@@ -55,7 +55,7 @@ def 可选实体识别版本(c, project_id):
              "冻结于": r["created_at"].isoformat() if r["created_at"] else None}
             for r in c.execute(text("""select id, key, version_no, created_at, entries
                                          from entity_dict_versions where project_id=:p and archived_at is null
-                                        order by key, version_no desc limit 200"""), {"p": project_id}).mappings()]
+                                        order by created_at desc nulls last, key, version_no desc limit 200"""), {"p": project_id}).mappings()]   # 11-13:最新冻结的在前,截断只截最老的(同 glossaries_api)
 
 
 def _详情(c, project_id, sid):
