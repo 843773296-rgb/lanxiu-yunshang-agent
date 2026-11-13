@@ -434,7 +434,8 @@ E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_artifact_page_actions.js test_member_page_actions.js \
              test_release_page_actions.js test_workflow_save_gate.js \
              test_workflow_graph_logic.js test_workflow_editor_actions.js \
-             test_workflow_new_nodes_panel.js test_workflow_foreach_panel.js
+             test_workflow_new_nodes_panel.js test_workflow_foreach_panel.js \
+             test_log_policy_page_actions.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
 	@echo "▸ 端到端(CI 版):$(words $(E2E_CI)) 份 Python + $(words $(E2E_CI_JS)) 份 JS"
