@@ -1082,6 +1082,7 @@ selftest_registry_check / punct_coverage_check)全 rc=0。**还没提交。**
 > 并行会话今晚推 3 笔(公海筛选 / 导出限店长 / W47 读路由登记)。**明天第一件事**:`git fetch && git rebase origin/main`(冲突用 scratchpad 外那套规则:自动区取 main、手写区两边留、棘轮取大、规格并集)→ `./tools/pre_push.sh`。
 > 并行会话约定:rebase 时 HANDOFF 以瘦身版为准,它的「⏱️ 12 小时长任务清单」那节**整节搬到顶部**。
 > **g23 让价词放宽补丁重备好了**(80c631e0,并行会话 08:40 汇总会贴命令):`! python3 tools/放宽补丁/g23_让价词_数字折.py`(worktree 工 下)。**用户 11-13 已亲手跑完**;guards_test 补 7 条(182 全绿;对照:旧 guards 下正好那 3 条编号用例红)已提交。「不要说的话小标题只罩两行」那处没重备(找不到定位)。
+> **11-13 凌晨用户拍三条**(全在 intent/optimization-program-2026-11.md):咬合重放只在改检查类文件时跑 / 排产夹具在库副本里造 / triage_shadow 每晚真跑几条(**并行会话确认 nightly_eval.py 没动,参数归我加**)。并行会话接下来 12 小时:管理后台验收页、告警、意见单 + backend/ownership_release.py,**不碰 agent/ 和 nightly**;它新拍的 38–41 条归它线。
 > ⚠️ 11-13 夜报测的是**不含我这 22 笔**的 main。并行会话核的 11-13 夜跑:oppo 仍 0/24(预期内,不含兜底),工具序 Skill→start_workflow 14 / Skill→call_opportunity→start_workflow 4 / 只 Skill 3 / Skill→start_workflow→call_opportunity 3 —— **推上去后的下一晚**看是否回到有分;注意末一类「转了工作流又调回工具」也挂了,到时读原文看是判据还是模型。growth / liability 红是时对时错题轮换挂,**不是**环境性失败 —— 接管兜底 / 环境性失败 / 罕见层封存的效果**不能**从这份夜报判。
 
 

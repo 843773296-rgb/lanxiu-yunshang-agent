@@ -8,7 +8,8 @@
 # 顺序(Not Rocket Science Rule 的落法,用户 2026-11-11 拍「全量门禁跑在 rebase 之后」):
 #   ① fetch,**HEAD 必须已经包含 origin/main**(没包含 = 还没 rebase,直接退;不在这里替你 rebase)
 #   ② 扫密钥(先看样本量数字,`git add` 过的才算进去)
-#   ③ **按改动文件重放咬合**(`bite_replay_touched --基线 origin/main`):这是 2026-11-12 全项目审读
+#   ③ **按改动文件重放咬合**(`bite_replay_touched --基线 origin/main --检查类才跑`;用户 11-13 拍:改动里没有
+#      检查 / 守卫 / 判分器类文件就跳过,一推从 ~85 分钟降到 ~15 分钟):这是 2026-11-12 全项目审读
 #      查出的缺口 —— 记账欠债清零了,而 1644 条规格的全量重放十天一次,门禁绿 ≠ 攻击还活着
 #   ④ 锁内跑全量 `./check.sh`
 #   ⑤ 推之前**再 fetch 一次**查 main 没动(门禁的 14 分钟里别人推了就回到 ①)
@@ -40,6 +41,9 @@ if [ "$SELFTEST" = 1 ]; then
   fi
   # 退出码各自捞:一条故意失败的子命令,外面的 rc 必须是它的,不是 date 的
   (false); rc=$?; if [ "$rc" != 0 ]; then say 0 "子命令退出码捞得到(不被 \$(date) 吃掉)"; else say 1 "子命令退出码" "false 之后 rc=0"; fi
+  # 用户 11-13 拍的「检查类才重放」:纯业务改动 → 空;带检查 / 守卫 → 非空(两边都钉,真调那个函数)
+  K="$(python3 -c "import sys; sys.path.insert(0,'tools'); import bite_replay_touched as b; print(len(b.检查类文件({'backend/api.py','HANDOFF.md','knowledge/x.md'})), len(b.检查类文件({'backend/api.py','agentsite/guards.py','agent/ops_eval.py'})))" 2>&1)"
+  if [ "$K" = "0 2" ]; then say 0 "检查类判定:纯业务改动跳过重放、带守卫 / 判分器的照跑"; else say 1 "检查类判定" "期望「0 2」,拿到「$K」"; fi
   for f in tools/scan_secrets.sh tools/bite_replay_touched.py tools/gate_lock.sh check.sh; do
     if [ -f "$f" ]; then say 0 "链上的脚本在:$f"; else say 1 "链上的脚本在:$f" "找不到"; fi
   done
@@ -59,8 +63,8 @@ echo "   ✅ HEAD 含 origin/main(领先 $(git rev-list --count origin/main..HEA
 echo "② 扫密钥"
 ./tools/scan_secrets.sh; rc=$?; [ "$rc" = 0 ] || { echo "${R}❌ 密钥扫描 rc=$rc${D}"; exit 1; }
 
-echo "③ 按改动文件重放咬合(基线 origin/main)"
-python3 tools/bite_replay_touched.py --基线 origin/main; rc=$?
+echo "③ 按改动文件重放咬合(基线 origin/main;改动里没有检查类文件就跳过 —— 用户 2026-11-13 拍)"
+python3 tools/bite_replay_touched.py --基线 origin/main --检查类才跑; rc=$?
 if [ "$rc" != 0 ]; then echo "${R}❌ 咬合重放 rc=$rc —— 攻击死了一条,先修规格或判据${D}"; exit 1; fi
 
 echo "④ 锁内全量门禁"

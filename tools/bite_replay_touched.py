@@ -111,6 +111,24 @@ def 改过的文件(提交, 基线=None):
     return {l.strip() for l in r.stdout.split("\n") if l.strip()}
 
 
+# ── 用户 2026-11-13 拍:推送前的重放**只在改动了检查本身时才跑** ──────────────────
+# 实测一次分支级重放 ~70 分钟 + 门禁 15 分钟,一推一个半小时、和并行会话抢锁。
+# 代价(用户知情):纯业务改动碰巧打死某条攻击,要等十天一次的全量重放才发现。
+# 「检查类」按**结构**认,不按目录枚举:
+#   ① 它本身是某条咬合规格的 `script`(被咬的那条检查)
+#   ② 文件名形状是检查 / 判分器:`*_check.py` `*_test.py` `*_judgetest.py` `*_eval.py` `check.sh`
+#   ③ 判分底座与线上守卫:`agent/textmatch.py` `agentsite/guards.py`;以及 `tools/` 下的 .py(多数是检查)
+_检查类形状 = re.compile(r"(?:_check|_test|_judgetest|_eval)\.py$|(?:^|/)check\.sh$")
+_检查类底座 = {"agent/textmatch.py", "agentsite/guards.py", "tools/bite_specs.json"}
+
+
+def 检查类文件(S):
+    specs = json.load(open(os.path.join(这里, "bite_specs.json"), encoding="utf-8"))
+    规格脚本 = {x.get("script") for x in specs}
+    return sorted(f for f in S if f in 规格脚本 or f in _检查类底座 or _检查类形状.search(f)
+                  or (f.startswith("tools/") and f.endswith(".py")))
+
+
 def 要重放的(S):
     """返回 {脚本: [(规格序号, 它钉的那些文件 ∩ S)]}。"""
     specs = json.load(open(os.path.join(这里, "bite_specs.json"), encoding="utf-8"))
@@ -167,6 +185,8 @@ def main():
                     help="给了就算 **基线...提交** 之间全部改过的文件(推送前用 `--基线 origin/main`:"
                          "一个分支攒了十几笔,一次三点号 diff 就是并集)")
     ap.add_argument("--只看", action="store_true", help="只算完备集,不重放")
+    ap.add_argument("--检查类才跑", action="store_true",
+                    help="改动里没有检查 / 守卫 / 判分器类文件就跳过重放(推送前用,用户 2026-11-13 拍)")
     ap.add_argument("--工作区脏也跑", action="store_true",
                     help="明知工作区有未提交改动也要跑 —— **跑出来的红要自己分辨是哪一种**")
     a = ap.parse_args()
@@ -210,6 +230,14 @@ def main():
         这次 = 改过的文件(c, a.基线)
         print(f"看的是:{标题}  —— 改过 {len(这次)} 个文件")
         S |= 这次
+    if a.检查类才跑:
+        检 = 检查类文件(S)
+        if not 检:
+            组0, 总0 = 要重放的(S)
+            print(f"{Y}⏭ 跳过重放(不适用,不是验过了):这 {len(S)} 个改动文件里**没有**检查 / 守卫 / 判分器类文件。{D}")
+            print(f"   本该重放的 {sum(len(v) for v in 组0.values())} 条规格({len(组0)} 个脚本)留给十天一次的全量重放 —— 用户 2026-11-13 拍的代价。")
+            return 0
+        print(f"改动里有 {len(检)} 个检查类文件 → 照常重放:{'、'.join(检[:6])}{' ……' if len(检) > 6 else ''}")
     组, 总 = 要重放的(S)
     条数 = sum(len(v) for v in 组.values())
     print(f"这 {len(a.提交)} 次提交一共改过 **{len(S)} 个文件**(并集);全库 {总} 条规格里,"
