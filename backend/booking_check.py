@@ -130,7 +130,13 @@ def main():
     # 11-13 加了「点名知会」(点名优先:点名的人有空就派他,知会归属导购,挂客户号)→ 9
     check("客户相关类型数", str(len(tt.CUSTOMER_TYPES)), "9")
     check("店铺运营类型数", str(len(tt.OPS_TYPES)), "9")   # 11-13 +费用提醒(费用到 80% 系统派给店长);10-21 +经营改进(挂已确认报告,经营复盘闭环);10-23 +补货跟进(挂 SKU,只从库存预警派);11-11 夜 +待改派(发布排班撞单,系统派给店长)
+    # 11-14:「公海知会」改成每位导购一条清单(用户 11-13 拍第三十九条),一条管好几户 → 不挂单个客户号,户们在 pool_notice 表
+    清单类 = {"公海知会"}
     for t in tt.CUSTOMER_TYPES:
+        if t in 清单类:
+            if tt.ref_of(t) is not None:
+                print(f"  {R}❌{D} 「{t}」是每人一条的清单,不该挂单个 {tt.ref_of(t)}"); bad += 1
+            continue
         if tt.ref_of(t) != "customer":
             print(f"  {R}❌{D} 客户相关的「{t}」该直接挂客户号,现在挂的是 {tt.ref_of(t)}"); bad += 1
     for t in tt.OPS_TYPES:
