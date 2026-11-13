@@ -301,6 +301,8 @@ export const ENDPOINTS = [
   { method: "POST", path: "/alert-rules", summary: "建一条告警规则", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/alert-rules/{id}/evaluate", summary: "立即评估一次(和 worker 走同一个评估)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/alert-rules/{id}/pause", summary: "暂停 / 恢复评估", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "GET", path: "/log-policy", summary: "日志采集策略 + 用量 + 到期会清哪些", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PUT", path: "/log-policy", summary: "改日志采集策略(保留天数 / 容量 / 告警比例 / 到期清理开关)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "GET", path: "/alert-incidents", summary: "告警待办(站内;触发中排前)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/alert-incidents/{id}/handle", summary: "把一条告警标成已处理(要写怎么处理的)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/opinions/{id}", summary: "一条意见 + 处理时间线 + 这一步能做的动作", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -354,4 +356,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 266 条接口 · 24 条异步 · 32 条要幂等键 · 39 条要 If-Match */
+/** 共 268 条接口 · 24 条异步 · 32 条要幂等键 · 40 条要 If-Match */
