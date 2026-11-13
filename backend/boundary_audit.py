@@ -122,6 +122,7 @@ class 前提不成立(Exception):
     ('ToolSearch 的点名例外写成按前缀放行(Bash 也一并放了)', '按需加载只取回自己名单里的工具'),
     ('全能助手顺手挂上了版师那一包(ToolSearch 搜得到版师写口)', '按需加载只取回自己名单里的工具'),
     ('聊天站 /run 没登录也照样往下跑', '没登录调不动聊天站的智能体'),
+    ('未登录攻击不把门店用量账指到临时目录(会往真账本记空花费)', '没登录调不动聊天站的智能体'),
     ('写工具闸被关掉(带卡库也直接执行)', '聊天里写操作要店员点确认卡才执行'),
     ('store_report 不再拿掉被模板隐藏的指标(_藏 恒为空)',
      '报告模板隐藏的指标,写报告的 AI 拿不到它的数'),
@@ -1256,10 +1257,16 @@ def a_run_no_login():
     if not _os.path.exists(py):
         raise 前提不成立("agentsite/.venv 不在 —— 这条攻击跑不起来,它什么都没验")
     src = r"""
-import sys, io, json, os
+import sys, io, json, os, tempfile
 R = os.getcwd(); sys.path[:0] = [R + '/agentsite', R + '/backend']
 os.chdir(R + '/agentsite')
+# 门店用量账指到临时目录:登录对照那一遍会走到「记一笔」,而假 run 没有 trace_id / 花费 ——
+# 11-13 起它每跑一次全量门禁就往真账本记一行空花费,验收页月费用因此一直显示「拿不到」
+_账 = tempfile.mkdtemp(prefix='audit-store-usage-')
+os.environ['LANXIU_STORE_USAGE_DIR'] = _账
 import app
+import store_usage
+assert store_usage.账目录 == _账, '门店用量账没指到临时目录 —— 再跑会写真账本'
 def 打(who):
     调了 = []
     async def 假run(*a, **k):

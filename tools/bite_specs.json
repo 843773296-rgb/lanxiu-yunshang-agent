@@ -20763,5 +20763,17 @@
    }
   ],
   "预期红": "公海 · 合并旧知会:知会日照旧(从原来那天算 7 天,不因合并重新计时)"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "未登录攻击的子进程不再把门店用量账指到临时目录 —— 登录对照那一遍会往真账本记一行空花费(11-13 验收页月费用一直「拿不到」的来路)",
+  "file": [
+   {
+    "path": "backend/boundary_audit.py",
+    "old": "os.environ['LANXIU_STORE_USAGE_DIR'] = _账\n",
+    "new": "pass\n"
+   }
+  ],
+  "预期红": "没登录调不动聊天站的智能体"
  }
 ]
