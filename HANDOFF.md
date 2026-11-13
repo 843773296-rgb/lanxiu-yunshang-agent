@@ -994,6 +994,8 @@ selftest_registry_check / punct_coverage_check)全 rc=0。**还没提交。**
 日志 `scratchpad/pre_push3.log`(scratchpad 会被清,先看)。HEAD 已 rebase 到并行会话 0e515765 之上、领先 31 笔、未推。没过的(脚本:没过/总数):
 ops_eval_judgetest 5/18 · muslin_check 1/8 · source_check 1/12 · worldclock_check 1/6 · **bite_check 12/12 · intent_check 5/5 · sealed_tier_check 3/3**(全挂 = 先疑「对照就是红的」/ 环境,不是攻击失效;记忆「咬合没红先疑攻击点」三类)。
 ⚠️ 重放期间并行会话在共享 PG 上跑过未推的迁移 7c3e1a9d5b20(已于 00:2x 退回 f112450e5aa7),可能污染了部分规格的对照 —— **先单跑 `python3 tools/bite_run.py --only <脚本>` 复现**,复现不出就是环境;复现得出再读那条规格的「预期红」。
+**01:2x 查了第一条**:`bite_run --only tools/sealed_tier_check.py` 单跑**照样 3/3 没红**(不是环境);而**在工作区手工施加同一破坏**(每面封存 5→6)跑 sealed_tier_check → **rc=1 红得很对**。
+→ 判据没坏,**问题在 bite_run 的副本里**:同一破坏在副本里没生效或检查没读到。嫌疑按序:① 副本里 `__pycache__` 旧字节码(5→6 同长度,若副本保留 mtime 就会用旧 .pyc)② 副本排除了某些文件(实拷 251MB / 上限 400MB)③ 副本里跑的解释器不同。查法:在 bite_run 里打印副本路径后不删,进副本手工跑。**7 个脚本很可能同一个根因**,先修这个再重放。
 并行会话不等我,它那批推完会喊;我修完 rebase 到它之上再跑 `./tools/pre_push.sh`。③-b 缩工具说明做了 1/16(churn_watch,1a5e985a)。
 
 ### 🕗 11-13 20:3x 起 · 12 小时长任务(用户要每小时激活提醒,cron :17 每小时,会话内)
