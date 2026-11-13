@@ -425,7 +425,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_exec_mode_flow.py test_retrieval_runs_flow.py \
           test_raw_log_flow.py test_chat_assistant_flow.py \
           test_access_api_flow.py test_opinions_flow.py test_issues_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
-          test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py \
+          test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py test_log_policy_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
           test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py
 
@@ -561,6 +561,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_opinions_migration_with_data.py
 	@./.venv/bin/python tests/e2e/test_monitoring_flow.py
 	@./.venv/bin/python tests/e2e/test_alerts_flow.py
+	@./.venv/bin/python tests/e2e/test_log_policy_flow.py
 	@./.venv/bin/python tests/e2e/test_eval_dispatch_flow.py
 	@./.venv/bin/python tests/e2e/test_project_gate.py
 	@./.venv/bin/python tests/e2e/test_cross_project_read.py

@@ -83,11 +83,39 @@ def _外部取值(指标, 取=None, c=None, project_id=None, 现在=None):
     if 指标 == "意见超时条数" and c is not None:
         import opinions_api as OPN
         return float(OPN.超时条数(c, project_id, 现在)), 1
+    if 指标 == "日志用量占比" and c is not None:
+        import log_policy_api as LOGP
+        return LOGP.占比(c, project_id)
     return None, 0
 
 
 门店费用规则名 = "门店月费用到上限 80%(业务拍板第三十八条)"
 意见超时规则名 = "意见单过了首次处理时限(业务拍板第四十一条)"
+日志用量规则名 = "日志用量到容量上限的告警线(业务拍板第四十条)"
+
+
+def 种上日志用量规则(c, project_id):
+    """澜绣项目种一条「日志用量占比 高于 告警比例×100」:阈值从这个项目的采集策略现取(没设 = 建议值 80%),
+    设置页改了告警比例,log_policy_api.改策略 会把这条(owner=system)的阈值跟着改。已有不动。"""
+    import acceptance_flow as F
+    import log_policy_api as LOGP
+    if project_id not in F.种子项目:
+        return 0
+    if c.execute(text("select 1 from alert_rules where project_id=:p and metric_code='日志用量占比' and archived_at is null"),
+                 {"p": project_id}).first():
+        return 0
+    策, _, _ = LOGP.取策略(c, project_id)
+    org = c.execute(text("select organization_id from projects where id=:p"), {"p": project_id}).scalar()
+    if not org or 策 is None:
+        return 0
+    c.execute(text("""insert into alert_rules (id, organization_id, project_id, created_at, created_by, updated_at, revision,
+                          name, filter_snapshot, metric_code, direction_code, threshold_value, window_minutes, min_sample_count,
+                          trigger_count, recover_count, dedupe_minutes, owner, breach_count, normal_count)
+                      values (:i, :o, :p, now(), 'system', now(), 1, :n, '{}'::jsonb, '日志用量占比', '高于', :th, 1440, 1, 1, 1, 1440,
+                              'system', 0, 0)"""),
+              {"i": f"ar_{_uuid.uuid4().hex[:12]}", "o": org, "p": project_id, "n": 日志用量规则名,
+               "th": Decimal(str(LOGP.阈值(策["告警比例"])))})
+    return 1
 
 
 def 种上意见超时规则(c, project_id):
@@ -147,6 +175,8 @@ def 扫告警(现在=None):
                     出.append(f"种上了「{门店费用规则名}」({p})")
                 if 种上意见超时规则(c, p):
                     出.append(f"种上了「{意见超时规则名}」({p})")
+                if 种上日志用量规则(c, p):
+                    出.append(f"种上了「{日志用量规则名}」({p})")
     except Exception as e:
         出.append(f"⚠️ 种门店费用规则出错({type(e).__name__}: {e})—— 下一轮再试")
     with 连接() as c:

@@ -1566,7 +1566,7 @@ async function 页_告警() {
           <td>连续 ${esc(String(r["连续越线才报"]))} 次才报 · 连续 ${esc(String(r["连续正常才恢复"]))} 次正常才恢复 · ${esc(String(r["去重分钟"]))} 分钟内不重复提醒</td>
           <td>${r["暂停了吗"] ? "暂停中" : r["触发中"] ? '<span class="pill fail">触发中</span>' : "正常"}<div class="k">${esc((r["上次评估结果"] || {})["结论"] || "还没评估过")}</div></td>
           <td><button data-alreval="${esc(r.id)}">立即评估</button> <button data-alrpause="${esc(r.id)}" data-rev="${esc(String(r.revision))}" data-to="${r["暂停了吗"] ? "0" : "1"}">${r["暂停了吗"] ? "恢复评估" : "暂停"}</button></td></tr>`).join("") + `</tbody></table>`;
-  const 指标们 = ["终态成功率", "写入办成率", "失败次数", "端到端P95秒", "每个办成任务成本", "算不出金额笔数", "门店月费用", "意见超时条数"];   // 门店月费用:值从聊天站门店用量账取(11-13),澜绣项目由 worker 自动种一条
+  const 指标们 = ["终态成功率", "写入办成率", "失败次数", "端到端P95秒", "每个办成任务成本", "算不出金额笔数", "门店月费用", "意见超时条数", "日志用量占比"];   // 门店月费用:值从聊天站门店用量账取(11-13),澜绣项目由 worker 自动种一条
   $("#main").innerHTML = 头 + `<h2>待办</h2>${单表}<h2>规则</h2>${规表}
     <h3>建一条规则(每一项都要填)</h3>
     <label class="f">名字</label><input id="alr-n" placeholder="比如:回电流程成功率掉了">
@@ -4379,8 +4379,8 @@ function 画_设置() {
     <div class="k">这条流程的每次运行,管理后台会记下五类原始记录:<b>事件</b>(只追加)、<b>步骤的每一次尝试</b>、
       <b>工具调用</b>(先记意图再记结果)、<b>人工决定</b>(只追加)、<b>澜绣桥请求与回执</b>。
       在「运行记录」→ 某次运行 →「原始日志」里看;看原件要「查看敏感输入」专项授权,没有的看到的是部分打码副本;每次下载都记审计。</div>
-    <div class="note"><b>可配置的采集策略(来源开关、正文策略、容量、保留期、告警)还没有做</b> —— 这里不摆开关,免得拧了不算数。
-      现在的边界是固定的:采上面五类、模型请求与响应原文在运行记录(traces / spans)那一侧、服务商内部过程拿不到。</div>
+    <div class="k">采哪五类是固定的(来源开关、正文策略这一版不做,不摆开关);模型请求与响应原文在运行记录(traces / spans)那一侧、服务商内部过程拿不到。</div>
+    <div id="lp-box" class="k">采集策略读取中…</div>
   </div>
   <div class="card" style="max-width:640px">
     <label class="f">名称</label><input id="st-n" value="${esc(g.名称)}">
@@ -4399,6 +4399,7 @@ function 画_设置() {
     <h4>什么时候运行</h4><div>手动(在「测试」或接口里发起),或者打开聊天接管后由聊天站发起。<span class="k">定时触发还没做 —— 不摆一个选了没反应的选项。</span></div>
     <h4>运行上限</h4><div>每次最多调模型 8 次(发起时带的默认值)。<span class="k">超过就停、记「没完整完成」,不会无限调。</span></div>
     <h4>人工核对的截止</h4><div>每个核对步骤自己设(搭建 → 人工核对 → 设置)。到点没人处理,这次运行结束、记「已过期」。</div></div>`;
+  画_日志策略();
   $("#st-tk").onclick = async () => {
     const 开 = $("#st-tk").dataset.on === "1";   // 11-08 用户拍:先确认(线上真客户马上受影响)
     if (!(await 问一句(开 ? "打开聊天接管?" : "关掉聊天接管?", "这一下会改线上聊天站真客户碰到这件事时的走法。", { 确定: 开 ? "打开接管" : "关掉接管" }))) return;
@@ -4413,6 +4414,46 @@ function 画_设置() {
                                负责人: $("#st-o").value.trim() || null, 对应技能: $("#st-sk").value || null }) });
       Object.assign(g, { 名称: d["名称"], 用途: d["用途"], 负责人: d["负责人"], 信息rev: d["revision"] });
       画_画布();
+    } catch (e) { 报错(e); }
+  };
+}
+
+/* 日志采集策略(11-14,用户拍第四十条「用建议值」30 天 / 5 GB / 80%):整个项目共用一份,存项目设置。
+ * 到期清理不可逆 → 默认关;打开前必须先看到「到期会清哪些」,打开时再问一句。 */
+function 字节(n) {
+  const G = 1024 ** 3, M = 1024 ** 2;
+  return n >= G ? (n / G).toFixed(2) + " GB" : n >= M ? (n / M).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
+}
+async function 画_日志策略() {
+  const 盒 = $("#lp-box");
+  if (!盒) return;
+  let d;
+  try { d = await 请求(`${P()}/log-policy`); } catch (e) { 盒.innerHTML = `<span class="ferr">采集策略读不到:${esc(String(e.message || e))}</span>`; return; }
+  const 策 = d["策略"], 量 = d["用量"], 期 = d["到期"];
+  const 超线 = 量["字节"] >= 量["告警线字节"];
+  盒.innerHTML = `<h4>采集策略(整个项目共用)${d["来源"] === "建议值" ? ' <span class="pill">用的是建议值</span>' : ""}</h4>
+    <div>已用 <b>${esc(字节(量["字节"]))}</b> / 上限 ${esc(字节(量["上限字节"]))}(${esc(String(量["占比"]))}%)
+      ${超线 ? '<span class="pill warn">过了告警线</span>' : ""}</div>
+    <div class="k">${Object.entries(量["各来源"]).map(([k, v]) => `${esc(k)} ${esc(String(v["条数"]))} 条 · ${esc(字节(v["字节"]))}`).join(" ｜ ")}</div>
+    <label class="f">保留天数(${d["上下限"]["保留天数"].join("–")})</label><input id="lp-d" type="number" value="${esc(String(策["保留天数"]))}">
+    <label class="f">每个项目最多(GB,${d["上下限"]["容量上限GB"].join("–")})</label><input id="lp-g" type="number" value="${esc(String(策["容量上限GB"]))}">
+    <label class="f">用到多少告警(%)</label><input id="lp-a" type="number" value="${esc(String(Math.round(策["告警比例"] * 100)))}">
+    <div style="margin:8px 0"><b>到期会清哪些</b>(早于 ${esc(String(期["截止"]).slice(0, 10))}、正文还在的):
+      ${期["合计条数"] ? `${Object.entries(期["各来源"]).filter(([, v]) => v["条数"]).map(([k, v]) => `${esc(k)} ${esc(String(v["条数"]))} 条`).join("、")},共 ${esc(字节(期["合计字节"]))}` : "现在没有到期的"}</div>
+    <label><input id="lp-p" type="checkbox" ${策["到期清理"] ? "checked" : ""}> 到期自动清理正文(骨架留着;<b>不可逆</b>)</label>
+    <div><button class="pri" id="lp-ok">保存采集策略</button> <span id="lp-msg" class="k"></span></div>
+    <div class="note">${esc(d["说明"])}</div>`;
+  $("#lp-ok").onclick = async () => {
+    const 清 = $("#lp-p").checked;
+    if (清 && !策["到期清理"] && !(await 问一句("打开到期清理?",
+      `保留期以外的正文会被换成一句「到期已删」,删了找不回。按刚才的保留天数,现在有 ${期["合计条数"]} 条会被清(上面列着)。`, { 确定: "打开到期清理" }))) return;
+    try {
+      const r = await 请求(`${P()}/log-policy`, { method: "PUT", headers: { "If-Match": String(d.revision) },
+        body: JSON.stringify({ 保留天数: Number($("#lp-d").value), 容量上限GB: Number($("#lp-g").value),
+                               告警比例: Number($("#lp-a").value) / 100, 到期清理: 清 }) });
+      轻提示("采集策略已保存");
+      画_日志策略();
+      return r;
     } catch (e) { 报错(e); }
   };
 }

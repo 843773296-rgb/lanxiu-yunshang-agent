@@ -242,6 +242,8 @@ app.include_router(_ISS.router)
 app.include_router(_CAP.router)
 app.include_router(_IMP.router)
 app.include_router(_ACC.router)
+import log_policy_api as _LOGP   # 日志采集策略(11-14,拍板第四十条)
+app.include_router(_LOGP.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

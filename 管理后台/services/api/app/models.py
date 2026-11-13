@@ -354,7 +354,7 @@ _额外检查 = {
     # 意见单(11-04,口径照意见收集 PRD §3.2 / §5.1):枚举只收这几个 —— 拼错的值会自成一档,受理台按状态筛时它哪一档都不算
     # 告警(11-04):枚举只收这几个;次数 / 分钟有上下限 —— 一条「连续 0 次就报」的规则等于每轮都报
     "alert_rules": [
-        ("ck_alert_rules_metric", "metric_code in ('终态成功率', '写入办成率', '失败次数', '端到端P95秒', '每个办成任务成本', '算不出金额笔数', '门店月费用', '意见超时条数')"),
+        ("ck_alert_rules_metric", "metric_code in ('终态成功率', '写入办成率', '失败次数', '端到端P95秒', '每个办成任务成本', '算不出金额笔数', '门店月费用', '意见超时条数', '日志用量占比')"),
         ("ck_alert_rules_direction", "direction_code in ('低于', '高于')"),
         ("ck_alert_rules_window", "window_minutes between 5 and 10080"),
         ("ck_alert_rules_min_sample", "min_sample_count >= 1"),

@@ -2072,6 +2072,12 @@ def main():
             except Exception as e:
                 print(f"  ⚠️ 告警扫描出错({type(e).__name__}: {e})—— 下一轮再扫")
             try:
+                import log_policy_api as _LOGP   # 日志到期清理(11-14,拍板第四十条):只清「到期清理」开着的项目;出错只打日志
+                for x in _LOGP.扫到期():
+                    print("  日志清理:" + x)
+            except Exception as e:
+                print(f"  ⚠️ 日志到期清理出错({type(e).__name__}: {e})—— 下一轮再清")
+            try:
                 import eval_dispatch as _EVD   # 评测派发(11-05):收子运行结果、判超时 / 超费用 / 收齐;出错只打日志
                 for x in _EVD.收一遍():
                     print("  评测:" + x)
