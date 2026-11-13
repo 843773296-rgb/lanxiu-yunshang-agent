@@ -44,6 +44,8 @@ bad = 0
 样本 = {}
 
 咬合 = [
+    ('自助预约不按点名优先(点名的人有空也不改派)',
+     '点名优先 · 有归属、点名的人有空 → 派给点名的人,归属导购收一条「点名知会」'),
     ('点名的人有空却不优先(排序键里去掉点名那一层,照旧按接触史 / 负载挑)',
      '点名的人有空 → 推荐他,理由里写着他'),
     ('点名的人在班但那个时段有别的活,不把原因传给 roster.点名的人没空(它只查在不在班,于是判成「直接派给他」)',
@@ -145,8 +147,10 @@ def main():
         print(f"  {R}❌{D} 挑不出「不点名时不会被推荐」的顾问 —— ① 不可观测"); sys.exit(1)
     print(f"  ·  对照:不点名时 11 点推荐 {基['name']};点名挑的是 {X['name']}(不点名时不会被推荐的人)")
     r, t = 约("点名有空", 11, named_advisor_no=X["no"], named_state="点名", channel="电话")
-    ck("点名有空的那张预约约上了,而且落进待分配池", bool(t) and t["assignee_no"] is None,
-       f"{r.get('code')} {r.get('reason', '')}"[:80])
+    # 11-13 点名优先:没归属的客户点名了有空的人 → 不再落池,直接派给点名的人
+    ck("点名优先 · 没归属、点名的人有空 → 直接派给他(不落池)",
+       bool(t) and t["assignee_no"] == X["no"] and r.get("code") == "NAMED",
+       f"{r.get('code')} 派给 {t and t['assignee_no']} {r.get('reason', '')}"[:90])
     if t:
         行 = q("SELECT named_advisor_no, named_state, channel FROM appointment WHERE id=?", r["appt"])[0]
         ck("顾客自助预约:点名三列都落库了",
@@ -244,6 +248,52 @@ def main():
         ck("绕开写口直接 INSERT 非法三态 → 库上 CHECK 挡住", False, "写进去了 —— 这个库的 named_state 没带 CHECK")
     except sqlite3.IntegrityError as e:
         ck("绕开写口直接 INSERT 非法三态 → 库上 CHECK 挡住", "CHECK" in str(e), str(e)[:60])
+
+    # ═══ ⑧ 点名优先 · 有归属导购的客户(用户 11-13 拍)═══════════════
+    # 归属导购 = 池[0](全天班、11 点和 16 点都空);点名 = X(11 点有空;14 点被上面造的占用挡住)
+    主 = next((p for p in 池 if p["no"] not in (X["no"], Y["no"])), None)
+    if not 主:
+        ck("点名优先 · 挑得出一位不是点名人的归属导购", False, "本店顾问不够")
+    else:
+        for k, i in (("有归属点名有空", 6), ("有归属点名有活", 7)):
+            cid, ph = f"FX-W21-{i}", f"1990021{i:04d}"
+            w("DELETE FROM customer WHERE id=? OR phone=?", cid, ph)
+            w("INSERT INTO customer(id,name,phone,phone_tail,shop,shop_code,advisor_no,archived,created) "
+              "VALUES(?,?,?,?,?,?,?,0,?)", cid, f"检查客{i}", ph, ph[-4:], 店, 码, 主["no"],
+              worldclock.今天().isoformat())
+            客[k] = dict(id=cid, phone=ph)
+        知会前 = q("SELECT COUNT(*) n FROM schedule WHERE type='点名知会' AND assignee_no=?", 主["no"])[0]["n"]
+        r, t = 约("有归属点名有空", 16, named_advisor_no=X["no"], named_state="点名")
+        知会后 = q("SELECT COUNT(*) n FROM schedule WHERE type='点名知会' AND assignee_no=? AND customer_id=?",
+                  主["no"], 客["有归属点名有空"]["id"])[0]["n"]
+        ck("点名优先 · 有归属、点名的人有空 → 派给点名的人,归属导购收一条「点名知会」",
+           bool(t) and t["assignee_no"] == X["no"] and 知会后 == 1,
+           f"{r.get('code')} 派给 {t and t['assignee_no']}(归属 {主['no']} · 点名 {X['no']})· 知会 {知会后} 条")
+        r, t = 约("有归属点名有活", 14, named_advisor_no=X["no"], named_state="点名")
+        多 = q("SELECT COUNT(*) n FROM schedule WHERE type='点名知会' AND customer_id=?", 客["有归属点名有活"]["id"])[0]["n"]
+        ck("点名优先 · 点名的人那个时段有活 → 照旧派归属导购,不发知会",
+           bool(t) and t["assignee_no"] == 主["no"] and r.get("code") == "BOUND" and 多 == 0,
+           f"{r.get('code')} 派给 {t and t['assignee_no']} · 知会 {多} 条")
+
+    # ═══ ⑦ 新建客户的来源渠道(用户 11-13 拍「加,选填」)═══════════════
+    def 建客(i, **多):
+        ph = f"1990031{i:04d}"
+        w("DELETE FROM customer WHERE phone=?", ph)
+        return server.create_customer(dict(name=f"检查来源{i}", phone=ph, shop=店,
+                                           advisor=f"{X['no']} {X['name']}", **多), "检查", "店长")
+    r = 建客(1, source_channel="小红书")
+    存 = q("SELECT source_channel FROM customer WHERE id=?", r.get("id")) if r.get("ok") else []
+    ck("新建客户填了来源渠道 → 落库", bool(存) and 存[0]["source_channel"] == "小红书",
+       f"{r.get('code')} {r.get('reason', '')[:40]} {存}")
+    r = 建客(2)
+    存 = q("SELECT source_channel FROM customer WHERE id=?", r.get("id")) if r.get("ok") else []
+    ck("新建客户不填来源渠道 → 照样建得出来,存空", bool(存) and 存[0]["source_channel"] is None,
+       f"{r.get('code')} {r.get('reason', '')[:40]} {存}")
+    前 = q("SELECT COUNT(*) n FROM customer")[0]["n"]
+    r = 建客(3, source_channel="渠" * (booking.渠道最长 + 1))
+    ck("来源渠道超长 → 拒,库里一行没多",
+       r.get("code") == "BAD_SOURCE_CHANNEL" and q("SELECT COUNT(*) n FROM customer")[0]["n"] == 前,
+       f"{r.get('code')}")
 
     print("\n  样本量:" + ";".join(f"{k[:18]}… {v} 例" for k, v in 样本.items()))
     if bad:

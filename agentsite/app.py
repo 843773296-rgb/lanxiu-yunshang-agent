@@ -812,7 +812,14 @@ class H(BaseHTTPRequestHandler):
                         except Exception as e:
                             错0 = f"{type(e).__name__}: {e}"
                         升, 因 = _mr.该升级吗(r0, 错0)
-                        if not 升:
+                        # 费用闸(用户 11-12 / 11-13 拍,见 store_usage.py):本月门店费用到顶 → 不升级;拿不到 → 照常升级
+                        import store_usage as _su
+                        费 = _su.现在() if 升 else None
+                        if 升 and not 费["可升级"] and r0 is not None:
+                            r = r0
+                            r["路由"] = {"分流": True, "答的": mid, "升级": False, "默认来由": 默认来由,
+                                        "该升级没升": 因, "费用": 费}
+                        elif not 升:
                             r = r0
                             r["路由"] = {"分流": True, "答的": mid, "升级": False, "默认来由": 默认来由}
                         else:
@@ -823,7 +830,17 @@ class H(BaseHTTPRequestHandler):
                                                        "lanxiu.route.from_trace": (r0 or {}).get("trace_id")})
                             r["路由"] = {"分流": True, "答的": _mr.升级到, "升级": True, "理由": 因,
                                         "先试的": mid, "先试trace": (r0 or {}).get("trace_id"),
-                                        "先试花费": (r0 or {}).get("cost_usd")}
+                                        "先试花费": (r0 or {}).get("cost_usd"), "费用": 费}
+                            if r0 is not None:   # 被换掉的那一遍也是门店真实花掉的钱
+                                try: _su.记(r0.get("trace_id"), r0.get("cost_usd"), (me or {}).get("no"), mid)
+                                except Exception: r["用量账错误"] = "先试那一遍的门店用量没记上 —— 本月费用会少算"
+                # 门店用量账:聊天站这一轮交出去的那一遍记一笔(评测 / 夜跑不走 /run,不进这本账 —— 口径靠「在哪记」)
+                try:
+                    import store_usage as _su
+                    _su.记(r.get("trace_id"), r.get("cost_usd"), (me or {}).get("no"),
+                          (r.get("路由") or {}).get("答的"), 升级=bool((r.get("路由") or {}).get("升级")))
+                except Exception as e:  # noqa: BLE001
+                    r["用量账错误"] = f"门店用量没记上({type(e).__name__})—— 本月费用会显示「拿不到」"[:200]
                 # 换模型也没用的(库故障 / 撞花费上限)→ 不升级,直接上报平台管理员(用户 10-25 拍):
                 # 记到这一轮根上,推送端带去管理后台建「执行故障上报」;页面照实告诉提问的人
                 报 = _mr.该上报吗(r)

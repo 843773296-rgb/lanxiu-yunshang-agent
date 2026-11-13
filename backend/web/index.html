@@ -1616,6 +1616,7 @@ const ADVS=["A01 林岚","A02 周叙","A03 沈砚","A04 陆微"];
 const WAYS=["到店量体","到店试衣","上门沟通","电话回电"];
 const NAMED_STATES=["","不详","没点","点名"];   // 三态只认后三个(后端 booking.点名三态 + 库上 CHECK);空 = 填了点名顾问就算点名,没填算不详
 const APPT_CHANNELS=["","电话","微信","到店","小程序","其他"];   // 渠道先存不分析;空 = 没填
+const SOURCE_CHANNELS=["","小红书","抖音","微信","老客转介绍","路过进店","门店活动","其他"];   // 客户来源渠道,选填(用户 11-13 拍);后端只限长度
 function nowPlus(h){const d=new Date(Date.now()+h*3600e3);
   const p=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:00`}
@@ -1628,6 +1629,7 @@ function formCustomer(after){
     {k:"advisor",type:"select",label:"销售顾问",req:1,opts:ADVS},
     {k:"birthday",label:"生日",ph:"1990-01-01"},
     {k:"addr",label:"地址",ph:"选填"},
+    {k:"source_channel",type:"select",label:"来源渠道",opts:SOURCE_CHANNELS},
   ],v=>doOp("/api/customer-create",v,after),true);
 }
 function formAppt(cid,after){

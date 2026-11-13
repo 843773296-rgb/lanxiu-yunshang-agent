@@ -167,8 +167,10 @@ def book(d):
 
     ③ 最要紧:如果让请求体带 advisor,那随便谁都能把单子塞进任意顾问的列表里。
 
-    请求可以带「点名谁 / 点名三态 / 渠道」(W21)—— **点名只记意愿,不改派单**:
-    派给谁照旧由 route() 定、落池的由 suggest_why 出建议、店长确认。点名的人必须是本店在职顾问。
+    请求可以带「点名谁 / 点名三态 / 渠道」(W21)。点名的人必须是本店在职顾问。
+    11-13 起**点名优先**(用户拍):点名的人那个时段有空 → 直接派给他(有归属导购的,归属导购收一条「点名知会」);
+    没空 → 照旧由 route() 定(有归属派归属,没归属落池、派单建议里带三步)。
+    ③ 仍然成立:请求体里**不能指定派给谁** —— 点名只认本店在职顾问,有没有空由系统判。
     """
     phone = "".join(ch for ch in (d.get("phone") or "") if ch.isdigit())
     if len(phone) != 11 or not phone.startswith("1"):
@@ -254,6 +256,30 @@ def book(d):
                    "SYS" if assignee else None,          # 派单人是系统,不是某个人
                    _now().strftime("%Y-%m-%d %H:%M") if assignee else None,
                    f"{need}(客户 {cust['name']} 手机端自助预约 {aid})"))
+    # ── 点名优先(用户 11-13 拍「点名优先」:点名的人有空就派他,归属导购收知会;没空再派归属导购)──
+    # 「有空」不在这儿另写一份:单子已经落库,直接问 suggest_why —— 它判点名的人在不在班、
+    # 那个时段有没有别的活、那天有没有被预留给别的客户,和店长在待分配池里看到的是同一个判断。
+    # 没空就什么都不改:有归属的照旧归属导购,没归属的留在池里(派单建议里带着业务定的三步)。
+    点名工号 = 点名列.get("named_advisor_no") if 点名列.get("named_state") == "点名" else None
+    if 点名工号 and 点名工号 != assignee:
+        建, _ = suggest_why(dict(id=sid, shop=cust.get("shop"), customer_id=cust["id"],
+                                 start_ts=t.strftime("%Y-%m-%d %H:%M"), end_ts=end.strftime("%Y-%m-%d %H:%M")))
+        点 = (建 or {}).get("点名") or {}
+        if 点.get("可派") is True and (建 or {}).get("no") == 点名工号:
+            原 = assignee
+            with closing(sqlite3.connect(DB)) as c, c:
+                c.execute("UPDATE schedule SET assignee_no=?, assigned_by='SYS', assigned_at=? WHERE id=?",
+                          (点名工号, _now().strftime("%Y-%m-%d %H:%M"), sid))
+                知会 = None
+                if 原:
+                    import ownership_transfer as _OT
+                    知会 = _OT._派知会(c, 原, cust["id"], cust.get("shop"),
+                                    f"客户 {cust['name']} 预约 {aid}({t:%m-%d %H:%M})点名要 {点.get('name') or 点名工号},"
+                                    f"他那个时段有空,已派给他。客户仍归你,不用做什么,看过点知道了",
+                                    _now().strftime("%Y-%m-%d"), 类型="点名知会")
+            assignee, code = 点名工号, "NAMED"
+            why = (f"客户点名了 {点.get('name') or 点名工号},他那个时段有空 —— 已派给他"
+                   + (f";归属导购收到一条知会({知会})" if 原 else ""))
     return dict(ok=True, code=code, appt=aid, task=sid,
                 customer=cust["name"], shop=cust.get("shop"),
                 assigned=bool(assignee), reason=why,
@@ -472,7 +498,8 @@ def suggest_why(task):
     # ② 时段冲突:有冲突的直接出局
     free, clash = [], {}
     for p in pool:
-        b = _busy(p["no"], start, end)
+        # 这张任务自己不算冲突(11-13 点名优先后,单子派出去了店长再问一遍建议,原来会把接单的人判成「那个时段有别的安排」—— 安排的正是这张)
+        b = [x for x in (_busy(p["no"], start, end) or []) if x.get("id") != task.get("id")]
         (clash.setdefault(p["no"], b) if b else None)
         if not b: free.append(p)
     cands = free or pool          # 全都冲突时不弃权,但要在理由里说出来

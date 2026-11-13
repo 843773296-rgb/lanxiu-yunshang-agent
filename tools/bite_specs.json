@@ -11059,8 +11059,8 @@
   "file": [
    {
     "path": "backend/tasktypes.py",
-    "old": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\", \"归属转移\", \"公海知会\", \"公海指派\"),   # 归属转移:11-11 加(客户归属保护期的知会)\n    \"企业任务\": (\"接待任务\", \"团建培训\", \"日常运维\", \"经营改进\", \"补货跟进\", \"待改派\"),   # 经营改进:10-21 加;补货跟进:10-23 加,挂 SKU;待改派:11-11 夜加(发布排班撞单)",
-    "new": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\", \"归属转移\", \"公海知会\", \"公海指派\", \"接待任务\"),   # 归属转移:11-11 加(客户归属保护期的知会)\n    \"企业任务\": (\"团建培训\", \"日常运维\", \"经营改进\", \"补货跟进\", \"待改派\"),   # 经营改进:10-21 加;补货跟进:10-23 加,挂 SKU;待改派:11-11 夜加(发布排班撞单)"
+    "old": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\", \"归属转移\", \"公海知会\", \"公海指派\", \"点名知会\"),   # 归属转移:11-11 加(客户归属保护期的知会)\n    \"企业任务\": (\"接待任务\", \"团建培训\", \"日常运维\", \"经营改进\", \"补货跟进\", \"待改派\"),   # 经营改进:10-21 加;补货跟进:10-23 加,挂 SKU;待改派:11-11 夜加(发布排班撞单)",
+    "new": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\", \"归属转移\", \"公海知会\", \"公海指派\", \"点名知会\", \"接待任务\"),   # 归属转移:11-11 加(客户归属保护期的知会)\n    \"企业任务\": (\"团建培训\", \"日常运维\", \"经营改进\", \"补货跟进\", \"待改派\"),   # 经营改进:10-21 加;补货跟进:10-23 加,挂 SKU;待改派:11-11 夜加(发布排班撞单)"
    }
   ],
   "预期红": "接待任务:展示归企业、派单归客户"
@@ -20494,5 +20494,137 @@
    }
   ],
   "预期红": "告诫:引号里的让价词、前面是「别先说」→ 不算许诺(T18 真跑原话)"
+ },
+ {
+  "script": "backend/agent_run_truth_check.py",
+  "改坏": "研判回包不再去掉 truth 键",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    out = {k: v for k, v in r.items() if k not in (\"truth\", \"judge\")}\n",
+    "new": "    out = {k: v for k, v in r.items() if k not in (\"judge\",)}\n"
+   }
+  ],
+  "预期红": "①b truth 键本身被去掉(不靠按原文兜底)"
+ },
+ {
+  "script": "backend/agent_run_truth_check.py",
+  "改坏": "入口绕过 研判回包 直接回原始结果",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            return self._send(研判回包(r, tr))\n",
+    "new": "            return self._send(r)\n"
+   }
+  ],
+  "预期红": "③ /api/agent-run 那一支经 研判回包() 出门"
+ },
+ {
+  "script": "backend/agent_run_truth_check.py",
+  "改坏": "研判回包第二道(按答案原文兜)关掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if any(a in s for a in 答案):\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "①c 别的键复述答案原文也去掉"
+ },
+ {
+  "script": "backend/named_advisor_check.py",
+  "改坏": "自助预约不按点名优先(点名的人有空也不改派)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "    if 点名工号 and 点名工号 != assignee:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "点名优先 · 有归属、点名的人有空 → 派给点名的人,归属导购收一条「点名知会」"
+ },
+ {
+  "script": "backend/named_advisor_check.py",
+  "改坏": "点名派走了却不给归属导购发知会",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "                if 原:\n",
+    "new": "                if False:\n"
+   }
+  ],
+  "预期红": "点名优先 · 有归属、点名的人有空 → 派给点名的人,归属导购收一条「点名知会」"
+ },
+ {
+  "script": "backend/named_advisor_check.py",
+  "改坏": "派单建议把这张任务自己算成冲突",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "        b = [x for x in (_busy(p[\"no\"], start, end) or []) if x.get(\"id\") != task.get(\"id\")]\n",
+    "new": "        b = list(_busy(p[\"no\"], start, end) or [])\n"
+   }
+  ],
+  "预期红": "点名的人有空 → 推荐他,理由里写着他"
+ },
+ {
+  "script": "backend/named_advisor_check.py",
+  "改坏": "新建客户不写来源渠道",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                   _wtoday(), d.get(\"addr\"), d.get(\"birthday\"), 来源))\n",
+    "new": "                   _wtoday(), d.get(\"addr\"), d.get(\"birthday\"), None))\n"
+   }
+  ],
+  "预期红": "新建客户填了来源渠道 → 落库"
+ },
+ {
+  "script": "backend/named_advisor_check.py",
+  "改坏": "来源渠道不限长度",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if 来源 and len(来源) > _bk.渠道最长:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "来源渠道超长 → 拒,库里一行没多"
+ },
+ {
+  "script": "agentsite/store_usage_check.py",
+  "改坏": "到顶判成 > 上限(正好 150 还照升)",
+  "file": [
+   {
+    "path": "agentsite/store_usage.py",
+    "old": "    if 本月合计 >= 上限:\n",
+    "new": "    if 本月合计 > 上限:\n"
+   }
+  ],
+  "预期红": "② 闸 · 150(正好上限)→ 到顶,不升级"
+ },
+ {
+  "script": "agentsite/store_usage_check.py",
+  "改坏": "金额未知的那笔当 0 算",
+  "file": [
+   {
+    "path": "agentsite/store_usage.py",
+    "old": "    if 坏 or 未知:\n",
+    "new": "    if 坏:\n"
+   }
+  ],
+  "预期红": "账 · 有一笔金额未知 → 拿不到(不当 0)"
+ },
+ {
+  "script": "agentsite/store_usage_check.py",
+  "改坏": "聊天站升级前不看费用闸",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "                        if 升 and not 费[\"可升级\"] and r0 is not None:\n",
+    "new": "                        if False:\n"
+   }
+  ],
+  "预期红": "④ 接线 · /run 升级前问费用闸,到顶就交小模型那一遍"
  }
 ]

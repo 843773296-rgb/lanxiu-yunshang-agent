@@ -76,7 +76,7 @@ def _wtoday():
     # ── 2026-11-12 逐条审 do_GET 时补的(执行手册 W47;守在 read_route_registry_check)──
     # 这几条原来**谁都能匿名读**,而返回里有客户 / 员工的个人信息:
     "/api/task-ref",      # 填任何客户号 / 单号 → 回「李望舒(C10046)」:客户姓名 + 门店,不分店
-    "/api/agent-run",     # 真调一次模型(花钱),回包带研判结论原文、真值(truth)根因
+    "/api/agent-run",     # 真调一次模型(花钱),回包带研判结论原文(11-13 起不再带真值,见 研判回包)
     "/api/stock",         # 预警「已跟进」里带接活员工的姓名
     "/api/stock-log",     # 操作人列是「工号 姓名」,ref 是订单号
     "/api/invites",       # 邀请码核销:哪位客户(客户号)哪天用了哪个活动的码
@@ -307,6 +307,21 @@ def _eval():
 def _truths():
     """只在跑完之后判分时读 —— 绝不进模型上下文。"""
     return _eval().truths()
+def 研判回包(r, tr):
+    """研判演示的回包:**不带评测答案**(用户 11-13 拍「收:接口不再返回答案」)。
+    去掉 truth / judge 两个键(判分说明会复述真值根因);再兜一层:任何字符串值里出现
+    真值根因 / 期望动作 / 期望证据原文的键也去掉 —— 模型自己的结论(finding)例外,那是它的答案不是我们的。
+    守在 backend/agent_run_truth_check.py。"""
+    out = {k: v for k, v in r.items() if k not in ("truth", "judge")}
+    答案 = [str(tr.get(k)) for k in ("root_cause", "expected_action", "expected_evidence", "note")
+           if tr.get(k) and len(str(tr.get(k))) >= 4]
+    for k in list(out):
+        if k == "finding":
+            continue
+        s = json.dumps(out[k], ensure_ascii=False) if not isinstance(out[k], str) else out[k]
+        if any(a in s for a in 答案):
+            out.pop(k)
+    return out
 DB=os.path.join(HERE,"lanxiu.db")
 DRAFTS=os.path.join(HERE,"drafts.json")
 
@@ -2176,6 +2191,13 @@ def create_customer(d, actor, _role=None):
         return dict(ok=False, code=code, reason=why,
                     疑似重复=[dict(id=x["id"], name=x["name"], shop=x.get("shop"))
                               for x in (suspects or [])])
+    # 来源渠道(用户 11-13 拍「加,选填」):不填也能建;和预约渠道同一个口径 —— 页面给下拉,后端只限长度,先存不分析
+    import booking as _bk
+    来源 = (d.get("source_channel") or "").strip() or None
+    if 来源 and len(来源) > _bk.渠道最长:
+        why = f"来源渠道太长了(最多 {_bk.渠道最长} 个字)"
+        log_op(actor, "customer", "-", "—", "新建", False, "BAD_SOURCE_CHANNEL", why, {"role": role})
+        return dict(ok=False, code="BAD_SOURCE_CHANNEL", reason=why, 疑似重复=[])
     ph = rules.norm_phone(d.get("phone"))
     n = rows("SELECT COUNT(*) c FROM customer")[0]["c"]
     cid = f"C{10000 + n + 1}"
@@ -2186,12 +2208,12 @@ def create_customer(d, actor, _role=None):
         import shop_key as _SK          # 门店码的唯一入口
         c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,shop_code,advisor_no,
                      lifecycle,
-                     level,created,order_cnt,paid_amount,addr,birthday,archived,idle_days)
-                     VALUES(?,?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
+                     level,created,order_cnt,paid_amount,addr,birthday,archived,idle_days,source_channel)
+                     VALUES(?,?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0,?)""",
                   (cid, d.get("name"), ph, (ph or "")[-4:], d.get("shop"),
                    _SK.码(c, d.get("shop")),
                    顾问工号(d.get("advisor")),
-                   _wtoday(), d.get("addr"), d.get("birthday")))
+                   _wtoday(), d.get("addr"), d.get("birthday"), 来源))
     log_op(actor, "customer", cid, "—", "潜在", True, "CREATE",
            f"新建客户 {d.get('name')};生命周期初始为「潜在」(无完成订单)", {"role": role})
     return dict(ok=True, code="CREATE", id=cid,
@@ -4072,16 +4094,14 @@ class H(BaseHTTPRequestHandler):
                 pv=_v1.provider(); r=_v1.run_case(pv,prompt); r["model"]=pv["model"]
             except Exception as e:
                 return self._send(dict(error=str(e)[:300], case=case, task_id=tid))
-            # 答案是跑完之后才附上的 —— 模型上下文里从头到尾没有 truth
+            # 判分在服务端做,**回包只给「判对没有」,不给答案原文、也不给判分说明**
+            # (用户 11-13 拍「收:接口不再返回答案」—— truth 是评测答案,红线是不许经任何接口漏出去;
+            #  判分说明会复述真值根因,一样算漏)。要对答案去看离线评测报告。
             _ev=_eval(); tr=_truths().get(case,{})
             _txt=json.dumps(r.get("finding"),ensure_ascii=False) if r.get("finding") else ""
-            ok,why=_ev.hit(_txt,tr.get("root_cause",""),case) if r.get("finding") else (False,"未提交")
-            r.update(task_id=tid, case=case, bp=bp, prompt=prompt, passed=ok, judge=why,
-                     truth=dict(root_cause=tr.get("root_cause"),
-                                expected_action=tr.get("expected_action"),
-                                expected_evidence=tr.get("expected_evidence"),
-                                note=tr.get("note")))
-            return self._send(r)
+            ok,_why=_ev.hit(_txt,tr.get("root_cause",""),case) if r.get("finding") else (False,"未提交")
+            r.update(task_id=tid, case=case, bp=bp, prompt=prompt, passed=ok)
+            return self._send(研判回包(r, tr))
         if p=="/api/scheme-options":
             import scheme as _sch
             return self._send(_sch.options())

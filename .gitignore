@@ -155,3 +155,6 @@ backend/.factory_eval_造的过期单.json
 
 # 写操作确认卡的库(11-11):运行数据,不进版本库
 agentsite/state/
+
+# 门店用量账(每行带工号,运营数据不进版本库;agentsite/store_usage.py)
+agentsite/usage/
