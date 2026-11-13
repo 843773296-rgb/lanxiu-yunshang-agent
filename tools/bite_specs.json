@@ -20626,5 +20626,41 @@
    }
   ],
   "预期红": "④ 接线 · /run 升级前问费用闸,到顶就交小模型那一遍"
+ },
+ {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "单店扫描不按店筛",
+  "file": [
+   {
+    "path": "backend/ownership_release.py",
+    "old": "    if 只这家店:\n        条件, 参 = \" AND shop=?\", (只这家店,)\n",
+    "new": "    if False:\n        条件, 参 = \" AND shop=?\", (只这家店,)\n"
+   }
+  ],
+  "预期红": "公海 · 单店试:只扫这家店,别家店的客户不在里面(本店那几户在)"
+ },
+ {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "执行时不再按店筛传进来的行",
+  "file": [
+   {
+    "path": "backend/ownership_release.py",
+    "old": "        行们 = [r for r in 行们 if r.get(\"店\") == 只这家店]\n",
+    "new": "        pass\n"
+   }
+  ],
+  "预期红": "公海 · 单店试:点名别家店时,传进来的本店行也不写"
+ },
+ {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "命令行真写不点名店也照写",
+  "file": [
+   {
+    "path": "backend/ownership_release.py",
+    "old": "            if not 店 and not 全部:\n",
+    "new": "            if False:\n"
+   }
+  ],
+  "预期红": "公海 · 单店试:命令行真写不点名店 → 拒写(退出码非 0,库里一条没多)"
  }
 ]

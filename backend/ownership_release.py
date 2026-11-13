@@ -20,7 +20,8 @@
    这条是用户 11-12 拍的**系统规则**(有天数、有知会、有日志),不经过模型。
 
     python3 backend/ownership_release.py            # 只看:今天会知会谁、释放谁
-    python3 backend/ownership_release.py --写       # 真写(要锁:./tools/gate_lock.sh)
+    python3 backend/ownership_release.py --写 --店 店名   # 真写一家店(要锁:./tools/gate_lock.sh);用户 11-13 拍先一家店试
+    python3 backend/ownership_release.py --写 --全部门店  # 试点过了再全部门店(不点名店又不写这个 → 拒写)
 """
 import os
 import sys
@@ -59,12 +60,16 @@ def 已知会日(c, 同户):
     return r[0] if r and r[0] else None
 
 
-def 扫描(c, 今天):
-    """→ [dict(客户, 同户, 店, 导购, 最后接触, 来自, 已知会日, 动作, 已过天数, 理由)]。只读。每个账户一行。"""
+def 扫描(c, 今天, 只这家店=None):
+    """→ [dict(客户, 同户, 店, 导购, 最后接触, 来自, 已知会日, 动作, 已过天数, 理由)]。只读。每个账户一行。
+    只这家店:给了就只扫档案在这家店的客户(用户 11-13 拍「公海首跑先挑一家店试」)。"""
     出, 见过 = [], set()
+    条件, 参 = "", ()
+    if 只这家店:
+        条件, 参 = " AND shop=?", (只这家店,)
     for cid, 店, 导购, 建档 in c.execute(
             "SELECT id, shop, advisor_no, created FROM customer "
-            "WHERE advisor_no IS NOT NULL AND advisor_no<>'' ORDER BY id").fetchall():
+            "WHERE advisor_no IS NOT NULL AND advisor_no<>''" + 条件 + " ORDER BY id", 参).fetchall():
         if cid in 见过:
             continue
         r = 判一户(c, cid, 今天, (店, 导购, 建档))
@@ -89,10 +94,13 @@ def _派(c, 类型, 给谁, 客户, 店, 说明, 今天):
     return OT._派知会(c, 给谁, 客户, 店, 说明, 今天, 类型=类型)
 
 
-def 执行(c, 今天, 操作人="系统", 行们=None):
-    """在调用方给的连接 / 事务里写。→ dict(知会=[任务号…], 释放=[客户…], 指派任务=[…])。"""
+def 执行(c, 今天, 操作人="系统", 行们=None, 只这家店=None):
+    """在调用方给的连接 / 事务里写。→ dict(知会=[任务号…], 释放=[客户…], 指派任务=[…])。
+    只这家店:给了就连调用方传进来的行们也再按店筛一遍 —— 「先一家店试」不靠调用方记得筛。"""
     import ownership_transfer as OT
-    行们 = 扫描(c, 今天) if 行们 is None else 行们
+    行们 = 扫描(c, 今天, 只这家店) if 行们 is None else 行们
+    if 只这家店:
+        行们 = [r for r in 行们 if r.get("店") == 只这家店]
     结果 = dict(知会=[], 释放=[], 指派任务=[])
     for r in 行们:
         if r["动作"] == "知会":
@@ -134,13 +142,25 @@ if __name__ == "__main__":
     import worldclock
     今天 = worldclock.今天()
     db = os.environ.get("LANXIU_DB") or os.path.join(HERE, "lanxiu.db")
+    店 = sys.argv[sys.argv.index("--店") + 1] if "--店" in sys.argv and sys.argv.index("--店") + 1 < len(sys.argv) else None
+    全部 = "--全部门店" in sys.argv
     with closing(sqlite3.connect(db, timeout=30)) as c:
-        行们 = 扫描(c, 今天)
-        print(f"今天(世界时钟)= {今天}")
+        行们 = 扫描(c, 今天, 店)
+        print(f"今天(世界时钟)= {今天}" + (f" · 只看 {店}" if 店 else ""))
         _印(行们)
+        if not 店:
+            按店 = Counter(r["店"] for r in 行们 if r["动作"] != "不动")
+            print("按门店(要动的):" + " · ".join(f"{k} {v}" for k, v in 按店.most_common()))
         if "--写" in sys.argv:
+            # 用户 11-13 拍「公海首跑先挑一家店试」:真写必须点名一家店;要全部门店得明说 --全部门店
+            if not 店 and not 全部:
+                print("❌ 没写:真写要点名一家店(--店 店名);试点过了要全部门店一起跑,明写 --全部门店")
+                sys.exit(2)
+            if 店 and not 行们:
+                print(f"❌ 没写:{店} 一户都没扫到 —— 店名对吗?")
+                sys.exit(2)
             with c:
-                r = 执行(c, 今天, 行们=行们)
+                r = 执行(c, 今天, 行们=行们, 只这家店=店)
             print(f"已写:知会 {len(r['知会'])} 条 · 释放 {len(r['释放'])} 户 · 指派任务 {len(r['指派任务'])} 条")
         else:
             print("(只看没写。真写加 --写,先拿锁)")

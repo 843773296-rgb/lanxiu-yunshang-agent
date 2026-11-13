@@ -78,6 +78,37 @@ def 等跑完(rid, 密):
     return 外("GET", f"/open/v1/runs/{rid}", 密)[1]
 
 
+建的工作流 = []   # 收尾用:这份测试建的每一条(用户 11-13 拍「加自动收尾」—— 原来跑完不收,正式项目里堆了 176 条)
+
+
+def 收尾(验=False):
+    """吊销这份测试发的每一把密钥、归档它建的每一条工作流(连同应用)。验=True 时顺带验归档口的闸。
+    异常退出也要跑(在 finally 里),所以自己吞错、只印不抛。"""
+    for wid in 建的工作流:
+        try:
+            if 验:
+                c, b = 打("POST", P + f"/workflows/{wid}/archive", 体={"理由": "e2e 收尾"})
+                ck("归档 · 还有没吊销的密钥 → 409 WORKFLOW_HAS_LIVE_KEYS,什么都没改",
+                   c == 409 and 码(b) == "WORKFLOW_HAS_LIVE_KEYS", (c, b))
+                c, b = 打("POST", P + f"/workflows/{wid}/archive", 体={})
+                ck("归档 · 不写理由 → 422", c == 422, (c, b))
+            c, l = 打("GET", P + f"/workflows/{wid}/access-keys")
+            for k in (l or {}).get("密钥") or []:
+                if not (k.get("吊销于") or k.get("revoked_at")):
+                    打("POST", P + f"/access-keys/{k['id']}/revoke", 体={"理由": "e2e 收尾"})
+            c, b = 打("POST", P + f"/workflows/{wid}/archive", 体={"理由": "e2e 收尾"})
+            if 验:
+                ck("归档 · 密钥都吊销了 → 归档成,应用一起归档", c == 200 and b.get("已归档") and b.get("应用"), (c, b))
+                c, d = 打("GET", P + f"/workflows/{wid}")
+                ck("归档 · 归档后再点一次 → 照实说早就归档了", 打("POST", P + f"/workflows/{wid}/archive",
+                   体={"理由": "e2e 收尾"})[1].get("note", "").startswith("早就归档了"))
+                验 = False      # 闸只在第一条上验
+            elif c != 200:
+                print(f"  ⚠️ 收尾没归档成 {wid}:{c} {b}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠️ 收尾出错 {wid}:{type(e).__name__} {e}")
+
+
 def main():
     print("▸ 准备:一条发布到生产的测试工作流 + 一个发密钥的管理员账号")
     def 建一条(名):
@@ -91,6 +122,8 @@ def main():
             if n["type"] == "end":
                 n["config"]["bindings"] = {"summary": {"source": "input", "pointer": "/article"}}
         打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定义}, 头={"If-Match": str(d["草稿"]["revision"])})
+        if wid:
+            建的工作流.append(wid)
         return wid
     wid = 建一条("e2e 访问API")
     ck("建了一条「开始 → 结束」工作流", bool(wid), wid)
@@ -347,6 +380,11 @@ def main():
     ck("**发密钥的人降成查看者 → 拿他的密钥取消也被拒(403)**:对外取消照样每次重核发密钥那个人的权限",
        c == 403 and 码(b) == "ISSUER_FORBIDDEN", (c, b))
 
+    print("\n▸ 收尾:吊销这份测试发的密钥、归档它建的工作流(顺带验归档口的闸)")
+    打("POST", P + "/memberships", 体={"工号": 发人, "角色": "admin"})   # 上面把发密钥的人降成了查看者,收尾前恢复不影响:吊销 / 归档都用 U001
+    收尾(验=True)
+    建的工作流.clear()
+
     print()
     if 挂:
         print(f"❌ {len(挂)} 条不过:{' / '.join(挂)}")
@@ -356,4 +394,8 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        rc = main()
+    finally:
+        收尾()          # 中途崩了也收(正常跑完 main 里已收过、清单已清空,这里什么都不做)
+    sys.exit(rc)

@@ -24,6 +24,9 @@ import ownership_protection as OP      # noqa: E402
     ("已预约不算接触(客户约了下周来,这周被收走)", "公海 · 约在未来的已预约算接触:不动"),
     ("客户页筛「公海」退回按名字比(没有导购的名字是空,一户都筛不出)", "公海 · 客户页「销售顾问」筛「公海」筛得出刚释放的那户,筛不出还有导购的"),
     ("释放到公海不记归属变更日志(「凭什么不是他的了」答不上)", "公海 · 释放落地:导购置空 + 日志记「进公海」+ 给店长派「公海指派」"),
+    ("单店扫描不按店筛", "公海 · 单店试:只扫这家店,别家店的客户不在里面(本店那几户在)"),
+    ("执行时不再按店筛传进来的行", "公海 · 单店试:点名别家店时,传进来的本店行也不写"),
+    ("命令行真写不点名店也照写", "公海 · 单店试:命令行真写不点名店 → 拒写(退出码非 0,库里一条没多)"),
 ]
 过, 挂 = [], []
 
@@ -110,6 +113,27 @@ def main():
             ck("公海 · 建档快两年、一次接触都没有:今天先知会", r["动作"] == "知会", r)
             ck("公海 · 约在未来的已预约算接触:不动", ORL.判一户(c, "C99000004", d0)["动作"] == "不动",
                ORL.判一户(c, "C99000004", d0))
+            # 先一家店试(用户 11-13 拍):点名别家店 → 扫不到、写不动这家店的客户;CLI 真写不点名店 → 拒写
+            别店 = c.execute("SELECT shop FROM customer WHERE shop IS NOT NULL AND shop<>? LIMIT 1", (原店,)).fetchone()
+            if not 别店:
+                ck("公海 · 单店试:库里有第二家店可作对照", False, "只有一家店,验不到")
+            else:
+                别 = 别店[0]
+                扫别 = {x["客户"] for x in ORL.扫描(c, d0, 别)}
+                扫本 = {x["客户"] for x in ORL.扫描(c, d0, 原店)}
+                ck("公海 · 单店试:只扫这家店,别家店的客户不在里面(本店那几户在)",
+                   "C99000002" not in 扫别 and "C99000002" in 扫本, (len(扫别), len(扫本)))
+                n前 = c.execute("SELECT COUNT(*) FROM schedule WHERE type='公海知会'").fetchone()[0]
+                with c:
+                    出别 = ORL.执行(c, d0, "检查", 行们=[r], 只这家店=别)
+                n后 = c.execute("SELECT COUNT(*) FROM schedule WHERE type='公海知会'").fetchone()[0]
+                ck("公海 · 单店试:点名别家店时,传进来的本店行也不写", not 出别["知会"] and n前 == n后, (出别, n前, n后))
+                import subprocess
+                p = subprocess.run([sys.executable, os.path.join(HERE, "ownership_release.py"), "--写"],
+                                   env={**os.environ, "LANXIU_DB": 副本}, capture_output=True, text=True, timeout=300)
+                n再 = c.execute("SELECT COUNT(*) FROM schedule WHERE type='公海知会'").fetchone()[0]
+                ck("公海 · 单店试:命令行真写不点名店 → 拒写(退出码非 0,库里一条没多)",
+                   p.returncode != 0 and n再 == n后, (p.returncode, p.stdout[-120:], n后, n再))
             with c:
                 出 = ORL.执行(c, d0, "检查", 行们=[r, ORL.判一户(c, "C99000003", d0)])
             任务 = c.execute("SELECT assignee_no, customer_id FROM schedule WHERE type='公海知会' AND customer_id IN "

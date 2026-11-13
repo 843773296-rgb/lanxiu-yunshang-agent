@@ -1986,6 +1986,57 @@ def 删掉版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(要�
     return {"id": vid, "已删": True, "note": "只是不在列表里显示了;跑过它的运行、出过的发布清单照样能打开"}
 
 
+@router.post(前缀 + "/workflows/{wid}/archive")
+async def 归档工作流(project_id: str, wid: str, request: Request, me: 身份 = Depends(要权限("生产审核/发布/回滚"))):
+    """归档一条工作流(连同它的应用),**行不删** —— 跑过它的运行、出过的发布清单、调用记录都还指着它。
+    11-13 加:正式项目里 e2e 测试堆了 176 条工作流(每条都发过生产),用户拍「现在就清,并加自动收尾」,而原来**没有任何归档口**。
+
+    三道闸,任何一道不过都 409、什么都不改:
+      ① 还有**没吊销的访问密钥**绑在它的应用上 —— 先吊销(吊销有自己的审计和理由);归档不替人吊销
+      ② 还有没跑完的运行(排队 / 在跑 / 等人核对 / 等外部)在用它的任何一个版本
+      ③ 开着聊天接管 —— 聊天助手正把问题转给它,先关接管
+    要写理由(进审计)。已经归档的再点一次:什么都不改,照实说。"""
+    体 = await request.json() if await request.body() else {}
+    理由 = (体.get("理由") or "").strip()
+    if len(理由) < 2:
+        raise _错(422, "VALIDATION", "要写归档理由", "比如「e2e 测试残留」「流程已停用」", field_errors={"理由": "必填"})
+    with 事务() as c:
+        w = c.execute(text("""select id, name, archived_at, coalesce(chat_takeover_enabled, false) 接管
+                                from workflows where project_id=:p and id=:w for update"""),
+                      {"p": project_id, "w": wid}).mappings().first()
+        if not w:
+            raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
+        if w["archived_at"]:
+            return {"id": wid, "已归档": True, "note": "早就归档了,这次什么都没改"}
+        钥 = c.execute(text("""select count(*) from access_keys k join applications a
+                                 on a.project_id=k.project_id and a.id=k.application_id
+                               where k.project_id=:p and a.workflow_id=:w and k.revoked_at is null
+                                 and k.archived_at is null and (k.expires_at is null or k.expires_at > now())"""),
+                       {"p": project_id, "w": wid}).scalar()
+        if 钥:
+            raise _错(409, "WORKFLOW_HAS_LIVE_KEYS", f"还有 {钥} 把访问密钥没吊销,外面的系统还能调它",
+                      "先在「访问接口」里把这些密钥吊销(要写理由),再来归档")
+        没完 = c.execute(text("""select count(*) from execution_runs r join workflow_versions v
+                                   on v.project_id=r.project_id and v.id = r.definition_ref->>'version_id'
+                                 where r.project_id=:p and v.workflow_id=:w
+                                   and r.status in ('queued', 'running', 'waiting_approval', 'waiting_external')"""),
+                         {"p": project_id, "w": wid}).scalar()
+        if 没完:
+            raise _错(409, "WORKFLOW_HAS_LIVE_RUNS", f"还有 {没完} 次运行没跑完(排队 / 在跑 / 等人核对)",
+                      "等它们跑完或取消之后再归档 —— 归档了它们恢复时找不到自己的来路")
+        if w["接管"]:
+            raise _错(409, "WORKFLOW_CHAT_TAKEOVER_ON", "聊天接管还开着,聊天助手正把问题转给它",
+                      "先关掉这条工作流的聊天接管,再来归档")
+        c.execute(text("""update workflows set archived_at=now(), updated_at=now(), revision=revision+1
+                           where project_id=:p and id=:w"""), {"p": project_id, "w": wid})
+        应用 = c.execute(text("""update applications set archived_at=now(), updated_at=now(), revision=revision+1
+                                  where project_id=:p and workflow_id=:w and archived_at is null returning id"""),
+                         {"p": project_id, "w": wid}).scalars().all()
+        _审计(c, me, "workflow.archive", {"工作流": wid, "名称": w["name"], "应用": list(应用)}, reason=理由)
+    return {"id": wid, "已归档": True, "应用": list(应用),
+            "note": "不在列表里了;跑过它的运行、发布清单、调用记录照样能打开"}
+
+
 # ── 试运行 ─────────────────────────────────────────────────────────
 # ── 测试样例与历史输入(10-26,方案 §8.1「保存样例、选择历史输入」)─────────────────
 # 整条流程用的样例 node_id 为空;单步测试用的样例记着是哪一步。
