@@ -20727,5 +20727,41 @@
    }
   ],
   "预期红": "公海 · 受保护客户(评测夹具 / 真值依赖)一户都不扫"
+ },
+ {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "知会退回一户一条",
+  "file": [
+   {
+    "path": "backend/ownership_release.py",
+    "old": "    for (导购, 店), 户们 in sorted(分组.items()):\n",
+    "new": "    for (导购, 店), 户们 in [(k, [x]) for k, v in sorted(分组.items()) for x in v]:\n"
+   }
+  ],
+  "预期红": "公海 · 知会落地:同一位导购两户 → 只派一条清单任务,名单里两户都在(用户 11-13 拍每人一条)"
+ },
+ {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "已知会日不读知会表",
+  "file": [
+   {
+    "path": "backend/ownership_release.py",
+    "old": "    if c.execute(\"SELECT 1 FROM sqlite_master WHERE type='table' AND name='pool_notice'\").fetchone():\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "公海 · 已知会日从知会表读得到"
+ },
+ {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "合并旧知会按合并那天重新计时",
+  "file": [
+   {
+    "path": "backend/ownership_release.py",
+    "old": "                      (cid, 导购, 店, 日, 新))\n",
+    "new": "                      (cid, 导购, 店, str(__import__(\"worldclock\").今天()), 新))\n"
+   }
+  ],
+  "预期红": "公海 · 合并旧知会:知会日照旧(从原来那天算 7 天,不因合并重新计时)"
  }
 ]

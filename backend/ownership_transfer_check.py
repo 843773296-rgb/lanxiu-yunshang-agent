@@ -28,6 +28,9 @@ import ownership_protection as OP      # noqa: E402
     ("执行时不再按店筛传进来的行", "公海 · 单店试:点名别家店时,传进来的本店行也不写"),
     ("命令行真写不点名店也照写", "公海 · 单店试:命令行真写不点名店 → 拒写(退出码非 0,库里一条没多)"),
     ("公海扫描不跳过受保护客户", "公海 · 受保护客户(评测夹具 / 真值依赖)一户都不扫"),
+    ("知会退回一户一条", "公海 · 知会落地:同一位导购两户 → 只派一条清单任务,名单里两户都在(用户 11-13 拍每人一条)"),
+    ("已知会日不读知会表", "公海 · 已知会日从知会表读得到"),
+    ("合并旧知会按合并那天重新计时", "公海 · 合并旧知会:知会日照旧(从原来那天算 7 天,不因合并重新计时)"),
 ]
 过, 挂 = [], []
 
@@ -145,10 +148,17 @@ def main():
                    p.returncode != 0 and n再 == n后, (p.returncode, p.stdout[-120:], n后, n再))
             with c:
                 出 = ORL.执行(c, d0, "检查", 行们=[r, ORL.判一户(c, "C99000003", d0)])
-            任务 = c.execute("SELECT assignee_no, customer_id FROM schedule WHERE type='公海知会' AND customer_id IN "
-                             "('C99000002','C99000003')").fetchall()
-            ck("公海 · 知会落地:给原导购派了「公海知会」任务(两户各一条)",
-               len(出["知会"]) == 2 and sorted(任务) == [(原导购, "C99000002"), (原导购, "C99000003")], (出, 任务))
+            任务 = c.execute("SELECT id, assignee_no, customer_id, note FROM schedule WHERE id IN (%s)"
+                             % ",".join("?" * len(出["知会"])), 出["知会"]).fetchall() if 出["知会"] else []
+            记 = c.execute("SELECT customer_id, advisor_no, noticed_on, schedule_id FROM pool_notice WHERE customer_id IN "
+                          "('C99000002','C99000003') ORDER BY customer_id").fetchall()
+            ck("公海 · 知会落地:同一位导购两户 → 只派一条清单任务,名单里两户都在(用户 11-13 拍每人一条)",
+               len(出["知会"]) == 1 and 出["知会户数"] == 2 and len(任务) == 1 and 任务[0][1] == 原导购 and 任务[0][2] is None
+               and "C99000002" in 任务[0][3] and "C99000003" in 任务[0][3], (出, 任务))
+            ck("公海 · 知会落地:每户在知会表记一行,挂在那条清单任务上、日子是今天",
+               [(x[0], x[1], x[2], x[3]) for x in 记] == [("C99000002", 原导购, str(d0), 任务[0][0] if 任务 else None),
+                                                       ("C99000003", 原导购, str(d0), 任务[0][0] if 任务 else None)], 记)
+            ck("公海 · 已知会日从知会表读得到", ORL.已知会日(c, ["C99000002"]) == str(d0), ORL.已知会日(c, ["C99000002"]))
             ck("公海 · 知会当天再扫:不动(没满 7 天)", ORL.判一户(c, "C99000002", d0)["动作"] == "不动")
             # 原导购第 3 天联系了 C99000003 并登记跟进 → 最后接触刷新 → 第 8 天不放
             c.execute("INSERT INTO followup(id, customer_id, ts, channel, content, advisor_no) VALUES(?,?,?,?,?,?)",
@@ -181,6 +191,36 @@ def main():
                    (d["total"], sorted(号们)[:5], d["facets"]["advisor"][-2:]))
             finally:
                 server.DB, merge.DB = 旧
+            # 合并旧知会(11-13 首跑留下一户一条):造两条旧任务(同一导购、同一天)→ 只看不动 → 真合并:旧的删、一条清单、日子不变
+            # 副本里还有真库那批旧知会,所以只看「多出来的这两条」那一组
+            基 = ORL.合并旧知会(c)
+            with c:
+                for i, cid in enumerate(("C99000004", "C99000001")):
+                    c.execute("INSERT INTO schedule(id, type, advisor_no, customer_id, start_ts, end_ts, status, shop, assignee_no, "
+                              "assigned_by, assigned_at, note, ref_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                              (f"SCOLDPOOL{i}", "公海知会", 原导购, cid, f"{d3} 09:00", f"{d3} 18:00", "有效", 原店, 原导购, "SYS",
+                               f"{d3} 09:00", "旧的一户一条", cid))
+            看 = ORL.合并旧知会(c)
+            还在 = c.execute("SELECT COUNT(*) FROM schedule WHERE id LIKE 'SCOLDPOOL%'").fetchone()[0]
+            组 = dict(((a, b, d), n) for a, b, d, n in 看["明细"])
+            基组 = dict(((a, b, d), n) for a, b, d, n in 基["明细"])
+            ck("公海 · 合并旧知会:只看 → 多出的 2 条算进同一条清单,库里一条没动",
+               看["旧条数"] == 基["旧条数"] + 2 and 组.get((原导购, 原店, d3), 0) == 基组.get((原导购, 原店, d3), 0) + 2
+               and 还在 == 2, (基["旧条数"], 看["旧条数"], 组.get((原导购, 原店, d3))))
+            with c:
+                合 = ORL.合并旧知会(c, 写=True)
+            还在 = c.execute("SELECT COUNT(*) FROM schedule WHERE id LIKE 'SCOLDPOOL%'").fetchone()[0]
+            新 = c.execute("SELECT DISTINCT schedule_id FROM pool_notice WHERE customer_id IN ('C99000004','C99000001')").fetchall()
+            ck("公海 · 合并旧知会:合完副本里一户一条的旧知会一条不剩", c.execute(
+                "SELECT COUNT(*) FROM schedule WHERE type='公海知会' AND customer_id IS NOT NULL").fetchone()[0] == 0)
+            新单 = c.execute("SELECT assignee_no, customer_id, substr(start_ts,1,10), note FROM schedule WHERE id=?",
+                            (新[0][0],)).fetchone() if len(新) == 1 else None
+            ck("公海 · 合并旧知会:旧的两条删掉,换成一条清单(派给原导购、名单两户都在)",
+               还在 == 0 and 新单 is not None and 新单[0] == 原导购 and 新单[1] is None and "C99000004" in 新单[3]
+               and "C99000001" in 新单[3], (还在, 新, 新单))
+            ck("公海 · 合并旧知会:知会日照旧(从原来那天算 7 天,不因合并重新计时)",
+               ORL.已知会日(c, ["C99000004"]) == str(d3) and (新单 or [None, None, None])[2] == str(d3),
+               (ORL.已知会日(c, ["C99000004"]), 新单))
         dst.close()
 
     # ③ 接线

@@ -10,10 +10,14 @@
   · 全都没有 → 退回建档日
 按**账户**判(一个账户只归一位导购,用户 10-26 拍):同户几条档案的接触合在一起算,放就整户放。
 
-「已知会日」不另建表 —— 就是派给原导购的那条「公海知会」任务的日子。通知和任务是同一条记录,不会分叉。
+「已知会日」记在 pool_notice(一户一行:哪天知会的、挂在哪条清单任务上)。
+⚠️ 11-13 改:原来「不另建表 —— 就是那条一户一条的公海知会任务的日子」;用户 11-13 拍第三十九条「**每位顾问每次只收一条清单**」
+   (首跑一人收了 160–190 条,待办被刷屏),一条任务对多户,日子就得另记。读的时候两边取最晚:
+   pool_notice + 合并前留下的一户一条旧任务(`--合并旧知会` 跑完就没有旧的了)。
 
 落地(`执行()`,默认不调;命令行要 `--写`):
-  · 知会 → 给原导购派一条「公海知会」任务(点「知道了」就完成;7 天内联系并登记跟进,最后接触日刷新,自然不放)
+  · 知会 → 每位原导购这次只派**一条**「公海知会」清单任务(列出他名下这次要知会的每一户;点「知道了」就完成),
+           每户在 pool_notice 记一行;7 天内联系并登记跟进,最后接触日刷新,自然不放
   · 释放 → 整户 advisor_no 置空(公海 = 没有导购,ownership.py 文件头:结构本来允许为空)
            + 归属变更日志记「进公海 / 长期没接触释放」+ 给本店店长派一条「公海指派」任务
 ⚠️ 和 backend/ownership.py「agent 只给参谋、不自动改数据」(09-20)的关系:那条管的是**智能体**;
@@ -22,6 +26,8 @@
     python3 backend/ownership_release.py            # 只看:今天会知会谁、释放谁
     python3 backend/ownership_release.py --写 --店 店名   # 真写一家店(要锁:./tools/gate_lock.sh);用户 11-13 拍先一家店试
     python3 backend/ownership_release.py --写 --全部门店  # 试点过了再全部门店(不点名店又不写这个 → 拒写)
+    python3 backend/ownership_release.py --合并旧知会       # 只看:一户一条的旧知会会合成几条清单
+    python3 backend/ownership_release.py --合并旧知会 --写  # 真合并(要锁)
 """
 import os
 import sys
@@ -54,10 +60,49 @@ def 最后接触(c, 同户, 店, 导购, 建档):
     return OP.最后维护日(订单, 跟进, 到店, 建档)
 
 
+知会表DDL = """CREATE TABLE IF NOT EXISTS pool_notice(
+  customer_id TEXT NOT NULL,      -- 账户里扫描到的那条档案(读的时候按同户全部档案查)
+  advisor_no  TEXT,               -- 知会给谁(原导购)
+  shop        TEXT,
+  noticed_on  TEXT NOT NULL,      -- 知会日 YYYY-MM-DD(满 7 天才放,口径在 knowledge/ownership_protection)
+  schedule_id TEXT,               -- 那条清单任务(一条任务对多户)
+  PRIMARY KEY (customer_id, noticed_on))"""
+
+
+def 建表(c):
+    c.execute(知会表DDL)
+
+
 def 已知会日(c, 同户):
+    """→ 'YYYY-MM-DD' 或 None。pool_notice 和合并前的一户一条旧任务取最晚的那天。表还没建(从没写过)= 没知会过。"""
     q = ",".join("?" * len(同户))
+    日们 = []
     r = c.execute(f"SELECT MAX(start_ts) FROM schedule WHERE type=? AND customer_id IN ({q})", (知会类型, *同户)).fetchone()
-    return r[0] if r and r[0] else None
+    if r and r[0]:
+        日们.append(str(r[0])[:10])
+    if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pool_notice'").fetchone():
+        r = c.execute(f"SELECT MAX(noticed_on) FROM pool_notice WHERE customer_id IN ({q})", 同户).fetchone()
+        if r and r[0]:
+            日们.append(str(r[0])[:10])
+    return max(日们) if 日们 else None
+
+
+def 清单说明(户们, 今天):
+    """一位导购这次要知会的那几户 → 清单任务的说明。户们:[dict(客户, 同户, 最后接触, 来自, 已过天数)]。"""
+    行 = [f"{x['客户']}(最后接触 {x['最后接触']} · {x['来自']} · 已过 {x['已过天数']} 天"
+         + (f" · 同户 {len(x['同户'])} 条档案" if len(x["同户"]) > 1 else "") + ")" for x in 户们]
+    return (f"【公海知会】你名下 {len(户们)} 户客户长期没接触,快要释放到本店公海。{OP.知会提前天} 天内联系并登记跟进的,"
+            f"继续归你;没联系的会释放到公海、由店长指派。点「知道了」即完成。名单:" + ";".join(行))
+
+
+def _派清单(c, 导购, 店, 户们, 今天):
+    """给一位导购派一条清单任务,每户记一行 pool_notice → 任务号(没派成 = None,pool_notice 也不记:没通知到就不算知会)。"""
+    sid = _派(c, 知会类型, 导购, None, 店, 清单说明(户们, 今天), 今天)
+    if sid:
+        for x in 户们:
+            c.execute("INSERT OR IGNORE INTO pool_notice(customer_id, advisor_no, shop, noticed_on, schedule_id) VALUES(?,?,?,?,?)",
+                      (x["客户"], 导购, 店, str(今天)[:10], sid))
+    return sid
 
 
 def 扫描(c, 今天, 只这家店=None):
@@ -109,16 +154,20 @@ def 执行(c, 今天, 操作人="系统", 行们=None, 只这家店=None):
     行们 = 扫描(c, 今天, 只这家店) if 行们 is None else 行们
     if 只这家店:
         行们 = [r for r in 行们 if r.get("店") == 只这家店]
-    结果 = dict(知会=[], 释放=[], 指派任务=[])
+    结果 = dict(知会=[], 释放=[], 指派任务=[], 知会户数=0)
+    建表(c)
+    # 知会:每位导购(按店分开)这次只派一条清单任务(用户 11-13 拍第三十九条)
+    分组 = {}
     for r in 行们:
         if r["动作"] == "知会":
-            sid = _派(c, 知会类型, r["导购"], r["客户"], r["店"],
-                     f"【公海知会】客户 {r['客户']}(同户 {len(r['同户'])} 条档案)最后一次接触是 {r['最后接触']}({r['来自']}),"
-                     f"已过 {r['已过天数']} 天。{OP.知会提前天} 天内联系并登记跟进就继续归你;否则释放到本店公海,由店长指派。点「知道了」即完成。",
-                     今天)
-            if sid:
-                结果["知会"].append(sid)
-        elif r["动作"] == "释放":
+            分组.setdefault((r["导购"], r["店"]), []).append(r)
+    for (导购, 店), 户们 in sorted(分组.items()):
+        sid = _派清单(c, 导购, 店, 户们, 今天)
+        if sid:
+            结果["知会"].append(sid)
+            结果["知会户数"] += len(户们)
+    for r in 行们:
+        if r["动作"] == "释放":
             q = ",".join("?" * len(r["同户"]))
             c.execute(f"UPDATE customer SET advisor_no=NULL WHERE id IN ({q})", r["同户"])
             c.execute(f"UPDATE appointment SET advisor_no=NULL WHERE customer_id IN ({q}) AND status='已预约'", r["同户"])
@@ -132,6 +181,33 @@ def 执行(c, 今天, 操作人="系统", 行们=None, 只这家店=None):
             if sid:
                 结果["指派任务"].append(sid)
     return 结果
+
+
+def 合并旧知会(c, 写=False):
+    """一户一条的旧「公海知会」任务(11-13 首跑留下的)→ 每位导购每个知会日一条清单任务 + pool_notice 每户一行;删旧任务。
+    → dict(旧条数, 新条数, 明细=[(导购, 店, 日, 户数)])。写=False 只算不动。日子照旧(满 7 天从原知会日算,不因合并重新计时)。
+    已经点了「知道了」的旧任务也合:合并只改「通知长什么样」,不改「哪天通知过」。"""
+    旧 = c.execute("SELECT id, assignee_no, shop, substr(start_ts,1,10), customer_id FROM schedule "
+                  "WHERE type=? AND customer_id IS NOT NULL ORDER BY assignee_no, start_ts, customer_id", (知会类型,)).fetchall()
+    组 = {}
+    for sid, 导购, 店, 日, cid in 旧:
+        组.setdefault((导购, 店, 日), []).append((sid, cid))
+    明细 = [(k[0], k[1], k[2], len(v)) for k, v in sorted(组.items())]
+    if not 写:
+        return dict(旧条数=len(旧), 新条数=len(组), 明细=明细)
+    import ownership_transfer as OT
+    建表(c)
+    for (导购, 店, 日), 项 in sorted(组.items()):
+        户们 = []
+        for _, cid in 项:
+            r = 判一户(c, cid, 日)          # 按原知会日重算一遍说明里的天数(和当时发出去的一致)
+            户们.append(dict(r, 客户=cid))
+        新 = _派(c, 知会类型, 导购, None, 店, 清单说明(户们, 日), 日)
+        for sid, cid in 项:
+            c.execute("INSERT OR IGNORE INTO pool_notice(customer_id, advisor_no, shop, noticed_on, schedule_id) VALUES(?,?,?,?,?)",
+                      (cid, 导购, 店, 日, 新))
+            c.execute("DELETE FROM schedule WHERE id=? AND type=?", (sid, 知会类型))
+    return dict(旧条数=len(旧), 新条数=len(组), 明细=明细)
 
 
 def _印(行们):
@@ -153,6 +229,17 @@ if __name__ == "__main__":
     店 = sys.argv[sys.argv.index("--店") + 1] if "--店" in sys.argv and sys.argv.index("--店") + 1 < len(sys.argv) else None
     全部 = "--全部门店" in sys.argv
     with closing(sqlite3.connect(db, timeout=30)) as c:
+        if "--合并旧知会" in sys.argv:
+            写 = "--写" in sys.argv
+            if 写:
+                with c:
+                    m = 合并旧知会(c, 写=True)
+            else:
+                m = 合并旧知会(c)
+            print(f"一户一条的旧知会 {m['旧条数']} 条 → 每人每天一条清单 {m['新条数']} 条" + ("(已合并)" if 写 else "(只看没动;真合并加 --写,先拿锁)"))
+            for 导购, 店, 日, n in m["明细"][:30]:
+                print(f"  {导购}({店})· {日} 知会的 {n} 户")
+            sys.exit(0)
         行们 = 扫描(c, 今天, 店)
         print(f"今天(世界时钟)= {今天}" + (f" · 只看 {店}" if 店 else ""))
         _印(行们)
@@ -169,6 +256,6 @@ if __name__ == "__main__":
                 sys.exit(2)
             with c:
                 r = 执行(c, 今天, 行们=行们, 只这家店=店)
-            print(f"已写:知会 {len(r['知会'])} 条 · 释放 {len(r['释放'])} 户 · 指派任务 {len(r['指派任务'])} 条")
+            print(f"已写:知会清单 {len(r['知会'])} 条(共 {r['知会户数']} 户)· 释放 {len(r['释放'])} 户 · 指派任务 {len(r['指派任务'])} 条")
         else:
             print("(只看没写。真写加 --写,先拿锁)")
