@@ -214,6 +214,7 @@ export const ENDPOINTS = [
   { method: "GET", path: "/workflows/{id}/versions/{vid}", summary: "看一个冻结版本的图(只读)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/workflows/{id}/versions/{vid}", summary: "给一个版本起名字", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "DELETE", path: "/workflows/{id}/versions/{vid}", summary: "删掉一个版本(从列表里藏起来)", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/workflows/{id}/archive", summary: "归档一条工作流(连同它的应用)", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/workflows/{id}/versions", summary: "冻结图版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/execution-policy-versions", summary: "冻结一版执行策略", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/execution-policy-versions", summary: "执行策略版本列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -353,4 +354,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 265 条接口 · 24 条异步 · 32 条要幂等键 · 39 条要 If-Match */
+/** 共 266 条接口 · 24 条异步 · 32 条要幂等键 · 39 条要 If-Match */

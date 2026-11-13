@@ -28644,6 +28644,120 @@
         "x-权限": "配置密钥与预算"
       }
     },
+    "/api/v1/projects/{project_id}/workflows/{id}/archive": {
+      "post": {
+        "description": "11-13 加(用户拍「清 e2e 残留 + 加自动收尾」,原来没有归档口):理由必填;**还有没吊销的访问密钥、没跑完的运行、聊天接管开着 → 409 什么都不改**(归档不替人吊销);行不删,跑过它的运行 / 发布清单 / 调用记录照样能打开",
+        "operationId": "post_workflows_id_archive",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已创建"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "归档一条工作流(连同它的应用)",
+        "tags": [
+          "工作流"
+        ],
+        "x-字段权限": [],
+        "x-审计": true,
+        "x-权限": "生产审核/发布/回滚"
+      }
+    },
     "/api/v1/projects/{project_id}/workflows/{id}/draft": {
       "patch": {
         "description": "**允许保存不完整草稿**(§5.3)—— 配一张图是个过程,逼人一次配对才能存会让人把半成品存在浏览器里(然后丢掉)。409 要给 Diff,**不覆盖**",
