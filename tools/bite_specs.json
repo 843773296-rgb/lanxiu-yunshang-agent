@@ -20628,6 +20628,18 @@
   "预期红": "④ 接线 · /run 升级前问费用闸,到顶就交小模型那一遍"
  },
  {
+  "script": "agentsite/store_usage_check.py",
+  "改坏": "给管理后台的门店用量口不验内部凭证",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "            ok_i, why_i = _ic.核对(self.headers.get(_ic.凭证头), self.client_address[0])\n            if not ok_i:\n                return self._send({\"error\": why_i, \"code\": \"INTERNAL_DENIED\"}, code=403)\n            import store_usage as _su\n",
+    "new": "            ok_i, why_i = True, \"\"\n            import store_usage as _su\n"
+   }
+  ],
+  "预期红": "⑤ 内部口 · /internal/store-usage 先验内部凭证(本机 + 凭证)再读账"
+ },
+ {
   "script": "backend/ownership_transfer_check.py",
   "改坏": "单店扫描不按店筛",
   "file": [
@@ -20662,5 +20674,41 @@
    }
   ],
   "预期红": "公海 · 单店试:命令行真写不点名店 → 拒写(退出码非 0,库里一条没多)"
+ },
+ {
+  "script": "backend/cost_alert_check.py",
+  "改坏": "同月同店不查重(每次都派)",
+  "file": [
+   {
+    "path": "backend/cost_alert.py",
+    "old": "        if c.execute(\"SELECT 1 FROM schedule WHERE type=? AND ref_id=? AND shop=?\", (类型, 月, 店)).fetchone():\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "③ 同月再推 → 不重派"
+ },
+ {
+  "script": "backend/cost_alert_check.py",
+  "改坏": "80% 那一档不派(只到顶才派)",
+  "file": [
+   {
+    "path": "backend/cost_alert.py",
+    "old": "    return 状态 in (\"提醒\", \"到顶\")\n",
+    "new": "    return 状态 in (\"到顶\",)\n"
+   }
+  ],
+  "预期红": "② 提醒 → 派一条给那家店的店长"
+ },
+ {
+  "script": "backend/cost_alert_check.py",
+  "改坏": "聊天站记完账不推费用提醒",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "                        _n, _明 = _ca2.推(_g, _su._月(), _su.本月工号们(), _su.月上限)\n",
+    "new": "                        _n, _明 = 0, []\n"
+   }
+  ],
+  "预期红": "⑥ 接线 · /run 记完门店用量账后推费用提醒"
  }
 ]

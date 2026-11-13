@@ -309,6 +309,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"error": why_i, "code": "INTERNAL_DENIED"}, code=403)
             import config_adoption as _ca
             return self._send(_ca.实际加载("task"))
+        if p == "/internal/store-usage":
+            # 给管理后台上线验收页「月费用」(用户 11-13 拍:只算门店真实使用)。本机 + 内部凭证才收;只读账,不写
+            import internal_call as _ic
+            ok_i, why_i = _ic.核对(self.headers.get(_ic.凭证头), self.client_address[0])
+            if not ok_i:
+                return self._send({"error": why_i, "code": "INTERNAL_DENIED"}, code=403)
+            import store_usage as _su
+            g = _su.现在()
+            return self._send({"月份": _su._月(), "合计": g["本月"], "笔数": g["笔数"], "账": g["账"],
+                               "状态": g["状态"], "上限": _su.月上限, "币种": "USD"})
         if p == "/api/my-opinions":
             # 「我的意见」(PRD §3.3):工号只从登录会话取,不从参数取 —— 别人的意见看不到
             # ⚠️ 必须在下面那行「/api/ 一律转给门店后台」之前 —— 11-04 第一版写在它后面,永远轮不到,页面报 not found(真浏览器冒烟抓到的)
@@ -841,6 +851,17 @@ class H(BaseHTTPRequestHandler):
                           (r.get("路由") or {}).get("答的"), 升级=bool((r.get("路由") or {}).get("升级")))
                 except Exception as e:  # noqa: BLE001
                     r["用量账错误"] = f"门店用量没记上({type(e).__name__})—— 本月费用会显示「拿不到」"[:200]
+                # 费用到 80% / 到顶 → 给本月用过的门店店长各派一条「费用提醒」,每月每店一次(用户 11-13 拍第三十八条)
+                try:
+                    import store_usage as _su
+                    import cost_alert as _ca2
+                    _g = _su.现在()
+                    if _ca2.要派吗(_g["状态"]):
+                        _n, _明 = _ca2.推(_g, _su._月(), _su.本月工号们(), _su.月上限)
+                        if _n or isinstance(_明, str):
+                            r["费用提醒"] = {"派了": _n, "明细": _明}
+                except Exception as e:  # noqa: BLE001
+                    r["费用提醒"] = {"派了": 0, "明细": f"没派上({type(e).__name__})"}
                 # 换模型也没用的(库故障 / 撞花费上限)→ 不升级,直接上报平台管理员(用户 10-25 拍):
                 # 记到这一轮根上,推送端带去管理后台建「执行故障上报」;页面照实告诉提问的人
                 报 = _mr.该上报吗(r)

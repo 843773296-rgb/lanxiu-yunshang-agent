@@ -6,12 +6,16 @@
 
     python3 管理后台/tools/clean_e2e_residue.py                 # 只看:要动哪些、动完应该剩多少
     python3 管理后台/tools/clean_e2e_residue.py --执行          # 真做(要锁:./tools/gate_lock.sh)
+    python3 管理后台/tools/clean_e2e_residue.py --执行 --连挂着的  # 再吊销挂在 e2e 工作流上、名字正好是「没上生产那条的」的密钥
 
 **全走后台正规口**(吊销口 / 归档口),每一下都进审计、写理由 —— 不直接改库。
 清单(密钥 id / 工作流 id)在动手前存到 ~/lanxiu-backups/,动完再查一遍数对不对。
 
 **不动的**(不在授权里,只报数):名字不带 e2e 的密钥(比如同一份测试发的「没上生产那条的」)、
 名字不带 e2e 的工作流、别的项目。挂着这类密钥的 e2e 工作流归档口会拒(还有没吊销的密钥)—— 照实报出来,不替人吊销。
+
+**--连挂着的**:用户 11-13 第二次拍「一起清」—— 只多动一类:挂在名字带 e2e 的工作流上、名字**正好**是
+「没上生产那条的」的密钥(访问API测试造的那把)。别的名字一把不碰。
 """
 import datetime
 import json
@@ -27,6 +31,7 @@ import urllib.request
 库 = os.environ.get("DATABASE_URL_PSQL", f"postgresql://{os.environ.get('USER')}@localhost:5432/aimc_dev")
 谁 = "U001"
 理由 = "e2e 测试残留清理(用户 11-13 拍:只动名字带 e2e 的)"
+挂钥名 = "没上生产那条的"
 P = f"/api/v1/projects/{项目}"
 
 
@@ -55,6 +60,12 @@ def 打(路, 体):
 def 现状():
     钥 = 查(f"""select id, name from access_keys where project_id='{项目}' and name ilike '%e2e%'
                and revoked_at is null and archived_at is null order by created_at""")
+    if "--连挂着的" in sys.argv:
+        钥 += 查(f"""select k.id, k.name from access_keys k
+                    join applications a on a.project_id=k.project_id and a.id=k.application_id
+                    join workflows w on w.project_id=a.project_id and w.id=a.workflow_id
+                   where k.project_id='{项目}' and w.name ilike '%e2e%' and k.name = '{挂钥名}'
+                     and k.revoked_at is null and k.archived_at is null order by k.created_at""")
     流 = 查(f"""select id, name from workflows where project_id='{项目}' and name ilike '%e2e%'
                and archived_at is null order by created_at""")
     别钥 = 查(f"""select count(*) from access_keys k join applications a on a.project_id=k.project_id and a.id=k.application_id

@@ -6,8 +6,9 @@
 三项都「通过」才算做完。三项的口径在 `acceptance_flow.py`(纯函数,这里只取数):
   ① 十条全签:PRD 13.4 的 S1–S10,每条结论「通过」并由店长签字
   ② 试点满两周:起算日 = 真数据导入日。**没设就是「未开始」,不默认成今天**
-  ③ 月费用未超上限(150 美元,拍板第十三条):读 `usage_ledger`(就是「用量与成本」页那份账,A1 上报进来的),
-     这个月(上海时间自然月)、不算 mock;**一行算不出参考价 / 一笔不是美元 / 一笔都没有 → 拿不到**,不显示成通过
+  ③ 月费用未超上限(150 美元,拍板第十三条):**澜绣项目读聊天站的门店用量账**(11-13 拍「只算门店真实使用」,
+     走 8770 /internal/store-usage + 内部凭证;取不到 = 拿不到,不退回读别的账);
+     别的项目照旧读 `usage_ledger`(「用量与成本」页那份账),这个月(上海时间自然月)、不算 mock;**一行算不出参考价 / 一笔不是美元 / 一笔都没有 → 拿不到**,不显示成通过
 任何一项拿不到数据,页面上都写「拿不到 ≠ 通过」。
 
 ## 权限(复用现成的,不新造)
@@ -131,7 +132,52 @@ def 种上(c, project_id):
     return n
 
 
-def 本月费用(c, project_id, 今天):
+def 门店费用汇总(体):
+    """聊天站 /internal/store-usage 的返回 → 判_费用 吃的汇总形状。纯函数。
+    体是 None / 带 error → None(拿不到);合计 None(有一笔金额未知 / 坏行)→ 拿不到并带账上那句说明 —— **不当 0 算**。"""
+    if not isinstance(体, dict) or 体.get("error"):
+        return None
+    笔 = int(体.get("笔数") or 0)
+    合 = 体.get("合计")
+    汇 = {"月份": 体.get("月份"), "行数": 笔, "已知金额": None if 合 is None else round(float(合), 4),
+          "金额未知的行数": 0, "币种们": [体.get("币种") or "USD"] if 笔 else [], "来源": "门店用量账"}
+    if 合 is None:
+        汇["拿不到"] = f"门店用量账:{体.get('账') or '合计拿不到'}"
+    return 汇
+
+
+def _问门店用量():
+    """→ 聊天站 /internal/store-usage 的返回或 {error}。走 curl + 内部凭证,同 chat_assistants_api._问聊天站加载了什么。"""
+    import json as _json
+    import subprocess as _sp
+    from open_api import _内部凭证, 聊天站
+    凭 = _内部凭证()
+    if not 凭:
+        return {"error": "内部通道没开:本机没有凭证文件"}
+    try:
+        r = _sp.run(["curl", "-sS", "--noproxy", "*", "-m", "8", 聊天站.rstrip("/") + "/internal/store-usage",
+                     "-H", f"X-Lanxiu-Internal: {凭}", "-w", "\n%{http_code}"], capture_output=True, text=True, timeout=15)
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"调聊天站起不来:{type(e).__name__}"}
+    体, _, 码 = r.stdout.rpartition("\n")
+    if 码 != "200":
+        return {"error": f"聊天站回 HTTP {码 or '连不上'}"}
+    try:
+        return _json.loads(体)
+    except ValueError:
+        return {"error": "聊天站回的不是 JSON"}
+
+
+def 本月费用(c, project_id, 今天, 门店体=None):
+    """**门店入口所在的项目(澜绣)读门店用量账**(用户 11-13 拍:只算门店真实使用 —— usage_ledger 混着评测 / 夜跑,
+    而聊天站门店调用一笔都没进 usage_ledger);取不到就是 None(拿不到),**不退回去读 usage_ledger**。
+    别的项目(没有门店入口,比如测试临时项目)照旧读 usage_ledger。"""
+    if project_id in F.种子项目:
+        return 门店费用汇总(门店体 if 门店体 is not None else _问门店用量())
+    return 账本费用(c, project_id, 今天)
+
+
+def 账本费用(c, project_id, 今天):
     """这个月(上海时间自然月)这个项目的真调用账:和「用量与成本」(knowledge_api.用量与成本)读同一张 usage_ledger、
     同一套口径 —— mock 不算钱,amount_known=False 是「算不出」不是 0。
     ⚠️ 两列可空,所以用 `is distinct from` / `is not true`:`source <> 'mock'` 会把 source 为空的真调用悄悄漏掉,
@@ -165,12 +211,13 @@ def 上线验收(project_id: str, me: 身份 = Depends(要权限("查看有权�
     """十条场景各一行 + 顶部「做完」判定(三项各自的状态)+ 试点设置。第一次打开时种上十条(只澜绣项目)。
     改记录 / 签字要带的 revision 在每一行;设起算日要带的在「试点.revision」。"""
     今天 = _今天()
+    门店体 = _问门店用量() if project_id in F.种子项目 else None   # 网络调用放在事务外
     with 事务() as c:
         种上(c, project_id)
         rs = c.execute(text("""select count(*) over () 全量, * from acceptance_items where project_id=:p and archived_at is null
                                 order by sort_no, scenario_code"""), {"p": project_id}).mappings().all()
         试 = c.execute(text("select * from acceptance_pilots where project_id=:p"), {"p": project_id}).mappings().first()
-        费 = 本月费用(c, project_id, 今天)
+        费 = 本月费用(c, project_id, 今天, 门店体)
         线 = c.execute(text("""select e.created_at, e.created_by, e.action_code, e.note, e.change_snapshot, i.scenario_code
                                 from acceptance_events e
                                 left join acceptance_items i on i.project_id = e.project_id and i.id = e.acceptance_item_id

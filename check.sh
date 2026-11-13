@@ -212,6 +212,7 @@ run "登录会话跨重启 · 服务重启不掉线、文件里只存指纹、�
 run "管理后台客户读接口 · 要登录、按门店划范围(用户 10-23 拍,打 HTTP 层)" python3 backend/customer_read_auth_check.py
 run "门店用量账 + 费用闸 · 本月只算门店真实使用,到顶停贵模型、拿不到照常换(用户 11-12 / 11-13 拍)" python3 agentsite/store_usage_check.py
 run "研判演示回包不带评测答案 · /api/agent-run 不再把真值并排回给页面(用户 11-13 拍)" python3 backend/agent_run_truth_check.py
+run "费用到 80% 给店长派提醒 · 每月每店一次,聊天站记账后推(用户 11-13 拍)" python3 backend/cost_alert_check.py
 run "管理后台读路由登记 · do_GET 每一条 /api/ 读接口都归了类(要登录 / 自查身份 / 匿名),死登记也红,真打 401(W47,11-12)" python3 backend/read_route_registry_check.py
 run "方案页客户搜索 · 要登录、只搜本店;着装人必须明确点选、不默认第一个(复审第 4 节 B,页面在 node 里真跑)" python3 backend/scheme_customer_search_check.py
 run "员工登录 · 5 条自测" python3 backend/auth.py

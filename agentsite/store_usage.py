@@ -82,6 +82,24 @@ def 本月(今天=None):
     return round(合计, 4), 笔, f"本月 {笔} 笔"
 
 
+def 本月工号们(今天=None):
+    """这个月门店用量账里出现过的工号(费用提醒派给这些人所在门店的店长)。读不了 → 空集合。"""
+    p = _文件(_月(今天))
+    号 = set()
+    try:
+        with open(p, encoding="utf-8") as f:
+            for ln in f:
+                try:
+                    x = json.loads(ln).get("工号")
+                except ValueError:
+                    continue
+                if x:
+                    号.add(str(x))
+    except OSError:
+        pass
+    return 号
+
+
 def 闸(本月合计, 上限=月上限, 比例=提醒比例):
     """→ dict(可升级, 状态, 说明)。状态 ∈ 正常 / 提醒 / 到顶 / 拿不到。纯函数,不读账。"""
     if 本月合计 is None:

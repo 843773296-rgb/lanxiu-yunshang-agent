@@ -8,6 +8,7 @@
   ② 账:没文件 = 0(还没人用,不是拿不到);两笔相加;有一笔金额未知 → 拿不到(**不当 0 算**);坏行 → 拿不到
   ③ 上限和管理后台上线验收页是同一个数(两个服务各写了一份,对不上就红)
   ④ 接线:聊天站 /run 在升级前问了费用闸、到顶时不升级;答完记账(读 app.py 语法树)
+  ⑤ 给管理后台验收页的内部口 /internal/store-usage:先验内部凭证再读账(读 app.py 语法树)
 """
 import ast
 import datetime
@@ -25,6 +26,7 @@ import store_usage as S  # noqa: E402
     ("到顶判成 > 上限(正好 150 还照升)", "② 闸 · 150(正好上限)→ 到顶,不升级"),
     ("金额未知的那笔当 0 算", "账 · 有一笔金额未知 → 拿不到(不当 0)"),
     ("聊天站升级前不看费用闸", "④ 接线 · /run 升级前问费用闸,到顶就交小模型那一遍"),
+    ("给管理后台的门店用量口不验内部凭证", "⑤ 内部口 · /internal/store-usage 先验内部凭证(本机 + 凭证)再读账"),
 ]
 
 坏 = []
@@ -78,7 +80,24 @@ for n in ast.walk(t):
 ck("④ 接线 · /run 升级前问费用闸,到顶就交小模型那一遍", 问闸 and 看可升级, f"问闸 {问闸} · 到顶交 r0 {看可升级}")
 ck("④ 接线 · /run 答完记门店用量账", 记账)
 
-print("\n验了 14 条")
+# ⑤ 给管理后台验收页的内部口(11-13):那一支里先 _ic.核对、不过就 403,之后才 _su.现在()
+支 = None
+for n in ast.walk(t):
+    if isinstance(n, ast.If) and "/internal/store-usage" in (ast.get_source_segment(src, n.test) or ""):
+        支 = n
+        break
+先验 = False
+if 支 is not None:
+    名们 = []
+    for b in 支.body:
+        for m in ast.walk(b):
+            if isinstance(m, ast.Call) and isinstance(m.func, ast.Attribute) and m.func.attr in ("核对", "现在"):
+                名们.append(m.func.attr)
+                break
+    先验 = 名们[:1] == ["核对"] and "现在" in 名们
+ck("⑤ 内部口 · /internal/store-usage 先验内部凭证(本机 + 凭证)再读账", 先验, f"那一支 {'没找到' if 支 is None else '调用顺序不对'}")
+
+print("\n验了 15 条")
 if 坏:
     print(f"❌ {len(坏)} 条不过"); sys.exit(1)
 print("✅ 全过")
