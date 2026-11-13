@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """告警端到端(DF-04 第二步,2026-11-04;方案验收 C16「低样本波动与持续异常 → 按最小样本、连续次数触发并恢复;
-不重复轰炸;告警能下钻到运行」)。用户拍的判法:连续 N 次越线才报、连续 M 次正常才恢复、样本不够那轮不算。
+不重复轰炸;告警能下钻到运行」)。11-13 加「门店月费用」(值从聊天站门店用量账取):开 / 拿不到不动 / 恢复 / 只给澜绣项目种一条。用户拍的判法:连续 N 次越线才报、连续 M 次正常才恢复、样本不够那轮不算。
 
 **自己造数据**:演示项目 A 里一个只有这份测试用的应用(筛选按它),6 次运行;改它们的状态来模拟「坏了」「好了」。
 期望值手算,判定那一份是 alert_rules.下一步(纯函数另有 test_alert_rules 验),这里验落库、接口、待办的开 / 提醒 / 恢复 / 处理。
@@ -152,6 +152,50 @@ def main():
         ck("扫过之后它记下了上次评估时间(下一轮 5 分钟内不再评)",
            next((x for x in rl["items"] if x["id"] == r3["id"]), {}).get("上次评估"), rl)
         ck("紧接着再扫一次 → 这条不在里面(还没到 5 分钟)", not [x for x in AL.扫告警() if "worker 路径" in x])
+
+        print("\n▸ 门店月费用(11-13 拍第三十八条:到上限 80% 总部也收到):值从聊天站门店用量账取,判定照样走 下一步()")
+        from db import 事务 as _事务
+        c, rf = 打("POST", P + "/alert-rules", dict(规, 名字=f"e2e {应用} 门店月费用", 指标="门店月费用", 方向="高于",
+                                                    阈值=119.9999, 最小样本=1, 连续越线才报=1, 连续正常才恢复=1))
+        ck("建规则收「门店月费用」这个指标", c == 201, (c, rf))
+        if c == 201:
+            规们.append(rf["id"])
+            原取 = AL._外部取值
+
+            def 评一次(值, 样本):
+                AL._外部取值 = lambda 指标, 取=None: (值, 样本)
+                try:
+                    with _事务() as cc:
+                        rr = cc.execute(text("select * from alert_rules where project_id=:p and id=:i for update"),
+                                        {"p": 项目, "i": rf["id"]}).mappings().first()
+                        return AL.评估一条(cc, rr)
+                finally:
+                    AL._外部取值 = 原取
+            动, 因 = 评一次(130.0, 9)
+            with 库.connect() as cc:
+                开 = cc.execute(text("select count(*) from alert_incidents where project_id=:p and alert_rule_id=:r and status='触发中'"),
+                               {"p": 项目, "r": rf["id"]}).scalar()
+            ck("本月 130 美元(过了 120)→ 开待办,告警页亮一条", 动 == "开待办" and 开 == 1, (动, 因, 开))
+            动, 因 = 评一次(None, 0)
+            ck("门店账拿不到(有一笔金额未知)→ 不动,**不当 0 算成恢复**", 动 == "不动", (动, 因))
+            动, 因 = 评一次(20.0, 3)
+            ck("月初清零(20 美元)→ 恢复,下个月还能再报", 动 == "恢复", (动, 因))
+        ck("取值:聊天站给合计 → (合计, 笔数);合计空 / 报错 → (None, 0)",
+           AL._外部取值("门店月费用", lambda: {"合计": 130.5, "笔数": 9}) == (130.5, 9)
+           and AL._外部取值("门店月费用", lambda: {"合计": None, "笔数": 9}) == (None, 0)
+           and AL._外部取值("门店月费用", lambda: {"error": "x"}) == (None, 0))
+        with _事务() as cc:
+            ck("种规则只给有门店入口的项目:演示项目 → 不种", AL.种上门店费用规则(cc, 项目) == 0)
+        with _事务() as cc:
+            AL.种上门店费用规则(cc, "project_lanxiu")
+            二 = AL.种上门店费用规则(cc, "project_lanxiu")
+            有项目 = cc.execute(text("select 1 from projects where id='project_lanxiu'")).first()
+            门规 = cc.execute(text("""select threshold_value, direction_code, min_sample_count from alert_rules
+                                     where project_id='project_lanxiu' and metric_code='门店月费用' and archived_at is null""")).all()
+        import acceptance_flow as _F
+        ck("澜绣项目种一条、再种不重复;阈值 = 验收页上限 × 0.8 − 0.0001(高于是严格大于,≥120 才报)",
+           (not 有项目 and not 门规) or (二 == 0 and len(门规) == 1 and abs(float(门规[0][0]) - (_F.月费用上限 * 0.8 - 0.0001)) < 1e-9
+                                       and 门规[0][1] == "高于" and 门规[0][2] == 1), (有项目, 二, 门规))
 
         print("\n▸ 暂停")
         c, rl = 打("GET", P + "/alert-rules")

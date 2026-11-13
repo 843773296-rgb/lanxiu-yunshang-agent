@@ -39,9 +39,12 @@ def 评估一条(c, r, 现在=None):
     import monitoring_api as MON
     现在 = 现在 or _dt.datetime.now(_dt.timezone.utc)
     筛 = r["filter_snapshot"] or {}
-    监 = MON.算(c, r["project_id"], 范围=筛.get("范围") or "业务", 应用=筛.get("应用"), 环境=筛.get("环境"),
-               版本=筛.get("版本"), 入口=筛.get("入口"), 分钟=r["window_minutes"])
-    值, 样本 = AR.取指标(监, r["metric_code"])
+    if r["metric_code"] in AR.外部指标们:
+        值, 样本 = _外部取值(r["metric_code"])
+    else:
+        监 = MON.算(c, r["project_id"], 范围=筛.get("范围") or "业务", 应用=筛.get("应用"), 环境=筛.get("环境"),
+                   版本=筛.get("版本"), 入口=筛.get("入口"), 分钟=r["window_minutes"])
+        值, 样本 = AR.取指标(监, r["metric_code"])
     新, 动, 因 = AR.下一步(_状态(r), 值, 样本, _规则(r), 现在)
     快 = {"值": 值, "样本": 样本, "窗口分钟": r["window_minutes"], "窗口止": 现在.isoformat(),
           "窗口起": (现在 - _dt.timedelta(minutes=r["window_minutes"])).isoformat(), "筛选": 筛, "结论": 因, "动作": 动}
@@ -68,10 +71,58 @@ def 评估一条(c, r, 现在=None):
     return 动, 因
 
 
+def _外部取值(指标, 取=None):
+    """→ (值, 样本)。门店月费用:聊天站 /internal/store-usage(同上线验收页那一路)。
+    取不到 / 合计拿不到(有一笔金额未知)→ (None, 0):判定当「这一轮算不出、不算」,**不当 0**(当 0 会把触发中的告警误判成恢复)。"""
+    if 指标 == "门店月费用":
+        import acceptance_api as ACC
+        体 = (取 or ACC._问门店用量)()
+        if not isinstance(体, dict) or 体.get("error") or 体.get("合计") is None:
+            return None, 0
+        return float(体["合计"]), int(体.get("笔数") or 0)
+    return None, 0
+
+
+门店费用规则名 = "门店月费用到上限 80%(业务拍板第三十八条)"
+
+
+def 种上门店费用规则(c, project_id):
+    """澜绣项目(有门店入口的那个)种一条「门店月费用」规则,已有就不动 → 种了几条。
+    阈值 = 上线验收页那个上限 × 0.8(acceptance_flow.月费用上限,单一来源);方向「高于」是严格大于,
+    所以写 上限×0.8 − 0.0001:门店账金额按 4 位小数记,> 119.9999 等价于 ≥ 120,和聊天站费用闸「到 80% 就提醒」一致。
+    连续 1 次就报 / 1 次正常就恢复(月初清零自然恢复,下个月还能再报);去重一天。"""
+    import acceptance_flow as F
+    if project_id not in F.种子项目:
+        return 0
+    有 = c.execute(text("select 1 from alert_rules where project_id=:p and metric_code='门店月费用' and archived_at is null"),
+                  {"p": project_id}).first()
+    if 有:
+        return 0
+    org = c.execute(text("select organization_id from projects where id=:p"), {"p": project_id}).scalar()
+    if not org:
+        return 0
+    c.execute(text("""insert into alert_rules (id, organization_id, project_id, created_at, created_by, updated_at, revision,
+                          name, filter_snapshot, metric_code, direction_code, threshold_value, window_minutes, min_sample_count,
+                          trigger_count, recover_count, dedupe_minutes, owner, breach_count, normal_count)
+                      values (:i, :o, :p, now(), 'system', now(), 1, :n, '{}'::jsonb, '门店月费用', '高于', :th, 1440, 1, 1, 1, 1440,
+                              'system', 0, 0)"""),
+              {"i": f"ar_{_uuid.uuid4().hex[:12]}", "o": org, "p": project_id, "n": 门店费用规则名,
+               "th": Decimal(str(F.月费用上限)) * Decimal("0.8") - Decimal("0.0001")})
+    return 1
+
+
 def 扫告警(现在=None):
     """worker 每 60 秒调一次:到点(上次评估过了 评估间隔分钟)的、没暂停的规则各评一次。**一条评挂了不拖垮别的、也不拖垮 worker**。"""
     现在 = 现在 or _dt.datetime.now(_dt.timezone.utc)
     出 = []
+    try:
+        import acceptance_flow as F
+        with 事务() as c:
+            for p in F.种子项目:
+                if 种上门店费用规则(c, p):
+                    出.append(f"种上了「{门店费用规则名}」({p})")
+    except Exception as e:
+        出.append(f"⚠️ 种门店费用规则出错({type(e).__name__}: {e})—— 下一轮再试")
     with 连接() as c:
         ids = [(x["project_id"], x["id"]) for x in c.execute(text(f"""
             select project_id, id from alert_rules where archived_at is null and paused_at is null
@@ -111,8 +162,8 @@ async def 建规则(project_id: str, request: Request, me: 身份 = Depends(要�
     名 = str(体.get("名字") or "").strip()
     if not 名:
         坏["名字"] = "必填"
-    if 体.get("指标") not in AR.指标们:
-        坏["指标"] = f"只收 {list(AR.指标们)}"
+    if 体.get("指标") not in AR.指标们 and 体.get("指标") not in AR.外部指标们:
+        坏["指标"] = f"只收 {list(AR.指标们) + list(AR.外部指标们)}"
     if 体.get("方向") not in AR.方向们:
         坏["方向"] = f"只收 {list(AR.方向们)}"
     try:

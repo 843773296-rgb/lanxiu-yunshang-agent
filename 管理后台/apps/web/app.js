@@ -1566,7 +1566,7 @@ async function 页_告警() {
           <td>连续 ${esc(String(r["连续越线才报"]))} 次才报 · 连续 ${esc(String(r["连续正常才恢复"]))} 次正常才恢复 · ${esc(String(r["去重分钟"]))} 分钟内不重复提醒</td>
           <td>${r["暂停了吗"] ? "暂停中" : r["触发中"] ? '<span class="pill fail">触发中</span>' : "正常"}<div class="k">${esc((r["上次评估结果"] || {})["结论"] || "还没评估过")}</div></td>
           <td><button data-alreval="${esc(r.id)}">立即评估</button> <button data-alrpause="${esc(r.id)}" data-rev="${esc(String(r.revision))}" data-to="${r["暂停了吗"] ? "0" : "1"}">${r["暂停了吗"] ? "恢复评估" : "暂停"}</button></td></tr>`).join("") + `</tbody></table>`;
-  const 指标们 = ["终态成功率", "写入办成率", "失败次数", "端到端P95秒", "每个办成任务成本", "算不出金额笔数"];
+  const 指标们 = ["终态成功率", "写入办成率", "失败次数", "端到端P95秒", "每个办成任务成本", "算不出金额笔数", "门店月费用"];   // 门店月费用:值从聊天站门店用量账取(11-13),澜绣项目由 worker 自动种一条
   $("#main").innerHTML = 头 + `<h2>待办</h2>${单表}<h2>规则</h2>${规表}
     <h3>建一条规则(每一项都要填)</h3>
     <label class="f">名字</label><input id="alr-n" placeholder="比如:回电流程成功率掉了">
