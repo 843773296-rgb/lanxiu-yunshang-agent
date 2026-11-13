@@ -2083,7 +2083,7 @@
  },
  {
   "script": "agent/ops_eval_judgetest.py",
-  "改坏": "把正反疑问的结构判定去掉,退回纯词表(「空不空」又会让后面的「非空」判成被否定)",
+  "改坏": "把正反疑问的结构判定去掉,退回纯词表(「空不空」又会让后面的「非空」判成被否定) 〔11-14 换预期红:原来那条真答案「空不空筛:」带全角冒号,11-12 起全角句读算分句,两者分进两句后结构判定在它上面不再承重;新加一条同句的对照来接〕",
   "file": [
    {
     "path": "agent/textmatch.py",
@@ -2091,7 +2091,7 @@
     "new": "    seg = seg"
    }
   ],
-  "预期红": "没人管·真答案(2026-09-21 实跑,该过 · 正反疑问)"
+  "预期红": "没人管·正反疑问和要点同一句(结构判定承重)"
  },
  {
   "script": "agent/ops_eval_judgetest.py",
@@ -18668,7 +18668,7 @@
  },
  {
   "script": "backend/worldclock_check.py",
-  "改坏": "把 booking.py 的 _now() 改回 datetime.datetime.now()",
+  "改坏": "把 booking.py 的 _now() 改回 datetime.datetime.now() 〔11-14 换预期红:后来加的「模块的时间源不许是机器时钟」先一步、更宽地抓住它 —— 按欠债表的还法,改成实测红的那一条〕",
   "file": [
    {
     "path": "backend/booking.py",
@@ -18676,7 +18676,7 @@
     "new": "    import datetime\n    return datetime.datetime.now()\n"
    }
   ],
-  "预期红": "写「已发生的事」那几列时用世界时钟"
+  "预期红": "模块的时间源不许是机器时钟"
  },
  {
   "script": "backend/worldclock_check.py",

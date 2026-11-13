@@ -177,8 +177,29 @@ def main():
     def _判一遍(d):
         _钉今天(d)
         return [M.按配置判(p, m, k, s, None, names, on=o) for p, m, k, s, o in 样]
+    # ⚠️ **两个「今天」从数据里挑,不写死**(11-14 改)。原来钉 09-18 和 11-15,而共享库重建之后
+    #    工单全在 10-08 以后、那两天**一张在做的都没有** —— 两天的队都是空的,
+    #    「按下单日算」和「按今天算」在空队上算出同一个数,这条判据把下单日拆掉也照样绿
+    #    (咬合重放逮到的:「改坏了却没红」)。**「没东西可验」和「验过了」长得一模一样。**
+    #    现在:甲 = 最早一张工单开工前一天(队一定空),乙 = 排队工艺最多的那天(队一定满)。
+    _开工日 = sorted({r[0] for r in c.execute(
+        "SELECT start_date FROM workorder WHERE start_date IS NOT NULL AND start_date<>''")})
+    _工艺 = list(kfm.values())
+    def _排队几项(d):
+        return sum(1 for k in _工艺
+                   if (lambda r: not r.get("error") and r["排队等待天数"] > 0)(_cap.when_free(k, 10, d, True)))
+    if _开工日:
+        _甲 = _real.date.fromisoformat(_开工日[0][:10]) - _real.timedelta(days=1)
+        _乙s = max(_开工日[:40], key=_排队几项)
+        _乙 = _real.date.fromisoformat(_乙s[:10])
+        _满 = _排队几项(_乙s[:10]) - _排队几项(_甲.isoformat())
+    else:
+        _甲 = _乙 = _real.date(2026, 9, 18); _满 = 0
+    ck("「按下单日算」那条有东西可验:挑出来的两天,队真的不一样(样本量 0 不叫通过)", _满 > 0, _满,
+       f"甲 {_甲} / 乙 {_乙}:乙比甲多 {_满} 项工艺在排队" if _满 > 0 else
+       "**库里挑不出队不一样的两天** —— 下面那条绿了也说明不了任何事,不是通过")
     try:
-        甲, 乙 = _判一遍(_real.date(2026, 9, 18)), _判一遍(_real.date(2026, 11, 15))
+        甲, 乙 = _判一遍(_甲), _判一遍(_乙)
     finally:
         _cap.dt = _real; _lt.dt = _real
     变 = [i for i, (x, y) in enumerate(zip(甲, 乙)) if x != y]
