@@ -25,7 +25,8 @@
 - 未验证:shift_world 登记 schedule.note 后,05:10 平移会把知会说明里的日期一起挪 —— 没真跑过平移;门禁那条世界日期检查会验。
 - eureka-fc 等我推完再 rebase;之后它改 api.py 工具描述区 + prompts.py TL 段,**我别碰这两处**。
 - ✅ 11-13 23:xx 已推 0e515765(4 笔)、已喊 eureka-fc(它 rebase 后推 27 笔,期间它会拿锁)。门禁两轮红在 gate_print_check = 8760 写库时裸 .backup 失败,已加 .timeout(0e515765)。
-- **11-14 01:3x 最新**:第一轮链红 2(booking_check 公海知会挂 None / log-policy 两接口没进契约)→ 修 1e27f418;第二轮红在管理后台 page-smoke(PUT /log-policy 没登记 revision 来源)→ 修 5d56beb2(make page-smoke 单跑 rc=0)。**第三轮在跑**(后台 bzu2s1qus,01:20 拿锁,输出 scratchpad/chain_1114c.txt;只认「被包的命令退出码」和 PUSHED)。下一步第一个动作:看第三轮 → 绿就喊 eureka-fc「已推,rebase 到我之上」→ 提交 PRD + HANDOFF(--only)→ 锁内 `python3 backend/ownership_release.py --合并旧知会`(先只看)。红就照日志修,别重跑没改的。判据:改了管理后台就得重跑 make test-e2e-ci;scan_secrets 单独一步(01:0x 有一次串在 commit 后面,违规了一次)。
+- **11-14 01:5x 最新**:第三轮 e2e 过、门禁红 2:① PRD 新表三行带裸计数(doc_numbers_check 无人认领;门禁跑工作区,未提交的 PRD 也算)→ 改成不带数 ② 契约加接口后 OpenAPI / TS 类型没重生 → make gen。已提交 64770ac0 + 8dcabc03(PRD+HANDOFF),scan 干净。**第四轮后台跑**,输出 scratchpad/chain_1114d.txt。判据:加契约接口要连带 make gen;往 PRD 正文写数字要么带日期当历史、要么别写。
+- **11-14 01:3x**:第一轮链红 2(booking_check 公海知会挂 None / log-policy 两接口没进契约)→ 修 1e27f418;第二轮红在管理后台 page-smoke(PUT /log-policy 没登记 revision 来源)→ 修 5d56beb2(make page-smoke 单跑 rc=0)。**第三轮在跑**(后台 bzu2s1qus,01:20 拿锁,输出 scratchpad/chain_1114c.txt;只认「被包的命令退出码」和 PUSHED)。下一步第一个动作:看第三轮 → 绿就喊 eureka-fc「已推,rebase 到我之上」→ 提交 PRD + HANDOFF(--only)→ 锁内 `python3 backend/ownership_release.py --合并旧知会`(先只看)。红就照日志修,别重跑没改的。判据:改了管理后台就得重跑 make test-e2e-ci;scan_secrets 单独一步(01:0x 有一次串在 commit 后面,违规了一次)。
 - **11-14 00:4x**:共享 PG 已在锁内升到 7c3e1a9d5b20 + 重启 aimc(alembic_sync_check 一致);日志策略 e2e 26/26(修了演示项目 B 没 U001 成员;这两次单跑没进锁,只动 B 项目自己造的行)、告警 e2e 35/35。main 本地:a53e32bc 日志策略 / c1bf4712 审计修 / c4167cb1 e2e 修(+告警三笔)。scan_secrets 干净 1624。**后台 bugd9j07w**:咬合重放 boundary_audit → 锁内 chain_C(e2e 全套 → chain_B 门禁+推),输出 scratchpad/chain_1114a.txt,只认「被包的命令退出码」和 PUSHED。推完:喊 eureka-fc;HANDOFF 跟下一笔提交;锁内 `--合并旧知会` 先只看。
   - **悬而未决(已问用户,没答)**:① 删不删门店账 8 行空花费(审计造的)② 澜绣项目到期清理开不开 —— 都不许自己动。**未验证**:日志策略的 worker 路径只在 e2e 里进程内调过 扫到期(),常驻 worker 没真跑过一轮;设置页策略卡没人真点过(只过 node --check)。之后还欠:清单第 7 项 PRD 补 12 条拍板发飞书、第 8 项 08:25 飞书汇总 + CronDelete 40eb3bed。
 - **11-14 01:0x 交接(压缩前)**:
@@ -43,11 +44,11 @@
 
 1. [x] ✅ 剩下 88 条 e2e 工作流 + 88 把「没上生产那条的」测试密钥(用户「一起清」):吊销 88 / 归档 88 / 核数对得上,清单 ~/lanxiu-backups/e2e残留清理-11132021.json;`clean_e2e_residue.py --连挂着的`
 2. [x] ✅ 上线验收页「月费用」改读门店用量账(46c7fada,已推 0e515765)。⚠️ 门店账本月 4 笔花费为空 → 页面如实「拿不到」;线索:Haiku 5.5 有贵档,cost_of 拿不到逐次用量就不猜(返回 None),trace_id 也空 —— 待查,别当 0
-3. [~] 80% 提醒:✅ 店长那头(46c7fada 已推);总部那头写在副本 .claude/worktrees/告警 分支 wip-告警(b830d3e5:告警指标「门店月费用」+ 迁移 7c3e1a9d5b20,worker 自动给澜绣项目种规则)—— 未迁移、未跑 e2e
-4. [~] 公海提醒每人一条清单:代码在 wip-告警(0c7ae43a:pool_notice 表 + 每人一条 + `--合并旧知会`,检查 41 条、咬合 13 条全过);副本预演 860 → 6 条。**待做**:并进 main → 门禁 → 推 → 锁内先只看再 `--合并旧知会 --写`
-5. [ ] 日志采集三个门槛填建议值 30 天 / 5 GB / 80%(第四十条)
-6. [~] 意见单分三级带时限:代码在 wip-告警(57c642b8:分级从「影响 / 评价 / 问题类型」推,截止依据开头写级别;超时提醒 = 告警指标「意见超时条数」,同一迁移)。未跑 e2e
-7. [~] PRD 补 11-13 这 12 条拍板 + 发飞书:✅ 2.4.1 表(三十–四十一,含落地状态)+ A-299 意见分级 / A-300 日志用量与到期清理 + B-120 门店账空花费;audit_prd pass、B-120 汇总合格(老条目 B-87 等本来就缺字段,没动);✅ 已发飞书 https://aqvi2xbk5kd.feishu.cn/docx/Fm7ydUjV3oZDI8xf79jcNnVJn6e(**没回读正文**,全文 50 万字太大)。**待提交**(等第三轮链推完再提,别让链推到没过门禁的文件)
+3. [x] ✅ 已推 8dcabc03(总部那头告警「门店月费用」,迁移 7c3e1a9d5b20 已在共享 PG)。原:80% 提醒:✅ 店长那头(46c7fada 已推);总部那头写在副本 .claude/worktrees/告警 分支 wip-告警(b830d3e5:告警指标「门店月费用」+ 迁移 7c3e1a9d5b20,worker 自动给澜绣项目种规则)—— 未迁移、未跑 e2e
+4. [x] ✅ 已推 8dcabc03;11-14 02:23 锁内先备份(~/lanxiu-backups/合并旧知会前-11140223.db)再 --合并旧知会 --写:858 条 → 5 条清单,pool_notice 858 户,复查剩 0。原:公海提醒每人一条清单:代码在 wip-告警(0c7ae43a:pool_notice 表 + 每人一条 + `--合并旧知会`,检查 41 条、咬合 13 条全过);副本预演 860 → 6 条。**待做**:并进 main → 门禁 → 推 → 锁内先只看再 `--合并旧知会 --写`
+5. [x] ✅ 已推 8dcabc03(设置页策略卡 + 告警「日志用量占比」+ 到期清理默认关,e2e 26 条);**澜绣项目到期清理没开,等用户看清单**。原:日志采集三个门槛填建议值 30 天 / 5 GB / 80%(第四十条)
+6. [x] ✅ 已推 8dcabc03(e2e 全套过)。原:意见单分三级带时限:代码在 wip-告警(57c642b8:分级从「影响 / 评价 / 问题类型」推,截止依据开头写级别;超时提醒 = 告警指标「意见超时条数」,同一迁移)。未跑 e2e
+7. [x] ✅ 8dcabc03 已推;飞书重发 https://aqvi2xbk5kd.feishu.cn/docx/MsM8dlHGRohcuqxZJCdceGUwnIb。原:PRD 补 11-13 这 12 条拍板 + 发飞书:✅ 2.4.1 表(三十–四十一,含落地状态)+ A-299 意见分级 / A-300 日志用量与到期清理 + B-120 门店账空花费;audit_prd pass、B-120 汇总合格(老条目 B-87 等本来就缺字段,没动);✅ 已发飞书 https://aqvi2xbk5kd.feishu.cn/docx/Fm7ydUjV3oZDI8xf79jcNnVJn6e(**没回读正文**,全文 50 万字太大)。**待提交**(等第三轮链推完再提,别让链推到没过门禁的文件)
 8. [ ] 早上 08:25 发飞书汇总
 
 ### 🧭 11-13 上午 · 用户拍了夜间汇总那 8 件(原话都是在拍板卡上选的,下面是选项原文)
