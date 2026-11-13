@@ -192,6 +192,7 @@ for _fn, _参 in {
     "_u":       "解 URL 参数",
     "_eval":    "评测入口的取数,不是页面",
     "_truths":  "truth 表的读口,backend/selftest.py 专门盯它(不许经工具层暴露)",
+    "研判回包": "研判演示回包去掉评测答案的纯函数(不取数),backend/agent_run_truth_check.py 专门盯它",
     # 按门店划范围(用户 10-23 拍;11-11 补齐)那一批的小工具:都不是页面,
     # 用上面「带 本店 再跑一遍」的那些用例覆盖到;范围对不对由 customer_read_auth_check 打 HTTP 层验
     "_店范围":  "从登录身份换门店范围(None = 跨店),不是页面",
