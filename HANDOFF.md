@@ -12,6 +12,15 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-14 22:1x · 已推 a4df89e5(迁移 + g23);③ 缩说明收尾,本地 3 笔等切后台(Opus 5.5)
+
+- **已推**:a4df89e5 —— 迁移机制第一步 + g23 两层放宽(用户亲手跑)。远程 w75 用户批准后已删。
+- **本地未推**:b83ed269 / e7f5882a / b3aae1ff —— 缩说明第 3–12 个(TL84–TL89、TL91–TL94;TL90 号空着),规矩 114 条。**不缩 4 个**:product_ranking(没有任何调用方带它,搬进规矩模型就看不到 —— P3 红)、record_pickup / set_grade_diff / check_write(写工具参数含义 / 用法,留在工具旁)。
+- **判据**:按编号挑规矩的角色(版师核料 pick、售后 _aftersale_rules)要把新规矩号加进 pick —— wear_risk 那次 P6 红在这;P3 抓「没有调用方带这个工具」。
+- **工具**:`.wip-glossary/shrink_tool.py 工具 规矩号 变量 挂后(或 inline:TLxx) 短说明文件` + `.wip-glossary/sync_rule_docs.sh`(规矩数四处 + 工具表 / SOP / README)。
+- **下一步第一个动作**:并行会话 22:06 起锁内 chain_B 在推(SH003 改回有效 + 无效店铺拦截)→ 它说推了 → `python3 .wip-glossary/align_rules_v9.py`(该多 TL84–89、91–94 共 10 条)→ `--切 N` → `agentsite/.venv/bin/python tools/assistant_effect_check.py` 绿 → 备份 funnel + checkout → rebase → pre_push(推完告诉它)。
+- **之后**:④ 第二步(服务启动跑补齐,约并行会话 + 重启);⑤ 拆 api.py(约窗口);⑥ 标品线。
+
 ### 🟡 11-14 21:1x · 迁移机制 + g23 两层放宽,推送前链在跑(Opus 5.5)
 
 - **本地未推(9 笔左右,d7b9596d 之上)**:迁移机制 540efa79 + 门禁跟上 9c866203 / 85e8248d;g23 用户亲手跑了**两个**放宽补丁(896a99ee 罩列表、ffe94558 挑话术带小标题),guards_test 188 绿;预跑门禁第二次全绿(21:10)。
