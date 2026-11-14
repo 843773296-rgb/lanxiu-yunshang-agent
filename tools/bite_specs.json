@@ -21397,5 +21397,185 @@
    }
   ],
   "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "把弹窗的权限判断删掉(只靠前端只显示自己的卡片)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if not 能:\n        return {\"看不到\": True, \"为什么\": 为什么}\n",
+    "new": "    if False:\n        return {\"看不到\": True, \"为什么\": 为什么}\n"
+   }
+  ],
+  "预期红": "拿别人的订单号去请求 → 看不到"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "让「订单不存在」和「不在你范围内」回不同的形状(成了存在性探测器)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        return {\"看不到\": True, \"为什么\": \"查不到这张单(可能不存在,也可能不在你范围内)\"}\n",
+    "new": "        return {\"不存在\": True, \"为什么\": \"查不到这张单\"}\n"
+   }
+  ],
+  "预期红": "不存在的订单号也走同一个「看不到」形状"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "顾问那一档只按订单上的顾问判(丢掉「名下客户」那一半)",
+  "file": [
+   {
+    "path": "knowledge/order_scope.py",
+    "old": "        if 客户归属顾问 == 工号:\n            return True, \"这单的客户在你名下(单是别人经手的)\"\n",
+    "new": "        if False:\n            return True, \"这单的客户在你名下(单是别人经手的)\"\n"
+   }
+  ],
+  "预期红": "他名下客户、**同事经手**的单 → 看得到(这一半最容易丢)"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "手机号原样返回",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        客[\"phone\"] = (ph[:3] + \"****\" + ph[-4:]) if len(ph) >= 7 else (\"有\" if ph else None)\n",
+    "new": "        客[\"phone\"] = ph\n"
+   }
+  ],
+  "预期红": "客户手机号是脱敏的"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "把卡片那头的 SQL 范围改松(和纯判定对不上)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        return \" AND (o.advisor_no=? OR o.cust_advisor_no=?)\", [no, no], 话, no\n",
+    "new": "        return \" AND (o.advisor_no=? OR o.cust_advisor_no=? OR 1=1)\", [no, no], 话, no\n"
+   }
+  ],
+  "预期红": "SQL 选出的和纯判定说能看的**一模一样**"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "把卡片那头的范围话和口径那边改得不一致",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    话 = _范.范围话(角色=role, 门店=shop)\n    if role == _范.总部运营:\n        return \"\", [], 话, None\n",
+    "new": "    话 = _范.范围话(角色=role, 门店=shop) + \"(卡片)\"\n    if role == _范.总部运营:\n        return \"\", [], 话, None\n"
+   }
+  ],
+  "预期红": "`范围话` 两头一致"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "图不标出处(一张 AI 效果图当实物图给客户看)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "         \"出处\": 图来源(spu) if spu else None,\n",
+    "new": "         \"出处\": None,\n"
+   }
+  ],
+  "预期红": "🔑 图带上了**出处**(生成图 / 示意图)"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "定制内容压成一句话(出色差纠纷时答不出袖子选的是哪个色)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            \"逐部件\": 逐条,\n",
+    "new": "            \"逐部件\": \"、\".join(str(x.get(\"part\")) for x in 逐条),\n"
+   }
+  ],
+  "预期红": "定制内容是**逐部件**的,不是一句话"
+ },
+ {
+  "script": "backend/chat_order_check.py",
+  "改坏": "只报一个定制加价(另一个对不上也看不见)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            \"订单行上的定制加价\": 实付,\n",
+    "new": ""
+   }
+  ],
+  "预期红": "🔑 **两个加价都报了**(选项标的 / 订单行上的)"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "让 归档() 在「不知道开没开裁」时默认成「还没开裁」",
+  "file": [
+   {
+    "path": "knowledge/muslin.py",
+    "old": "    if 开裁了吗 is None:\n        return None\n    return \"该试没试\" if 开裁了吗 else \"还没到时候\"",
+    "new": "    if 开裁了吗 is None:\n        开裁了吗 = False\n    return \"该试没试\" if 开裁了吗 else \"还没到时候\""
+   }
+  ],
+  "预期红": "不知道开没开裁时,归档要返回算不出"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "把「已试未签」也归成「该试没试」(拿查不到记录当没签字)",
+  "file": [
+   {
+    "path": "knowledge/muslin.py",
+    "old": "        return \"已试已签\" if 签了吗 else \"已试未签\"\n    # 没有试衣记录",
+    "new": "        return \"已试已签\" if 签了吗 else \"该试没试\"\n    # 没有试衣记录"
+   }
+  ],
+  "预期红": "试了没签不许归成该试没试"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "把 该试衣() 返回那句里的门槛来路(业务 09-22 确认)删掉",
+  "file": [
+   {
+    "path": "knowledge/muslin.py",
+    "old": "                  + \"(重工门槛业务 09-22 确认)\")",
+    "new": "                  )"
+   }
+  ],
+  "预期红": "该试的结论要带着门槛的来路"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "让 judge() 在试衣已签时仍按量体记录判",
+  "file": [
+   {
+    "path": "knowledge/liability.py",
+    "old": "        if 试衣状态 == \"已试已签\":\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "试衣已签压过量体记录"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "让 judge() 在该试没试时仍按量体记录判",
+  "file": [
+   {
+    "path": "knowledge/liability.py",
+    "old": "        if 试衣状态 == \"该试没试\":\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "该试没试压过量体记录"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "让 能不能开裁() 在「判不了该不该试」时放行",
+  "file": [
+   {
+    "path": "knowledge/muslin.py",
+    "old": "    if 该不该试 is None:\n        return (\"判不了\",",
+    "new": "    if 该不该试 is None:\n        return (\"可以\","
+   }
+  ],
+  "预期红": "判不了该不该试的,不许放行开裁"
  }
 ]
