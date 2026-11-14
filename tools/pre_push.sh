@@ -43,7 +43,7 @@ if [ "$SELFTEST" = 1 ]; then
   (false); rc=$?; if [ "$rc" != 0 ]; then say 0 "子命令退出码捞得到(不被 \$(date) 吃掉)"; else say 1 "子命令退出码" "false 之后 rc=0"; fi
   # 用户 11-13 拍的「检查类才重放」:纯业务改动 → 空;带检查 / 守卫 → 非空(两边都钉,真调那个函数)
   K="$(python3 -c "import sys; sys.path.insert(0,'tools'); import bite_replay_touched as b; print(len(b.检查类文件({'backend/api.py','HANDOFF.md','knowledge/x.md'})), len(b.检查类文件({'backend/api.py','agentsite/guards.py','agent/ops_eval.py'})))" 2>&1)"
-  if [ "$K" = "0 2" ]; then say 0 "检查类判定:纯业务改动跳过重放、带守卫 / 判分器的照跑"; else say 1 "检查类判定" "期望「0 2」,拿到「$K」"; fi
+  if [ "$K" = "0 2" ]; then say 0 "检查类判定:纯业务改动跳过重放、带守卫 / 判分器的照跑"; else say 1 "检查类判定" "期望「0 2」,拿到「${K}」"; fi
   for f in tools/scan_secrets.sh tools/bite_replay_touched.py tools/gate_lock.sh check.sh; do
     if [ -f "$f" ]; then say 0 "链上的脚本在:$f"; else say 1 "链上的脚本在:$f" "找不到"; fi
   done

@@ -989,6 +989,15 @@ selftest_registry_check / punct_coverage_check)全 rc=0。**还没提交。**
 - **下一步第一个动作**:看 /tmp/chain_1112j.txt 末行 `chain rc=` 和有没有 `PUSHED`(只认这两样)→ 绿了 `gh run list` 看 CI → 然后把报告 5.2 的第一张卡(落地与数据 4 题)用 AskUserQuestion 问用户;他没回之前按 5.1 前 8 条的顺序开工(第 1 条写口身份闸是纯收紧,不碰拍板)。
 - **悬而未决**:HANDOFF 这一节的六项是在门禁跑的中途加的,**还没提交**(工作区改动),要和下一批一起 `commit --only HANDOFF.md`;`.wip-glossary/patch_pickup_eval.py.已应用` 等 eureka-fc 推了 charset 改动再改回原名。
 
+### 🟡 11-14 08:3x · 第三轮推送前链在跑(pre_push6.log,07:18 起,08:28 才到 32/77,预计 10 点前后)
+- 04:30 那五处**全清**(b7c2638f 等);source_check 那条不是抖动,是 bite_check 对照红连带。已 rebase 到 c8b28a3e。
+- 对方答应:我推完前不推 main。推完第一件事 SendMessage 告诉他。
+- **用户 11-14 07:4x 拍三条(还没写进 intent,推完写)**:① 接管出错只在没配好时兜底 —— ⚠️ 这件 11-12 已拍过且已上线(a5227c3a,一律兜底),
+  我重复问了;今天的答案更窄:**403 FORBIDDEN(账号没发起权限)照旧拦**、明说「找管理员开权限」,NOT_BOUND / 连不上 / 没发布照旧兜底。
+  ② 标品交付告知只出草稿,人点了才发。③ 拆 api.py 先约窗口、喊对方停手,一口气拆完。
+- **未验**:11-13 夜跑 oppo 仍判红(兜底 11-12 19:00 就上线了)—— 原因没查。T17 是单轮模型误读(schema 有 status),顺手在说明里写清参数可单独用。
+- 新提醒 cron 63232bb0(:17,清单 ⓪–⑥)。
+
 ### 🔴 11-14 04:30 · 第二轮推送前链又红在 ③(**没推**;对方答应我推完前不推 main)
 
 - 状态:已 rebase 到 8dcabc03 + cherry-pick 对方 ccf2f4e9(我这边 5abbd1fe,pool_notice 新表)+ c8b2287d(规则数 102→103)。领先 37 笔。

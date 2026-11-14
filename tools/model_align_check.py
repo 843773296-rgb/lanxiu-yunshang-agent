@@ -42,6 +42,24 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 记录仪 = os.path.join(ROOT, ".feynman", "llm-trace.jsonl")
+
+
+def _主检出():
+    """worktree 的主检出根目录(拿 git 的公共目录推);本身就是主检出 / 不是 git 仓库 → None。"""
+    import subprocess
+    try:
+        g = subprocess.run(["git", "-C", ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                           capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception:
+        return None
+    根 = os.path.dirname(g) if g else ""
+    return 根 if 根 and os.path.realpath(根) != os.path.realpath(ROOT) else None
+
+
+# ⚠️ 2026-11-14:存量 7 处是照**主检出**的记录仪登的(aimc 跑在主检出,真调用都记在那边),
+#    而 worktree 自己那份只有在这个检出里跑评测时才写 —— 旧副本只见过两种模型,
+#    于是存量里的老行被算成「新增 31 处」,主干代码一样红。这台机器的证据 = 两份合起来。
+记录仪们 = [记录仪] + ([os.path.join(_主检出(), ".feynman", "llm-trace.jsonl")] if _主检出() else [])
 样本下限 = 50          # 地板:记录仪里至少这么多条才拿它当「实际在用什么」的证据
 基线文件 = os.path.join(HERE, "模型写死基线.json")
 
@@ -114,10 +132,11 @@ def 实际用过的():
     ⚠️ `None` 和 `set()` 要分开:前者是「这台检出没有记录仪」,
     后者是「有记录仪但一条成功的都没有」—— 后者该让人去查认证 / 额度。
     """
-    if not os.path.isfile(记录仪):
+    在的 = [f for f in 记录仪们 if os.path.isfile(f)]
+    if not 在的:
         return None
     出, 条 = set(), 0
-    for l in io.open(记录仪, encoding="utf-8", errors="replace"):
+    for l in (x for f in 在的 for x in io.open(f, encoding="utf-8", errors="replace")):
         l = l.strip()
         if not l:
             continue
