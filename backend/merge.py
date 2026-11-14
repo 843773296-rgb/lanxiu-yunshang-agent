@@ -141,6 +141,13 @@ def 并入(a, b, me, 来源="页面"):
         缺 = [x for x in (a, b) if x not in 行]
         if 缺:
             return 拒("NO_CUSTOMER", f"没有档案 {'、'.join(缺)}")
+        # 执行这一步也核「同一个账户下、同名」(11-14 补):原来只有建任务那一头守(系统发现重复 / 手动发起),
+        # 执行时不看 —— 哪天多一个入口建任务,执行这头就是唯一的闸。不跨账户合并档案(用户 10-26 定,11-14 复拍照旧)
+        两 = {r["id"]: dict(r) for r in c.execute(
+            "SELECT id, name, phone, birthday, addr, account_id FROM customer WHERE id IN (?,?)", (a, b))}
+        结论, 理由 = 判同一人(两[a], 两[b])
+        if 结论 != "同一人":
+            return 拒("NOT_SAME_ACCOUNT", f"{结论}:{理由} —— 只合并同一个账户下、同名的重复档案")
         ra, rb = 主档(a, c), 主档(b, c)
         if ra == rb:
             return 拒("ALREADY", f"{a} 和 {b} 已经是同一个人了(主档都是 {ra})")

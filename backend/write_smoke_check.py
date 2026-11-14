@@ -315,6 +315,12 @@ def 用例表():
                 if _mg.DB != s.DB:
                     return {"error": "merge 没指到副本 —— 拒绝往下跑"}
                 总部 = {"no": "冒烟", "name": "冒烟", "role": "总部运营"}
+                # 合并执行处核「同一账户下、同名」(11-14)—— 准备时在副本里把这一对造成该合并的那种
+                import sqlite3 as _sq3
+                from contextlib import closing as _cls3
+                with _cls3(_sq3.connect(s.DB)) as _cx, _cx:
+                    _cx.execute("UPDATE customer SET name=(SELECT name FROM customer WHERE id=?), "
+                                "account_id=(SELECT account_id FROM customer WHERE id=?) WHERE id=?", (对[0], 对[0], 对[1]))
                 并 = _mg.并入(对[0], 对[1], 总部, 来源="冒烟准备")
                 r = s.customer_unmerge(并.get("副档"), "冒烟:撤销合并", me=总部)
                 if not r.get("ok") or _mg.主档(并.get("副档")) != 并.get("副档"):

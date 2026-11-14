@@ -21272,5 +21272,17 @@
    }
   ],
   "预期红": "库没做到最新"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "并入() 执行时不核同一账户(只靠建任务那头)",
+  "file": [
+   {
+    "path": "backend/merge.py",
+    "old": "        if 结论 != \"同一人\":\n            return 拒(\"NOT_SAME_ACCOUNT\", f\"{结论}:{理由} —— 只合并同一个账户下、同名的重复档案\")\n",
+    "new": "        if False:\n            return 拒(\"NOT_SAME_ACCOUNT\", \"\")\n"
+   }
+  ],
+  "预期红": "执行处也拒跨账户合并(不靠建任务那头守)"
  }
 ]

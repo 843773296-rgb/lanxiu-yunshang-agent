@@ -26,6 +26,7 @@ bad, n = [], 0
     ("AI 工具查订单只查主档(不连关联档)", "AI 工具:查副档的订单 → 两条档案的单一起列、每单标着原档案"),
     ("数人头不过滤已并入的档案", "数人头按人:合并后工作台客户数少一个(两条档案算一个人)"),
     ("并入时不压平", "并入时压平:挂在副档下的档案一并改指新主档"),
+    ("并入() 执行时不核同一账户(只靠建任务那头)", "执行处也拒跨账户合并(不靠建任务那头守)"),
     ("撤销入口不要原因", "撤销入口:店长撤不了、不写原因撤不了(都没撤成)"),
 ]
 
@@ -76,6 +77,9 @@ if 店长 and 总部 and len(两条) == 2:
     c.execute("UPDATE customer SET created='2024-06-01', merged_into=NULL WHERE id=?", (乙,))
     # 乙用一个库里没有的名字:按名字搜的那条要验「认到主档」,而常见姓名在库里本来就有别的同名人(真重名)
     c.execute("UPDATE customer SET name='检查专用·乙' WHERE id=?", (乙,))
+    # 11-14:合并执行处也核「同一账户下、同名」(口径用户 10-26 定、11-14 复拍照旧)—— 样本得是该合并的那种:
+    # 两份放到同一个账户、同一个名字(原来是随手挑的两个不同账户的人,执行处不核时碰巧能并)
+    c.execute("UPDATE customer SET name='检查专用·乙', account_id=(SELECT account_id FROM customer WHERE id=?) WHERE id=?", (乙, 甲))
     c.commit()
     表们 = ("ordr", "measure_rec", "appointment", "followup", "deposit", "rating", "points_log")
     def 行数(cid):
@@ -107,12 +111,16 @@ if 店长 and 总部 and len(两条) == 2:
     # ── 第 2 批:AI 工具按客户号 / 姓名认人,认得软合并 ─────────────────────
     import api as AP
     AP.DB = db
+    # 合并只允许同名(11-14 执行处也核),「按副档的名字搜」要验的是「副档之后改了名,照样认到主档」——
+    # 并完再给副档换个库里没有的名字(合并后改名是真实会发生的事:档案里录错的名字后来被改对)
+    c.execute("UPDATE customer SET name='检查专用·乙改' WHERE id=?", (乙,)); c.commit()
     名甲, 名乙 = (c.execute("SELECT name FROM customer WHERE id=?", (x,)).fetchone()[0] for x in (甲, 乙))
     人们, 注 = AP._认客户(乙)
     ck("AI 工具:给副档号 → 认成主档,并注明已并入", len(人们) == 1 and 人们[0]["id"] == 甲
        and 人们[0]["关联"] == [甲, 乙] and 乙 in (注 or ""), (人们, 注))
     ck("AI 工具:按副档的名字搜(和主档不同名)也认到主档", 名乙 != 名甲 and [x["id"] for x in AP._认客户(名乙)[0]] == [甲],
        (名乙, 名甲, AP._认客户(名乙)[0]))
+    c.execute("UPDATE customer SET name=? WHERE id=?", (名甲, 乙)); c.commit()   # 改回同名:后面几条还要在这一对上撤 / 再并
     单 = AP.get_order(customer=乙)
     甲单 = c.execute("SELECT COUNT(*) FROM ordr WHERE customer_id=?", (甲,)).fetchone()[0]
     ck("AI 工具:查副档的订单 → 两条档案的单一起列、每单标着原档案",
@@ -159,10 +167,22 @@ if 店长 and 总部 and len(两条) == 2:
        all(x["id"] != 乙 for x in AP.get_lifecycle(lifecycle=c.execute(
            "SELECT lifecycle FROM customer WHERE id=?", (乙,)).fetchone()[0]).get("rows", [])))
 
+    # ── 执行处也核「同一账户下、同名」(11-14):两份不同账户的档案,在执行这一步就拒 ──────────
+    异 = c.execute("""SELECT a.id, b.id FROM customer a JOIN customer b ON a.account_id<>b.account_id AND a.id<b.id
+                     WHERE a.account_id IS NOT NULL AND b.account_id IS NOT NULL
+                       AND COALESCE(a.merged_into,'')='' AND COALESCE(b.merged_into,'')='' AND a.id NOT IN (?,?) AND b.id NOT IN (?,?)
+                     LIMIT 1""", (甲, 乙, 甲, 乙)).fetchone()
+    if 异:
+        r = MG.并入(异[0], 异[1], 总部)
+        ck("执行处也拒跨账户合并(不靠建任务那头守)", r.get("code") == "NOT_SAME_ACCOUNT"
+           and [tuple(x) for x in c.execute("SELECT COALESCE(merged_into,'') FROM customer WHERE id IN (?,?)", tuple(异))] == [("",), ("",)], r)
+
     # ── 只有一层:并入时压平,而且**直接量这个保证**(不靠「每次都记得压平」)──────────
     丙 = c.execute("SELECT id FROM customer WHERE id NOT IN (?,?) AND (merged_into IS NULL OR merged_into='') "
                   "ORDER BY id LIMIT 1", (甲, 乙)).fetchone()[0]
-    c.execute("UPDATE customer SET created='2025-01-01' WHERE id=?", (丙,)); c.commit()
+    # 丙也得是同一个账户下的同名档案(执行处核同一账户,11-14)
+    c.execute("UPDATE customer SET created='2025-01-01', name=(SELECT name FROM customer WHERE id=?), "
+              "account_id=(SELECT account_id FROM customer WHERE id=?) WHERE id=?", (乙, 乙, 丙)); c.commit()
     MG.撤销(乙, 总部)
     MG.并入(乙, 丙, 总部)            # 乙(2024)收了丙(2025)
     MG.并入(甲, 乙, 总部)            # 再把乙并进甲(2020)—— 丙必须跟着改指甲
