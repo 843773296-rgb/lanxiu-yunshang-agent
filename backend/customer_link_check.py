@@ -19,7 +19,7 @@ sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "knowledge")]
 FAIL = []
 
 咬合 = [
-    ('把 customer_link.用 的「先占位」去掉(用过的链接还能再用)', '② 用过再用 → 失效;且和「根本不存在」回的是同一句话'),
+    ('把 customer_link.用 的「先占位」去掉(用过的链接还能再用)', '② 两次几乎同时点:只有一次办得成(先占位)'),
     ('把 customer_link.发 的「只能给本店的单发」去掉', '① 别店的人发不了'),
     ('把「没办成就还占位」去掉(顾客点一下遇到状态不对,链接就废了)', '④ 没办成链接还能再用'),
 ]
@@ -50,9 +50,9 @@ def main():
         r = q(sql, *a)
         return dict(no=r[0][0], name=r[0][1], role=r[0][2], shop=r[0][3]) if r else None
 
-    单 = q("SELECT id, shop_code FROM ordr WHERE status='待完成' AND kind='定制品订单' AND shop_code IS NOT NULL ORDER BY id LIMIT 2")
-    ck("样本:两张待完成的定制单", len(单) == 2, len(单))
-    if len(单) < 2: return
+    单 = q("SELECT id, shop_code FROM ordr WHERE status='待完成' AND kind='定制品订单' AND shop_code IS NOT NULL ORDER BY id LIMIT 3")
+    ck("样本:三张待完成的定制单", len(单) == 3, len(单))
+    if len(单) < 3: return
     oid, 码 = 单[0]
     本店 = 人("SELECT no,name,role,shop FROM staff WHERE role='顾问' AND status='启用' AND shop_code=? LIMIT 1", 码)
     别店 = 人("SELECT no,name,role,shop FROM staff WHERE role='顾问' AND status='启用' AND shop_code<>? LIMIT 1", 码)
@@ -83,6 +83,25 @@ def main():
     r2 = customer_link.用(令牌, {})
     坏 = customer_link.用("这个令牌根本不存在", {})
     ck("② 用过再用 → 失效;且和「根本不存在」回的是同一句话", r2.get("code") == "INVALID" and r2.get("reason") == 坏.get("reason"), 2)
+
+    # 「先占位」防的是**两次几乎同时点**:两边都已经过了「找」那一步(看到的都是没用过),再抢着办。
+    # 先后点两次看不出它 —— 第二次在「找」那一步就因为「已用过」被拦了(11-14 咬合没红,攻击点不可观测)。
+    # 所以这里造出同时点的形状:让第二次的「找」看到的还是旧状态,再看是不是只办成一次
+    oid3, 码3 = 单[2]
+    本店3 = 人("SELECT no,name,role,shop FROM staff WHERE role='顾问' AND status='启用' AND shop_code=? LIMIT 1", 码3) or 本店
+    t3 = (customer_link.发(dict(order_id=oid3, purpose="签收确认"), 本店3).get("链接") or "").split("/c/")[-1]
+    第一次 = customer_link.用(t3, {})
+    with closing(sqlite3.connect(副本)) as c, c:
+        c.execute("UPDATE ordr SET status='待完成' WHERE id=?", (oid3,))      # 让「办」这一步本身能再成一次,只剩占位在拦
+    原找 = customer_link._找
+    customer_link._找 = lambda c, token: ((c.execute("SELECT * FROM customer_link WHERE token_hash=?",
+                                                     (customer_link._指纹(token),)).fetchone()), None)
+    try:
+        第二次 = customer_link.用(t3, {})
+    finally:
+        customer_link._找 = 原找
+    ck("② 两次几乎同时点:只有一次办得成(先占位)", 第一次.get("ok") and 第二次.get("code") == "INVALID"
+       and q("SELECT status FROM ordr WHERE id=?", oid3) == [("待完成",)], 2, json.dumps([第一次.get("code"), 第二次.get("code")]))
 
     print("\n③ 重发 / 过期")
     oid2 = 单[1][0]

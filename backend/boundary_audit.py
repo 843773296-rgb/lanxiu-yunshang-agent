@@ -913,7 +913,14 @@ def a_customer_link_abuse():
         _cl.用(t, {})
         with _cls(_sq.connect(p)) as c, c:
             c.execute("UPDATE ordr SET status='待完成' WHERE id=?", (单[0][0],))      # 还原,看第二次能不能再推一次
-        if _cl.用(t, {}).get("ok"): return "同一条链接用了两次 —— 门没守住"
+        # 先后点两次在「找」那一步就被拦了,看不出占位(11-14 咬合没红)—— 造出同时点:第二次的「找」看到的还是没用过
+        原找 = _cl._找
+        _cl._找 = lambda c, token: (c.execute("SELECT * FROM customer_link WHERE token_hash=?", (_cl._指纹(token),)).fetchone(), None)
+        try:
+            两次 = _cl.用(t, {}).get("ok")
+        finally:
+            _cl._找 = 原找
+        if 两次: return "两次几乎同时点,同一条链接办成了两次 —— 门没守住"
         旧 = _cl.发({"order_id": 单[1][0], "purpose": "签收确认"}, 导[1])["链接"].split("/c/")[-1]
         新 = _cl.发({"order_id": 单[1][0], "purpose": "签收确认"}, 导[1])["链接"].split("/c/")[-1]
         if _cl.用(旧, {}).get("ok") or 状态(单[1][0]) == "完成": return "重发之后旧链接还能用 —— 门没守住"
@@ -2091,7 +2098,7 @@ STRUCT = [
   a_product_template_by_manager, "以店长身份改 template",
   "比改名字严重 —— 量体模板决定量哪些尺寸,改错了是照着错的口径去裁"),
  ("冒充顾客办不成事(一次性链接)", "backend/customer_link.py 发 / 用(11-14 台账第四十四条)",
-  a_customer_link_abuse, "库副本上:不存在的令牌、一条链接用两次、重发后用旧链接、过期后再用",
+  a_customer_link_abuse, "库副本上:不存在的令牌、两次几乎同时点同一条链接、重发后用旧链接、过期后再用",
   "**靠结构**:令牌 32 字节随机、库里只存哈希;用之前先占位(UPDATE … WHERE used_at IS NULL,看改了几行);"
   "过期按真实时钟;重发把旧的作废。原来顾客侧核身份靠「订单号 + 手机后四位」,一万种组合、试错不留痕"),
  ("改不了自己的权限,也提不了别人的权", "server.py save_staff_perm(11-14 台账第四十五条第四组)",

@@ -3509,50 +3509,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 11:31。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 14:40。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | f1e8c979 · 2026-11-14 · 四组按钮跟上门禁:新写口补冒烟用例(欠账 10→9)、检查里连库包 closing、员工表列名写死、还掉的位置参数欠债销账 |
-| 代码量 | 1102 个 Python 文件 / 201672 行(不含 .venv) |
-| 验收 | `./check.sh` 共 418 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 77c78249 · 2026-11-14 · 顾客一次性链接 + 剩下 5 处按钮 + 裁片用料维护页 + 研判示例库反例两版(11-14 台账第四十四、四十九到五十四条) |
+| 代码量 | 1110 个 Python 文件 / 204230 行(不含 .venv) |
+| 验收 | `./check.sh` 共 421 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
- M .feynman/tool-eval.json
- M HANDOFF.md
+M .feynman/tool-eval.json
+ M README.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
  M backend/boundary_audit.py
- M backend/db_build.py
- M backend/pickup_write.py
- M backend/rating_write.py
- M backend/server.py
- M backend/web/index.html
- M backend/worldclock.py
- M check.sh
- M intent/capability-request-verdict.md
+ M backend/customer_link_check.py
  M tools/bite_specs.json
- M tools/ensure_tables.py
- M tools/shift_world.py
- M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
+ M tools/publish_prd.py
+ M tools/publish_product_doc.py
+ M "\345\256\211\345\205\250\350\276\271\347\225\214\345\256\241\350\256\241.md"
+ M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\350\257\264\346\230\216.md"
  M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
 ?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/backup-launchd.log
+?? .feynman/health/
+?? .feynman/multi-date/
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-f1e8c979 四组按钮跟上门禁:新写口补冒烟用例(欠账 10→9)、检查里连库包 closing、员工表列名写死、还掉的位置参数欠债销账
-bc317549 管理后台「本期未实现」按钮四组接通(11-14 台账第四十五到四十八条):店铺 / 内容活动品类页面 / 编辑预约 + 定向运营 / 编辑权限
-ef8d2285 夜间汇总 11-13→11-14 发飞书:早上拍的两件(空花费 8 行已删 / 澜绣到期清理 11-23 前再问)写回汇总第一节
-c8b28a3e pool_notice 跟上门禁第二批:建表模块进库指纹「算」表、咬合锚点跟上加门店码的 INSERT、README 重生成
-f348f1d2 交接:eureka-fc 链红在咬合重放,让我先推;05:2x 起推 ccf2f4e9 + e518f1c7
+77c78249 顾客一次性链接 + 剩下 5 处按钮 + 裁片用料维护页 + 研判示例库反例两版(11-14 台账第四十四、四十九到五十四条)
+ed6cef10 推送前链第四轮红在模型对齐检查的咬合对照:副本不带 .git,找不到主检出的记录仪
+93e996e6 交接:后台已切 v11(v9 + TL82),第四轮推送前链;影响面棘轮 警示段落 391→393(自动涨,按它的提示提交)
+60499c1f 交接 + 待办清单:rebase 到并行会话 f1e8c979 后按约定重建(瘦身版为准,对方新节搬顶部);待办清单重生成
+675584d4 接管兜底收窄(用户 11-14 拍「只在没配好时兜底,明确拒绝的照旧拦」):403 没权限不兜
 ```
 <!--/AUTO-->
 ## 一句话在做什么
