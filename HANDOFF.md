@@ -23,8 +23,8 @@
 - **未验证**:g23 补丁只在副本试跑(用户还没跑);get_member 缩说明没跑模型评测(只验了召回);接管兜底夜跑商机套待今晚。
 - **作废**:链日志第五轮「✅ 已推送」那行不等于进了主干(当时推成 origin/w75)—— 以后只认 `git ls-remote origin refs/heads/main`。
 - **禁区**:并行会话锁内推送期间(14:5x 起约 40 分钟)不跑门禁、不写共享库、不切后台生产;表数 135 / 文档 133 的差别是它没推导致的,别改文档;origin/w75 删前要问用户。
-- **下一步第一个动作**:等 CI 子代理回报(只读调查两条红)→ 把归因告诉并行会话;它说推了 → `git fetch && git rebase origin/main` → `./tools/pre_push.sh`(这次推 HEAD:main)。
-- **CI 两条已查清(15:0x,子代理只读复现)**:① 1f343ea5 的 agent/evaldb.py:40-45 把 tools/gate_db/sitecustomize.py 的 `_真`/`_真实` 也改指评测副本,只在 Linux 红(macOS /var 软链躲过);修=跳过 sitecustomize/check_copy 和下划线变量 ② e2af62e6 加 named_state CHECK,fakedata/discover.py:353 要 ≥2 值才判枚举、schema.py:107 跳过 CHECK;修=schema.py 解析 CHECK IN。已发并行会话问它认不认。
+- **下一步第一个动作**:等并行会话说 5f01393c 推了(它的 CI 修复那笔可能紧跟着,问它要不要等) → `git fetch && git rebase origin/main` → `./tools/pre_push.sh`(这次推 HEAD:main)。
+- **CI 两条已查清(15:0x,子代理只读复现)**:① 1f343ea5 的 agent/evaldb.py:40-45 把 tools/gate_db/sitecustomize.py 的 `_真`/`_真实` 也改指评测副本,只在 Linux 红(macOS /var 软链躲过);修=跳过 sitecustomize/check_copy 和下划线变量 ② e2af62e6 加 named_state CHECK,fakedata/discover.py:353 要 ≥2 值才判枚举、schema.py:107 跳过 CHECK;修=schema.py 解析 CHECK IN。**并行会话 15:1x 两条都认**:它先推第二批(5f01393c,含两张新表),推完单独一笔修这两条,推前告诉我。我不碰 evaldb.py / fakedata/。
 - **悬而未决**:CI 两条归谁修;迁移机制是否和并行会话的新表一起做基线。
 - **并行会话接下来推**:customer_link / customer_tag 新表(建 customer_tag 会把 tag.n 重算成 0)、三条新检查、server.py 新写口 + 匿名放行 /api/c/look、/api/c/use。
 
