@@ -33,6 +33,12 @@
 """
 import ast, glob, os, re, sys
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 夹具 = re.compile(r'"(C1\d{4}|W1\d{4}-\d|MW7\d+|AS6\d+|PT\d{2}|LT\d{2}|MT\d{2}|KF\d{2})"')
@@ -81,7 +87,7 @@ def main():
         if not 有前提声明(src):
             缺.append(f"{os.path.basename(p)} 写死了 {ids[:4]},却没声明前提")
     ck("写死了夹具的,都声明了前提", not 缺, 有夹具,
-       "；".join(缺[:3]) if 缺 else
+       "；".join(缺[:3]) + _还有(缺, 3) if 缺 else
        "**「忘了声明」和「真的不依赖」在代码里长得一模一样** —— 所以后者也要写出来")
 
     # ② 声明了的,得真的成立 —— 各套自己在 import 时断言,这里只确认它们跑得起来
@@ -100,7 +106,7 @@ def main():
         except Exception as e:
             死.append(f"{name}:{type(e).__name__} {str(e)[:40]}")
     ck("声明的前提都还成立", not 死, 活 + len(死),
-       "；".join(死[:2]) if 死 else
+       "；".join(死[:2]) + _还有(死, 2) if 死 else
        "**静默变成永远通过**比永远失败危险得多 —— 后者至少会有人来查")
 
     print()

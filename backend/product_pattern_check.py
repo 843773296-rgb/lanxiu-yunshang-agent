@@ -24,6 +24,12 @@
 """
 import os, sys, sqlite3
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 FAIL = []
@@ -152,7 +158,7 @@ def main():
     ck("通称不许当某一个形制的独占别名", not 通称,
        c.execute("SELECT COUNT(*) FROM xingzhi WHERE alias IS NOT NULL AND alias!=''")
         .fetchone()[0],
-       ("；".join(通称[:2]) + " —— **写通称的人会被悄悄判成其中一个**,"
+       ("；".join(通称[:2]) + _还有(通称, 2) + " —— **写通称的人会被悄悄判成其中一个**,"
         "而解析成功和解析正确长得一模一样。别名只收真正的一对一别称,"
         "通称要让它报「对应多条」" if 通称 else
         "别名都是一对一的别称,没有通称混进来"))
@@ -160,7 +166,7 @@ def main():
     ck("product_custom.xz 都能解析到形制", not 野xz,
        c.execute("SELECT COUNT(*) FROM product_custom WHERE xz IS NOT NULL AND xz!=''")
         .fetchone()[0],
-       ("；".join(野xz[:2]) if 野xz else
+       ("；".join(野xz[:2]) + _还有(野xz, 2) if 野xz else
         "存的是名字不是编码 —— **改一次形制名就可能断链**,而断了不会报错"))
 
     # ⑥ **名字、`unit`、裁片三者必须说同一件事。**
@@ -188,11 +194,11 @@ def main():
                 片不齐.append(f"{_pn} → {_pt} 裁片只有上装({'/'.join(_ps) or '空'})")
     ck("名字说多件的商品,unit 必须是「套」", not 名不齐,
        c.execute("SELECT COUNT(*) FROM product").fetchone()[0],
-       ("；".join(名不齐[:3]) if 名不齐 else
+       ("；".join(名不齐[:3]) + _还有(名不齐, 3) if 名不齐 else
         "`unit` 这一列早就在承载「一件还是一套」—— 字段在那儿,就得和名字对齐"))
     ck("unit='套' 的商品,版型裁片必须覆盖下装", not 片不齐,
        c.execute("SELECT COUNT(*) FROM product WHERE unit='套'").fetchone()[0],
-       ("；".join(片不齐[:2]) if 片不齐 else
+       ("；".join(片不齐[:2]) + _还有(片不齐, 2) if 片不齐 else
         "车间照版型下料 —— 裁片里没有裙片,裙子就不会被裁出来"))
 
     # ⑦ **人工裁定表里的东西必须真实存在。**
@@ -207,7 +213,7 @@ def main():
         elif not c.execute("SELECT 1 FROM pattern WHERE code=?", (_pt,)).fetchone():
             野裁.append(f"「{_nm}」指的版型 {_pt} 不存在")
     ck("人工裁定表两头都存在", not 野裁, len(_FPP.人工裁定),
-       ("；".join(野裁[:2]) if 野裁 else
+       ("；".join(野裁[:2]) + _还有(野裁, 2) if 野裁 else
         "拍板结论也是主数据 —— **只落在库里,下次重建就悄悄退回「待定」**"))
 
     # ⑤ **没连上边的要按类别分开数。**

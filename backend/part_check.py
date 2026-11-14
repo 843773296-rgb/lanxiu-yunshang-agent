@@ -32,6 +32,12 @@ pad 上那份不进报价、不进 BOM、不进工单,也和订单没有绑定�
 """
 import os, sys, sqlite3, importlib.util
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE]
 _spec = importlib.util.spec_from_file_location(
@@ -125,7 +131,7 @@ def main():
                     坏.append(f"{r['name'][:14]}·{b}·{维}:{sorted(有)} ≠ 整件 {sorted(整)}")
     n3 = c.execute("SELECT COUNT(DISTINCT spu) FROM part_option").fetchone()[0]
     ck("部位的可选料要有依据(内衬走里料,外层不细分)", not 坏, n3,
-       ("；".join(坏[:2]) if 坏 else
+       ("；".join(坏[:2]) + _还有(坏, 2) if 坏 else
         "内衬 / 系带按材料类别(BOM 备注是版师写的);"
         "**外层部位不细分** —— 「领口适合织金缎」是审美判断不是结构事实,"
         "编一个就是假装业务拍过板"))
@@ -192,7 +198,7 @@ def main():
        (f"野词:{野} —— 该用 {part.部位顺序}" if 野 else
         "**单一来源不靠自觉,靠检查** —— 交互稿里那套(上身/袖子/裙摆)不采用"))
     ck("代码和页面里不许硬编交互稿那套部位词", not 硬编, len(part.交互稿旧称),
-       ("；".join(硬编[:3]) if 硬编 else
+       ("；".join(硬编[:3]) + _还有(硬编, 3) if 硬编 else
         "报错会说得出该用哪个词 —— **光说「不许用」,人还得自己猜**"))
 
     # ⑤ 相容矩阵不许多出部位维度

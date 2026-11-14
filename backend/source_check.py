@@ -36,6 +36,12 @@
 """
 import os, sys, sqlite3
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
@@ -397,7 +403,7 @@ def main():
             总 += r["n"]
             if r["s"] not in 档: 野.append(f"{t}.{r['s']}({r['n']} 条)")
     ck("每条主数据的来源等级都在口径表里", not 野, 总,
-       "；".join(野[:3]) if 野 else f"{总} 条,四张主数据表")
+       "；".join(野[:3]) + _还有(野, 3) if 野 else f"{总} 条,四张主数据表")
 
     # ── ③ 声称可溯源的,得真的溯得了源 ────────────────────────────────
     欠 = []

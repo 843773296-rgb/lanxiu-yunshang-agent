@@ -25,6 +25,12 @@
 """
 import os, sys, sqlite3
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.dirname(HERE),
                 os.path.join(os.path.dirname(HERE), "knowledge")]
@@ -72,7 +78,7 @@ def main():
         if r.get("error") or not r.get("rows"):
             坏.append(f"{类}「{q}」查不到")
     ck("kb_pattern 认得出人对版型的每一种称呼", not 坏, len(说法),
-       ("；".join(坏[:3]) if 坏 else
+       ("；".join(坏[:3]) + _还有(坏, 3) if 坏 else
         "**工具的入参维度和人说话的维度对不上,表现出来是模型在胡说** —— "
         "一套评测里 4 条栽在这上面"))
 
@@ -81,7 +87,7 @@ def main():
            if api.kb_size(p["code"]).get("error")
            or api.kb_size(p["name"]).get("error")]
     ck("kb_size 认编码也认全名", not 坏2, min(40, len(pats)) * 2,
-       ("；".join(坏2[:3]) if 坏2 else "已经支持 —— 这条是防回退"))
+       ("；".join(坏2[:3]) + _还有(坏2, 3) if 坏2 else "已经支持 —— 这条是防回退"))
 
     # ③ **查不到的时候要说清这个工具认什么。**
     #    不说的话,模型只能反复猜入参,而每猜一次都是一轮对话和一次花费。

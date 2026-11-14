@@ -32,6 +32,12 @@ BOM 里的「辅料」是织带 / 丝绦,那是**买来的成品带子**,两回�
 """
 import os, sys, sqlite3, importlib.util
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 KN = os.path.join(os.path.dirname(HERE), "knowledge")
 
@@ -76,7 +82,7 @@ def main():
     n1 = c.execute("SELECT COUNT(DISTINCT pattern) FROM pattern_piece "
                    "WHERE ratio IS NOT NULL").fetchone()[0]
     ck("每个版型的裁片占比之和 = 1", not 差, n1,
-       ("；".join(差[:3]) if 差 else
+       ("；".join(差[:3]) + _还有(差, 3) if 差 else
         "**用可信的总量(fabric_base)× 估算的相对占比,比两个都估要稳**"))
 
     # ② 每条都要有来源,而且来源只能是这两种
@@ -94,7 +100,7 @@ def main():
     ck("占比全部到了「行业规范」档或以上(没有停在估算 / 复核的)", 低 == 0, n2,
        f"{低} 片还停在估算 / 复核" if 低 else "")
     ck("每条占比都要标来源(估算 / 复核 / 行业规范 / 版师)", not 野, n2,
-       ("；".join(野[:3]) if 野 else
+       ("；".join(野[:3]) + _还有(野, 3) if 野 else
         "**估算 / 复核 / 版师是三种可信度** —— "
         "「复核」是核过规则、没核过数,报价上按最低那一档提示"))
 
@@ -137,7 +143,7 @@ def main():
                 elif 米 <= 0:
                     坏.append(f"{pt}·{b} 用料 0 米 —— **挂里是真要用布的**")
     ck("内衬的用料走 BOM,不按裁片占比算", not 坏, 40,
-       ("；".join(坏[:3]) if 坏 else
+       ("；".join(坏[:3]) + _还有(坏, 3) if 坏 else
         "**一个部位用两个来源推出来,算料时不能只用其中一个** —— "
         "按裁片占比算的话内衬是 0.00 米"))
 
@@ -150,7 +156,7 @@ def main():
         if fb and abs(s - fb) > max(0.05, fb * 0.02):
             偏.append(f"{pt}:各部位 {round(s,2)} ≠ 整件 {fb}")
     ck("外层各部位的用料之和 = 整件用料", not 偏, 40,
-       ("；".join(偏[:3]) if 偏 else
+       ("；".join(偏[:3]) + _还有(偏, 3) if 偏 else
         "**内衬另计**(它吃里料不吃主料);**系带算在内** —— "
         "它在裁片表里,是用主料裁的。这条对账炸出过 0.15 米凭空消失"))
     c.commit(); c.close()

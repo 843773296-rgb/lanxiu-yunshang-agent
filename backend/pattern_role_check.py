@@ -27,6 +27,12 @@
 """
 import os, sys, sqlite3
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "agentsite")]
@@ -356,7 +362,7 @@ def main():
             hit = [w for w in 词 if f'"{w}' in out or f'{w}"' in out]
             if hit: 脏.append(f"{n} 返回里有 {hit[:3]}")
     ck("版师拿得到尺寸和体型,拿不到手机号和消费额", not 脏, len(读工具),
-       "；".join(脏[:3]) if 脏 else
+       "；".join(脏[:3]) + _还有(脏, 3) if 脏 else
        "**给多余的字段,它就会去用** —— 这个项目在 allowed_tools 上栽过")
 
     # ── ⑤ 闸也要两个方向 ──────────────────────────────────────────────

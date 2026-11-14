@@ -34,6 +34,12 @@
 """
 import os, sqlite3, sys
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -112,7 +118,7 @@ def main():
 
     漏登记 = [f"{t}.{col}" for t, col in 用到 if (t, col) not in 登记]
     报("用到这些列名的表都登记了", not 漏登记,
-       "、".join(漏登记[:4]) + " —— **新表用了这个列名就得登记用哪把钥匙**"
+       "、".join(漏登记[:4]) + _还有(漏登记, 4) + " —— **新表用了这个列名就得登记用哪把钥匙**"
        if 漏登记 else f"{len(用到)} 处都在登记表里")
 
     不符, 明细 = [], []
@@ -124,7 +130,7 @@ def main():
         明细.append(f"{t}.{col}={实}({n})")
         if 实 and 实 != 应:
             不符.append(f"{t}.{col}:登记 {应},实际 {实}")
-    报("每张表用的钥匙和登记的一致", not 不符, "；".join(不符[:3]) or " · ".join(明细))
+    报("每张表用的钥匙和登记的一致", not 不符, "；".join(不符[:3]) + _还有(不符, 3) or " · ".join(明细))
 
     # 同一个域里出现了两把钥匙 → 不是错,但**必须是被登记过的**,
     # 因为 join 的时候一边是 XZ01 一边是「唐制齐胸襦裙」,**join 不出错,只出空**

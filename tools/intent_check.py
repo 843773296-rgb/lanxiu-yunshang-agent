@@ -27,6 +27,12 @@
 """
 import os, re, sys
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DIR = os.path.join(ROOT, "intent")
@@ -115,7 +121,7 @@ def main():
         miss = [k for k in 必填 if f"**{k}**" not in t]
         if miss: 缺.append(f"{name} 缺 {miss}")
     ck("每份 intent 的必填字段都在", not 缺, len(docs),
-       "；".join(缺[:3]) if 缺 else
+       "；".join(缺[:3]) + _还有(缺, 3) if 缺 else
        "**「明确不做什么」是这里面最值钱的一栏** —— "
        "「还没做」和「决定不做」在代码里长得一模一样,而该触发的动作正好相反")
 
@@ -128,7 +134,7 @@ def main():
         状态[name] = s
         if s not in 合法状态: 野.append(f"{name}:{s}")
     ck("状态只能是这四种之一", not 野, len(docs),
-       "；".join(野[:3]) if 野 else f"{合法状态}")
+       "；".join(野[:3]) + _还有(野, 3) if 野 else f"{合法状态}")
 
     # ── ③ 「做完了」的,判据点名的检查必须真的在 ──────────────────────
     #
@@ -192,7 +198,7 @@ def main():
             print(f"     ℹ {name} 的判据里 {丢} 不在门禁里(评测要花钱,本来就不进)"
                   f"—— 门禁盯着的是 {在}")
     ck("说「做完了」的,判据点名的检查真的在 check.sh 里", not 断, n3,
-       "；".join(断[:3]) if 断 else
+       "；".join(断[:3]) + _还有(断, 3) if 断 else
        "**一个自称做完、而判据已经不存在的 intent,比没有这份文件更糟** —— "
        "它会让人以为这件事有人盯着")
 

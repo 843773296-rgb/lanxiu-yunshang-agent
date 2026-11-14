@@ -19,6 +19,12 @@
 """
 import os, sys, sqlite3
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
 FAIL = []
@@ -75,7 +81,7 @@ def main():
                 n4 += 1
                 if r["shop"] != 店[0]:
                     bad4 += 1; 例.append(f"{r['name']} 挂在 {r['shop']}")
-    ck("活动名里写了哪家店,就得挂在哪家店", not bad4, n4, "；".join(例[:2]))
+    ck("活动名里写了哪家店,就得挂在哪家店", not bad4, n4, "；".join(例[:2]) + _还有(例, 2))
 
     # ⑤ 归因真的连得上:至少有一个活动能查到订单。
     #    **这一条防的是「迁移把所有边都搞断了而检查还全绿」** ——

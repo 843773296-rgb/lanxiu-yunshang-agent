@@ -35,6 +35,12 @@
 """
 import glob, json, os, re, sys
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 基线供应商 = "claude"
@@ -149,10 +155,10 @@ def main():
        if 缺码 else "每份都记着是哪个提交跑的,判据换过就看得出来")
 
     ck("每条结果都记着是谁跑的", not 无, 条数,
-       "；".join(无[:3]) if 无 else
+       "；".join(无[:3]) + _还有(无, 3) if 无 else
        "**盖在每一条上不是文件头** —— 跑到一半被停时,文件头说的和内容里的会对不上")
     ck("一份文件里不混两家", not 混, len(files),
-       "；".join(混[:3]) if 混 else
+       "；".join(混[:3]) + _还有(混, 3) if 混 else
        "**混了的话这份历史既不是 A 的也不是 B 的**")
     # ⚠️ **检查名要写死,不许用 f-string 拼。**
     # 咬合记录的全部作用就是「拿着这个名字去脚本里找到那条检查」——
@@ -161,7 +167,7 @@ def main():
     # 一条没人跑的检查,连它自己的咬合记录是错的都没人知道。
     # (同一个坑昨天在 stock_check.py 里刚踩过一次。)
     ck("基线是 claude 跑的", not 非基线, len(files),
-       "；".join(非基线[:3]) if 非基线 else
+       "；".join(非基线[:3]) + _还有(非基线, 3) if 非基线 else
        "2026-09-15 业务拍板:**用 Claude 做实验** —— "
        "写在检查里,是因为「下次别用那家跑」这种话只靠记是记不住的")
 

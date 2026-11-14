@@ -28,6 +28,12 @@
 并且在不是 git 仓库的地方**明说自己不适用**,而不是假装通过。
 """
 import json
+
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
 import os
 import subprocess
 import sys
@@ -96,7 +102,7 @@ def main():
                 对不上.append(f"{x['script']}:要改的那段在 HEAD 的 {f['path']} 里找不到"
                             f" —— **这条规格指着还没提交的代码**")
     ck("可执行的咬合规格,指的代码都已经在仓库里", not 对不上, n,
-       "；".join(对不上[:3]) if 对不上 else
+       "；".join(对不上[:3]) + _还有(对不上, 3) if 对不上 else
        "**工作区绿不等于仓库里那一版绿** —— 规格和它要改的代码必须一起进仓库")
 
     # ── 顺带一条:门禁点名的脚本,仓库里都得有 ──────────────────────

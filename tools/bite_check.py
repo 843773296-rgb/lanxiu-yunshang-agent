@@ -51,6 +51,12 @@
 """
 import ast, contextlib, importlib.util, io, os, re, sys
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
@@ -508,7 +514,7 @@ def main():
         + (f" ……还有 {len(读不了) - 2} 条(共 {len(读不了)})" if len(读不了) > 2 else "")
         ) if 读不了 else "都是字面量,没有一条是拼出来的")
     ck("有咬合记录的,记录本身是对的(预期红的那条真的在脚本里)", not 坏, len(有) + len(坏),
-       "；".join(坏[:2]) if 坏 else
+       "；".join(坏[:2]) + _还有(坏, 2) if 坏 else
        "**只写「测过了」和没写是一回事** —— 要写清改坏的是什么、该红的是哪一条")
     ck(f"没有咬合记录的脚本不超过 {欠账上限} 个(只许降不许涨)",
        len(无) <= 欠账上限, len(ss),

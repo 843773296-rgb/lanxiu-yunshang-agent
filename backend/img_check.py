@@ -22,6 +22,12 @@
 **「渲染成功」和「看得出是不同的衣服」是两件事**,所以分成两条验。
 """
 import os, sys, hashlib, sqlite3, collections
+
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE]
 import img
@@ -69,7 +75,7 @@ def main():
             主图[p["spu"]] = hashlib.md5(
                 img.render(p["spu"], "main").encode()).hexdigest()
     ck("每个商品的每种图都渲染得出来", not 坏, len(prods) * len(变体),
-       ("；".join(坏[:2]) if 坏 else
+       ("；".join(坏[:2]) + _还有(坏, 2) if 坏 else
         "**页面上只是图裂了一块,没人会当成 bug 报上来** —— 所以要专门验"))
 
     # ② 不能全长一样。按「最大的一桶占比」判,不写死数字 ——
@@ -105,11 +111,11 @@ def main():
            if FX.顶级品类(c, p["category"]) in ("女装", "男装", "童装")
            and c.execute("SELECT pattern FROM product WHERE spu=?",
                          (p["spu"],)).fetchone()[0]) - len(退),
-       ("；".join(退[:3]) if 退 else
+       ("；".join(退[:3]) + _还有(退, 3) if 退 else
         "品类只有 16 个叶子,形制有 40 多个 —— **形制才是决定衣服长什么样的那一层**"))
     if 待定:
         print(f"     ℹ️ 另有 {len(待定)} 件成衣还没定形制,图只能按品类画:"
-              f"{'、'.join(待定[:3])}")
+              f"{'、'.join(待定[:3]) + _还有(待定, 3)}")
         print(f"        **没定形制 ⇒ 图也画不准** —— 跑 `tools/pattern_todo.py` 看这笔账")
 
     c.close()

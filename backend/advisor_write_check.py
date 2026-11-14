@@ -33,6 +33,12 @@ UPDATE 的形状太多(`SET a=?, b=?`、`SET a=COALESCE(?,a)`、拼出来的),
 """
 import os, re, sys
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT]
@@ -122,7 +128,7 @@ def main():
     # ⚠️ 这条现在是**反着守**的:名字列已删,谁写它谁就是把副本又引回来了。
     ck("名字列不许回来(INSERT 里不许出现 advisor / measured_by)",
        not 坏, len(档),
-       f"{len(坏)} 处:\n       " + "\n       ".join(坏[:6]) if 坏 else
+       f"{len(坏)} 处:\n       " + "\n       ".join(坏[:6]) + _还有(坏, 6) if 坏 else
        f"扫了 {len(档)} 个文件,**没有一处 INSERT 写顾问名字** —— "
        f"名字是 staff 的副本、会漂,工号才是引用")
 

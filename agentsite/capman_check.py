@@ -15,6 +15,12 @@
 """
 import os, re, sys, json, tempfile
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [ROOT, HERE, os.path.join(ROOT, "backend")]
@@ -121,7 +127,7 @@ def main():
             if not g.get("证据") or not g.get("标题") or not g.get("kind"):
                 bad3.append(f"{名} 有缺口没带证据"); break
     ck("每个探针跑得起来,而且每条缺口都带证据", not bad3, n3,
-       "；".join(bad3[:2]) if bad3 else "没有证据的建议是噪声,会让人把整张清单一起忽略")
+       "；".join(bad3[:2]) + _还有(bad3, 2) if bad3 else "没有证据的建议是噪声,会让人把整张清单一起忽略")
 
     # ── 四、探针的类别必须是口径里定义过的 ─────────────────────
     合法 = set(CAP.类别) | {"prune"}

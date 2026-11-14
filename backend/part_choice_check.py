@@ -29,6 +29,12 @@
 """
 import os, sys, sqlite3
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 FAIL = []
 
@@ -64,14 +70,14 @@ def main():
         if r["s"] is not None and abs(r["s"] - round(r["custom_amount"], 2)) > 0.01:
             差.append(f"{r['name'][:16]}:明细 {r['s']} ≠ 订单行 {r['custom_amount']}")
     ck("部位加价之和 = 订单行的定制部件金额", not 差, len(rs),
-       ("；".join(差[:2]) if 差 else
+       ("；".join(差[:2]) + _还有(差, 2) if 差 else
         "**这张表不是重新算一遍价,是把一个已有的总额拆成看得见的项** —— "
         "拆出来对不上,就是收的钱和记的账分家了"))
 
     # ② 有钱就得有项
     无项 = [r["name"][:18] for r in rs if r["s"] is None]
     ck("有定制部件金额的订单行必须有明细", not 无项, len(rs),
-       ("；".join(无项[:3]) if 无项 else "有钱没项 = 回到出问题前的样子"))
+       ("；".join(无项[:3]) + _还有(无项, 3) if 无项 else "有钱没项 = 回到出问题前的样子"))
 
     # ③ 没钱不许有项 —— **两个方向都要测**
     多项 = [r[0] for r in c.execute(
@@ -80,7 +86,7 @@ def main():
     n3 = c.execute("SELECT COUNT(*) FROM ordr_item WHERE COALESCE(custom_amount,0)<=0"
                    ).fetchone()[0]
     ck("没有定制部件金额的订单行不许有明细", not 多项, n3,
-       ("；".join(多项[:3]) if 多项 else
+       ("；".join(多项[:3]) + _还有(多项, 3) if 多项 else
         "有项没钱 = 白做了活没收钱 —— **同样是账实不符,只是方向相反**"))
 
     # ④ 选的料必须在这个商品的可选料里
@@ -91,7 +97,7 @@ def main():
                             AND o.part=ch.part AND o.material=ch.material)""")]
     n4 = c.execute("SELECT COUNT(*) FROM item_part_choice").fetchone()[0]
     ck("选的料必须在这个商品该部位的可选料里", not 野, n4,
-       ("；".join(野[:3]) if 野 else
+       ("；".join(野[:3]) + _还有(野, 3) if 野 else
         "选了配置页上根本没有的料,说明中间某一步把约束绕过去了 —— **而车间会照着做**"))
     # ⑤ **每一项都必须有金额、有料、有部位** —— 缺一样就不是「记录」。
     #    业务原话:「具体选了什么部位、什么料、什么颜色,什么报价,都需要有」。
@@ -106,7 +112,7 @@ def main():
               OR amount IS NULL""")]
     n5 = c.execute("SELECT COUNT(*) FROM item_part_choice").fetchone()[0]
     ck("每一项都要有部位、料、金额", not 缺, n5,
-       ("；".join(缺[:3]) if 缺 else
+       ("；".join(缺[:3]) + _还有(缺, 3) if 缺 else
         "颜色允许为空(有些料只有一个色),**部位 / 料 / 金额三样一个都不能少**"))
 
     # ⑥ **成交金额是快照,不许从配置表现算。**
@@ -147,7 +153,7 @@ def main():
            WHERE m.kind='面料' AND cc.verdict='不可'""")]
     n62 = c.execute("SELECT COUNT(*) FROM item_part_choice WHERE kind='工艺'").fetchone()[0]
     ck("同一部位的面料和工艺必须相容", not 不可, n62,
-       ("；".join(不可[:3]) if 不可 else
+       ("；".join(不可[:3]) + _还有(不可, 3) if 不可 else
         "**拦在入口的规则,要在存量上对一次账** —— "
         "配置页拦得住的前提是「所有下单路径都经过配置页」,那是假设不是事实"))
 
@@ -179,7 +185,7 @@ def main():
         "SELECT COUNT(*) FROM item_part_choice WHERE kind='面料' AND part IN ("
         + ",".join("?" * len(外层)) + ")", 外层).fetchone()[0]
     ck("外层部位有面料就得有工艺", not 缺艺, n63,
-       ("；".join(缺艺[:3]) if 缺艺 else
+       ("；".join(缺艺[:3]) + _还有(缺艺, 3) if 缺艺 else
         "**内衬和系带不算** —— 里面那层和辅料本来就不做工艺,"
         "而相容矩阵是主料 × 工艺的,里料压根不在里面"))
 
@@ -209,7 +215,7 @@ def main():
             if it.get("wearer_id") and not it.get("measures")]
     ck("有着装人却没量体的,不许在文档上留一张空表", not 空表,
        len(doc.get("items") or []),
-       ("；".join(空表[:3]) if 空表 else
+       ("；".join(空表[:3]) + _还有(空表, 3) if 空表 else
         "**空表和「量过但都是 0」在纸上长得一样,而车间会照着裁**"))
     c.close()
 

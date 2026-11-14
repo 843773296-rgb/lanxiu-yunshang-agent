@@ -47,6 +47,12 @@
 """
 import ast, os, re, sqlite3, sys
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import server  # noqa: E402
@@ -299,7 +305,7 @@ def main():
     c.close()
 
     ck("每个只读入口都拿真数据跑得通", not 坏, 跑了,
-       ("；".join(坏[:3]) if 坏 else
+       ("；".join(坏[:3]) + _还有(坏, 3) if 坏 else
         "**页面炸了和页面空着,在静态检查眼里一模一样** —— 只有真跑一次分得开"))
 
     print("=" * 96)

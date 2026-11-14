@@ -22,6 +22,12 @@ md 改了、推导器重跑,这条检查跟着变 —— 这是这个项目的�
 """
 import os, sys, sqlite3
 
+
+def _还有(清单, n):
+    """截断时交代还有几条 —— 截断的和完整的长得一模一样(tools/truncation_check.py)。"""
+    清单 = list(清单)
+    return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 # ❹ 那条检查要读 `knowledge/fitting.py` —— 关键尺寸的**第二个来源**在它手里
 sys.path[:0] = [os.path.join(os.path.dirname(HERE), "knowledge")]
@@ -155,7 +161,7 @@ def main():
         "这条让它在本地就红"))
 
     ck("两处关键尺寸说的是同一件事", not 不一致, len(两处),
-       ("、".join(不一致[:2]) if 不一致
+       ("、".join(不一致[:2]) + _还有(不一致, 2) if 不一致
         else "01-形制.md 和 08-量体与版型.md 各存了一份 —— 一致靠检查,不靠记性"))
 
     c.close()
