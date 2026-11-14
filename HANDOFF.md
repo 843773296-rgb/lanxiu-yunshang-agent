@@ -17,7 +17,8 @@
 - **已验证**:第五轮推送前链咬合 78/78 + 门禁全绿;链印「已推送」其实推成了 origin/w75(pre_push.sh 推的是 `HEAD`),手动 `HEAD:main` 快进进主干(f1e8c979→ed6cef10)。pre_push.sh 已改成推 `HEAD:main`(自测绿)。**origin/w75 这个多出来的远程分支还在,删要问用户。**
 - **CI 连红 7 次(都在 ed6cef10 之前,f1e8c979 起)**:① 「写库评测切库副本」判 `api._c()` 连副本那条不过 ② 「假数据工厂」崩在 `named_state` CHECK 约束 —— 本地都绿,CI 从零才红。已告诉并行会话,分工待定。
 - **接管兜底**:主检出现在才真有(推之前主检出 0 处 记兜底)→ 下一晚夜跑商机套看是不是绿了。
-- **下一步(按序)**:① 打 `.wip-glossary/shrink_get_member.py`(get_member 846→360 + TL83 原样 539 字 + get_aftersale 三参数可单独用;副本试跑过,未跑 prompts_check)→ prompts_check / select_eval 第一层 / vocab_check → `.wip-glossary/align_rules_v9.py` 出后台新版本并切(移动不改字,用户长期授权,做完告诉他;切前告诉并行会话)② g23 放宽补丁 `tools/放宽补丁/g23_告诫小标题_罩列表.py` 已进项目,交用户 `! python3 tools/放宽补丁/g23_告诫小标题_罩列表.py`,跑完补 guards_test 用例 ③ 迁移机制方案 `.wip-glossary/migration_plan.md`(加列清单 alter_inventory.txt;并行会话要推 customer_link / customer_tag 两张表,基线要算进去)。
+- **14:5x 更新**:本地 3 笔未推 —— fbb4f445(pre_push 推 HEAD:main + g23 补丁 + 交接)、cf02a163(get_member 缩说明 + TL83 + get_aftersale,检查全绿、select 21/21)。**后台新版本等这批推上主干再出再切**(别再先切后推)。并行会话 77c78249 正在锁内推(表数 135,文档跟它走,别改);它推完我 rebase → pre_push。CI 两条我在查(派了子代理),查到归谁告诉它。
+- **下一步(按序)**:①(已做,见上)打 `.wip-glossary/shrink_get_member.py`(get_member 846→360 + TL83 原样 539 字 + get_aftersale 三参数可单独用;副本试跑过,未跑 prompts_check)→ prompts_check / select_eval 第一层 / vocab_check → `.wip-glossary/align_rules_v9.py` 出后台新版本并切(移动不改字,用户长期授权,做完告诉他;切前告诉并行会话)② g23 放宽补丁 `tools/放宽补丁/g23_告诫小标题_罩列表.py` 已进项目,交用户 `! python3 tools/放宽补丁/g23_告诫小标题_罩列表.py`,跑完补 guards_test 用例 ③ 迁移机制方案 `.wip-glossary/migration_plan.md`(加列清单 alter_inventory.txt;并行会话要推 customer_link / customer_tag 两张表,基线要算进去)。
 - **生产**:后台店长助手 = v11(v9 + TL82),和主干对上。
 - **并行会话接下来推**:customer_link / customer_tag 新表(建 customer_tag 会把 tag.n 重算成 0)、三条新检查、server.py 新写口 + 匿名放行 /api/c/look、/api/c/use。
 
