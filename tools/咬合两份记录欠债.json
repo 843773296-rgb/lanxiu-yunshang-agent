@@ -9,7 +9,6 @@
   "backend/grading_check.py": 1,
   "backend/muslin_check.py": 1,
   "backend/order_write_check.py": 1,
-  "backend/rating_check.py": 2,
   "backend/rating_rebuild_check.py": 2,
   "fakedata/agree.py": 3,
   "fakedata/anchor.py": 3,

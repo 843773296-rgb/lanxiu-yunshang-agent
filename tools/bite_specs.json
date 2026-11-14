@@ -22183,5 +22183,21 @@
    }
   ],
   "预期红": "没先看过就改 → 拦下"
+ },
+ {
+  "script": "backend/rating_check.py",
+  "改坏": "在库副本上把全部评价改成同一个星级(门店跨度归零)",
+  "sql": [
+   "UPDATE rating SET star=4"
+  ],
+  "预期红": "门店之间真的拉开了差距"
+ },
+ {
+  "script": "backend/rating_check.py",
+  "改坏": "在库副本上把 world_meta 记的 rating_window 改成别的三个月(等价于跨月了没重造)",
+  "sql": [
+   "UPDATE world_meta SET v='2025-01|2025-02|2025-03' WHERE k='rating_window'"
+  ],
+  "预期红": "评价数据的三个月窗口就是今天该看的那三个月"
  }
 ]
