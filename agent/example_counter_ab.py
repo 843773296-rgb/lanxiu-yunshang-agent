@@ -73,8 +73,29 @@ def 造到副本(副本, 案):
                                                      f"「表面一样、根因不同」反例 · {x['类']}", 案["来源"]))
                 n += 1
                 continue
+            if x["bp"] == "BP-02":
+                # 合并(11-15 夜加,台账第五十六条「同账户同名就合并,家人同名共用号不专门处理」):
+                # 照模板那对档案**原地**改 —— 不克隆客户,因为订单 / 跟进都挂在原客户号上,
+                # 克隆出来的档案「订单数 3」而一张单都查不到,模型会被这个矛盾带偏(那就不是在测示例了)。
+                # 模板那题本身不在这份评测里,原地改只影响副本。
+                模 = x["模板"]
+                t = c.execute("SELECT * FROM task WHERE id=?", ("T" + 模,)).fetchone()
+                if not t: raise SystemExit(f"{x['id']}:模板工单 T{模} 不在库里")
+                tl = [d[1] for d in c.execute("PRAGMA table_info(task)")]
+                tr = dict(zip(tl, t)); 甲, 乙 = tr["ref_id"].split("|")
+                if x["改"].get("同一账户"):
+                    a = c.execute("SELECT phone, phone_tail, account_id FROM customer WHERE id=?", (甲,)).fetchone()
+                    if not a or not a[0]: raise SystemExit(f"{x['id']}:模板档案 {甲} 没有手机号")
+                    c.execute("UPDATE customer SET phone=?, phone_tail=?, account_id=? WHERE id=?", (a[0], a[1], a[2], 乙))
+                tr.update(id="T" + x["id"], status="待复核")
+                c.execute(f"INSERT OR REPLACE INTO task({','.join(tl)}) VALUES({','.join('?' * len(tl))})", [tr[k] for k in tl])
+                c.execute("INSERT OR REPLACE INTO truth(case_id,breakpoint,root_cause,expected_action,expected_evidence,note,src) "
+                          "VALUES(?,?,?,?,?,?,?)", (x["id"], x["bp"], x["根因"], x.get("处理") or 处理(x["根因"]), x["依据"],
+                                                     f"「表面一样、根因不同」反例 · {x['类']}", 案["来源"]))
+                n += 1
+                continue
             if x["bp"] != "BP-03":
-                raise SystemExit(f"{x['id']}:合并类反例还没有造法")
+                raise SystemExit(f"{x['id']}:{x['bp']} 这一类反例还没有造法")
             m = c.execute("SELECT * FROM maintain WHERE id=?", (x["模板"],)).fetchone()
             if not m: raise SystemExit(f"{x['id']}:模板维修单 {x['模板']} 不在库里")
             列 = [d[1] for d in c.execute("PRAGMA table_info(maintain)")]
