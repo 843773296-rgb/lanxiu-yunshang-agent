@@ -37,10 +37,19 @@ def 用副本(前缀="eval-", 先导入=()):
     # ⚠️ check_copy 只认叫 DB / DB_PATH 的模块变量,而评测自己读库用的变量叫 DBP(10 套都是)——
     # 11-13 夜跑:排班评测的写口和工具服务都切到了副本,**判分还读真库**,8 道挂 5 道「草稿期望 35 实际 0」,
     # 被判成「退步」。所以这里**不看变量名**:本项目里还指着真库的模块级路径,一律改指副本(含 __main__)
+    # ⚠️ 2026-11-14 修(CI 连红 7 次,eureka-fc 只读查清):原来连**守卫自己认「哪个是真库」的变量**也改了 ——
+    #   tools/gate_db/sitecustomize.py 的 `_真` / `_真实`(门禁改道层把评测副本当真库,再导回门禁副本 →
+    #   「api._c() 连的是副本」那条红;只在 Linux 红,macOS 的 /var 是软链、realpath 对不上碰巧躲过),
+    #   还有 ops._本库(「是不是真库,是才往外上报研判反馈」—— 改了它,评测里会把副本当真库往外报)、
+    #   check_copy.真库、oplog._真库。这几样都是**守卫的参照物**,改指副本 = 守卫失效。
+    #   所以:守卫模块整个跳过,下划线开头的变量(模块自己的守卫 / 参照)不碰;评测读库的 DBP 这类照旧改。
+    跳过的模块 = ("sitecustomize", "check_copy")
     补 = []
     for m in check_copy._本项目的模块():
+        if getattr(m, "__name__", "") in 跳过的模块:
+            continue
         for 名, 值 in list(vars(m).items()):
-            if not 名.startswith("__") and check_copy._是这个库(值, 真):
+            if not 名.startswith("_") and check_copy._是这个库(值, 真):
                 setattr(m, 名, 副本)
                 补.append(f"{getattr(m, '__name__', '?')}.{名}")
     print(f"  🗄  评测跑在库副本上:{副本}(真库不碰;工具服务子进程经 LANXIU_DB 跟着切)"
@@ -50,6 +59,7 @@ def 用副本(前缀="eval-", 先导入=()):
 
 
 咬合 = [("用副本() 不设 LANXIU_DB(工具服务子进程照旧写真库)", "工具服务子进程拿得到副本路径(LANXIU_DB)"),
+        ("用副本() 又去改下划线开头的变量(守卫认「哪个是真库」的参照物被改指副本)", "守卫的参照物不改:ops._本库 仍指真库"),
         ("用副本() 只切 DB / DB_PATH,不管别的名字(评测的 DBP 照旧读真库)", "评测自己读库的变量(叫 DBP,不叫 DB)也指副本")]
 
 
@@ -64,6 +74,7 @@ def _自测():
             坏.append(名)
 
     import api  # noqa: F401  先 import 写口 / 取数模块,再切(顺序见文件头)
+    import ops, oplog  # noqa: F401  守卫参照物所在的模块也要**切之前**就在 —— 不然下面「没被改」那两条验不到东西
     import roster_write  # noqa: F401
     真 = os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
     os.environ.pop("LANXIU_DB", None)
@@ -75,6 +86,14 @@ def _自测():
     副本 = 用副本("evaldb-selftest-")
     ck("评测自己读库的变量(叫 DBP,不叫 DB)也指副本", os.path.realpath(假评测.DBP) == os.path.realpath(副本), 假评测.DBP)
     ck("工具服务子进程拿得到副本路径(LANXIU_DB)", os.environ.get("LANXIU_DB") == 副本, os.environ.get("LANXIU_DB"))
+    # 守卫的参照物不许被改(11-14:原来连它们一起改,CI 上「api._c() 连的是副本」那条红)
+    import ops as _ops, oplog as _ol
+    ck("守卫的参照物不改:ops._本库 仍指真库", os.path.realpath(_ops._本库) == 真, _ops._本库)
+    ck("守卫的参照物不改:oplog._真库 仍指真库", os.path.realpath(_ol._真库) == 真, _ol._真库)
+    _sc = sys.modules.get("sitecustomize")
+    if _sc is not None and getattr(_sc, "_真实", None):
+        ck("门禁改道层的真库(sitecustomize._真实)没被改指评测副本",
+           os.path.realpath(_sc._真实) != os.path.realpath(副本), _sc._真实)
     import api as _a
     with closing(_a._c()) as c:
         落 = c.execute("pragma database_list").fetchone()[2]

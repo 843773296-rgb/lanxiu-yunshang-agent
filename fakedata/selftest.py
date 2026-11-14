@@ -106,6 +106,19 @@ def main():
     sh = fks[("ordr", "cust_id")].get("shape") or {}
     ck(sh.get("0", 0) > 0.4, "量出「一半客户零订单」这个形状", f"实测 0 桶 ={sh.get('0')}")
 
+    # 2026-11-14(CI 连红 7 次的第二条):列带 CHECK(col IN (…)),库里却只出现过一种值 —— 统计判不出枚举,
+    # 原来会当自由文本造出乱字,灌库撞 CHECK。现在以库自己写的允许值为准
+    _ck = os.path.join(tmpd, "check_in_test.db")
+    with sqlite3.connect(_ck) as _c:
+        _c.execute("CREATE TABLE appt(id TEXT PRIMARY KEY, named_state TEXT "
+                   "CHECK(named_state IS NULL OR named_state IN ('点名','没点','不详')))")
+        _c.executemany("INSERT INTO appt(id, named_state) VALUES(?,?)", [(f"A{i:03d}", "不详" if i % 3 == 0 else None) for i in range(60)])
+    _cc = S.connect(_ck); _f = D.discover(_cc, _cc.reflect())
+    _col = _f["tables"]["appt"]["columns"]["named_state"]
+    ck(_col.get("semantic") == "enum" and set(_col.get("enum") or {}) == {"点名", "没点", "不详"},
+       "带 CHECK 允许值的列:库里只见过一种值,也按 CHECK 认成枚举、三个值都给份额", json.dumps(_col, ensure_ascii=False)[:160])
+    _cc.close()
+
     print("\n【方案层】")
     pl = P.build(facts, scale=1.0)
     ck(pl["tables"]["note"].get("skip"), "没有主键的表被跳过(灌得进去但删不掉)")

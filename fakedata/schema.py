@@ -111,6 +111,37 @@ def _sqlite_comments(ddl):
         pending = []
     return out
 
+def _sqlite_checks(ddl):
+    """从 DDL 里挑出「这一列只能取这几个值」的约束 → {列名: [允许值, …]}。
+
+    2026-11-14 加(CI 连红 7 次的第二条,eureka-fc 只读查清):`appointment.named_state` 带着
+    `CHECK(named_state IS NULL OR named_state IN ('点名','没点','不详'))`,而 CI 从零建库时这一列只有
+    `booking.book` 写、全是「不详」—— 一个值,discover 判不出枚举(要 ≥2 个不同值),于是当自由文本造出乱字,
+    灌库当场撞上 CHECK。**数据库自己写着允许哪几个值,就别靠「碰巧出现过几种」去猜。**
+    只认 `col IN ('a', 'b', …)` 这一种形状(可带 `col IS NULL OR`);认不出的 CHECK 原样跳过,不猜。
+    """
+    out = {}
+    s = ddl or ""
+    i = 0
+    while True:
+        j = s.upper().find("CHECK", i)
+        if j < 0: break
+        k = s.find("(", j)
+        if k < 0: break
+        深, e = 0, k
+        for e in range(k, len(s)):        # 找配对的右括号(CHECK 里本身有括号)
+            if s[e] == "(": 深 += 1
+            elif s[e] == ")":
+                深 -= 1
+                if 深 == 0: break
+        体 = s[k + 1:e]
+        for m in re.finditer(r"[\"`\[]?(\w+)[\"`\]]?\s+IN\s*\(([^()]*)\)", 体, re.I):
+            值 = re.findall(r"'((?:[^']|'')*)'", m.group(2))
+            if 值: out[m.group(1)] = [v.replace("''", "'") for v in 值]
+        i = e + 1
+    return out
+
+
 class SqliteConn(Conn):
     dialect, ph = "sqlite", "?"
     def __init__(self, path):
@@ -132,9 +163,11 @@ class SqliteConn(Conn):
         for name, ddl in rows:
             t = Table(name)
             comments = _sqlite_comments(ddl or "")
+            checks = _sqlite_checks(ddl or "")
             for _cid, cname, ctype, notnull, dflt, pk in self.q(f"PRAGMA table_info({self.ident(name)})"):
                 t.columns.append(Column(cname, ctype, nullable=not notnull, pk=bool(pk),
                                         default=dflt, comment=comments.get(cname, "")))
+                if cname in checks: t.columns[-1].check_in = checks[cname]
                 if pk: t.pk.append(cname)
             # 唯一约束:PRAGMA index_list 里 unique=1 且只含一列的
             for _s, idx, uniq, *_r in self.q(f"PRAGMA index_list({self.ident(name)})"):

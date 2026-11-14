@@ -20417,7 +20417,7 @@
   "file": [
    {
     "path": "agent/evaldb.py",
-    "old": "            if not 名.startswith(\"__\") and check_copy._是这个库(值, 真):\n",
+    "old": "            if not 名.startswith(\"_\") and check_copy._是这个库(值, 真):\n",
     "new": "            if 名 in (\"DB\", \"DB_PATH\") and check_copy._是这个库(值, 真):\n"
    }
   ],
@@ -21212,5 +21212,29 @@
    }
   ],
   "预期红": "未退:重发不带防护(没核实、没说原幂等号)→ 挂"
+ },
+ {
+  "script": "agent/evaldb.py",
+  "改坏": "用副本() 又去改下划线开头的变量(守卫认「哪个是真库」的参照物被改指副本)",
+  "file": [
+   {
+    "path": "agent/evaldb.py",
+    "old": "            if not 名.startswith(\"_\") and check_copy._是这个库(值, 真):\n",
+    "new": "            if not 名.startswith(\"__\") and check_copy._是这个库(值, 真):\n"
+   }
+  ],
+  "预期红": "守卫的参照物不改:ops._本库 仍指真库"
+ },
+ {
+  "script": "fakedata/selftest.py",
+  "改坏": "discover 不认 CHECK 允许值(只靠「出现过几种值」猜枚举)",
+  "file": [
+   {
+    "path": "fakedata/discover.py",
+    "old": "            允许 = getattr(c, \"check_in\", None)\n",
+    "new": "            允许 = None\n"
+   }
+  ],
+  "预期红": "带 CHECK 允许值的列:库里只见过一种值,也按 CHECK 认成枚举、三个值都给份额"
  }
 ]

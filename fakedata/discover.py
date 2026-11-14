@@ -360,6 +360,23 @@ def discover(conn, schema, tables=None, verbose=False):
                 cf["semantic"] = "enum"
                 cf["enum"] = {str(k): round(v / s, 3) for k, v in freq.items()}
 
+            # 库自己写着允许哪几个值(CHECK col IN (…)),就以它为准 —— 盖过上面那条统计规则(11-14:
+            # CI 从零建库时 named_state 只有「不详」一个值,统计判不出枚举,造了乱字撞 CHECK)。
+            # 频率:见过的按见过的比例;允许但没见过的也给一点份额(不然生成永远只出「不详」,另外两态测不到)
+            允许 = getattr(c, "check_in", None)
+            if 允许:
+                见 = dict(conn.q(
+                    f"select {conn.ident(c.name)}, count(*) from {conn.ident(tn)} "
+                    f"where {conn.ident(c.name)} is not null group by 1")) if t.rows else {}
+                见 = {str(k): v for k, v in 见.items() if str(k) in 允许}
+                总 = sum(见.values())
+                底 = 0.05 if 总 else 1.0 / len(允许)
+                权 = {v: (底 + (见.get(v, 0) / 总 if 总 else 0)) for v in 允许}
+                和 = sum(权.values())
+                cf["semantic"] = "enum"
+                cf["enum"] = {v: round(w / 和, 3) for v, w in 权.items()}
+                cf["enum_from"] = "CHECK 约束"
+
             # 数值分布:分位数,不是平均值 —— 金额是长尾,平均值骗人
             if c.kind in ("int", "real") and vals:
                 nums = sorted(v for v in vals if isinstance(v, (int, float)))
