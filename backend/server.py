@@ -2035,7 +2035,7 @@ def save_measure_item(d,actor,role="顾问"):
     while rows("SELECT 1 FROM measure_item WHERE code=?",code):
         n+=1; code=f"MI{n:02d}"
     with _conn() as c:
-        c.execute("INSERT INTO measure_item VALUES(?,?,?,?,?,'启用',?)",
+        c.execute("INSERT INTO measure_item(code,name,unit,required,sort,status,note) VALUES(?,?,?,?,?,'启用',?)",
                   (code,nm,unit,req,srt,d.get("note") or ""))
     log_edit(actor,d.get("actor_no"),"测量项",code,"创建测量项",
              [{"字段":"名称","改前":"","改后":nm},{"字段":"单位","改前":"","改后":unit}],
@@ -2200,7 +2200,7 @@ def create_download(kind,filters,actor):
          "商品库":lambda:product_list({"per":["1"]})["total"],
          "交易查询":lambda:order_list({"per":["1"]})["total"]}.get(kind,lambda:0)()
     with _conn() as c:
-        c.execute("INSERT INTO download_task VALUES(?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO download_task(id,kind,filters,status,rows_n,size_kb,created_by,created,expire_at) VALUES(?,?,?,?,?,?,?,?,?)",
           (did,kind,filters or "全部","已完成",cnt,max(1,cnt//8),"60000008",
            _wnow().strftime("%Y-%m-%d %H:%M"),
            (_wnow()+datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M")))
@@ -2672,7 +2672,7 @@ def import_customers(text,actor,role="顾问",dry=True):
         # 疑似重复进人工确认队列
         with _conn() as c:
             for ln,nm,why2 in review:
-                c.execute("INSERT OR IGNORE INTO task VALUES(?,?,?,?,?,?)",
+                c.execute("INSERT OR IGNORE INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
                   (f"TIMP-{batch}-{ln}","客户合并确认",f"导入第 {ln} 行|{nm}","待处理",
                    _wnow().strftime("%Y-%m-%d %H:%M"),why2))
     log_op(actor,"import",batch,"—","导入",True,"IMPORT",
@@ -2702,7 +2702,7 @@ def apply_approval(kind,target,payload,note,actor,role="顾问"):
     n=rows("SELECT COUNT(*) c FROM approval WHERE kind=?",kind)[0]["c"]+1
     aid=f"{pre}-{n:03d}"
     with _conn() as c:
-        c.execute("INSERT OR REPLACE INTO approval VALUES(?,?,?,?,?,?,wnow(),NULL,NULL,?)",
+        c.execute("INSERT OR REPLACE INTO approval(id,kind,target,payload,status,applied_by,applied_at,decided_by,decided_at,note) VALUES(?,?,?,?,?,?,wnow(),NULL,NULL,?)",
                   (aid,kind,target,_j.dumps(payload,ensure_ascii=False),"待审批",actor,note))
     log_op(actor,"bk-approval",aid,"—","待审批",True,"APPLY",f"{kind} · {target} · {note}",{"role":role})
     return dict(ok=True,code="APPLY",id=aid,
@@ -3345,7 +3345,7 @@ def save_template(d,actor,role="顾问"):
                       (nm,d.get("descr") or "",code))
             c.execute("DELETE FROM tpl_item WHERE tpl=?",(code,))
             for j,it in enumerate(items,1):
-                c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j))
+                c.execute("INSERT INTO tpl_item(tpl,item,sort) VALUES(?,?,?)",(code,it,j))
         ch=[]
         if old[0]["name"]!=nm: ch.append({"字段":"模版名称","改前":old[0]["name"],"改后":nm})
         if (old[0]["descr"] or "")!=(d.get("descr") or ""):
@@ -3365,10 +3365,10 @@ def save_template(d,actor,role="顾问"):
     n=rows("SELECT COUNT(*) c FROM measure_tpl")[0]["c"]+1
     code=f"MT{n:02d}"
     with _conn() as c:
-        c.execute("INSERT INTO measure_tpl VALUES(?,?,?,'启用','60000008',wnow())",
+        c.execute("INSERT INTO measure_tpl(code,name,descr,status,updated_by,updated) VALUES(?,?,?,'启用','60000008',wnow())",
                   (code,nm,d.get("descr") or ""))
         for j,it in enumerate(items,1):
-            c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j))
+            c.execute("INSERT INTO tpl_item(tpl,item,sort) VALUES(?,?,?)",(code,it,j))
     log_edit(actor,d.get("actor_no"),"量体模板",code,"创建量体模板",
              [{"字段":"模版名称","改前":"","改后":nm},
               {"字段":"测量项","改前":"","改后":"、".join(items)}],
@@ -3418,7 +3418,7 @@ def save_syscode(d,actor,role="顾问"):
     n=rows("SELECT COUNT(*) c FROM sys_code WHERE category=?",d["category"])[0]["c"]+1
     code=f"{pre}-{n:02d}"
     with _conn() as c:
-        c.execute("INSERT INTO sys_code VALUES(?,?,?,?,?,'启用',?)",
+        c.execute("INSERT INTO sys_code(code,category,name,val,sort,status,note) VALUES(?,?,?,?,?,'启用',?)",
                   (code,d["category"],d["name"],d["val"],n,d.get("note") or ""))
     log_op(actor,"sys_code",code,"—","新建",True,"CREATE",f"{d['category']} · {d['name']}={d['val']}",{"role":role})
     return dict(ok=True,code="CREATE",reason=f"系统编码 {code} 已创建")

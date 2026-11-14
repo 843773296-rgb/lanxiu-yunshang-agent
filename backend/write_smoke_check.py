@@ -56,7 +56,7 @@ DONE = []
 
 # 还没有冒烟用例的写接口数。**只许降不许涨** —— 补一个改一次这个数。
 # 定在当前值而不是 0:一次补 17 个不现实,而「等补完再进门禁」的下场是永远补不完。
-欠账上限 = 9    # 11-14 补「本期未实现」按钮四组时顺带补上 save_content 的冒烟,10 → 9
+欠账上限 = 9    # 11-14 补「本期未实现」按钮四组时顺带补上 save_content 的冒烟,10 → 9(11-14 夜补的 import_customers 原在豁免名单里,不占这个数)
 
 
 def ck(name, ok, n, msg=""):
@@ -110,7 +110,6 @@ def 可达的写函数():
     "顾问工号": "按显示串反查工号,纯读",
     "resolve_combo": "相容矩阵试算,**不写库**(实测:调用前后 0 行变化)",
     "gen_draft": "生成草稿文本,要调模型",
-    "import_customers": "批量导入,要上传文件;**待补** —— 见 intent/write-smoke-debt.md",
     "create_download": "建导出任务,产物落磁盘不落库;**待补**",
     "scheme_status": "方案状态流转,**待补**(等数据重建落地)",
     "merge_transit": "客户合并,**待补** —— 合并用例是 truth 夹具,冒烟会动到它们",
@@ -275,6 +274,21 @@ def 用例表():
                         "phone": 未用手机, "shop": (客 or {}).get("shop")},
                        员["no"] if 员 else "魏欣新", "店长"),
                    "customer"))
+
+    # import_customers(text, actor, role, dry) —— 真导入(dry=False)一行「疑似重复」:
+    # 它不建客户,而是往 task 进一条「客户合并确认」。**这条路径 11-14 夜之前一直是坏的**:
+    # INSERT 按位置给了 6 个值,而 task 有 7 列 —— 导入只要碰上疑似重复就整批报错,
+    # 门禁只跑过试算(dry=True 不走这段),所以一直没人发现。
+    def _导入(s):
+        r = s.rows("SELECT name, phone, shop FROM customer WHERE archived=0 AND length(phone)=11 "
+                   "AND shop LIKE 'SH%' ORDER BY id LIMIT 1")[0]
+        尾 = r["phone"][-4:]
+        for 中 in range(1000, 10000):
+            ph = r["phone"][:3] + str(中) + 尾
+            if not s.rows("SELECT 1 FROM customer WHERE phone=?", ph): break
+        return s.import_customers(f"姓名,手机号,归属店铺,销售顾问\n{r['name']},{ph},{r['shop']},",
+                                  员["no"] if 员 else "魏欣新", role="店长", dry=False)
+    出.append(("import_customers", _导入, "task"))
 
     # create_appointment(d, actor, _role)
     # ⚠️ **时间要往后排** —— 早于当前时间的补录只有店长及以上能做,

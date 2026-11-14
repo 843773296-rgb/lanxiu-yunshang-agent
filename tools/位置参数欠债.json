@@ -49,15 +49,6 @@
    "workorder": 2,
    "xingzhi": 1
   },
-  "backend/server.py": {
-   "approval": 1,
-   "download_task": 1,
-   "measure_item": 1,
-   "measure_tpl": 1,
-   "sys_code": 1,
-   "task": 1,
-   "tpl_item": 2
-  },
   "fakedata/agree.py": {
    "p": 1
   },
