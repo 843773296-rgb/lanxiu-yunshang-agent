@@ -21813,5 +21813,65 @@
    "DELETE FROM pattern_rev WHERE pattern='PT04'"
   ],
   "预期红": "每个版型都有改动记录"
+ },
+ {
+  "script": "tools/shift_e2e.py",
+  "改坏": "让 `平移()` 只写回一半的行(`批` 后面加 `and rid % 2`,模拟挪到一半被中断)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "            批 = [(nv, rid) for nv, rid in 批 if nv is not None]\n",
+    "new": "            批 = [(nv, rid) for nv, rid in 批 if nv is not None and rid % 2]\n"
+   }
+  ],
+  "预期红": "每个人的流失预警码一个没变"
+ },
+ {
+  "script": "tools/shift_e2e.py",
+  "改坏": "把 `schedule.end_ts` 登记进 `整列日期不挪`(漏挪一列)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "整列日期不挪 = {\n",
+    "new": "整列日期不挪 = {\n    \"schedule.end_ts\": \"咬合:漏挪一列\",\n"
+   }
+  ],
+  "预期红": "逾期的那几条单一模一样"
+ },
+ {
+  "script": "tools/shift_e2e.py",
+  "改坏": "把 `ordr.created` 登记进 `整列日期不挪`",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "整列日期不挪 = {\n",
+    "new": "整列日期不挪 = {\n    \"ordr.created\": \"咬合:漏挪一列\",\n"
+   }
+  ],
+  "预期红": "每张订单「离世界今天几天」不变"
+ },
+ {
+  "script": "tools/shift_e2e.py",
+  "改坏": "把 `lifecycle_history.as_of` 登记进 `整列日期不挪`",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "整列日期不挪 = {\n",
+    "new": "整列日期不挪 = {\n    \"lifecycle_history.as_of\": \"咬合:漏挪一列\",\n"
+   }
+  ],
+  "预期红": "档位历史的每个时点各自正好 +200 天"
+ },
+ {
+  "script": "tools/shift_e2e.py",
+  "改坏": "把反向对照那条 update 改成只动 `as_of`、不动存量",
+  "file": [
+   {
+    "path": "tools/shift_e2e.py",
+    "old": "            c.execute(\"update lifecycle_history set idle_days=400, orders_12m=0, \"\n                      \"amount_12m=0 where id=?\", (行[0],))\n",
+    "new": "            c.execute(\"update lifecycle_history set as_of=as_of where id=?\", (行[0],))\n"
+   }
+  ],
+  "预期红": "反向对照:只改一个人的存量,他的码就变了"
  }
 ]
