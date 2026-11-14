@@ -12,6 +12,14 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🔴 11-14 17:1x · 第六轮推送前链红,等并行会话推完再切后台(Opus 5.5)
+
+- **状态**:本地领先 origin/main 8 笔(pre_push 推 HEAD:main / g23 补丁 / get_member 缩 + TL83 / 文档跟上 219bc9ac / 交接)。第六轮 16:56 门禁红 5 条:4 条(规矩数 103→104、工具表、SOP+README、补丁全角点)已修提交;**剩 assistant_effect「TL83 只在聊天站」** → 要后台出 v12 = v11 + TL83 并切生产。
+- **禁区 / 约定**:并行会话锁内在推 CI 修复(b3cc8694 改版);**它说推了才切 v12**(否则它门禁红在 TL83)。切 v12 到我推上去之间它不跑门禁、不推(19:45 白天汇总只本地提交)。
+- **下一步第一个动作**:它说推了 → `python3 .wip-glossary/align_rules_v9.py`(默认:导规矩→代码导入→PATCH 回生产值→skills-sync→出版本→逐列比;只该多 TL83)→ `--切 N` → `python3 tools/assistant_effect_check.py` 绿 → 备份 funnel.jsonl(.wip-glossary/funnel.jsonl.bak 已有一份旧的,覆盖)+ `git checkout agentsite/evals/funnel.jsonl` → `git fetch && git rebase --autostash origin/main` → 后台 `./tools/pre_push.sh > .wip-glossary/pre_push10.log 2>&1`;推完告诉它,放回 funnel.jsonl,告诉用户 g23 补丁命令。
+- **未验证**:g23 补丁改了全角点后没重跑副本对照(只编译过);用户跑时补丁自带对照会验。
+- **之后**:④ 迁移机制(方案 .wip-glossary/migration_plan.md,基线要含 customer_link / customer_tag);③ 剩 13 个长说明。origin/w75 多余远程分支删前问用户。
+
 ### 🟢 11-14 14:3x · 已推主干 ed6cef10(Opus 5.5,worktree 工)
 
 - **已验证**:第五轮推送前链咬合 78/78 + 门禁全绿;链印「已推送」其实推成了 origin/w75(pre_push.sh 推的是 `HEAD`),手动 `HEAD:main` 快进进主干(f1e8c979→ed6cef10)。pre_push.sh 已改成推 `HEAD:main`(自测绿)。**origin/w75 这个多出来的远程分支还在,删要问用户。**
