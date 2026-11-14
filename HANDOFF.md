@@ -63,20 +63,31 @@
 > 规矩同上一轮:gate_lock --who、不碰 eureka-fc 文件、改管理后台推前 make test-e2e-ci、scan_secrets 单独一步、commit --only;**加新列走 backend/migrations/**;写共享库前先跟 eureka-fc 说。
 > ⚠️ 开局时 eureka-fc 在跑推送前链(schema_version 那笔),**它推完之前别跑门禁、别写共享库**;本地待推 f0208b4a(白天汇总)。
 
-**交接(11-14 22:2x,压缩前)**
-- **下一步第一个动作**:eureka-fc 已推 a4df89e5(迁移机制,表数 136,check.sh 加 migration_check,rebuild 51 步)。→ `git pull --rebase --autostash`(冲突:check.sh 我加了两行 shop_inactive/shop_rename 在 shop_write_check 后;bite_specs 我加了 9 条在末尾;PRD 我加了 2.4.3 节)→ 锁内 `python3 -c` 用 server.transit("bk-shop","SH003","有效",{"note":"用户 11-14 夜拍板:无效是标错的"},总部运营名,me=总部运营) 改回(已告诉 eureka-fc)→ 锁内 `boundary_audit.py --md > 安全边界审计.md`(剥锁提示行;条数 65→66,doc_numbers_check 看要不要改数)→ bite_run --only shop_rename(4 条没跑过)→ make_readme → git add backend/shop_inactive_check.py backend/shop_rename.py backend/shop_rename_check.py → scan_secrets 单独 → commit --only → chain_B 推。
-- **本地已提交未推**:f0208b4a(白天汇总)、c8e17595(合并执行处核同户同名)。**未提交**:shop_key.停业理由 + 五入口(server create_customer/import_customers/create_appointment、order_write.open_order、booking.book)、seed SH003→有效、ops_eval X08 去掉「无效」考点 + judgetest 3 条改写(349 全过)、shop_inactive_check(绿、咬合 4/4)、boundary_audit a_inactive_shop_new_business(守住)、oplog.log_op 加 conn= 参数、shop_rename.py + shop_rename_check.py(绿)、check.sh 两行、bite_specs 9 条、PRD 2.4.3。
-- **判据**:改名预览(真库只读):SH003→12104 行/12 表、SH001→29096、SH002→17670,没登记列 0;**account.home_shop 不在 shop_key.带门店键的 里**(1682 行 SH003),已放进 shop_rename.另外要改的。合同正文等只当快照不改。**真改共享库前先把预览给用户看、再问一次(用户拍板第五十八条原话)**;还没做页面按钮/路由(要动管理后台就得 make test-e2e-ci)。
-- **踩的**:server.import_customers(dry=True) 在真库上调了一次 → op_log 多 1 行 actor='x' 的「导入 试算」(只此一行,没删)。检查里拿 log_op 的表算「什么都没动」会误红(撤销本该多一行台账)。
-- **禁区**:同前;eureka-fc 接下来动 api.py 描述区 + prompts.py TL84,别碰。
+**交接(11-15 01:4x,压缩前)**
+- ⚠️ **01:34 夜跑自动提交 aca71aa0 推了 main,把我 16fd553f 及之前 ~20 笔一起带上去了**(没过本地全量、也在 eureka-fc 推之前)。已告诉 eureka-fc。**CI 43621848814 已绿(01:5x,gh 回读 completed success)**;本地只剩 044fdb55 / 02a74b4f / f129c13b 三笔待推。以后「eureka-fc 推完前不推 main」这条**挡不住夜跑的自动推** —— 早上汇总里要说。
+- **下一步第一个动作**:等 eureka-fc 回话(01:4x 已发消息问「推了没」+ 订了它空闲通知)。它推完 → `git pull --rebase --autostash`(我这边改过 check.sh 一行[反例清单检查,在 example_pool_check 后]、bite_specs 末尾追加 ~60 条、HANDOFF)→ `./tools/scan_secrets.sh` 单独 → 锁内 `bash scratchpad/chain_B.sh`(重启 8760/8770 让改名三个路由上线 + 冒烟 + 全量 + 推)。**只认「被包的命令退出码」和 PUSHED 那一行**。推完告诉 eureka-fc。
+- **本地待推 ~20 笔**(5d204964 起,到 02a74b4f):改名页面按钮+路由 / INSERT 具名(server、工具、seed、平移、自测)/ 截断 21 文件 / 咬合规格 ~60 条 + 多处判据修 / bite_check 规格键修 / 写口冒烟清零 / 运行史支路 / 示例库 v3 合并 MX-01–03 + example_counter_check 进门禁。都没过全量门禁 —— 推前那一次全量就是它们的真验。
+- **4:55 夜跑窗口后**(bite_run 现在因 .nightly-eval.pid 拒跑,退出码 3):`tools/bite_run.py --only` initpath_check / grading_check(4 条 sql)/ supplier_check(1 sql)/ refund_sets_judgetest / page_load_check / shift_world(--selftest 里「不认识参数」那条起子进程)/ source_check —— 这些内存重放(sim_bite)验不了。其余新规格都 sim_bite 过。
+- **判据**:sim_bite = 子进程里把被改模块从改坏源码加载 + 拦 open()/read_text 读改坏内容,磁盘不动;**只能用于只读或自带库副本的检查**;空攻击对照过(不误报)。草稿拷在 tools/.sim_bite_草稿.py(**未入库,别 add**)。
+- **夜间汇总草稿**:澜绣云裳agent-夜间汇总-20261115.md(未提交;08:0x 定稿 → `python3 tools/feishu_publish.py 澜绣云裳agent-夜间汇总-20261115.md` → 回读 → git add + commit → CronDelete addf3eab)。b02b9cdf 核出处判据修好;vs4 剩 1 条 ❌(艾媒价位)= **curl 超时半截页面**,17c27ebf 修(退出码非 0 当抓不到)。✅ vs5 全绿(266 条都指对),已记运行史 4a0094ca。
+- **05:4x** 0da7d7e7:写库不写列名 17 → 16(顾问工号检查那笔是报错文案不是 SQL)。规格预期红那张表 growth_eval_judgetest 1 条**不还**:预期红印在它 import 的 growth_eval.py 里,重放 4/4 过,是静态扫描不跟 import 的盲区(别为过扫描写注释,也别放宽去跟 import)。
+  未推提交碰过的 13 个检查单跑全绿(⚠️ zsh 里 `python3 $c` 不拆参数,带参数的会报 rc=2 假红 —— 单独跑才是真的)。本地 **15 笔**未推。
+- **05:1x 续还到 30**(6e05b977 评价两条库级 / cfe47e71 评价重造登记 / d1040b18 **指代判分器编号轴原来不可观测**,补了一条只有它挂得住的对照,清单从 scheme_eval 搬到 judgetest / e45b950b 三条「要重建库」改库级:待确认单、该试没试、PT23 腰围)。
+  剩 30 / 15 个脚本:fakedata 14 + tool_eval 1 + guards_test 1(别人的线)、runlog 2 + intent 1(只报不拦)、交付图 4、cron 2(标记文件每天被改写)、hook_sync 1、impact 1、repo_consistency 2(要真提交)、rating_rebuild 1(换种子夹具)。
+- **05:0x 还咬合两份记录 50 → 39**(c5e57ba8 / 19f11820 / 57948dd9 / 8a576363):页面骨架 2、评测题面 1、intent 点名 1、出处 2、文档工具数 1、渠道 TL31 1、白坯 TL30 1、启动建库 1(只改清单对齐已有规格)、版师先看再改 1。连带修了两条过期规格(欠债表处数那条换到 fakedata/repro.py 的 4;_脚本键 那条改点名「不在欠债表里的…」)。
+  **不补的**(别重查):runlog 2 / intent「还挂着已做完」1 = 只报不拦,咬合验不了;交付图 4 = 图不进副本;grading / muslin 种子 / order_write = 要整库重建;cron_health / hook_sync = 机器外的文件;fakedata / tool_eval = 不是我的线。
+- 本地 **10 笔**未推(origin/main 仍是 aca71aa0)。
+- **悬而未决(早上问用户,合成一张卡)**:退款「余额不足、补足后仍失败」判定规则 —— 卡在 docs/交接归档/选型卡-退款补足后仍失败-待拍.md(推荐 A:按最后一次失败定因 + 必须说清余额已不是卡点;参数:回码变了就算补足过)。示例库 v3 真跑(example_counter_ab.py --做 --轮 2,调模型)排在 4:55 + eureka-fc 推完之后、要拿锁。
+- **作废的结果**:「运行史说 verify_sources 不在了」是误报(脚本在,已登记支路;差点删记录,已 checkout 回去)。「两份记录欠债 110」是错算,真数 101 → 现 50。verify_sources 联网全跑在后台(bh5c9f1s0,输出 /tmp/vs.log,缓冲到结束才有字);跑绿了 `python3 tools/runlog_check.py --记 tools/verify_sources.py`。
+- **禁区**:同前(eureka-fc 的文件;不推 main 直到它推完;不开浏览器;到期清理不开);**07:xx 后发飞书夜间汇总**(文件名带「澜绣云裳agent」,格式照 澜绣云裳agent-白天汇总-20261114.md),然后 CronDelete addf3eab。
 
 1. [x] ✅ 8b38dc1e 已推(含白天汇总、合并、拦截、改名代码;第二轮门禁绿)
 2. [x] ✅ 22:4x 共享库 SH003 无效→有效(bk-shop 流转留台账)。原:SH003 改回有效:锁内走状态流转(总部身份、写原因、留 op_log),**先告诉 eureka-fc**(动共享库数据)
 3. [x] ✅ 9a5054d7/8b38dc1e 已推,咬合 4/4、审计 66 条⑤⑤ 无效店铺不许新增业务:create_appointment / 开单 / create_customer / booking.book 都按 shop.status 拦;状态机说明那句兑现;检查 + 咬合 + 边界审计;先查造数(daily_fresh)会不会往无效店造数
 4. [x] ✅ c8e17595(未推)merge.并入 执行处核 判同一人;merge_check 样本改同账户同名(副档改名那条验完改回、丙也造成同户)+ 新用例「执行处也拒跨账户合并」+ 咬合 1;write_smoke 撤销合并那条准备时造同户同名;relabel / reopen / tag_level / 冒烟全绿;merge_account_duplicates 先过 判同一人 不受影响;PRD 已知缺口划掉。原:合并执行处补「同一账户」闸(merge.并入)+ 改 merge_check 样本为同账户同名(⑤⑥ 口径不变,只是执行处也守)
-5. [~] **(00:3x 交接)本地 3 笔待推:5d204964 / cb78eca2 / 9221f15c(造数回填工具 10 处 INSERT 具名,欠债 92→82)。eureka-fc 00:37 还没喊推完 —— 它喊之前别跑门禁;喊了 → pull --rebase --autostash → scan_secrets → 锁内 chain_B。** (23:xx)cb78eca2 本地:server.py 8 处位置参数 INSERT 改具名(位置参数欠债去掉 server.py)+ **修了真坏:真导入碰上疑似重复就抛错(task 7 列给 6 值)** + 冒烟补真导入用例。**待推**:5d204964(改名页面按钮)+ cb78eca2 —— eureka-fc 切生产到它推上去之间(约 1 小时)别跑门禁,它推完喊我再 chain_B。还代码欠账:位置参数 17 / 截断 23 / 咬合两份记录 39 / 预期红扫不到 5 / 写口冒烟 9 —— 每还一处把棘轮上限跟着降
-6. [ ] 给没红过的检查补对照:优先守钱 / 权限 / 顾客数据的
-7. [ ] 研判示例库第三版:退款「余额不足、补足后仍失败」+ 合并类(按 ⑤⑥ 口径出题);新根因要新判定规则 → 先摆选型卡
+5. [~] **(01:3x)欠账一览**:位置参数 100→17(剩 fakedata + seed xingzhi 1 处 —— 那一处故意留着,两条咬合拿它当攻击点)/ 截断 59→3(剩 fakedata)/ 咬合两份记录 110(错算)→50(剩 fakedata 14 + 要外部文件 / 整库重建 / 真子进程的)/ 预期红扫不到 5→2(成长评测对照 + rounds.py 不碰)/ **写口冒烟 9→0**(顺带堵「被拒也算写成」,通用开关那条绿了三天没真切过)。另修:工厂回传检查两条空转判据、未来记录回挪先后关系只比三点、运行史把核出处工具误报成「不在了」、反例清单检查进门禁。**位置参数欠债 100 → 17**(剩下全在 fakedata/ + seed xingzhi 1 处)。本地待推 6 笔:5d204964 / cb78eca2 / 9221f15c / 2a1ed4c6(seed 38 处,两个临时检出从零各建一遍库、dump 除随机盐外逐行一致)/ de24fc96(平移两工具 18 处)/ 018f4e20(四个自测 9 处 + 修三条攻击原文过期的咬合规格)。**4:55 夜跑窗口过后要重放**(bite_run 现在因夜跑拒跑):`--only advisor_write_check` / `--only insert_shape_check` / `--only initpath_check` / `--only grading_check`(4 条 sql 型新规格)/ `--only refund_sets_judgetest` / `--only page_load_check` —— 这几条 sim_bite 验不了(读源码文件 / 改库 / 起子进程)。另:01:0x 后本地又加 65dc92cd(工厂回传检查修两条空转判据 + 8 规格)、1e31608e(推档 5 规格);两份记录欠债现 65。**(00:3x 交接)本地 3 笔待推:5d204964 / cb78eca2 / 9221f15c(造数回填工具 10 处 INSERT 具名,欠债 92→82)。eureka-fc 00:37 还没喊推完 —— 它喊之前别跑门禁;喊了 → pull --rebase --autostash → scan_secrets → 锁内 chain_B。** (23:xx)cb78eca2 本地:server.py 8 处位置参数 INSERT 改具名(位置参数欠债去掉 server.py)+ **修了真坏:真导入碰上疑似重复就抛错(task 7 列给 6 值)** + 冒烟补真导入用例。**待推**:5d204964(改名页面按钮)+ cb78eca2 —— eureka-fc 切生产到它推上去之间(约 1 小时)别跑门禁,它推完喊我再 chain_B。还代码欠账:位置参数 17 / 截断 23 / 咬合两份记录 39 / 预期红扫不到 5 / 写口冒烟 9 —— 每还一处把棘轮上限跟着降
+6. [~] (01:0x)补可重放咬合规格 23 条:聊天查订单权限 9 / 白坯试衣闸 6 / 开单 3 / 签收 3 / 退款评价 2,**每条都在内存里重放过**(scratchpad/sim_bite.py:被改模块从改坏的源码加载、磁盘不动;空攻击对照过不会误报);两份记录欠债 110(错算)→101(修了带参数规格的配对)→78。提交 01eadf73 / f7c04b0d / 62fd284d。⚠️ sim_bite 只对「import 进来的模块」有效,**直接读源码文件的检查(advisor_write / insert_shape)它看不见**,那几条照旧等 bite_run。原:给没红过的检查补对照:优先守钱 / 权限 / 顾客数据的
+7. [~] (01:2x)合并类做了:e79ec86b 加 MX-01–03(同名不同人那几对改成同号同账户 → 按⑤⑥该合并;对比脚本补合并造法,原地改不克隆) + 7f042fda 反例清单检查进门禁(4 咬合内存重放过)。空跑:21 条全造出、MX-02/03 配到 MX-01 + MERGE-14/15。**真跑(example_counter_ab.py --做 --轮 2,调模型)还没跑** —— 排在 4:55 夜跑窗口 + eureka-fc 推完之后,要拿锁。**退款「补足后仍失败」没做:新根因 → 判定规则要用户拍**,选型卡写进早上汇总(推荐:按最后一次失败的返回码定因 + 必须说清「余额已不是卡点」)。原:研判示例库第三版:退款「余额不足、补足后仍失败」+ 合并类(按 ⑤⑥ 口径出题);新根因要新判定规则 → 先摆选型卡
 8. [x] ✅ 后端 9a5054d7/8b38dc1e 已推;页面按钮 + 三个路由本地已提交待推(见下)。共享库没真改过。原:新功能 = **店名整库改名**(用户 20:1x 拍,台账第五十八条):总部才能用;先列出会动哪几张表多少行给用户看(预演)、确认后**一个事务里**一起改(shop.name + 所有存「编码 + 店名」显示串的列,清单就是 shop_key 的「带门店键的」)、改完对账(按编码数 = 按新串数)、能撤回(记旧名);试运行门店范围 / 旧报告里存的串要一并考虑;**真改共享库前先给用户看预演、再问一次**(不可逆面大)。PRD B-121「未解决事项」那条就是它
 9. [ ] 收尾:夜间汇总发飞书(文件名带「澜绣云裳agent」)+ 删每小时提醒
 
@@ -2810,14 +2821,14 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 22:03。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-15 05:40。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | c8e17595 · 2026-11-14 · 合并执行处也核「同一账户 + 同名」:原来只在发起合并任务那头拦,直接调执行就能跨账户合并顾客档案(白天汇总里记的已知缺口) |
-| 代码量 | 1111 个 Python 文件 / 204481 行(不含 .venv) |
-| 验收 | `./check.sh` 共 423 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 0da7d7e7 · 2026-11-15 · 写库不写列名欠账 17 → 16:顾问工号检查里那一笔是**报错文案**,不是 SQL |
+| 代码量 | 1119 个 Python 文件 / 205940 行(不含 .venv) |
+| 验收 | `./check.sh` 共 426 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
@@ -2825,35 +2836,35 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ```
 M .feynman/tool-eval.json
  M HANDOFF.md
- M agent/ops_eval.py
- M agent/ops_eval_judgetest.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M backend/booking.py
- M backend/boundary_audit.py
- M backend/oplog.py
- M backend/order_write.py
- M backend/seed.py
- M backend/server.py
- M backend/shop_key.py
- M check.sh
- M tools/bite_specs.json
- M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/backup-launchd.log
+?? .feynman/health/
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? .feynman/world-shift-launchd.log
+?? .wip-glossary/
+?? .wip-muslin/
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-c8e17595 合并执行处也核「同一账户 + 同名」:原来只在发起合并任务那头拦,直接调执行就能跨账户合并顾客档案(白天汇总里记的已知缺口)
-f0208b4a 白天汇总 11-14 07:45→19:45 定稿并发飞书:两批推送、CI 两条老红修好后转绿(11-12 以来第一次)、示例库两版结论
-d7b9596d 交接:第六轮红剩后台 TL83,等并行会话推完切 v12 再跑第七轮
-459d4514 第六轮推送前链门禁红 5 条跟上 TL83:规矩数 103→104(四处)、工具表 / SOP / README 重生成、放宽补丁列表编号认全角点
-170b0abc 交接:并行会话认领 CI 两条,先推它第二批再单独修
+0da7d7e7 写库不写列名欠账 17 → 16:顾问工号检查里那一笔是**报错文案**,不是 SQL
+e45b950b 咬合两份记录还 3 处(33 → 30):三条「要重建库才打得到」的,改成在库副本上直接造出那个结果
+d1040b18 指代推进判分器:编号轴原来**不可观测**,补一条只有它挂得住的对照;咬合两份记录 36 → 33
+cfe47e71 咬合两份记录还 1 处(37 → 36):评价重造后「混着日期的列都还登记着」能重放了
+6e05b977 咬合两份记录还 2 处(39 → 37):评价的「门店拉开差距」和「三个月窗口」能重放了
 ```
 <!--/AUTO-->
 ## 一句话在做什么

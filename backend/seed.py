@@ -3104,7 +3104,7 @@ def run():
         code TEXT PRIMARY KEY, name TEXT, alias TEXT, key_sizes TEXT, src_type TEXT)""")
     c.execute("DELETE FROM xingzhi")
     for _cd, _nm3, _al, _sz, _src in _dx.parse():
-        c.execute("INSERT INTO xingzhi VALUES(?,?,?,?,?)",
+        c.execute("INSERT INTO xingzhi(code,name,alias,key_sizes,src_type) VALUES(?,?,?,?,?)",
                   (_cd, _nm3, _al, "、".join(_sz) or None, _src))
 
     # 定制方案:fe-scheme 状态机终于有承载物了(此前 PRD 定义了 4 状态 5 边,却没有任何页面)
