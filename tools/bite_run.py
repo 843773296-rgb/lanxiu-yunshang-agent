@@ -964,6 +964,8 @@ def main():
     占上锁(os.path.join(_锁, ".bite-run.pid"))
 
     base = tempfile.mkdtemp(prefix="bite-")
+    # 副本不带 .git:要认「这是哪个检出」的检查(model_align_check 找主检出的记录仪)从这里拿原路径
+    os.environ.setdefault("LANXIU_SRC_ROOT", ROOT)
     pristine = 建副本(os.path.join(base, "pristine"))
     print(f"副本:{base}")
     print("=" * 96)

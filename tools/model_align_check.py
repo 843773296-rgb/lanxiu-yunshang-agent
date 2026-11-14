@@ -53,6 +53,16 @@ def _主检出():
     except Exception:
         return None
     根 = os.path.dirname(g) if g else ""
+    if not 根 and os.environ.get("LANXIU_SRC_ROOT"):
+        # 咬合重放在**不带 .git 的副本**上跑,git 问不出来 —— bite_run 把原检出的路径放在这个环境变量里,
+        # 拿它再问一次(11-14 第四轮推送前链红在这里:副本里只剩工作区那份 11-12 的旧记录仪,对照组就红了。
+        # 顺着共用库的软链找不行 —— 副本会把指向外面的软链拷成实文件,那正是为了不让破坏改到真库)
+        try:
+            g = subprocess.run(["git", "-C", os.environ["LANXIU_SRC_ROOT"], "rev-parse", "--path-format=absolute",
+                                "--git-common-dir"], capture_output=True, text=True, timeout=10).stdout.strip()
+        except Exception:
+            g = ""
+        根 = os.path.dirname(g) if g else ""
     return 根 if 根 and os.path.realpath(根) != os.path.realpath(ROOT) else None
 
 
