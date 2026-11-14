@@ -843,6 +843,29 @@ SHIFT_DESC_RULE = Rule("TL92", ("on_shift",), """
 """)
 
 
+CREDIT_DESC_RULE = Rule("TL93", ("deal_credit",), """
+**deal_credit 的读法 —— 2026-11-14 从工具说明整段挪来,一个字没删:**
+
+⚠️ **要害:两种分成不是一回事,不许相加也不许互相比较。**
+· **收入分成** 加起来**必须 100** —— 那是分钱(算提成)
+· **影响力分成** **可以超过 100** —— 那是记贡献,不是零和的
+一单可以同时是「收入:张三 70 + 李四 30」和「影响力:张三 100 + 李四 60 + 店长 40」。两者在库里长得一模一样(都是「某人 + 某个百分比」),所以**分两栏返回**。看到影响力加起来 200% **不要当成错误**。
+
+⚠️ **这不是成交率** —— 这一版只记录不算率(算率还缺「订单追得到哪次接待」,3511 张定制单标着「未接入」)。
+
+⚠️ 三种来源要分开:`人工填` / `规则算` / `算法算`(算法算必带版本)——三者算出来都是一个百分比,**可信度完全不同**。W 型的 30/30/30/10 是**行业惯例不是算出来的**,而且现在的旅程是造的,**证明的是算法跑得通,不是算得准**。
+
+⚠️ 「算不出来」不是「没有贡献」;「一条记录都没有」是**没记过归因**,不是没人有贡献。
+""")
+
+
+WEAR_RISK_DESC_RULE = Rule("TL94", ("wear_risk",), """
+**wear_risk 的读法 —— 2026-11-14 从工具说明整段挪来,一个字没删:**
+
+⚠️ **用的是率不是绝对数**(按维保单数排,排出来的是「哪个卖得多」),而**分子分母一起返回**:分母低于 30 件的**不给结论**,给「样本不足」——**那不是 0%**,不许读成「这个面料特别结实」,**「没有证据」和「有证据说没问题」是两回事**。⚠️ **返回里单独有一条「差异显不显著」** —— 不显著就说「这批数据分不出来」,**不许报第一名**:报一个不显著的第一名比不报更糟,不报的话版师知道自己没依据,报了他以为自己有。⚠️ **这个库上的易损结构是造数时种进去的**(轻薄丝类 / 刺绣的倍数是编的,方向才是行业常识),返回里「撞在种下的规律上」那一条**必须一起报出去** —— 否则这套分析越准确越危险:它会把一个编出来的假设,用真实数据的样子讲出来。⚠️ **不接月份参数,这是故意的** —— 维保发生在卖出之后,按月切会让分子分母错位、率系统性偏低,**而偏低的率和「这个面料确实结实」长得一模一样**。⚠️ **易损率高不等于该停做** —— 这里没有售价、没有毛利、没有退货,拿它单独下「别做了」的结论是用一个指标替代一整笔生意。
+""")
+
+
 REVIVE_RULE = Rule("TL35", ("revive_list",), """
 **促活名单要回答两件事:为什么是他,为什么是现在。五条不许错:**
 
@@ -1146,6 +1169,7 @@ SHIFT_RULE,
 SHIFT_DESC_RULE,
 ROSTER_WRITE_RULE,
 CREDIT_RULE,
+CREDIT_DESC_RULE,
 HISTORY_RULE,
 CONVERSION_RULE,
 CONVERSION_DESC_RULE,
@@ -1798,6 +1822,7 @@ ORDERS_RANGE_RULE,
 ORDERS_RANGE_DESC_RULE,
 SALES_RANK_RULE,
 POPULARITY_RULE,
+WEAR_RISK_DESC_RULE,
 WEEKLY_REVENUE_RULE,
 STORE_REPORT_RULE,
 SUMMARIZE_PRODUCTS_RULE,
@@ -1809,6 +1834,7 @@ SHIFT_RULE,
 SHIFT_DESC_RULE,
 ROSTER_WRITE_RULE,
 CREDIT_RULE,
+CREDIT_DESC_RULE,
 HISTORY_RULE,
 CONVERSION_RULE,
 CONVERSION_DESC_RULE,
@@ -2150,7 +2176,8 @@ def _pattern_rules():
     #         说不对就得说该是多少
     pick = {"TL25", "TL26", "TK01", "TK03", "TL07", "TL15", "TL08", "TL27", "TL41",
             "TL71", "TL74", "TL75",
-            "TL79"}    # TL79(11-11)get_product_images / draft_capability_request:示意图不能当实物、缺工具起草申请
+            "TL79",
+            "TL94"}    # TL94(11-14)wear_risk 说明里挪来的读法(率不是绝对数 / 样本不足≠0% / 不显著不报第一 / 种下的规律 / 不接月份)    # TL79(11-11)get_product_images / draft_capability_request:示意图不能当实物、缺工具起草申请
     seen, out = set(), []
     for r in (TASK_RULES + KB_RULES + WORKSHOP_RULES):
         if r.id in pick and r.id not in seen:
