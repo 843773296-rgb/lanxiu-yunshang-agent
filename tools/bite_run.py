@@ -358,7 +358,10 @@ def 门禁怎么跑(script):
     if script.startswith("管理后台/"):
         py = 管理后台解释器()
         return [py, script] if py else None
-    return [sys.executable, script]
+    # ⚠️ 11-15 夜:带参数的规格(`x.py --selftest`)而门禁里没有这一行时,原来拼成
+    # `[python, "x.py --selftest"]` —— **整串被当成一个文件名**,对照恒红「这条咬合证明不了任何事」,
+    # 长得和判据死了一模一样(shift_world 的 5 条就这么报的;根子是它的 --selftest 没进门禁,已补)。
+    return [sys.executable] + script.split()
 
 
 def 跑不了的理由(script):

@@ -599,6 +599,7 @@ run "店长排班判分器 · 库副本上造出做对 / 做错的世界(替店�
 run "AI 调控中心 · 没做的模块不给假入口;咨询详情五段齐(21 条自测)" python3 agentsite/aihub.py --selftest
 run "提示词候选 · 不指定就用源头、找不到就抛、没验证不许采纳(7 条自测)" python3 tools/prompt_candidate.py --selftest
 run "演示世界的日期 · 世界跟着真实日期走,库说的和数据实际的要对得上(6 条咬合)" python3 tools/shift_world.py --check
+run "演示世界平移 · 自测(单位数小时、跑两次不再挪、没登记的列拒绝动手、拼错参数拒跑;22 条,合成夹具)" python3 tools/shift_world.py --selftest
 # ⚠️ 上面那条用的是**合成夹具**(4 张表、11 个日期列),守的是挪法本身。
 # 下面这条在**真库的副本**上整库挪 200 天,守的是平移那句很强的承诺:
 # 「一切相对关系不变」。两条不能互相代替 —— 夹具里没有 lifecycle_history,
