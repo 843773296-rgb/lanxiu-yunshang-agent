@@ -51,7 +51,7 @@ def 建表(c):
 
 
 def _现在():
-    return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")   # 真实时钟:链接是真实世界的凭证,7 天按真实的 7 天算(这几列登在 shift_world「整列日期不挪」)
 
 
 def _指纹(token):
@@ -104,7 +104,7 @@ def 发(d, me):
         废 = c.execute("UPDATE customer_link SET void_at=? WHERE order_id=? AND purpose=? AND COALESCE(pkg_id,'')=? "
                       "AND used_at IS NULL AND void_at IS NULL", (现, oid, 用途, pkg or "")).rowcount
         token = secrets.token_urlsafe(32)
-        到 = (dt.datetime.now() + dt.timedelta(days=有效天数)).strftime("%Y-%m-%d %H:%M:%S")
+        到 = (dt.datetime.now() + dt.timedelta(days=有效天数)).strftime("%Y-%m-%d %H:%M:%S")   # 真实时钟:同上,过期时间跟着真实世界走,不跟演示世界平移
         c.execute("INSERT INTO customer_link(token_hash,purpose,order_id,pkg_id,created_by,created_at,expires_at) "
                   "VALUES(?,?,?,?,?,?,?)", (_指纹(token), 用途, oid, pkg, me.get("no"), 现, 到))
     log_op(谁, "customer-link", oid, "发链接", 用途, True, "ISSUE",

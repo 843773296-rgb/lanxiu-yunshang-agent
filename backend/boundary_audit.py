@@ -925,8 +925,8 @@ def a_customer_link_abuse():
         新 = _cl.发({"order_id": 单[1][0], "purpose": "签收确认"}, 导[1])["链接"].split("/c/")[-1]
         if _cl.用(旧, {}).get("ok") or 状态(单[1][0]) == "完成": return "重发之后旧链接还能用 —— 门没守住"
         with _cls(_sq.connect(p)) as c, c:
-            c.execute("UPDATE customer_link SET expires_at=? WHERE token_hash=?",
-                      ((_dt.datetime.now() - _dt.timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S"), _cl._指纹(新)))
+            # 拨到一个早就过去的固定日子 —— 不取「现在」,免得这个文件引入机器时钟(它还写别的已发生列)
+            c.execute("UPDATE customer_link SET expires_at='2000-01-01 00:00:00' WHERE token_hash=?", (_cl._指纹(新),))
         if _cl.用(新, {}).get("ok") or 状态(单[1][0]) == "完成": return "过期的链接还能用 —— 门没守住"
         raise PermissionError("四刀都被拦下")
     finally:
