@@ -56,7 +56,7 @@ DONE = []
 
 # 还没有冒烟用例的写接口数。**只许降不许涨** —— 补一个改一次这个数。
 # 定在当前值而不是 0:一次补 17 个不现实,而「等补完再进门禁」的下场是永远补不完。
-欠账上限 = 2    # 11-15 夜补系统编码 / 测量项 / 审批驳回 / 模版新建 / 模版删除 / 页面区块六条 + 草稿状态改豁免(写文件不写库),9 → 2。 11-14 补「本期未实现」按钮四组时顺带补上 save_content 的冒烟,10 → 9(11-14 夜补的 import_customers 原在豁免名单里,不占这个数)
+欠账上限 = 0    # 11-15 夜补到底:系统编码 / 测量项 / 审批驳回 / 模版新建 / 模版删除 / 页面区块 / 新建商品 / 通用流转八条 + 草稿状态改豁免(写文件不写库),9 → 0。**以后新加写口必须自带冒烟用例**
 
 
 def ck(name, ok, n, msg=""):
@@ -135,6 +135,12 @@ def 跑一个(名, 调用, 看表):
     if isinstance(r, dict) and r.get("code") in ("NOCHANGE", "NO_CHANGE"):
         return ("**用例失效**:接口明说「没有字段发生变化」,"
                 "说明这个用例给的值已经不会造成写入了 —— 坏的是用例,不是接口"), 0
+    # ⚠️ 11-15 夜补:**返回「拒绝」也算没写成。** 原来只认 `error`,而多数写口拒绝时回的是
+    # `ok=False + code`,并且**拒绝也留痕**(往 op_log 记一条 allowed=0)——
+    # 于是一条看 op_log 的用例(审批驳回 / 延期已通知 / 操作日志类),**被拒了照样「行数多了一行」、照样绿**。
+    # > 一个「真的写进去了」和一个「被拒了、只留了一行拒绝痕迹」,在 op_log 的行数上长得一模一样。
+    if isinstance(r, dict) and r.get("ok") is False:
+        return f"返回拒绝 {r.get('code')}:{str(r.get('reason') or '')[:80]}", 0
     后 = 计数(看表)
     return None, 后 - 前
 
@@ -367,9 +373,12 @@ def 用例表():
     # toggle(table, key, val, col, on, off, actor) —— 启停一个系统编码
     码 = 取("SELECT code FROM sys_code LIMIT 1") if 有表("sys_code") else None
     if 码:
+        # ⚠️ 11-15 夜补 role:11-12 给通用开关加了「店长以上才能切」之后,这条一直是**被拒**的
+        # (没传角色 = 「你是 None」),而拒绝也往 op_log 记一行,于是它**绿了三天、一次都没真切过**。
+        # 跑一个() 现在把「返回拒绝」算没写成,这条当场红出来才看见。
         出.append(("toggle",
                    lambda s: s.toggle("sys_code", "code", 码["code"],
-                                      actor=员["no"] if 员 else "魏欣新"),
+                                      actor=员["no"] if 员 else "魏欣新", role="总部运营"),
                    "op_log"))
 
     # 通话录音上传(10-03):管理后台客户页。**不入队**(冒烟不该真去转写),
@@ -453,6 +462,18 @@ def 用例表():
         if _页:
             出.append(("save_block", lambda s, _p=_页["code"], _m=_部: s.save_block(
                 {"act": "add", "page": _p, "kind": "图文", "title": "冒烟区块"}, _m["name"]), "page_block"))
+        # 新建商品:标品(定制品要挂量体模版,那是另一条路)。商品是全国一份的主数据,只总部运营
+        _品类 = 取("SELECT code FROM category WHERE status='启用' ORDER BY code DESC LIMIT 1") if 有表("category") else None
+        if _品类:
+            出.append(("save_product", lambda s, _m=_部, _c=_品类["code"]: s.save_product(
+                {"name": "冒烟商品" + str(id(s))[-5:], "base_price": 199, "category": _c, "kind": "标品"},
+                _m["name"], _m["role"]), "product"))
+        # 通用状态流转:挑一条草稿内容发布(没有连带动作)。transit 拒绝也留痕,
+        # 所以这条只有在「返回拒绝算没写成」之后才有意义(见 跑一个())
+        def _发一条草稿(s, _m=_部):
+            码 = (s.rows("SELECT code FROM content WHERE status='草稿' LIMIT 1") or [{"code": ""}])[0]["code"]
+            return s.transit("bk-content", 码, "已发布", {}, _m["name"], me=_m)
+        出.append(("transit", _发一条草稿, "op_log"))
         出.append(("save_activity", lambda s, _m=_部: s.save_activity(
             {"name": "冒烟活动", "kind": "线上", "start_d": "2027-01-01", "end_d": "2027-01-02", "shop": "全渠道"}, _m), "activity"))
         活 = 取("SELECT code FROM activity LIMIT 1")
@@ -595,6 +616,9 @@ def main():
     ('把用例表里的函数名写错一个字(create_followup → create_followupX),欠账涨一个',
      '没覆盖的写接口不超过'),
     ('让 create_followup 只返回 ok 不写库(把 _insert 那一句吞掉)',
+     '写接口真跑,且库里真的变了'),
+    # 11-15 夜:被拒也往 op_log 记一行 —— 拿掉开关用例的角色,它被拒、只留一行拒绝痕迹,必须红
+    ('拿掉通用开关用例的角色(被拒了,只在 op_log 留一行拒绝痕迹)',
      '写接口真跑,且库里真的变了'),
 ]
 # ⚠️ 第一条的破坏点换过一次:原来写的是「把那一行整个删掉」,

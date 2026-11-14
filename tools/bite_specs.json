@@ -22049,5 +22049,17 @@
    }
   ],
   "预期红": "「改」里只有造法认得的键"
+ },
+ {
+  "script": "backend/write_smoke_check.py",
+  "改坏": "拿掉通用开关用例的角色(被拒了,只在 op_log 留一行拒绝痕迹)",
+  "file": [
+   {
+    "path": "backend/write_smoke_check.py",
+    "old": "actor=员[\"no\"] if 员 else \"魏欣新\", role=\"总部运营\"),",
+    "new": "actor=员[\"no\"] if 员 else \"魏欣新\"),"
+   }
+  ],
+  "预期红": "写接口真跑,且库里真的变了"
  }
 ]
