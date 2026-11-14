@@ -14,6 +14,7 @@
   ⑤ 日志只记真改了的字段,而且「日志记的字段 = UPDATE 真写的字段」(两边从源码取)
   ⑥ 入口真接上了:/api/shop-save 交的是会话里的登录人,不是请求体
 """
+from contextlib import closing
 import os, re, sys, json, sqlite3, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -39,12 +40,14 @@ def main():
     tmp = tempfile.mkdtemp()
     副本 = os.path.join(tmp, "lanxiu.db")
     # .backup 而不是 cp:backend/lanxiu.db 在另一个检出里是软链(CLAUDE.md §7-5.5)
-    with sqlite3.connect(os.path.join(HERE, "lanxiu.db")) as 真, sqlite3.connect(副本) as 副:
+    with closing(sqlite3.connect(os.path.join(HERE, "lanxiu.db"))) as 真, closing(sqlite3.connect(副本)) as 副:
         真.backup(副)
     import server, oplog
     server.DB = oplog.DB = 副本
     assert server.DB == 副本 and oplog.DB == 副本, "库没切到副本"
-    q = lambda sql, *a: [tuple(r) for r in sqlite3.connect(副本).execute(sql, a).fetchall()]
+    def q(sql, *a):
+        with closing(sqlite3.connect(副本)) as _c:
+            return [tuple(r) for r in _c.execute(sql, a).fetchall()]
     def 人(role):
         r = q("SELECT no,name,role,shop FROM staff WHERE role=? AND status='启用' ORDER BY no LIMIT 1", role)
         if not r: return None

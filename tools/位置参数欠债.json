@@ -51,7 +51,6 @@
   },
   "backend/server.py": {
    "approval": 1,
-   "content": 1,
    "download_task": 1,
    "measure_item": 1,
    "measure_tpl": 1,

@@ -12,6 +12,7 @@
   ⑤ 内容发布 / 下架走状态机,发布时记发布时间
   ⑥ 日志记的字段 = UPDATE 真写的字段;入口交的是会话登录人;页面上这七个按钮不再是「本期未实现」
 """
+from contextlib import closing
 import os, re, sys, json, sqlite3, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -36,12 +37,14 @@ def ck(name, ok, n, msg=""):
 def main():
     tmp = tempfile.mkdtemp()
     副本 = os.path.join(tmp, "lanxiu.db")
-    with sqlite3.connect(os.path.join(HERE, "lanxiu.db")) as 真, sqlite3.connect(副本) as 副:
+    with closing(sqlite3.connect(os.path.join(HERE, "lanxiu.db"))) as 真, closing(sqlite3.connect(副本)) as 副:
         真.backup(副)
     import server, oplog
     server.DB = oplog.DB = 副本
     assert server.DB == 副本 and oplog.DB == 副本, "库没切到副本"
-    q = lambda sql, *a: [tuple(r) for r in sqlite3.connect(副本).execute(sql, a).fetchall()]
+    def q(sql, *a):
+        with closing(sqlite3.connect(副本)) as _c:
+            return [tuple(r) for r in _c.execute(sql, a).fetchall()]
     def 人(role):
         r = q("SELECT no,name,role,shop FROM staff WHERE role=? AND status='启用' ORDER BY no LIMIT 1", role)
         return dict(no=r[0][0], name=r[0][1], role=r[0][2], shop=r[0][3]) if r else None

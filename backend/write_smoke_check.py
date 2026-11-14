@@ -56,7 +56,7 @@ DONE = []
 
 # 还没有冒烟用例的写接口数。**只许降不许涨** —— 补一个改一次这个数。
 # 定在当前值而不是 0:一次补 17 个不现实,而「等补完再进门禁」的下场是永远补不完。
-欠账上限 = 10
+欠账上限 = 9    # 11-14 补「本期未实现」按钮四组时顺带补上 save_content 的冒烟,10 → 9
 
 
 def ck(name, ok, n, msg=""):
@@ -378,6 +378,30 @@ def 用例表():
             return s.call_fix(dict(no=(店长 or {}).get("no", "T"), name="冒烟", role="店长", shop=店客["shop"]),
                               dict(audio_id="CA-SMOKE", idx=0, action="采纳", 以后自动改=True))[0]
         出.append(("call_fix", _纠, "asr_verified_pair"))
+
+    # ── 11-14「本期未实现」按钮四组(台账第四十五到四十八条):都只认会话里的总部运营 ──
+    # 改已有行的那两个(编辑预约 / 改权限)行数不动 —— 判据数 edit_log:每次保存都留一条(没改动也记「无改动」)
+    部 = 取("SELECT no,name,role,shop FROM staff WHERE role='总部运营' AND status='启用' LIMIT 1")
+    if 部:
+        _部 = dict(部)
+        出.append(("save_shop", lambda s, _m=_部: s.save_shop(
+            {"new": 1, "code": "SH9" + str(id(s))[-2:], "name": "冒烟店" + str(id(s))[-4:]}, _m), "shop"))
+        出.append(("save_content", lambda s, _m=_部: s.save_content({"title": "冒烟内容"}, _m), "content"))
+        出.append(("save_page", lambda s, _m=_部: s.save_page(
+            {"name": "冒烟页" + str(id(s))[-4:], "channel": "小程序"}, _m), "page"))
+        出.append(("save_category", lambda s, _m=_部: s.save_category({"name": "冒烟品类" + str(id(s))[-3:]}, _m), "category"))
+        出.append(("save_activity", lambda s, _m=_部: s.save_activity(
+            {"name": "冒烟活动", "kind": "线上", "start_d": "2027-01-01", "end_d": "2027-01-02", "shop": "全渠道"}, _m), "activity"))
+        活 = 取("SELECT code FROM activity LIMIT 1")
+        if 活:
+            出.append(("add_activity_cost", lambda s, _m=_部, _a=活["code"]: s.add_activity_cost(
+                {"activity": _a, "item": "冒烟费用", "amount": 1}, _m), "activity_cost"))
+        约 = 取("SELECT id FROM appointment WHERE status IN ('待确认','已预约') LIMIT 1")
+        if 约:
+            出.append(("edit_appointment", lambda s, _m=_部, _i=约["id"]: s.edit_appointment({"id": _i}, _m), "edit_log"))
+        顾 = 取("SELECT no FROM staff WHERE role='顾问' AND status='启用' LIMIT 1")
+        if 顾:
+            出.append(("save_staff_perm", lambda s, _m=_部, _n=顾["no"]: s.save_staff_perm({"no": _n}, _m), "edit_log"))
 
     return [x for x in 出 if 有表(x[2])]
 

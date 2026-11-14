@@ -10,6 +10,7 @@
      同一类还没办完的再发一遍全部跳过(不连派两条),跳过的逐个说清
   ③ 入口交的是会话登录人;页面上这几处不再是「本期未实现」/「未做」
 """
+from contextlib import closing
 import os, re, sys, json, sqlite3, tempfile, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -33,12 +34,14 @@ def ck(name, ok, n, msg=""):
 def main():
     tmp = tempfile.mkdtemp()
     副本 = os.path.join(tmp, "lanxiu.db")
-    with sqlite3.connect(os.path.join(HERE, "lanxiu.db")) as 真, sqlite3.connect(副本) as 副:
+    with closing(sqlite3.connect(os.path.join(HERE, "lanxiu.db"))) as 真, closing(sqlite3.connect(副本)) as 副:
         真.backup(副)
     import server, oplog, tasks, targeted_ops
     server.DB = oplog.DB = tasks.DB = targeted_ops.DB = 副本
     assert all(m.DB == 副本 for m in (server, oplog, tasks, targeted_ops)), "库没切到副本"
-    q = lambda sql, *a: [tuple(r) for r in sqlite3.connect(副本).execute(sql, a).fetchall()]
+    def q(sql, *a):
+        with closing(sqlite3.connect(副本)) as _c:
+            return [tuple(r) for r in _c.execute(sql, a).fetchall()]
     def 人(sql, *a):
         r = q(sql, *a)
         return dict(no=r[0][0], name=r[0][1], role=r[0][2], shop=r[0][3]) if r else None

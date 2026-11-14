@@ -9,6 +9,7 @@
   ⑤ 改成功后**这个人的旧会话全作废**(会话里的角色是登录时存的)
   ⑥ 日志记的字段 = UPDATE 里记日志的那几个;入口交会话登录人
 """
+from contextlib import closing
 import os, re, sys, json, sqlite3, tempfile, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -33,14 +34,16 @@ def ck(name, ok, n, msg=""):
 def main():
     tmp = tempfile.mkdtemp()
     副本 = os.path.join(tmp, "lanxiu.db")
-    with sqlite3.connect(os.path.join(HERE, "lanxiu.db")) as 真, sqlite3.connect(副本) as 副:
+    with closing(sqlite3.connect(os.path.join(HERE, "lanxiu.db"))) as 真, closing(sqlite3.connect(副本)) as 副:
         真.backup(副)
     import server, oplog, auth
     server.DB = oplog.DB = 副本
     # 会话落盘也挪到临时目录 —— 这条检查要往会话表里塞假会话,别碰真登录态
     auth._文件 = lambda: os.path.join(tmp, "sessions.json")
     assert server.DB == 副本 and oplog.DB == 副本
-    q = lambda sql, *a: [tuple(r) for r in sqlite3.connect(副本).execute(sql, a).fetchall()]
+    def q(sql, *a):
+        with closing(sqlite3.connect(副本)) as _c:
+            return [tuple(r) for r in _c.execute(sql, a).fetchall()]
     def 人(sql, *a):
         r = q(sql, *a)
         return dict(no=r[0][0], name=r[0][1], role=r[0][2], shop=r[0][3]) if r else None
@@ -53,7 +56,7 @@ def main():
                "AND NOT EXISTS(SELECT 1 FROM schedule x WHERE x.assignee_no=s.no AND x.status='有效') ORDER BY s.no LIMIT 1")
     if not 空顾问 and 有客顾问:
         # 库里每个顾问都有客户时,在副本上造一个空的(只在副本)
-        with sqlite3.connect(副本) as c:
+        with closing(sqlite3.connect(副本)) as c, c:
             c.execute("INSERT INTO staff(no,name,role,shop,status,shop_code) SELECT '69999999','检查空顾问','顾问',shop,'启用',shop_code "
                       "FROM staff WHERE no=?", (有客顾问["no"],))
         空顾问 = 人("SELECT no,name,role,shop FROM staff WHERE no='69999999'")
@@ -61,14 +64,16 @@ def main():
     if not all((总部, 店长, 有客顾问, 空顾问)): return
     别店 = q("SELECT code||' '||name FROM shop WHERE code<>(SELECT shop_code FROM staff WHERE no=?) ORDER BY code LIMIT 1", 空顾问["no"])[0][0]
 
+    # 列名写死:staff 带 pwd_*,星号会把哈希和盐带出来(staff_cred_check 盯着)
+    员工列 = "SELECT no,name,role,shop,shop_code,status,updated_by,updated FROM staff ORDER BY no"
     print("\n① 三条拍过的")
-    前 = q("SELECT * FROM staff ORDER BY no")
+    前 = q(员工列)
     r1 = server.save_staff_perm(dict(no=空顾问["no"], role="店长"), 店长)
     r2 = server.save_staff_perm(dict(no=店长["no"], role="总部运营", shop=""), 店长)
     ck("① 店长改不了别人、也给自己提不了权", r1.get("code") == "WRONG_ROLE" and r2.get("code") == "WRONG_ROLE"
-       and q("SELECT * FROM staff ORDER BY no") == 前, 2, json.dumps([r1.get("code"), r2.get("code")]))
+       and q(员工列) == 前, 2, json.dumps([r1.get("code"), r2.get("code")]))
     r = server.save_staff_perm(dict(no=总部["no"], status="停用"), 总部)
-    ck("① 总部运营改不了自己", r.get("code") == "SELF_EDIT" and q("SELECT * FROM staff ORDER BY no") == 前, 1, r.get("code"))
+    ck("① 总部运营改不了自己", r.get("code") == "SELF_EDIT" and q(员工列) == 前, 1, r.get("code"))
     r = server.save_staff_perm(dict(no=空顾问["no"], role="店长", shop=空顾问["shop"]), dict(店长, role="财务"))
     ck("① 低级别(自称财务)不能把别人提成店长", r.get("code") in ("WRONG_ROLE", "ABOVE_ME"), 1, r.get("code"))
 
