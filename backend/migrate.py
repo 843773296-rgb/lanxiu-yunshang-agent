@@ -105,7 +105,7 @@ def 补齐(c, 目录=目录, 说=print):
         try:
             m.up(c)
             c.execute("INSERT INTO schema_version(ver, name, fp, applied_at) VALUES (?,?,?,?)",
-                      (ver, name, fp, _dt.datetime.now().isoformat(timespec="seconds")))
+                      (ver, name, fp, _dt.datetime.now().isoformat(timespec="seconds")))  # 真实时钟:记库结构什么时候被改,运维痕迹,不随世界平移(同 op_log.ts)
             c.execute("COMMIT")
         except Exception:
             c.execute("ROLLBACK")
