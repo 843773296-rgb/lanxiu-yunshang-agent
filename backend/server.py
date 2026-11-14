@@ -4072,6 +4072,11 @@ POST_匿名放行 = {
     "/api/logout": "退出口 —— 会话可能已经过期,退出不该被拦;它只作废请求自己 cookie 里的那个 token,碰不到别人",
     "/api/book":   "顾客手机端自助预约 —— 顾客没有员工账号,要他先注册等于不让约;"
                    "敞开的代价由 booking.book() 自己的三道闸兜(格式 / 频次 / 派给谁不由请求决定)",
+    # 顾客一次性链接(11-14,台账第四十四条):顾客没有账号,**身份就是链接里那个令牌**。
+    # 敞开的代价由 customer_link 自己兜:令牌 32 字节随机、库里只存哈希;只能用一次、7 天过期、重发即作废;
+    # 只能办链接上写明的那一件事;令牌不对 / 过期 / 用过对外一律同一句话
+    "/api/c/look": "顾客点开一次性链接:只回「这条链接是干什么的」,不改任何东西",
+    "/api/c/use":  "顾客在一次性链接页上办那一件事(签收确认 / 追评)—— 身份是令牌,见 customer_link.用",
 }
 POST_内部口 = {
     "/api/triage-run-worker": "智能运维平台(8770)研判执行线程领活 / 心跳 / 收尾 —— 服务端线程调用,没有浏览器 cookie;"
@@ -4111,6 +4116,34 @@ class H(BaseHTTPRequestHandler):
             if not u: return self._send({"error": "没登录"}, 401)
             r = _ocs.取(u, p.split("/api/contract/", 1)[1], db=backend.DB)
             return self._send(r, 404 if "error" in r else 200)
+        if p in ("/api/pieces", "/api/pattern-rules"):
+            # 裁片用料维护页(11-14,台账第五十一条)。要登录;改占比走 POST /api/piece-ratio(只版师)
+            if not _me(self): return self._send({"error": "没登录"}, 401)
+            if p == "/api/pieces":
+                from urllib.parse import parse_qs as _pq
+                pt = (_pq(urlparse(self.path).query).get("pattern") or [""])[0]
+                型 = rows("SELECT code, name, fabric_base FROM pattern ORDER BY code")
+                片 = rows("SELECT name, qty, ratio, ratio_src, ratio_by, ratio_at, ratio_why FROM pattern_piece "
+                          "WHERE pattern=? ORDER BY ratio DESC", pt) if pt else []
+                return self._send(dict(版型=型, 裁片=片, 当前=pt))
+            # 三张口径表**只读**(用户 11-14 拍:照生命周期 —— 留在 knowledge 口径里,改要走评审)
+            import grading as _gr, fitting as _ft      # knowledge/ 已在 sys.path(文件头)
+            return self._send(dict(
+                说明="行业规范推算 —— 业务 2026-11-14 定为正式口径使用,未经版师核;要改走评审、改知识库口径并重新对账,不在页面上改",
+                童装档差=dict(来源=_gr.童装来源, 基码身高=_gr.童装基码身高, 每10cm=_gr._童10, 每5cm=_gr._童5, 一四零跨段=_gr._童140),
+                门幅=rows("SELECT code, name, cat, width_cm, spec FROM material WHERE cat IN ('里料','衬料') ORDER BY cat, code"),
+                特体修版量=_ft.特体修版量))
+        if p.startswith("/api/customer-tags/"):
+            # 这位客户打了哪些标签 + 标签字典(11-14)。要登录;本店范围和写口同一条(tag_level_write.bind_tags)
+            import tag_level_write as _tl, sqlite3 as _sq3, contextlib as _ctl
+            u = _me(self)
+            if not u: return self._send({"error": "没登录"}, 401)
+            cid = p.split("/api/customer-tags/", 1)[1]
+            with _ctl.closing(_sq3.connect(_tl.DB)) as _c:
+                有表 = _c.execute("SELECT 1 FROM sqlite_master WHERE name='customer_tag'").fetchone()
+                打了 = [r[0] for r in _c.execute("SELECT tag_code FROM customer_tag WHERE customer_id=?", (cid,))] if 有表 else []
+                字典 = [dict(code=r[0], name=r[1], grp=r[2], status=r[3]) for r in _c.execute("SELECT code,name,grp,status FROM tag ORDER BY grp, code")]
+            return self._send(dict(打了=打了, 字典=字典))
         if p == "/api/arrival-calendar":
             # 新品上市日历(工作台)—— 商品排期不分门店,登录了就能看
             import arrival_card as _ac
@@ -4139,6 +4172,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(r, 404 if "error" in r else 200)
         # 四个智能体页面已迁到独立站点(agentsite/,端口 8770)。
         # 后台只留一个入口链接,接口仍对外提供 —— 新站的 /api/* 反代过来。
+        if p.startswith("/c/") and len(p) > 3:
+            # 顾客一次性链接的落地页(11-14,台账第四十四条)。**页面本身不带任何顾客信息** ——
+            # 它只是一个壳,打开后拿路径里的令牌去 POST /api/c/look;令牌不对,页面上什么都没有。
+            # no-store:令牌在地址里,别留在缓存;no-referrer:顾客点页面上任何外链都不把带令牌的地址带出去
+            b=open(os.path.join(HERE,"web","c.html"),"rb").read()
+            self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
+            self.send_header("cache-control","no-store"); self.send_header("referrer-policy","no-referrer")
+            self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if p in ("/","/index.html"):
             b=open(os.path.join(HERE,"web","index.html"),"rb").read()
             self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
@@ -5142,6 +5183,32 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/import":
             return self._send(import_customers(body.get("text"),登录人["name"],role=登录人.get("role"),
                                                dry=bool(body.get("dry",True))))
+        if p=="/api/piece-ratio":
+            # 改一片的用料占比:只版师、why 必填、同版型没核过的片按比例归一 —— 规则全在 api.set_piece_ratio,
+            # 身份从会话塞进工具层的上下文(它不收身份参数,和聊天里那条写工具同一个函数)
+            with backend.as_user(登录人):
+                r = backend.set_piece_ratio(body.get("pattern"), body.get("piece"), body.get("ratio"), body.get("why") or "")
+            if "error" in r:
+                log_op(登录人.get("name") or "?", "pattern_piece", f"{body.get('pattern')}·{body.get('piece')}", "改占比", "拒绝",
+                       False, "REJECT", r["error"][:120], {"role": 登录人.get("role")})
+                return self._send(dict(ok=False, code="REJECT", reason=r["error"]))
+            log_op(登录人.get("name") or "?", "pattern_piece", f"{body.get('pattern')}·{body.get('piece')}", str(r.get("改前")),
+                   str(r.get("改后")), True, "RATIO", (body.get("why") or "")[:120], {"role": 登录人.get("role")})
+            return self._send(dict(r, ok=True, code="RATIO", reason=f"已改:{r.get('折合米数')}(同版型没核过的片已重新归一)"))
+        if p in ("/api/tag-save", "/api/customer-tags", "/api/level-save", "/api/merge-manual"):
+            import tag_level_write as _tl
+            fn = {"/api/tag-save": _tl.save_tag, "/api/customer-tags": _tl.bind_tags,
+                  "/api/level-save": _tl.save_level, "/api/merge-manual": _tl.manual_merge}[p]
+            return self._send(fn(body, 登录人))
+        if p=="/api/customer-link":
+            import customer_link as _cl
+            return self._send(_cl.发(body, 登录人))
+        if p=="/api/c/look":
+            import customer_link as _cl
+            return self._send(_cl.看(str(body.get("token") or "")))
+        if p=="/api/c/use":
+            import customer_link as _cl
+            return self._send(_cl.用(str(body.get("token") or ""), body))
         if p=="/api/staff-perm":
             return self._send(save_staff_perm(body, 登录人))
         if p=="/api/appt-edit":

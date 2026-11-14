@@ -362,6 +362,9 @@ run "店铺资料写口 · 只总部运营能建 / 改 / 启停,新店默认无�
 run "内容 / 活动 / 品类 / 页面写口 · 只总部运营;新建先不对外;品类最多三级、有上架商品不许停用(11-14 台账第四十五条)" python3 backend/content_write_check.py
 run "编辑预约 / 定向运营 · 本店的人改本店的预约;定向运营只总部、派给归属导购、不连派两条(11-14 台账第四十七、四十八条)" python3 backend/appt_ops_write_check.py
 run "编辑权限 · 只总部运营、不能改自己、不能提到比自己高;名下有客户不许调走;改完旧会话作废(11-14 台账第四十五条)" python3 backend/staff_perm_check.py
+run "顾客一次性链接 · 只给本店的单发、只能用一次、7 天过期、重发作废、没办成还占位、库里只存哈希(11-14 台账第四十四条)" python3 backend/customer_link_check.py
+run "客户标签 / 会员等级 / 手动合并 · 打标签本店范围、停用的不能新打;新等级先停用且门槛单调;手动合并不跨账户(11-14 台账第四十九条)" python3 backend/tag_level_check.py
+run "按钮四组 + 顾客链接的页面接线 · node 里真跑页面:按钮渲染了、点了真绑着、发出去的地址和内容对(11-14)" node backend/page_buttons_check.mjs
 run "商品表单 · 显示的字段就得改得了(对照设计稿)" python3 backend/product_form_check.py
 run "量体模版 / 测量项 · 改一个被引用的东西是最危险的动作" python3 backend/measure_tpl_check.py
 run "分部位可选料 · 部位从裁片归并,报价口径要跟着出" python3 backend/part_check.py

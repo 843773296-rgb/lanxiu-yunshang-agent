@@ -448,12 +448,20 @@ def customer_issue_code(order_id, phone_tail, pkg=None):
 
 
 def customer_complete(order_id, phone_tail):
-    """顾客确认完成:「待完成 → 完成」。"""
+    """顾客确认完成:「待完成 → 完成」(订单号 + 手机后四位核身份的那条老路)。"""
     o, err = _顾客的单(order_id, phone_tail)
     if err: return err
+    return 顾客确认完成(o["id"])
+
+
+def 顾客确认完成(order_id, 来源="订单号+后四位"):
+    """「待完成 → 完成」本身。**怎么核顾客身份不归这里**:老路是订单号 + 后四位(customer_complete),
+    新路是一次性链接(customer_link.用,11-14)—— 两条路共用这一段,规则只有一份。"""
+    o = _单(order_id)
+    if not o: return dict(ok=False, code="NO_ORDER", reason="没有这一单")
     if o["status"] != "待完成":
         return dict(ok=False, code="BAD_STATE", reason=f"这一单现在是「{o['status']}」—— 签收之后才能确认完成")
-    ok, code, why = _完成(o, "顾客", "顾客", "COMPLETE", f"顾客确认订单 {o['id']} 完成")
+    ok, code, why = _完成(o, "顾客", "顾客", "COMPLETE", f"顾客确认订单 {o['id']} 完成(经{来源})")
     if not ok:
         return dict(ok=False, code=code, reason=why)
     return dict(ok=True, code="COMPLETE", 订单=o["id"], 到="完成", reason="已确认完成,谢谢")

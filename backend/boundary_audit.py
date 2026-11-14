@@ -885,6 +885,48 @@ def a_staff_self_elevate():
         _sh.rmtree(d, ignore_errors=True)
 
 
+def a_customer_link_abuse():
+    """冒充顾客 —— 库副本上四刀(11-14 台账第四十四条「顾客证明本人 = 导购发一次性链接」)。
+
+    刀一:拿不存在的令牌办事。刀二:一条链接用两次。刀三:链接过期了还用。刀四:重发之后用旧链接。
+    任何一刀让订单变成「完成」都算破。⚠️ 先把四个模块的库指到副本 —— customer_link 一调就建表。"""
+    import customer_link as _cl, oplog as _ol, pickup_write as _pw, rating_write as _rw
+    import shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq, datetime as _dt
+    from contextlib import closing as _cls
+    原 = (_cl.DB, _ol.DB, _pw.DB, _rw.DB)
+    d = _tf.mkdtemp(prefix="ba-clink-"); p = _os.path.join(d, "lanxiu.db")
+    with _cls(_sq.connect(原[0])) as 真, _cls(_sq.connect(p)) as 副:
+        真.backup(副)
+    _cl.DB = _ol.DB = _pw.DB = _rw.DB = p
+    try:
+        with _cls(_sq.connect(p)) as c:
+            单 = c.execute("SELECT id, shop_code FROM ordr WHERE status='待完成' AND kind='定制品订单' AND shop_code IS NOT NULL "
+                          "ORDER BY id LIMIT 2").fetchall()
+            人们 = [c.execute("SELECT no, name, role, shop FROM staff WHERE role='顾问' AND status='启用' AND shop_code=? LIMIT 1",
+                            (x[1],)).fetchone() for x in 单]
+        if len(单) < 2 or not all(人们):
+            return "没有可攻击的样本(两张待完成定制单和各自的在职顾问)—— 没攻击成,不算守住"
+        状态 = lambda oid: _sq.connect(p).execute("SELECT status FROM ordr WHERE id=?", (oid,)).fetchone()[0]
+        导 = [dict(no=x[0], name=x[1], role=x[2], shop=x[3]) for x in 人们]
+        if _cl.用("A" * 43, {}).get("ok"): return "不存在的令牌办成了事 —— 门没守住"
+        t = _cl.发({"order_id": 单[0][0], "purpose": "签收确认"}, 导[0])["链接"].split("/c/")[-1]
+        _cl.用(t, {})
+        with _cls(_sq.connect(p)) as c, c:
+            c.execute("UPDATE ordr SET status='待完成' WHERE id=?", (单[0][0],))      # 还原,看第二次能不能再推一次
+        if _cl.用(t, {}).get("ok"): return "同一条链接用了两次 —— 门没守住"
+        旧 = _cl.发({"order_id": 单[1][0], "purpose": "签收确认"}, 导[1])["链接"].split("/c/")[-1]
+        新 = _cl.发({"order_id": 单[1][0], "purpose": "签收确认"}, 导[1])["链接"].split("/c/")[-1]
+        if _cl.用(旧, {}).get("ok") or 状态(单[1][0]) == "完成": return "重发之后旧链接还能用 —— 门没守住"
+        with _cls(_sq.connect(p)) as c, c:
+            c.execute("UPDATE customer_link SET expires_at=? WHERE token_hash=?",
+                      ((_dt.datetime.now() - _dt.timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S"), _cl._指纹(新)))
+        if _cl.用(新, {}).get("ok") or 状态(单[1][0]) == "完成": return "过期的链接还能用 —— 门没守住"
+        raise PermissionError("四刀都被拦下")
+    finally:
+        _cl.DB, _ol.DB, _pw.DB, _rw.DB = 原
+        _sh.rmtree(d, ignore_errors=True)
+
+
 def _verdict(name, reads=(), writes=()):
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "agentsite"))
@@ -2048,6 +2090,10 @@ STRUCT = [
  ("店长改不了定制品的量体模板", "同上",
   a_product_template_by_manager, "以店长身份改 template",
   "比改名字严重 —— 量体模板决定量哪些尺寸,改错了是照着错的口径去裁"),
+ ("冒充顾客办不成事(一次性链接)", "backend/customer_link.py 发 / 用(11-14 台账第四十四条)",
+  a_customer_link_abuse, "库副本上:不存在的令牌、一条链接用两次、重发后用旧链接、过期后再用",
+  "**靠结构**:令牌 32 字节随机、库里只存哈希;用之前先占位(UPDATE … WHERE used_at IS NULL,看改了几行);"
+  "过期按真实时钟;重发把旧的作废。原来顾客侧核身份靠「订单号 + 手机后四位」,一万种组合、试错不留痕"),
  ("改不了自己的权限,也提不了别人的权", "server.py save_staff_perm(11-14 台账第四十五条第四组)",
   a_staff_self_elevate, "库副本上:店长把自己提成总部运营、总部运营改自己、店长把顾问提成总部运营",
   "**靠结构**:身份只认会话;改自己一律拒(不分改什么);只总部运营能改、且不能提到比自己高。"

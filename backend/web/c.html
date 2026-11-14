@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>澜绣云裳 · 顾客确认</title>
+<style>
+/* 顾客一次性链接的落地页(11-14,台账第四十四条)。页面是空壳:内容全靠路径里的令牌去问 /api/c/look */
+:root{--bg:#f7f5f2;--card:#fff;--ink:#2a2622;--ink2:#6b625a;--line:#e6e0d8;--acc:#8a3b2e;--ok:#2f7a4f;--bad:#a33}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1917;--card:#262320;--ink:#eee8e1;--ink2:#a89f95;--line:#3a3530;--acc:#d07a68;--ok:#6cc08e;--bad:#e07a7a}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.w{max-width:480px;margin:0 auto;padding:28px 16px}
+h1{font-size:19px;margin:0 0 4px}.sub{color:var(--ink2);font-size:13px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px}
+textarea{width:100%;box-sizing:border-box;min-height:120px;border:1px solid var(--line);border-radius:8px;padding:10px;
+  font:inherit;background:transparent;color:var(--ink)}
+button{width:100%;margin-top:14px;padding:12px;border:0;border-radius:8px;background:var(--acc);color:#fff;font-size:16px}
+button:disabled{opacity:.5}
+.msg{margin-top:14px;font-size:14px}.ok{color:var(--ok)}.bad{color:var(--bad)}
+</style></head>
+<body><div class="w">
+ <h1>澜绣云裳</h1><div class="sub" id="sub">正在打开链接…</div>
+ <div class="card" id="box"></div>
+</div>
+<script>
+"use strict";
+const 令牌 = decodeURIComponent(location.pathname.replace(/^\/c\//, ""));
+const box = document.getElementById("box"), sub = document.getElementById("sub");
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function 发(url, body){
+  const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  return r.json();
+}
+function 结果(r){
+  const m = document.createElement("div");
+  m.className = "msg " + (r.ok ? "ok" : "bad"); m.textContent = r.reason || (r.ok ? "已完成" : "没有成功");
+  box.appendChild(m);
+}
+(async () => {
+  let d;
+  try { d = await 发("/api/c/look", {token: 令牌}); } catch (e) { d = {ok:false, reason:"网络不通,请稍后再打开"}; }
+  if (!d.ok) { sub.textContent = ""; box.innerHTML = `<div class="bad">${esc(d.reason)}</div>`; return; }
+  sub.textContent = `订单尾号 ${d.订单尾号} · 链接有效到 ${d.有效到} · 只能用一次`;
+  if (d.用途 === "签收确认") {
+    box.innerHTML = `<div>衣服已经试穿合身、交到您手上了吗?确认后这一单就算完成。</div>
+      <button id="go">我已收到,确认完成</button>`;
+    document.getElementById("go").onclick = async e => {
+      e.target.disabled = true; const r = await 发("/api/c/use", {token: 令牌});
+      结果(r); if (!r.ok) e.target.disabled = false;
+    };
+  } else {
+    box.innerHTML = `<div>穿过之后感觉怎么样?(不改您原来的评分)</div>
+      <textarea id="t" maxlength="300" placeholder="最多 300 字"></textarea><button id="go">提交追评</button>`;
+    document.getElementById("go").onclick = async e => {
+      const t = document.getElementById("t").value.trim();
+      if (!t) { 结果({ok:false, reason:"写点什么再提交吧"}); return; }
+      e.target.disabled = true; const r = await 发("/api/c/use", {token: 令牌, note: t});
+      结果(r); if (!r.ok) e.target.disabled = false;
+    };
+  }
+})();
+</script>
+</body></html>

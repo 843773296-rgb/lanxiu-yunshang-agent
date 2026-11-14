@@ -54,6 +54,8 @@ import alert_dispatch
 import kb_issue
 import report_template
 import ownership_release   # 公海知会清单的每户记录(11-14)
+import customer_link       # 顾客一次性链接(11-14,台账第四十四条)
+import tag_level_write     # 客户标签绑定(11-14,台账第四十九条)
 import query_index          # 为真实查询加的索引(2026-10-24,只读审计第 4 条)
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
@@ -61,6 +63,11 @@ import query_index          # 为真实查询加的索引(2026-10-24,只读审�
     (ownership, "建表", ["cust_owner_log"]),
     # 公海知会每户一行(2026-11-14,拍板第三十九条「每人一条清单」):首次派清单 / 合并旧知会时才写 —— 运行时才写
     (ownership_release, "建表", ["pool_notice"]),
+    # 顾客一次性链接(2026-11-14,台账第四十四条):导购第一次发链接时才写 —— 运行时才写,建死免得表数漂
+    (customer_link, "建表", ["customer_link"]),
+    # 客户标签绑定(2026-11-14,台账第四十九条):原来没有「哪位客户打了哪个标签」这回事,tag.n 是造的。
+    # 建表这一步顺带把 tag.n 按真实绑定重算(造数写进去的人数归零)—— 重建时 seed 写的 n 也会被它改成真数
+    (tag_level_write, "建表", ["customer_tag"]),
     (asr, "建表", ["call_audio", "call_transcript"]),
     (credit, "建表", ["deal_credit"]),
     (roster, "建表", ["shift_tpl", "roster", "leave_req"]),

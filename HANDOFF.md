@@ -19,24 +19,46 @@
 
 1. [x] ✅ 门店账 8 行空花费已删(07:40):备份 agentsite/usage/备份-空花费8行-20261114.jsonl + 整文件 .删前-20261114;本月 = 0 元 0 笔(账本不进版本库,无提交)
 2. [x] ✅ 08:29 夜间汇总已发飞书并回读(标题 / 「已拍」/「0 元 0 笔」/「07:15」都在;用户身份授权过期,改用发布脚本自己的令牌读回);一次性提醒 17cf0fd3 已删。原:08:25 上一轮夜间汇总发飞书(一次性提醒 17cf0fd3 08:26;汇总里第 1 件改成「已删」、第 2 件改成「11-23 前再问」;只本地提交,等 eureka-fc 推完再推)
-3. [x] ✅ PRD 2.4.2 补第四十二到四十八条 + 难点 B-121(店名锁死)+ 补齐 B-119 字段;08:3x 已发飞书并回读(四组落地状态那版待门禁绿后再发一次)。⚠️ 附录 B 另有 19 条老条目字段不全(严格汇总器报),欠账。原:PRD 2.4.1 补第四十二到四十五条 + 发飞书
-4. [x] ✅(未提交,等门禁)店铺:save_shop(新店默认无效 / 店名锁死 / 店长只能指本店在职店长)、客户详情「编辑门店」→「转移顾问」走客户转移审批;检查 backend/shop_write_check.py。原:按钮第一组:门店 / 店铺资料(编辑门店、新增店铺、编辑店铺)—— backend/web/index.html 1567/1666/1692 一带;先查有没有现成写口和权限判定,写口走统一写入判定 + 留 op_log,只总部管理员
-5. [x] ✅(未提交)save_content(补角色、作者记本人)/ save_activity / add_activity_cost / save_page / save_category + 新状态机 bk-content;**fsm.主数据岗**:店铺 / 商品 / 活动 / 页面 / 内容的状态只许总部运营切(原来谁登录都能点);检查 content_write_check.py。原:按钮第二组:内容 / 活动 / 品类(新建/编辑品类、编辑/下架内容、新建活动、新增页面、添加费用)
-6. [x] ✅(未提交)edit_appointment(本店的人改本店)、backend/targeted_ops.py(定向运营,逐个调 tasks.assign_task)、生命周期两个按钮换说明;检查 appt_ops_write_check.py。原:按钮第三组:预约 / 定向运营(编辑预约、定向运营、添加生命周期、设为默认值)
-7. [x] ✅(未提交)save_staff_perm + auth.作废(改完作废旧会话);检查 staff_perm_check.py;边界审计三条新攻击(店铺 / 内容 / 提权)。原:按钮第四组:权限编辑(1750 一带)—— 必须挡:自己给自己提权、给别人提到比自己高;边界审计加一条真攻击
-8. [ ] 顾客一次性链接:导购发、只能用一次、7 天过期 → 接顾客追评写口 + 签收告知单的顾客确认(先算法选型卡?时效/令牌规则已拍,按「已确认」直接做,PRD 附录 A 记)
-9. [x] ✅(未提交,随这批)写进 intent/log-retention-review-1122.md(状态「等人的活」),待办清单已重生成;intent_check 全绿。原:11-22 前提醒用户看澜绣到期清理真清单(会话内定时器活不到那天 → 写进 待办清单 / intent)
+3. [x] ✅ PRD 2.4.2 补第四十二到四十八条 + 难点 B-121(店名锁死)+ 补齐 B-119 字段;08:3x 已发飞书并回读(10:3x 四组落地版已再发飞书并回读)。✅ 附录 B 19 条老条目已补齐(11:0x,缺的栏按附录自己的规矩写「不知道」不补编;B-98 [知识]→[业务]、B-102 [工程]→[AI]),严格汇总器全合格 —— 未提交,随第 8 项那批。原:PRD 2.4.1 补第四十二到四十五条 + 发飞书
+4. [x] ✅ 已推 bc317549 店铺:save_shop(新店默认无效 / 店名锁死 / 店长只能指本店在职店长)、客户详情「编辑门店」→「转移顾问」走客户转移审批;检查 backend/shop_write_check.py。原:按钮第一组:门店 / 店铺资料(编辑门店、新增店铺、编辑店铺)—— backend/web/index.html 1567/1666/1692 一带;先查有没有现成写口和权限判定,写口走统一写入判定 + 留 op_log,只总部管理员
+5. [x] ✅ 已推 bc317549 save_content(补角色、作者记本人)/ save_activity / add_activity_cost / save_page / save_category + 新状态机 bk-content;**fsm.主数据岗**:店铺 / 商品 / 活动 / 页面 / 内容的状态只许总部运营切(原来谁登录都能点);检查 content_write_check.py。原:按钮第二组:内容 / 活动 / 品类(新建/编辑品类、编辑/下架内容、新建活动、新增页面、添加费用)
+6. [x] ✅ 已推 bc317549 edit_appointment(本店的人改本店)、backend/targeted_ops.py(定向运营,逐个调 tasks.assign_task)、生命周期两个按钮换说明;检查 appt_ops_write_check.py。原:按钮第三组:预约 / 定向运营(编辑预约、定向运营、添加生命周期、设为默认值)
+7. [x] ✅ 已推 bc317549 + f1e8c979(跟上门禁:写口冒烟欠账 10→9 等)save_staff_perm + auth.作废(改完作废旧会话);检查 staff_perm_check.py;边界审计三条新攻击(店铺 / 内容 / 提权)。原:按钮第四组:权限编辑(1750 一带)—— 必须挡:自己给自己提权、给别人提到比自己高;边界审计加一条真攻击
+8. [~] 代码写完、单项全绿、**未提交未推**(10:5x):backend/customer_link.py(新表 customer_link)+ c.html 落地页 + /api/customer-link、/api/c/look、/api/c/use(后两个进匿名放行)+ 订单日志页发链接按钮;pickup_write 拆出 顾客确认完成、rating_write 新增 追评闸 / 顾客追评(原来只有规则没写口);customer_link_check(进 check.sh)+ 咬合 4 条 + 边界审计「冒充顾客办不成事」;登记已做:ensure_tables、db_build 算表、shift_world 四列不平移;PRD A-301 + 第四十四条。**还差(等 eureka-fc 推完再做,全在锁里一口气)**:① 锁内 `python3 tools/ensure_tables.py` 在共享库建**两张**表(customer_link + customer_tag)② doc_numbers_check 现跑,把它点名的「133 张」改 **135**(上次是 4 份文档 + tools/publish_prd.py + publish_product_doc.py,README 用 make_readme)③ 咬合重放 customer_link_check + page_buttons_check.mjs(3 条)+ tag_level_check(3 条)+ 「先占位」那条审计 ④ boundary_audit --md 写回(剥掉锁提示行)⑤ make_readme ⑥ git add 新文件(customer_link.py / customer_link_check.py / web/c.html / **page_buttons_check.mjs** / **tag_level_write.py** / **tag_level_check.py** / **agent/example-counter-cases.json** / **agent/example_counter_ab.py** / **agent/example-counter-ab-results.jsonl**(评测结果进版本库))⑦ chain_B。原:顾客一次性链接:导购发、只能用一次、7 天过期 → 接顾客追评写口 + 签收告知单的顾客确认(先算法选型卡?时效/令牌规则已拍,按「已确认」直接做,PRD 附录 A 记)
+9. [x] ✅ 已推 bc317549 写进 intent/log-retention-review-1122.md(状态「等人的活」),待办清单已重生成;intent_check 全绿。原:11-22 前提醒用户看澜绣到期清理真清单(会话内定时器活不到那天 → 写进 待办清单 / intent)
+10. [~] 代码写完、单项全绿、未提交(11:4x):backend/tag_level_write.py(新表 customer_tag + 新建标签 / 打标签 / 新增等级先停用且门槛单调 / 手动合并只同户同名)+ 系统设置入口页 + 新建退款接退押金两人复核 + 页面六处;tag_level_check.py(进 check.sh)+ 咬合 3;登记:ensure_tables / db_build / worldclock.已发生的时间列(customer_tag.created_at)。⚠️ 建表时 tag.n 会按真实绑定重算 → 共享库里那些造出来的「已绑定 35 人」会变 0(诚实,PRD 要写)。已知缺口:merge.并入 执行那一步不核同一账户(加了会让 merge_check 23 条样本红,没硬改,只在手动发起那头拦)。原:剩下 5 处按钮(㊾):标签配置 / 新建标签、新增等级(主数据,照四组规矩:只总部、留记录);新建退款 / 手动合并 **走现成审批流**(退款两人复核、合并店长发起 → 总部审批),不另开直通写口;系统设置 = 系统类页面的入口
+11. [~] 代码写完、单项全绿、未提交(11:5x):商品菜单加「裁片用料」页 —— GET /api/pieces、GET /api/pattern-rules(三张口径表只读)、POST /api/piece-ratio(with backend.as_user(登录人) 调现成的 api.set_piece_ratio,**只版师**,沿用原规矩 —— 我默认表里写过「版师和总部都能改」,以原规矩为准,汇报时要说);增删裁片不做(裁片是从知识库推导的,页面增删会和推导打架);检查:page_buttons_check ⑥ + tag_level_check ⑤。版师数据增删改查(51;11:2x 第四张卡细化:**裁片占比做维护页**(版师 + 总部能改、留记录、来源照实写);**三张表(童装档差 / 门幅 / 特体修版量)照生命周期** —— 留在 knowledge 口径里,页面只读展示 + 标「行业规范推算」,改要走评审)。原:版师数据增删改查(51):三张表 + 391 片用料占比,行业推算值转正式口径(来源字段照实写),维护页 + 写口 + 留记录
+12. [~] **13:0x 真跑完**(example-counter-ab-results.jsonl 末行):关 10/10、8/10(2 道交付前检查扣下没答成);开 9/10、9/10;照抄示例根因 0。开示例挂的两道:CX-08 判分器要「免费改」字样(模型判对我方 + 记录缺失,写的是改腰 / 返修)、CX-12 **我自编的标签有歧义**(缩水 + 告知过洗护 → 模型判洗护不当客方,返修判定表第 9 行也成立)。结论:题太容易(不带示例就近满分),测不出有没有用;能确定不退步、不照抄。**用户 13:0x 拍(台账第五十三条):先不开,下一版出难题再测。** **13:2x 第五张卡(台账第五十四条):退款「超时且实际未退」判定 = 说清没退 + 带防护地重发** → agent/eval.py 新一支 + eval_hit_judgetest 5 条对照 + 咬合 1;案例清单加 D9921–D9923(照 D2000–D2002 克隆、只删成功出账),缩水两题换成染色不均 / 洗后褪色(换的是题,不是答案);第二版 13:4x 跑完:原判 关 10/12 · 11/12、开 10/12 · 10/12 —— 退款两题 8 次里大半是**判分器认不出对的说法**(不是模型错);修判分器(只改认说法、口径不动)+ 钉 6 条真跑原话(对照 32 条全过),同一批原文重判 关 11/12 · 12/12、开 10/12 · 12/12,照抄 0;结论不变(测不出有用),「先不开」不用改。重判记录已追加到 results.jsonl(写明不是重跑)。PRD A-302 已记。本批还要 git add:无新文件(eval.py / eval_hit_judgetest.py 是改动)。 CX-12 / CX-15(缩水)下一版要换掉 —— **不能看了模型答案再改标签**,记成发现。(12:3x)案例清单 agent/example-counter-cases.json(15 条,全是售后判责 BP-03:尺寸需调整 超公差 / 公差内 / 记录不全 各 3,特性问题 已告知 / 未告知 各 3;每类 1 进示例池;CX-08 尺寸差和 CX-02 一模一样但真因是记录不全,CX-14 起球和 CX-10 一样但未告知)+ agent/example_counter_ab.py(evaldb.用副本 → 副本里克隆模板维修单 / 工单 + 插标注 → 进程里把示例池并上反例 → 开 / 关各 N 轮,结果追加 example-counter-ab-results.jsonl)。空跑过:真库 maintain 无 CX-、truth 仍 90 条。**真跑在后台**(b1js6azrt,输出 scratchpad/excounter.out,模型 Haiku 4.5 = 研判默认 / 一期 / 夜跑同一个)。退款 / 合并两类反例要新根因 → 新判定规则 → 先摆选型卡,这轮没做。原:研判示例库(52):自己按业务口径准备「表面一样、根因不同」的案例(来源照实标「项目方按业务口径整理」,不冒充业务)+ 维护能力;再按方案第 10 节测一轮看有没有用
+14. [ ] 19:45 白天汇总发飞书:草稿 澜绣云裳agent-白天汇总-20261114.md 已起(13:2x),「待补」处补推送结果和示例库第二版结果 → feishu_publish → 回读 → 提交 → CronDelete 32071ca5
+13. [x] ✅(未提交,随下一批)只有 capability-request-verdict 真错(写着等用户拍,实际 11-11 已拍 ② 并落地)→ 改「进行中」等下一轮 ops;另三条「进行中」各有明写理由(等真跑 / 规矩持续照办),故意不动。原:intent 状态核对改正:capability-request-verdict / 算法选型卡 / 全量门禁 rebase / 罕见层方法(四条疑已做完)
 > **11-14 08:4x 第二张拍板卡(台账第四十六到四十八条,PRD 2.4.2 要补)**:㊻ 生命周期「添加档位 / 设为默认」**不做成页面可改**,按钮换成说明(改档走评审 + 改知识库口径 + 重对真值)㊼ 定向运营 = **给这一档选中的客户批量建跟进任务**、分给各自归属导购、要填目的、内部任务不联系客户、一次最多 200 人、只总部发起 ㊽ 编辑预约 **和新建预约同一套权限**(门店的人改本店的),只改时间和顾问,规则同新建(rules.validate_appointment),已到店 / 完成 / 取消的不能改,留记录。
+> **11-14 11:1x 第三张拍板卡(台账第四十九到五十二条,PRD 2.4.2 要补)**:㊾ 剩下 5 处「本期未实现」**全做**:新建退款 / 手动合并 / 标签配置 + 新建标签 / 新增等级 / 系统设置 ㊿ 昨晚工具评测 18/24 **先不管**(等下次夜跑)(51)版型三张表 + 391 片裁片用料占比:**行业推算值就是正式口径**,要做**增删改查**的维护能力,以后有需要再改(52)研判示例库:**「你就是业务」—— 我自己准备「表面一样、根因不同」的案例**,保留以后编辑 / 添加的能力。
+> 顺带核实:「写请求题两种都算对」「全量门禁挪到 rebase 之后」等四条用户 11-11 早已拍过并落地(ad17cb8d / feb33775),intent 里状态没改 —— 待改,不用再问。
 > 第四组我自定的保守细节(未问):员工名下还有客户 / 未完成任务时不许改门店、改角色、停用(先转走客户)。
 > 每组按钮:写口 + 权限 + 咬合 + 页面接线测试;**新表照记忆「建新表连代码一起推」三处一起登**。
 
 **进度(11-14 09:2x)**:四组按钮代码 + 4 份新检查(已挂 check.sh)+ 14 条咬合规格 + 3 条边界审计攻击都写完、单跑全绿,**全部未提交**。锁内咬合重放在跑(scratchpad/bite_4groups.out,只认「四组咬合合计退出码」和「被包的命令退出码」)。之后:锁内 boundary_audit --md 重生成《安全边界审计.md》→ make_readme → rebase → chain_B(重启 8760/8770 + 冒烟 + 全量门禁 + 推)。没动 管理后台/,不用 e2e。eureka-fc 09:05 起跑 pre_push,推完才能推。
+**进度(11-14 10:3x)**:✅ 10:2x 已推 ef8d2285 / bc317549 / f1e8c979(全量门禁 rc=0、PUSHED);已通知 eureka-fc rebase。它要跑约 2 小时的链,期间它的 ⑤(导规矩 / 切生产指针)写后台库前会喊我。
+**⛔ 延长到 ~15:10(eureka-fc 12:5x 第五轮推送前链;12:45 那轮红在 bite_run 副本里找不到主检出记录仪,已修 ed6cef10)—— 我回了「不用让路、等你推」。原:11-14 10:4x 起约 2 小时(到 eureka-fc 喊「推完」为止):它切了店长助手生产指针(v9 + TL82)、在跑推送链 —— **我不跑全量门禁、不建表、不重启服务、不推**。这期间我门禁的 assistant_effect_check 会红在「挑出的规矩」(后台多 TL82),是它造成的、预期。⚠️ backend/customer_link.py 的 发 / 看 / 用 **一调就 CREATE TABLE IF NOT EXISTS** —— 只许在把 customer_link.DB 指到副本的检查里调,别在 python 里对真库直接试。
+**下一步:第 8 项顾客一次性链接** —— 要建新表:**代码可以先写、只在库副本上验;在 eureka-fc 那条链跑完之前,不重启服务、不跑全量门禁、不推**(ensure_tables 一跑就会在共享库建出表,它的门禁会红在没碰过的地方)。建表那一笔同批登:ensure_tables / shop_key(有 shop 列时)/ 文档表数 133→134 / db_build 算或不算 / make_readme / bite 锚点 / shift_world(有日期列)/ table_origin。
+
+**推送脚本已备好(14:1x)**:scratchpad/push_A.sh(锁内:建两张表 + 文档表数点名)→ 锁外照点名改「133 张」为 135 → scratchpad/push_B.sh(锁内:咬合重放 5 组 + boundary_audit --md 直接写文件 + make_readme;只认 bite_total_rc=0 和 boundary_audit rc=0)→ git add 新文件 → scan_secrets → commit --only → chain_B.sh。
+
+**交接(11-14 11:4x,压缩前)**
+- **下一步第一个动作**:等 eureka-fc 喊「推完」(它 11:3x 在咬合重放 32/78;推完后它要改 api.py get_member 工具说明 + prompts.py TL83,**我别碰这两区**)。喊了之后:锁内一口气 —— `python3 tools/ensure_tables.py`(建 customer_link + customer_tag;⚠️ 会把 tag.n 全部按真实绑定重算成 0)→ `python3 tools/doc_numbers_check.py` 看它点名哪几处「133 张」改 135 → 咬合重放(customer_link_check / tag_level_check / page_buttons_check.mjs / 审计「先占位」那条;脚本照 scratchpad/bite_4groups.sh,**别再用中文变量名**,上次汇总那行因此退出码 255)→ `boundary_audit.py --md` 写回(输出第一行和最后一行是锁提示,剥掉)→ make_readme → git add 新文件 → scan_secrets 单独 → commit --only → chain_B。
+- **本批未提交的我的文件**:backend/{customer_link.py, customer_link_check.py, tag_level_write.py, tag_level_check.py, page_buttons_check.mjs, web/c.html}(新)+ server.py / pickup_write.py / rating_write.py / boundary_audit.py / worldclock.py / db_build.py / web/index.html + tools/{ensure_tables.py, shift_world.py, bite_specs.json} + check.sh + PRD + HANDOFF + intent/capability-request-verdict.md + 待办清单.md。
+- **判据**:顾客链接时间列用真实时钟、登「整列日期不挪」(世界时钟会让 7 天永远到不了);customer_tag.created_at 用世界时钟、登 worldclock.已发生的时间列;标签人数归零是诚实(原数是造的,PRD 写了);新等级先停用 + 门槛单调;手动合并只同户同名(merge.判同一人)。
+- **作废 / 撤回**:试过在 merge.并入 执行处加「同一账户」检查 → merge_check 红 23 条(样本用不同名的两人)→ 已 git checkout 撤回,只在 manual_merge 拦;PRD 已记为已知缺口。
+- **未验证**:新页面 / 顾客落地页没在真浏览器点过(只 node 桩);第 12 项示例库还没开工 —— 设计定为「案例清单文件 + 评测时在库副本上现造单据 + 开 / 关各两轮」,**不写进 truth 表、不改 seed**;难点是 sdk.run 的工具子进程也要指到副本(参照 11-12「评测改在库副本上跑」那套切库)。来源必须标「项目方按业务口径整理(用户 11-14 授权)」,结论写明是自己出的题。
+- **禁区**:tag.n 归零 / 建表只能在锁内、eureka-fc 链跑完之后;eureka-fc 的 api.py 工具描述区和 prompts.py TL 段;合并执行处不改。
+- **拍过的(第三、四张卡)**:㊾ 剩 5 处全做(已做)㊿ 工具评测先不管(51)裁片做页面、三张表只读(已做;改占比只版师 —— 我默认表里说过总部也能改,以原规矩为准,要跟用户说)(52)示例库自己准备案例 + 保留编辑能力。
+
 **交接(11-14 09:2x,压缩前)**
 - **下一步第一个动作**:等后台 b5h2n0fk2(锁内 scratchpad/bite_4groups.sh,输出 scratchpad/bite_4groups.out)→ 只认每组「退出码=」和「四组咬合合计退出码=0」+「被包的命令退出码 0」。红了先看是不是锚点(old 串)对不上 —— 规格里 old 都是对当前工作区 assert 过的。
 - 绿了之后:① 锁内 `python3 backend/boundary_audit.py --md` 重生成《安全边界审计.md》(新加 3 条:店铺 / 内容活动页面品类 / 提权)② `git add` 新文件:backend/shop_write_check.py、content_write_check.py、appt_ops_write_check.py、staff_perm_check.py、targeted_ops.py ③ 等 eureka-fc 推完(它 09:05 起 pre_push)→ pull --rebase → 锁内 chain_B(scratchpad/chain_B.sh:重启 8760/8770 + 冒烟 + 全量门禁 + 推)→ scan_secrets 单独一步 → 提交 --only 自己的路径。**没动 管理后台/,不用 e2e**。
 - 我改过的文件(提交时 --only 这些):backend/server.py、fsm.py、auth.py、boundary_audit.py、web/index.html、4 份新检查 + targeted_ops.py、check.sh、tools/bite_specs.json、tools/doc_numbers_check.py(加「定向运营一次最多几人」规格)、产品需求文档、HANDOFF。
 - **判据**:店名锁死 = shop_key.码() 整串比对当前 shop 表,改名后老串换不出码(PRD B-121);新店默认无效 = 验收集 bk-shop-R8初始态;fsm.主数据岗 一改 = 店铺 / 商品 / 活动 / 页面 / 内容的 transit 都要总部运营(grep 过:没有别的检查 / 定时任务走这几台的 fsm.check;arrival_card 直接 UPDATE 上架,不经状态机)。
-- **未验证**:① 页面接线只做了源码对账(表单字段 = 写口字段),没在 DOM 桩里真点 ② 「不能提到比自己高」(ABOVE_ME)现在走不到 —— 只总部能改、总部最高;留作保险 ③ 全量门禁还没跑过这批,可能红在:状态机台数 / 写口登记类检查 / js_smoke / check_copy 文案 / selftest_registry。
+- **未验证**:① ~~页面接线只做了源码对账~~ 11:0x 补了 backend/page_buttons_check.mjs(node 里真跑页面,19 条,手工咬合 3 口都红在点名那条,已进 check.sh,未提交);仍没在真浏览器 / 真手机上点过 ② 「不能提到比自己高」(ABOVE_ME)现在走不到 —— 只总部能改、总部最高;留作保险 ③ 全量门禁还没跑过这批,可能红在:状态机台数 / 写口登记类检查 / js_smoke / check_copy 文案 / selftest_registry。
 - **作废的结果**:「真库编辑日志 20 分钟多 159 条」是演示世界的未来日期商品日志,不是我写的(真库 content/activity/page/category/shop/schedule 都核过没变)。
 - **禁区**:页面上另外 6 处「本期未实现」(系统设置、新建退款 / 手动合并、标签配置、新增等级、新建标签)不在用户选的四组里,不动;第 8 项顾客一次性链接要建新表 → 等这批推完单独一批(三处登记 + db_build + make_readme + bite 锚点)。
 - **欠账**:PRD 附录 B 有 19 条老条目字段不全(write-product-doc 汇总器 --严格);门禁绿后 PRD 要再发一次飞书(四组落地那版还没发)。
@@ -3487,33 +3509,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 03:11。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 11:31。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | df5d4c79 · 2026-11-14 · 咬合重放剩下 7 条逐条查清:一个只印不拦、两个判据被后来的改动架空、一个数据漂了 |
-| 代码量 | 1100 个 Python 文件 / 201758 行(不含 .venv) |
-| 验收 | `./check.sh` 共 414 项 —— **接手第一件事就是跑它** |
+| 分支 | `main` |
+| 最新提交 | f1e8c979 · 2026-11-14 · 四组按钮跟上门禁:新写口补冒烟用例(欠账 10→9)、检查里连库包 closing、员工表列名写死、还掉的位置参数欠债销账 |
+| 代码量 | 1102 个 Python 文件 / 201672 行(不含 .venv) |
+| 验收 | `./check.sh` 共 418 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-?? .feynman/bite-all-20261016.log
-?? .feynman/nightly-eval.log
-?? ".feynman/\345\205\250\351\241\271\347\233\256\345\277\253\347\205\247-20261109.md"
+M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+ M .feynman/tool-eval.json
+ M HANDOFF.md
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+ M backend/boundary_audit.py
+ M backend/db_build.py
+ M backend/pickup_write.py
+ M backend/rating_write.py
+ M backend/server.py
+ M backend/web/index.html
+ M backend/worldclock.py
+ M check.sh
+ M intent/capability-request-verdict.md
+ M tools/bite_specs.json
+ M tools/ensure_tables.py
+ M tools/shift_world.py
+ M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
+ M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
+?? .claude/
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-df5d4c79 咬合重放剩下 7 条逐条查清:一个只印不拦、两个判据被后来的改动架空、一个数据漂了
-5232057a 咬合重放红的根因:执行器取了门禁里「第一行」——那是 --自测;连带修三处我自己前两天留下的真红
-c87cbd60 交接:咬合重放的红单跑可复现、而工作区手工施破坏会红 —— 根因在 bite_run 副本,不在判据
-c5231099 交接:推送前链红在咬合重放(7 个脚本),下一步先单跑复现分清环境还是攻击失效
-677cc602 交接:rebase 到并行会话 0e515765 后按约定重建(瘦身版为准,它的新节和 12 小时清单搬顶部)
+f1e8c979 四组按钮跟上门禁:新写口补冒烟用例(欠账 10→9)、检查里连库包 closing、员工表列名写死、还掉的位置参数欠债销账
+bc317549 管理后台「本期未实现」按钮四组接通(11-14 台账第四十五到四十八条):店铺 / 内容活动品类页面 / 编辑预约 + 定向运营 / 编辑权限
+ef8d2285 夜间汇总 11-13→11-14 发飞书:早上拍的两件(空花费 8 行已删 / 澜绣到期清理 11-23 前再问)写回汇总第一节
+c8b28a3e pool_notice 跟上门禁第二批:建表模块进库指纹「算」表、咬合锚点跟上加门店码的 INSERT、README 重生成
+f348f1d2 交接:eureka-fc 链红在咬合重放,让我先推;05:2x 起推 ccf2f4e9 + e518f1c7
 ```
 <!--/AUTO-->
 ## 一句话在做什么

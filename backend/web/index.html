@@ -411,7 +411,7 @@ h1{font-size:18px;margin:0 0 3px;font-weight:600}
       <path d="M2 14V3M5.3 14V3M8 14V3M10.7 14V3M14 14V3M1 14h14"/></svg></span>
     澜绣云裳管理后台</div>
   <div class="sp">
-    <span class="ic dis" title="系统设置 · 本期未实现"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+    <span class="ic" id="setBtn" title="系统设置:系统类页面的入口"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
       <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9.5a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9.5a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
     <span class="ic" id="bellBtn" title="查看待处理任务"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
@@ -456,7 +456,7 @@ const MENU=[
  {k:"guide",i:"guide",t:"导购",subs:[["schedule","个人日程"],["roster","排班"],["perf","导购业绩"]]},   // 排班:11-11 夜(用户拍「后台页面 + 聊天都能排」)
  {k:"page",i:"page",t:"页面",subs:[["pages","页面配置"]]},
  {k:"mkt",i:"mkt",t:"营销",subs:[["activities","营销活动"],["invites","邀请码管理"]]},
- {k:"goods",i:"goods",t:"商品",subs:[["products","商品库"],["categories","品类管理"],
+ {k:"goods",i:"goods",t:"商品",subs:[["products","商品库"],["categories","品类管理"],["pieces","裁片用料"],
    ["stock","库存查询"],["stocklog","库存变更日志"]]},
  {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["freight","运费表"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
  {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"],["kbissues","知识问题"]]},
@@ -481,7 +481,7 @@ function renderNav(){
 /* 面包屑:每一级可点回上级。crumbs 支持 "标签" 或 ["标签","路由","参数"] */
 const CRUMB_ROUTE={"首页":"workbench","客户管理":"customers","客户档案":"customers",
   "店铺配置":"shops","店铺管理":"shops","导购":"schedule","个人日程":"schedule","排班":"roster","权限管理":"staff",
-  "交易查询":"orders","商品":"products","商品库":"products","品类管理":"categories","库存查询":"stock",
+  "交易查询":"orders","商品":"products","商品库":"products","品类管理":"categories","裁片用料":"pieces","库存查询":"stock",
   "业务内容":"mtpls","量体配置":"mitems","量体模版":"mtpls","内容管理":"contents","运费表":"freight",
   "营销":"activities","营销活动":"activities","邀请码管理":"invites",
   "页面":"pages","页面配置":"pages","系统编码":"syscodes","下载中心":"downloads","审批中心":"approvals","会员等级":"levels","客户标签管理":"tags",
@@ -532,6 +532,8 @@ async function get(u){
 }
 // 11-08 UI 检查:顶栏铃铛有手型光标和「查看待处理任务」提示,原来没绑任何事件。待处理任务在工作台
 { const b=document.getElementById("bellBtn"); if(b){ b.style.cursor="pointer"; b.onclick=()=>view("workbench"); } }
+// 11-14(台账第四十九条):系统设置 = 系统类页面的入口页。原设计稿没有这一页的内容,不另造功能,只把散在菜单里的系统页聚到一处
+{ const b=document.getElementById("setBtn"); if(b){ b.style.cursor="pointer"; b.onclick=()=>view("sysset"); } }
 function 登录地址(){ return location.protocol+"//"+(location.hostname||"127.0.0.1")+":8770/login"; }
 function 重试载入(){ if(上次要载入) return view(上次要载入[0],上次要载入[1],true); }
 if(window.addEventListener) window.addEventListener("unhandledrejection",e=>{ if(e.reason===已被取代) e.preventDefault(); });
@@ -549,7 +551,7 @@ async function post(u,b){
 const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合并确认",finance:"押金退款异常",
   appts:"客户预约",lifecycle:"客户生命周期类型",oplog:"操作日志",
   shops:"店铺管理",staff:"权限管理",schedule:"个人日程",roster:"排班",orders:"交易查询",
-  products:"商品库",categories:"品类管理",stock:"库存查询",
+  products:"商品库",categories:"品类管理",pieces:"裁片用料",stock:"库存查询",
   mitems:"量体配置",mtpls:"量体模版",contents:"内容管理",freight:"运费表",
   activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
   syscodes:"系统编码",skills:"Skill 管理",skill:"Skill",mcp:"MCP 服务与工具",rtpls:"报告模板",rtpl:"报告模板",downloads:"下载中心",approvals:"审批中心",
@@ -602,6 +604,7 @@ async function route(v,arg){
   if(v==="products") return productList();
   if(v==="product")  return productDetail(arg);
   if(v==="categories")return categoryPage();
+  if(v==="pieces")    return piecesPage();
   if(v==="stock")    return stockList();
   if(v==="craftdoc") return craftDoc(arg);   // 11-08 UI 检查:原来写成 a(未定义),订单详情 / 订单日志 6 个入口都打不开
   if(v==="orderlog") return orderLog(arg);
@@ -622,6 +625,7 @@ async function route(v,arg){
   if(v==="rtpl")     return rtplDetail(arg);
   if(v==="downloads")return downloadList();
   if(v==="approvals")return approvalCenter(arg);
+  if(v==="sysset")   return sysSettings();
   if(v==="levels")   return levelPage();
   if(v==="tags")     return tagPage();
   if(v==="aftersales")return afterList();
@@ -953,7 +957,8 @@ async function listPage(kind){
       ${acts()}
     </div>
     <div class="ops">
-      <button class="btn sol" disabled title="${fin?"新建退款":"手动合并"} · 本期未实现">+ ${fin?"新建退款":"手动合并"}</button>
+      ${(ROLE==="店长"||ROLE==="总部运营")?`<button class="btn sol" data-manual title="${fin?"发起退押金:进入店长 / 财务两人复核":"指定两份档案建合并确认任务:之后照旧核验 → 总部审批"}">+ ${fin?"新建退款":"手动合并"}</button>`
+        :`<button class="btn sol" disabled title="要店长或总部运营">+ ${fin?"新建退款":"手动合并"}</button>`}
       <button class="btn" data-exp-task title="每单涉及钱或合并、要单独审核,不做一键批量处理">导出所选</button></div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:44px"><span class="cb" data-cball></span></th>
@@ -968,6 +973,16 @@ async function listPage(kind){
      ${d.rows.length?"":'<tr><td colspan="6" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的记录</td></tr>'}
      </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-t]").forEach(e=>e.onclick=()=>view("task",e.dataset.t));
+  // 11-14(台账第四十九条):两个手动入口都接现成的审批流,不开直接动钱 / 动档案的口子
+  M.querySelectorAll("[data-manual]").forEach(e=>e.onclick=()=>fin
+    ? modal("新建退款(发起退押金)",[
+        {k:"id",label:"押金单号",req:1,ph:"押金状态要是「已付」"},
+        {k:"note",type:"text",label:"退款原因(必填,复核时要看)",req:1}],
+        v=>doTransit("bk-deposit",v.id.trim(),"退款审批中",{note:v.note},()=>listPage(kind)))
+    : modal("手动合并(建合并确认任务)",[
+        {k:"a",label:"客户编码 甲",req:1},{k:"b",label:"客户编码 乙",req:1},
+        {k:"note",type:"text",label:"为什么认为是同一人",req:1,ph:"只有同一个账户(同一手机号)下、同名的档案能合并"}],
+        v=>doOp("/api/merge-manual",v,()=>listPage(kind))));
   M.querySelectorAll("[data-exp-task]").forEach(e=>e.onclick=()=>导出所选(fin?"押金退款异常":"客户合并",[["任务号","id"],["关联单号","ref_id"],["创建时间","created"],["状态","status"]],d.rows,"id"));
   bindTable(st,()=>listPage(kind));
 }
@@ -1487,7 +1502,7 @@ async function custDetail(cid){
      <span class="tg">${esc(c.lifecycle)}</span>
      ${c.manual_lc?`<span class="tg" style="border-color:var(--navy);color:var(--navy)">人工调整</span>`:""}
      ${c.archived?`<span class="tg" style="border-color:var(--bad);color:var(--bad)">已归档</span>`:""}
-     <a class="dead" title="标签配置 · 本期未实现">标签配置</a></div>
+     <a data-ctags style="cursor:pointer" title="给这位客户打标签(本店的人给本店客户)">标签配置</a></div>
    ${d.已并入?`<div class="card" id="mergeBox" style="padding:12px 16px;margin-bottom:12px;border-left:3px solid var(--warn)">
      这份档案<b>已并入 <a class="mono" data-cust="${esc(d.已并入)}" style="cursor:pointer">${esc(d.已并入)}</a></b>(同一个人;各店照旧在自己这份上开单,订单和积分只关联不累计)
      ${ROLE==="总部运营"?`<button class="btn" data-unmerge="${esc(c.id)}" style="margin-left:12px">撤销合并</button>`:""}</div>`
@@ -1598,6 +1613,22 @@ async function custDetail(cid){
     custDetail(cid)});
   M.querySelectorAll("[data-edit]").forEach(e=>e.onclick=()=>formEditCustomer(c,()=>custDetail(cid)));
   M.querySelectorAll("[data-fu]").forEach(e=>e.onclick=()=>formFollowup(cid,()=>custDetail(cid)));
+  // 11-14:标签配置 —— 原来库里没有「客户打了哪个标签」这回事,标签页的人数是造的。现在勾哪些就是哪些(整组替换)
+  M.querySelectorAll("[data-ctags]").forEach(e=>e.onclick=async()=>{
+    const t=await get("/api/customer-tags/"+encodeURIComponent(cid)); if(t.error){res(false,"ERR",t.error);return}
+    const 有=new Set(t.打了||[]);
+    const m=document.createElement("div"); m.className="mask";
+    m.innerHTML=`<div class="modal" style="width:520px"><h4>标签配置 · ${esc(c.name||cid)}</h4><div class="bd2">
+      ${(t.字典||[]).map(x=>`<label style="display:inline-flex;gap:6px;margin:0 14px 10px 0;${x.status!=="启用"&&!有.has(x.code)?"opacity:.45":""}">
+        <input type="checkbox" data-tagck="${esc(x.code)}" ${有.has(x.code)?"checked":""} ${x.status!=="启用"&&!有.has(x.code)?"disabled":""}>
+        ${esc(x.name)}<span style="color:var(--ink3);font-size:12px">${esc(x.grp)}${x.status!=="启用"?" · 停用":""}</span></label>`).join("")}
+      </div><div class="ft"><button class="btn gray" data-x>取消</button><button class="btn sol" data-y>保存</button></div></div>`;
+    document.body.appendChild(m);
+    m.querySelector("[data-x]").onclick=()=>m.remove();
+    m.querySelector("[data-y]").onclick=async()=>{
+      const tags=[...m.querySelectorAll("[data-tagck]")].filter(x=>x.checked).map(x=>x.dataset.tagck);
+      const r=await doOp("/api/customer-tags",{customer_id:cid,tags},()=>custDetail(cid)); if(r&&r.ok)m.remove()};
+  });
   // 11-14:原来这里是一个没接线的「编辑门店」灰按钮。客户换归属只有一条现成的路 —— 客户转移审批
   // (同店换顾问;跨店搬客户从没拍过,不在这里开)。和客户列表的批量转移是同一个写口
   M.querySelectorAll("[data-xfer]").forEach(e=>e.onclick=()=>modal(`转移顾问 · ${c.name||cid}`,[
@@ -2310,6 +2341,42 @@ async function craftDoc(oid){
    <div class="fbar"><button class="btn" data-back="orders">返回</button></div>`);
   M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
   M.querySelectorAll("[data-print]").forEach(e=>e.onclick=()=>window.print());
+}
+
+// 11-14(台账第五十一条):裁片用料维护。占比在库里,**只有版师能改**(why 必填,同版型没核过的片自动归一 —— 规则在 api.set_piece_ratio);
+// 下面三张口径表**只读**:用户拍「照生命周期」—— 留在知识库口径里,改要走评审、改口径、重新对账
+Q.pcs={pattern:""};
+async function piecesPage(){
+  const st=Q.pcs, d=await get("/api/pieces?pattern="+encodeURIComponent(st.pattern||"")), R=await get("/api/pattern-rules");
+  const 型=(d.版型||[]).find(x=>x.code===d.当前)||{};
+  M.innerHTML=chrome([["首页","workbench"],"商品","裁片用料"],`
+   <div class="card"><div class="hd"><h3>裁片用料占比</h3>
+     <span class="n">行业规范推算的值是正式口径(业务 11-14 定);版师核过的片标「版师」,不会再被推算覆盖</span></div>
+    <div class="form"><div><label>版型</label><select data-pcs-pt>
+      <option value="">选一个版型</option>${(d.版型||[]).map(x=>`<option value="${esc(x.code)}" ${x.code===d.当前?"selected":""}>${esc(x.code)} ${esc(x.name)}</option>`).join("")}
+     </select></div></div>
+    ${d.当前?`<table class="tb" style="margin-top:12px"><thead><tr><th>裁片</th><th style="width:60px">片数</th>
+      <th style="width:90px">占比</th><th style="width:110px">折合米数</th><th style="width:110px">来源</th><th>谁改的 · 什么时候 · 为什么</th>
+      <th style="width:70px">操作</th></tr></thead><tbody>
+      ${(d.裁片||[]).map(x=>`<tr><td>${esc(x.name)}</td><td class="mono">${x.qty??""}</td>
+       <td class="mono">${(x.ratio*100).toFixed(1)}%</td><td class="mono">${((x.ratio||0)*(型.fabric_base||0)).toFixed(2)} 米</td>
+       <td><span class="pill ${x.ratio_src==="版师"?"p-ok":"p-mut"}">${esc(x.ratio_src||"")}</span></td>
+       <td style="color:var(--ink2);font-size:12.5px">${esc([x.ratio_by,x.ratio_at,x.ratio_why].filter(Boolean).join(" · "))}</td>
+       <td>${ROLE==="版师"?`<span class="lk" data-pcs-ed="${esc(x.name)}" data-r="${x.ratio}">改</span>`:`<span class="lk dead" title="核裁片用料要由版师来做">改</span>`}</td></tr>`).join("")}
+     </tbody></table>`:`<div class="empty">先选一个版型</div>`}</div>
+   <div class="card"><div class="hd"><h3>三张口径表(只读)</h3><span class="n">${esc(R.说明||"")}</span></div>
+    <div class="bd" style="padding:14px 24px;font-size:13px">
+     <div style="margin-bottom:12px"><b>童装档差</b> · 基码 ${esc(String(R.童装档差&&R.童装档差.基码身高||""))} · <span style="color:var(--ink3)">${esc(R.童装档差&&R.童装档差.来源||"")}</span>
+      <div class="mono" style="margin-top:6px;color:var(--ink2)">每 10cm:${esc(JSON.stringify(R.童装档差&&R.童装档差.每10cm||{}))}<br>每 5cm:${esc(JSON.stringify(R.童装档差&&R.童装档差.每5cm||{}))}</div></div>
+     <div style="margin-bottom:12px"><b>里衬料门幅</b>(${(R.门幅||[]).length} 种)
+      <div style="margin-top:6px">${(R.门幅||[]).map(m=>`<span class="pill p-mut" style="margin:0 6px 6px 0">${esc(m.cat)} · ${esc(m.name)} · ${m.width_cm??"没写"}cm</span>`).join("")}</div></div>
+     <div><b>特体修版量</b>${Object.entries(R.特体修版量||{}).map(([k,v])=>`<div style="margin-top:6px"><span class="pill p-blue">${esc(k)}</span> <span style="color:var(--ink2)">${esc(v)}</span></div>`).join("")}</div>
+    </div></div>`);
+  M.querySelectorAll("[data-pcs-pt]").forEach(e=>e.onchange=()=>{st.pattern=e.value;piecesPage()});
+  M.querySelectorAll("[data-pcs-ed]").forEach(e=>e.onclick=()=>modal(`改用料占比 · ${型.name||""} · ${e.dataset.pcsEd}`,[
+    {k:"ratio",label:"占比(0–1 之间,0.25 = 25%)",req:1,val:e.dataset.r},
+    {k:"why",type:"text",label:"依据(必填:量的、照排料图算的、还是比着老版定的)",req:1}],
+    v=>doOp("/api/piece-ratio",{pattern:d.当前,piece:e.dataset.pcsEd,ratio:v.ratio,why:v.why},piecesPage)));
 }
 
 async function categoryPage(){
@@ -3337,13 +3404,22 @@ function formEditCustomer(c,after){
 }
 
 Q.tg2={page:1,per:20};
+function sysSettings(){
+  const 项=MENU.find(m=>m.k==="sys").subs;
+  M.innerHTML=chrome([["首页","workbench"],"系统设置"],`
+   <div class="card"><div class="hd"><h3>系统设置</h3><span class="n">系统类页面都在这里;能不能改由各页自己的权限决定</span></div>
+    <div class="bd" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;padding:16px 24px 22px">
+     ${项.map(([v,t])=>`<div class="card" style="margin:0;padding:14px 16px;cursor:pointer" data-go="${esc(v)}"><b>${esc(t)}</b></div>`).join("")}
+    </div></div>`);
+  M.querySelectorAll("[data-go]").forEach(e=>e.onclick=()=>view(e.dataset.go));
+}
 async function levelPage(){
   const d=await get("/api/levels");
   const tot=Object.values(d.dist).reduce((a,b)=>a+b,0);
   M.innerHTML=chrome([["首页","workbench"],"客户管理","会员等级"],`
    <div class="card"><div class="hd"><h3>等级配置</h3>
      <span class="n">滚动 12 个月实付金额<b>或</b>完成订单数,任一满足即升级(后台 PRD 6.2)</span>
-     <span class="more dead" title="新增等级 · 本期未实现">+ 新增等级</span></div>
+     ${ROLE==="总部运营"?`<span class="more" data-newlv title="新等级先是停用,核对门槛后再启用">+ 新增等级</span>`:`<span class="more dead" title="会员等级只有总部运营能改">+ 新增等级</span>`}</div>
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:100px">编码</th>
      <th style="width:120px">等级</th><th style="width:150px">金额门槛</th>
      <th style="width:130px">订单门槛</th><th style="width:120px">当前人数</th>
@@ -3354,7 +3430,7 @@ async function levelPage(){
       <td class="mono">${r.orders?r.orders+" 单":"—"}</td>
       <td class="mono">${d.dist[r.name]||0} 人
         <span style="color:var(--ink3);font-size:11.5px">${tot?Math.round((d.dist[r.name]||0)/tot*100):0}%</span></td>
-      <td><span class="pill p-ok">${esc(r.status)}</span></td>
+      <td><span class="pill ${r.status==="启用"?"p-ok":"p-mut"}">${esc(r.status)}</span>${ROLE==="总部运营"&&r.code!=="L0"?` <span class="lk" data-lvst="${esc(r.code)}" data-to="${r.status==="启用"?"停用":"启用"}">${r.status==="启用"?"停用":"启用"}</span>`:""}</td>
       <td style="color:var(--ink2);font-size:12.5px">${esc(r.note)}</td></tr>`).join("")}
     </tbody></table>
     <div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">计算规则</b> ——
@@ -3385,6 +3461,17 @@ async function levelPage(){
         if(!/^-?\d+$/.test(String(v.delta).trim())){res(false,"格式不对","调整积分要填整数,比如 5000 或 -2000");return false}
         return doOp("/api/approval-apply",{kind:"积分调整",target:v.target,
         payload:{delta:parseInt(v.delta,10)},note:v.note},levelPage)},true));
+  // 11-14:新增等级(先停用)/ 启停 —— 都只总部运营;门槛必须高过现在最高那一档,写口里拦
+  M.querySelectorAll("[data-newlv]").forEach(e=>e.onclick=()=>modal("新增等级(建好先是停用)",[
+    {k:"name",label:"等级名称",req:1,ph:"最多 6 字"},
+    {k:"amount",label:"金额门槛(滚动 12 个月实付,元)",req:1,it:"number"},
+    {k:"orders",label:"订单门槛(完成单数)",req:1,it:"number"},
+    {k:"need_points",label:"积分门槛",it:"number"},
+    {k:"point_rule",label:"积分规则",ph:"例如:下单实付每 1 元累积 2.5 分"}],
+    v=>doOp("/api/level-save",v,levelPage),true));
+  M.querySelectorAll("[data-lvst]").forEach(e=>e.onclick=async()=>{
+    if(e.dataset.to==="停用"&&!await sure("停用这个等级?","停用后客户等级按剩下的档位现算,这一档的客户会落到下一档。","停用"))return;
+    doOp("/api/level-save",{code:e.dataset.lvst,status:e.dataset.to},levelPage)});
 }
 
 async function tagPage(){
@@ -3393,7 +3480,7 @@ async function tagPage(){
    <div class="card">
     <div class="form">${fld("标签名称/编码","q",st,null,"请输入")}
       ${fld("标签分组","grp",st,F.grp)}${fld("状态","status",st,F.status)}${acts()}</div>
-    <div class="ops"><button class="btn sol" disabled title="新建标签 · 本期未实现">+ 新建标签</button></div>
+    <div class="ops">${ROLE==="总部运营"?`<button class="btn sol" data-newtag>+ 新建标签</button>`:`<button class="btn sol" disabled title="标签只有总部运营能建">+ 新建标签</button>`}</div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      ${sortTh("标签编码","code",st,"120px")}<th style="width:160px">标签名称</th>
      <th style="width:130px">所属分组</th>${sortTh("已绑定客户","n",st,"130px")}
@@ -3409,6 +3496,11 @@ async function tagPage(){
       </tr>`).join("")}
     </tbody></table>${pagerC(d)}</div>`);
   bindToggle(tagPage); bindTable(st,tagPage);
+  // 11-14:新建标签(只总部运营)。分组可以选已有的,也可以新起一个
+  M.querySelectorAll("[data-newtag]").forEach(e=>e.onclick=()=>modal("新建标签",[
+    {k:"name",label:"标签名称",req:1,ph:"最多 10 字"},
+    {k:"grp",label:"所属分组",req:1,ph:"已有:"+(F.grp||[]).join(" / ")}],
+    v=>doOp("/api/tag-save",v,tagPage)));
 }
 
 Q.as1={page:1,per:10}; Q.mt1={page:1,per:10};
@@ -3545,7 +3637,9 @@ async function orderLog(oid){
   const o=d.order;
   M.innerHTML=chrome([["首页","workbench"],["消费与售后","orders"],"订单日志"],`
    <div class="card" style="margin-bottom:14px"><div class="hd"><h3>${esc(o.id)}</h3>
-     <span class="n">${esc(d.客户)} · ${esc(o.shop||"")} · ${esc(o.kind||"")} · 现在是「${esc(o.status||"")}」· ¥${money(o.amount)}</span></div>
+     <span class="n">${esc(d.客户)} · ${esc(o.shop||"")} · ${esc(o.kind||"")} · 现在是「${esc(o.status||"")}」· ¥${money(o.amount)}</span>
+     ${o.status==="待完成"?`<span class="more" data-clink="签收确认" title="顾客点开链接自己确认完成;只能用一次、7 天过期">发签收确认链接 ›</span>`
+      :o.status==="完成"?`<span class="more" data-clink="追评" title="顾客穿过之后的那句话;只能用一次、7 天过期">发追评链接 ›</span>`:""}</div>
     <table class="tb" style="margin-top:12px"><thead><tr>
      <th style="width:70px">行</th><th>商品</th><th style="width:70px">数量</th>
      <th style="width:140px">给谁做</th></tr></thead><tbody>
@@ -3574,6 +3668,12 @@ async function orderLog(oid){
       ||`<tr><td colspan="4" style="color:var(--ink3)">这张单还没有日志</td></tr>`}
     </tbody></table>
     <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
+  // 11-14 顾客一次性链接(台账第四十四条):导购生成、自己转给顾客(系统不替他发)。重发会作废旧的那条
+  M.querySelectorAll("[data-clink]").forEach(e=>e.onclick=async()=>{
+    const r=await doOp("/api/customer-link",{order_id:o.id,purpose:e.dataset.clink});
+    if(r&&r.ok&&r.链接) modal(`${e.dataset.clink}链接 · 有效到 ${r.有效到}`,[
+      {k:"url",label:"复制下面这条发给顾客(只显示这一次)",val:location.origin+r.链接}],()=>true);
+  });
 }
 
 // 工厂回传(业务 09-22:生产和发货只认工厂回传,门店不推)—— 该催的单 + 收件箱里要人看的回传

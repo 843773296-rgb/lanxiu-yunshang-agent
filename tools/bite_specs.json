@@ -21080,5 +21080,137 @@
    }
   ],
   "预期红": "明确拒绝(403 没权限)不兜底"
+ },
+ {
+  "script": "backend/customer_link_check.py",
+  "改坏": "把 customer_link.用 的「先占位」去掉(用过的链接还能再用)",
+  "file": [
+   {
+    "path": "backend/customer_link.py",
+    "old": "    if 占 != 1:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "② 用过再用 → 失效;且和「根本不存在」回的是同一句话"
+ },
+ {
+  "script": "backend/customer_link_check.py",
+  "改坏": "把 customer_link.发 的「只能给本店的单发」去掉",
+  "file": [
+   {
+    "path": "backend/customer_link.py",
+    "old": "            if not 我店 or 我店 != (o[\"shop_code\"] or _SK.码(c, o[\"shop\"])):\n",
+    "new": "            if False:\n"
+   }
+  ],
+  "预期红": "① 别店的人发不了"
+ },
+ {
+  "script": "backend/customer_link_check.py",
+  "改坏": "把「没办成就还占位」去掉(顾客点一下遇到状态不对,链接就废了)",
+  "file": [
+   {
+    "path": "backend/customer_link.py",
+    "old": "            c.execute(\"UPDATE customer_link SET used_at=NULL WHERE token_hash=? AND used_at=?\", (r[\"token_hash\"], 现))\n",
+    "new": "            pass\n"
+   }
+  ],
+  "预期红": "④ 没办成链接还能再用"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "把 customer_link.用 的「先占位」去掉(审计:一条链接用两次)",
+  "file": [
+   {
+    "path": "backend/customer_link.py",
+    "old": "    if 占 != 1:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "冒充顾客办不成事(一次性链接)"
+ },
+ {
+  "script": "backend/page_buttons_check.mjs",
+  "改坏": "把编辑店铺按钮的绑定选择器改错(按钮渲染了但点了没反应)",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "M.querySelectorAll(\"[data-edit-shop]\").forEach(e=>e.onclick=()=>{",
+    "new": "M.querySelectorAll(\"[data-edit-shopX]\").forEach(e=>e.onclick=()=>{"
+   }
+  ],
+  "预期红": "① 点了弹出编辑表单:店长只列本店在职店长,带着现值"
+ },
+ {
+  "script": "backend/page_buttons_check.mjs",
+  "改坏": "把权限页「自己那行不给编辑」的页面条件去掉",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "ROLE===\"总部运营\"&&!(ME&&ME.no===r.no)",
+    "new": "ROLE===\"总部运营\""
+   }
+  ],
+  "预期红": "② 总部:只给别人的那行渲染「编辑」(自己那行是灰的)"
+ },
+ {
+  "script": "backend/page_buttons_check.mjs",
+  "改坏": "顾客页取令牌时不去掉 /c/ 前缀(拿整条路径当令牌)",
+  "file": [
+   {
+    "path": "backend/web/c.html",
+    "old": "location.pathname.replace(/^\\/c\\//, \"\")",
+    "new": "location.pathname"
+   }
+  ],
+  "预期红": "⑤ 顾客页:拿地址里的令牌去问链接是干什么的"
+ },
+ {
+  "script": "backend/tag_level_check.py",
+  "改坏": "把打标签的「停用的标签不能新打」去掉",
+  "file": [
+   {
+    "path": "backend/tag_level_write.py",
+    "old": "        if 停: return 拒(\"TAG_OFF\"",
+    "new": "        if False: return 拒(\"TAG_OFF\""
+   }
+  ],
+  "预期红": "② 停用的标签不能新打,已打着的不受影响"
+ },
+ {
+  "script": "backend/tag_level_check.py",
+  "改坏": "把新增等级的「门槛要高过最高那一档」去掉",
+  "file": [
+   {
+    "path": "backend/tag_level_write.py",
+    "old": "        if 顶 and (额 <= 顶[\"amount\"]",
+    "new": "        if False and (额 <= 顶[\"amount\"]"
+   }
+  ],
+  "预期红": "③ 门槛不高过最高档被拒"
+ },
+ {
+  "script": "backend/tag_level_check.py",
+  "改坏": "把手动合并的「只在同一账户下同名时能发起」去掉",
+  "file": [
+   {
+    "path": "backend/tag_level_write.py",
+    "old": "        if 结论 != \"同一人\":\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "④ 不同账户的两份档案发起不了合并"
+ },
+ {
+  "script": "agent/eval_hit_judgetest.py",
+  "改坏": "「超时且实际未退」不要求重发带防护(随手重发也算对)",
+  "file": [
+   {
+    "path": "agent/eval.py",
+    "old": "            if _重发带着防护(text, m.start()):\n                return True, \"\"\n        return False, \"内容:没给出带防护的重发建议",
+    "new": "            if True:\n                return True, \"\"\n        return False, \"内容:没给出带防护的重发建议"
+   }
+  ],
+  "预期红": "未退:重发不带防护(没核实、没说原幂等号)→ 挂"
  }
 ]

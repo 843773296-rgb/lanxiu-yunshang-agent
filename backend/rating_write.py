@@ -196,6 +196,40 @@ def customer_rate(order_id, phone_tail, star, note=None, pkg=None, 分项=None, 
     return 出
 
 
+def 追评闸(pkg_id):
+    """→ (能不能追评, 为什么)。发链接时先判一遍(customer_link.发)、顾客提交时再判一遍(顾客追评)——
+    **同一个函数**:发的时候不判,导购会发出一条注定用不了的链接,顾客点开才被告知「超过 90 天」。
+    签收时刻取这个包裹里**最后一件**核验合身的时间:分批签的包裹,穿过之后得从最后那件算起。"""
+    r = _评过的(pkg_id)
+    if not r: return False, "这个包裹还没有评价 —— 追评是评价之后的那句话"
+    签 = [x["fit_at"] for x in _包里的件(pkg_id) if x["fit_result"] == "合身" and x["fit_at"]]
+    return R.能不能追评(max(签) if 签 else None, _now(), 追评过了吗=bool(r.get("followup_note")))
+
+
+def 顾客追评(pkg_id, note):
+    """顾客的追评(11-14 接,入口是一次性链接 customer_link.用)。**怎么核顾客身份不归这里。**
+
+    规则全在 knowledge/rating.能不能追评(签收之后、90 天内、一个包裹一次;不带星、不改原来的评分、
+    不进差评清单)—— 这里只取「签收时刻」和「追评过没有」交给它判。签收时刻取这个包裹里**最后一件**
+    核验合身的时间:分批签的包裹,穿过之后得从最后那件算起。"""
+    r = _评过的(pkg_id)
+    if not r:
+        return dict(ok=False, code="NO_RATING", reason="这个包裹还没有评价 —— 追评是评价之后的那句话")
+    话 = str(note or "").strip()
+    if not 话: return dict(ok=False, code="NEED_NOTE", reason="追评内容不能为空")
+    if len(话) > 300: return dict(ok=False, code="TOO_LONG", reason="追评最多 300 个字")
+    能, 为何 = 追评闸(pkg_id)
+    if not 能:
+        return _deny("顾客", "CANNOT_FOLLOWUP", 为何, pkg_id)
+    with closing(sqlite3.connect(DB)) as c, c:
+        n = c.execute("UPDATE rating SET followup_note=?, followup_at=? WHERE pkg_id=? AND followup_note IS NULL",
+                      (话, _now(), pkg_id)).rowcount
+    if n != 1:
+        return dict(ok=False, code="CANNOT_FOLLOWUP", reason="已经追评过了 —— 一个包裹追评一次")
+    log_op("顾客", "rating", pkg_id, "已评", "已追评", True, "FOLLOWUP", f"包裹 {pkg_id} 追评 {len(话)} 字(不改星级)", {})
+    return dict(ok=True, code="FOLLOWUP", 包裹=pkg_id, reason="谢谢,追评已收到(不改原来的评分)")
+
+
 def customer_edit_rating(order_id, phone_tail, star, note=None, pkg=None):
     """顾客改自己的评价。24 小时内、最多一次。
 
