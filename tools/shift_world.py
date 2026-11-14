@@ -558,7 +558,7 @@ def 平移(db=DB, 到=None, 说=print):
     说(f"  世界现在停在 {现},要挪到 {到} —— 差 {天} 天")
     if 天 == 0:
         说("  已经在这一天了,不动。")
-        c.execute("INSERT OR REPLACE INTO world_meta VALUES('shifted_at',?)",
+        c.execute("INSERT OR REPLACE INTO world_meta(k,v) VALUES('shifted_at',?)",
                   (datetime.now().isoformat(timespec="seconds"),))   # 真实时钟:记的是「什么时候跑的这次平移」,本来就该是真时间
         c.commit(); c.close()
         return dict(到=到, 天=0, 列=len(纯) + len(文字里也挪), 改=0)
@@ -641,10 +641,10 @@ def 平移(db=DB, 到=None, 说=print):
             批 = [(nv, rid) for nv, rid in 批 if nv is not None]
             c.executemany(f'update "{t}" set "{col}"=? where rowid=?', 批)
             改 += len(批)
-        c.execute("INSERT OR REPLACE INTO world_meta VALUES('world_today',?)", (到,))
-        c.execute("INSERT OR REPLACE INTO world_meta VALUES('shifted_at',?)",
+        c.execute("INSERT OR REPLACE INTO world_meta(k,v) VALUES('world_today',?)", (到,))
+        c.execute("INSERT OR REPLACE INTO world_meta(k,v) VALUES('shifted_at',?)",
                   (datetime.now().isoformat(timespec="seconds"),))   # 真实时钟:同上,这是运维痕迹不是世界里的事
-        c.execute("INSERT OR REPLACE INTO world_meta VALUES('基准',?)", (基准,))
+        c.execute("INSERT OR REPLACE INTO world_meta(k,v) VALUES('基准',?)", (基准,))
     说(f"  挪了 {改} 个值,{len(纯)} 个日期列 + {len(该挪文字)} 个文字列")
     c.close()
     # 按星期编排的数据要重算 —— 见上面「平移后重算」那张表
@@ -826,11 +826,11 @@ def _自测():
       create table factory_msg(at text, reason text);
       create table color_family(note text);
     """)
-    c.execute("insert into ordr values('D1','2026-08-31 19:58','没有日期的说明')")
-    c.execute("insert into ordr values('D2','2026-08-01 09:00','也没有')")
-    c.execute("insert into edit_log values('2026-02-16 9:16')")      # 单位数小时
-    c.execute("insert into factory_msg values('2026-08-20','工厂接单,承诺 2026-09-05 完工')")
-    c.execute("insert into color_family values('黛是青黑色(业务 2026-09-20 定)')")
+    c.execute("insert into ordr(id,created,note) values('D1','2026-08-31 19:58','没有日期的说明')")
+    c.execute("insert into ordr(id,created,note) values('D2','2026-08-01 09:00','也没有')")
+    c.execute("insert into edit_log(ts) values('2026-02-16 9:16')")      # 单位数小时
+    c.execute("insert into factory_msg(at,reason) values('2026-08-20','工厂接单,承诺 2026-09-05 完工')")
+    c.execute("insert into color_family(note) values('黛是青黑色(业务 2026-09-20 定)')")
     c.commit()
 
     ck("单位数小时的时间戳算「整列日期」(不算文字)",
@@ -866,7 +866,7 @@ def _自测():
 
     # 没登记的文字日期列 → 拒绝动手
     c.execute("create table 新表(说明 text)")
-    c.execute("insert into 新表 values('这条里有 2026-05-05 但没人登记过')")
+    c.execute("insert into 新表(说明) values('这条里有 2026-05-05 但没人登记过')")
     c.commit(); c.close()
     r3 = 平移(p, "2026-09-25", 说=lambda *a: None)
     ck("每一列混着日期的都登记过了(没登记就拒绝动手)",

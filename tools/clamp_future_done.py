@@ -63,27 +63,27 @@ def _自测():
       create table scheme(id text, name text, created text);
     """)
     # ① 老场景:完工日在未来
-    c.execute("insert into ordr values('A','2026-08-01 10:00','完成','2026-10-05 10:00',"
+    c.execute("insert into ordr(id,created,status,finished_at,updated,produced_at,shipped_at,cut_at,paid_at) values('A','2026-08-01 10:00','完成','2026-10-05 10:00',"
               "'2026-10-05 10:00','2026-09-20 10:00','2026-09-28 10:00','2026-09-10 10:00',"
               "'2026-08-02 10:00')")
     # ② **第二种未来**:完工日不在未来,**签收在未来** —— 修之前一张也选不到
-    c.execute("insert into ordr values('B','2026-08-01 10:00','完成','2026-09-20 10:00',"
+    c.execute("insert into ordr(id,created,status,finished_at,updated,produced_at,shipped_at,cut_at,paid_at) values('B','2026-08-01 10:00','完成','2026-09-20 10:00',"
               "'2026-09-20 10:00','2026-09-10 10:00','2026-09-15 10:00','2026-09-05 10:00',"
               "'2026-08-02 10:00')")
-    c.execute("insert into pickup_item values(1,'B','PB','合身','2026-10-07 15:00')")
-    c.execute("insert into pickup values('B','2026-10-06 09:00',null,'2026-10-07 15:00',null)")
+    c.execute("insert into pickup_item(order_item_id,order_id,pkg_id,fit_result,fit_at) values(1,'B','PB','合身','2026-10-07 15:00')")
+    c.execute("insert into pickup(order_id,arrived_at,forwarded_at,fit_at,complete_at) values('B','2026-10-06 09:00',null,'2026-10-07 15:00',null)")
     # ③ **分钟粒度**:回传时刻(09:05)早于下单时刻(09:25),按天挪会落到下单之前
-    c.execute("insert into ordr values('C','2026-09-23 09:25','完成','2026-09-30 12:00',"
+    c.execute("insert into ordr(id,created,status,finished_at,updated,produced_at,shipped_at,cut_at,paid_at) values('C','2026-09-23 09:25','完成','2026-09-30 12:00',"
               "null,null,null,null,'2026-09-23 10:00')")
-    c.execute("insert into factory_msg values('C','2026-09-24 09:05','2026-09-24 09:05',null)")
+    c.execute("insert into factory_msg(order_id,at,received_at,promise_date) values('C','2026-09-24 09:05','2026-09-24 09:05',null)")
     # ④ **还在办**的单:finished_at 是 NULL、签收也不在未来,只有别的已发生列在未来
-    c.execute("insert into ordr values('D','2026-09-23 09:25','待发货',null,"
+    c.execute("insert into ordr(id,created,status,finished_at,updated,produced_at,shipped_at,cut_at,paid_at) values('D','2026-09-23 09:25','待发货',null,"
               "'2026-10-20 18:20',null,null,null,'2026-09-23 10:00')")
     # ⚠️ 这条回传**故意放在下单之后三天**(不是同一天)。第一版放在同一天,
     # 于是「让在办的单也被压缩」这个攻击**改坏了却看不出来** ——
     # 同一天的值压缩后 round() 回到原地,断言照样过,咬合只好红在另一条上。
     # **夹具要让破坏看得见**,否则证明不了那道守卫在承重。
-    c.execute("insert into factory_msg values('D','2026-09-26 15:05','2026-09-26 15:05',null)")
+    c.execute("insert into factory_msg(order_id,at,received_at,promise_date) values('D','2026-09-26 15:05','2026-09-26 15:05',null)")
     c.commit()
 
     说过 = []

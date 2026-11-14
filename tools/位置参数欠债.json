@@ -45,20 +45,6 @@
    "ordr": 1,
    "pickup_item": 1,
    "pkg": 1
-  },
-  "tools/clamp_future_done.py": {
-   "factory_msg": 2,
-   "ordr": 4,
-   "pickup": 1,
-   "pickup_item": 1
-  },
-  "tools/shift_world.py": {
-   "color_family": 1,
-   "edit_log": 1,
-   "factory_msg": 1,
-   "ordr": 2,
-   "world_meta": 4,
-   "新表": 1
   }
  }
 }
