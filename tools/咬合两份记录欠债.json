@@ -33,7 +33,6 @@
   "tools/impact.py": 1,
   "tools/intent_check.py": 2,
   "tools/repo_consistency_check.py": 2,
-  "tools/runlog_check.py": 2,
-  "tools/shift_world.py": 4
+  "tools/runlog_check.py": 2
  }
 }

@@ -21897,5 +21897,65 @@
    }
   ],
   "预期红": "先后关系全保住"
+ },
+ {
+  "script": "tools/shift_world.py --selftest",
+  "改坏": "把整列日期的判据改严(不认 `9:16` 这种单位数小时)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "整列日期 = re.compile(r\"^\\d{4}-\\d{2}-\\d{2}([ T]\\d{1,2}:\\d{2}(:\\d{2})?)?$\")",
+    "new": "整列日期 = re.compile(r\"^\\d{4}-\\d{2}-\\d{2}([ T]\\d{2}:\\d{2}(:\\d{2})?)?$\")"
+   }
+  ],
+  "预期红": "单位数小时的时间戳算「整列日期」"
+ },
+ {
+  "script": "tools/shift_world.py --selftest",
+  "改坏": "平移之后世界的最后一天对不上目标日期",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "    天 = (date.fromisoformat(到) - date.fromisoformat(现)).days\n",
+    "new": "    天 = (date.fromisoformat(到) - date.fromisoformat(现)).days + 1\n"
+   }
+  ],
+  "预期红": "世界的最后一天 = 目标日期"
+ },
+ {
+  "script": "tools/shift_world.py --selftest",
+  "改坏": "同一个目标跑两次,被挪了两次",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "        c.execute(\"INSERT OR REPLACE INTO world_meta(k,v) VALUES('world_today',?)\", (到,))\n",
+    "new": ""
+   }
+  ],
+  "预期红": "跑第二次不会再挪"
+ },
+ {
+  "script": "tools/shift_world.py --selftest",
+  "改坏": "把一列没登记的文字日期列加进来",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "文字里也挪 = {\n",
+    "new": "文字里也挪 = {\n    \"新表.说明\": \"咬合:把自测里那张没登记的新表登记上 —— 拒绝动手那道闸就测不到了\",\n"
+   }
+  ],
+  "预期红": "每一列混着日期的都登记过了"
+ },
+ {
+  "script": "tools/shift_world.py --selftest",
+  "改坏": "把「不认识的参数就拒跑」那道守卫删掉(拼错一个字母就跳过自检直接挪)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "    if _野参数:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "参数拼错了要拒跑"
  }
 ]
