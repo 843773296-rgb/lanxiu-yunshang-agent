@@ -4,9 +4,6 @@
  "登记于": "2026-11-07",
  "欠着的": {
   "agent/growth_eval_judgetest.py": 1,
-  "agent/refund_sets_judgetest.py": 1,
-  "agent/rounds.py": 1,
-  "backend/initpath_check.py": 1,
-  "backend/page_load_check.mjs": 1
+  "agent/rounds.py": 1
  }
 }
