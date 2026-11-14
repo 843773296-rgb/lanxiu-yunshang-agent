@@ -21873,5 +21873,29 @@
    }
   ],
   "预期红": "反向对照:只改一个人的存量,他的码就变了"
+ },
+ {
+  "script": "tools/backfill_rating.py --selftest",
+  "改坏": "让「顾客改评价」那一步不换评语",
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "            if R.是差评(星) != R.是差评(原星):\n",
+    "new": "            if False:\n"
+   }
+  ],
+  "预期红": "评语和星级对得上"
+ },
+ {
+  "script": "tools/clamp_future_done.py --selftest",
+  "改坏": "只把 finished_at 改小,不动同一单的其它时间点(会造出「发货晚于完成」)",
+  "file": [
+   {
+    "path": "tools/clamp_future_done.py",
+    "old": "            use = [x for x in cols if x in have]\n",
+    "new": "            use = [x for x in cols if x in have and (t != \"ordr\" or x == \"finished_at\")]\n"
+   }
+  ],
+  "预期红": "先后关系全保住"
  }
 ]

@@ -113,10 +113,20 @@ def _自测():
     ck("④ 而且要**说出来**(不动不等于没事 —— 那是某个写口用了机器时钟)",
        any("还在办" in x for x in 说过),
        [x for x in 说过 if "还在办" in x][:1])
-    ck("先后关系全保住(下单 ≤ 开裁 ≤ 完工)",
-       all(q(f"select (created<=coalesce(cut_at,created)) and "
-             f"(coalesce(cut_at,created)<=coalesce(finished_at,cut_at,created)) "
-             f"from ordr where id='{x}'")[0] for x in "AB"))
+    # ⚠️ 11-15 夜补全链:原来只比「下单 ≤ 开裁 ≤ 完工」,而咬合清单那条写的是
+    # 「只挪 finished_at、不动别的时间点 → 发货晚于完成」—— **生产完、发货两个点根本不在比较里**,
+    # 那一刀改坏了也红不了(补可重放规格时实测:没红)。
+    # > 一条「先后关系全保住」的判据,和一条只比了其中三个点的,**在那个 ✅ 上长得一模一样。**
+    链 = ("created", "cut_at", "produced_at", "shipped_at", "finished_at")
+    def _最近(cols):          # 这一点有值就用它,没有就往前找(coalesce 至少要两个参数)
+        cols = list(reversed(cols))
+        return cols[0] if len(cols) == 1 else "coalesce(" + ",".join(cols) + ")"
+    def _不早于前面(i):
+        return f"({_最近(链[:i])}<={_最近(链[:i + 1])})"
+    ck("先后关系全保住(下单 ≤ 开裁 ≤ 生产完 ≤ 发货 ≤ 完工)",
+       all(q(f"select {' and '.join(_不早于前面(i) for i in range(1, len(链)))} "
+             f"from ordr where id='{x}'")[0] for x in "AB"),
+       [q(f"select {','.join(链)} from ordr where id='{x}'") for x in "AB"])
     n = q("select count(*) from factory_msg f join ordr o on o.id=f.order_id "
           "where f.received_at < o.created")[0]
     ck("一条回传早于下单都没有", n == 0, f"{n} 条")
