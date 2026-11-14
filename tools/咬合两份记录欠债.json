@@ -14,7 +14,6 @@
   "backend/pattern_role_check.py": 1,
   "backend/rating_check.py": 2,
   "backend/rating_rebuild_check.py": 2,
-  "backend/source_check.py": 2,
   "fakedata/agree.py": 3,
   "fakedata/anchor.py": 3,
   "fakedata/repro.py": 4,

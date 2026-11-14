@@ -22119,5 +22119,21 @@
    }
   ],
   "预期红": "点名的 intent 都真的存在"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把 MT02 云锦的 src_name / src_url 都抹掉(欠账 +1)",
+  "sql": [
+   "UPDATE craft SET src_name=NULL, src_url=NULL WHERE code='MT02'"
+  ],
+  "预期红": "溯不了源的条目不超过"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把所有 demo 的 src_name 改成「内部资料」(一个认不出来的占位符)。⚠️ 11-15 夜落成规格时库里 craft 已经**一条 demo 都没有**(biz 111 / public 38 / scale 19)—— 照字面写 `WHERE src_type='demo'` 影响 0 行、什么都没改坏。判据是「一个出处名挂在三分之一以上条目上」,所以改打 biz 那一档(111/168 > 1/3),同一个形状",
+  "sql": [
+   "UPDATE craft SET src_name='内部资料' WHERE src_type='biz'"
+  ],
+  "预期红": "没有认不出来的占位符混在出处里"
  }
 ]
