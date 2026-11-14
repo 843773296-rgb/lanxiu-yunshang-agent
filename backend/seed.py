@@ -1093,12 +1093,12 @@ def run():
             import datetime as _dt3
             _pre = _dt3.date(2026, _m, _d) - _dt3.timedelta(days=2)
             dstr = _pre.isoformat()
-            c.execute("INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO deposit(id,customer_id,appt_id,amount,status,idem_key,created,updated) VALUES(?,?,?,?,?,?,?,?)",
                       (did,cid,f"AP{3000+n}",amt,status,idem,dstr,dstr))
-            c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO payment_flow(id,deposit_id,direction,amount,channel,channel_serial,status,ts) VALUES(?,?,?,?,?,?,?,?)",
                       (f"PF{did}I",did,"in",amt,"微信支付",f"WX{random.randint(10**11,10**12)}","success",dstr+" 10:12"))
             if 已退:
-                c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
+                c.execute("INSERT INTO payment_flow(id,deposit_id,direction,amount,channel,channel_serial,status,ts) VALUES(?,?,?,?,?,?,?,?)",
                           (f"PF{did}O",did,"out",amt,"微信支付",f"WX{random.randint(10**11,10**12)}","success",f"{dstr} 14:31"))
             req = amt*1.5 if cause=="退款金额超过可退额" else amt
             for a,(code,msg) in enumerate(traces,1):
@@ -1262,7 +1262,7 @@ def run():
               ("SH002","徐汇店","有效","周恒东","021-6400-2002","上海市徐汇区","上海市徐汇区淮海中路 1010 号 2F"),
               ("SH003","杭州湖滨店","有效","李明华","0571-8700-3003","浙江省杭州市","杭州市上城区湖滨路 88 号 1F")]
     for code,nm,st,mg,ph,pv,ad in SHOPDATA:
-        c.execute("INSERT INTO shop VALUES(?,?,?,?,?,?,?,?)",(code,nm,st,mg,ph,pv,ad,"2026-08-20 10:12"))
+        c.execute("INSERT INTO shop(code,name,status,manager,phone,province,addr,updated) VALUES(?,?,?,?,?,?,?,?)",(code,nm,st,mg,ph,pv,ad,"2026-08-20 10:12"))
 
     # ── 员工与角色(PRD 第 8 章:按角色做数据权限控制)──
     # 花名册在模块级(见文件上方 STAFF)—— 这里**不再抄一份**。
@@ -1371,7 +1371,7 @@ def run():
           ("C06","西式 / 非汉服",None,6),
             ("C0601","西装","C06",1)]
     for code,nm,pa,so in CATS:
-        c.execute("INSERT INTO category VALUES(?,?,?,?,?)",(code,nm,pa,so,"启用"))
+        c.execute("INSERT INTO category(code,name,parent,sort,status) VALUES(?,?,?,?,?)",(code,nm,pa,so,"启用"))
 
     # 知识库必须在商品之前灌 —— 定制品的可选项要现场查 craft_combo 过滤,
     # 表是空的时候过滤器什么都不做,而且**不报错**(踩过:42 个商品全部"通过"了校验)。
@@ -1392,7 +1392,7 @@ def run():
                   "cost_level,src_type,src_url,src_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", row)
     # 决策表:顾问问的多是「客户说 X 我推什么」,这类答案在 md 里是表格不是条目
     for topic,head,rws,fn in _kb.tables():
-        c.execute("INSERT INTO kb_table VALUES(?,?,?,?)",
+        c.execute("INSERT INTO kb_table(topic,head,rows,src_file) VALUES(?,?,?,?)",
                   (topic,json.dumps(head,ensure_ascii=False),json.dumps(rws,ensure_ascii=False),fn))
 
     # ── 组合约束矩阵(工艺 × 材质)—— 21 × 13 = 273 格 ────────────────
@@ -1401,7 +1401,7 @@ def run():
     # 每格带 rule:人工确认 / R2 / R11 …,结论可追到依据,不可追的结论不该给客户。
     import derive_combo as _dc
     for a,b,v,r,rule in _dc.derive():
-        c.execute("INSERT INTO craft_combo VALUES(?,?,?,?,'demo',?)",(a,b,v,r,rule))
+        c.execute("INSERT INTO craft_combo(craft,material,verdict,reason,src_type,rule) VALUES(?,?,?,?,'demo',?)",(a,b,v,r,rule))
 
     # ── 版型库与 BOM 库 —— 同样由 md 推,md 是唯一源头 ──────────────────
     import derive_pattern as _dp
@@ -1437,10 +1437,10 @@ def run():
                   (m["code"], m["name"], m["cat"], m["spec"], m["width_cm"], m["unit"],
                    m["price"], m["loss"], m["lead"], m["ref_craft"], qty))
     for b in _dp.pattern_bom():
-        c.execute("INSERT INTO pattern_bom VALUES(?,?,?,?,?,?)",
+        c.execute("INSERT INTO pattern_bom(pattern,material,qty_base,qty_step,unit,note) VALUES(?,?,?,?,?,?)",
                   (b["pattern"], b["material"], b["qty_base"], b["qty_step"], b["unit"], b["note"]))
     for b in _dp.craft_bom():
-        c.execute("INSERT INTO craft_bom VALUES(?,?,?,?,?)",
+        c.execute("INSERT INTO craft_bom(craft,material,qty,unit,note) VALUES(?,?,?,?,?)",
                   (b["craft"], b["material"], b["qty"], b["unit"], b["note"]))
 
     # ── 会员信息(设计稿「客户详情」的字段)────────────────────────────
@@ -1569,7 +1569,7 @@ def run():
       ("W0406","衬里工","缝制","KF18,KF32,KF28",1.0,3,"上海工坊","锁边、压褶"),
     ]
     for no,nm,tr,sk,dr,wl,ws,note in ART:
-        c.execute("INSERT INTO artisan VALUES(?,?,?,?,?,?,?,'在职',?)",(no,nm,tr,sk,dr,wl,ws,note))
+        c.execute("INSERT INTO artisan(no,name,trade,skills,day_rate,wip_limit,workshop,status,note) VALUES(?,?,?,?,?,?,?,'在职',?)",(no,nm,tr,sk,dr,wl,ws,note))
 
     # ── 师傅并进 staff:**「工坊排产」这个 agent 角色原来没有对应的登录身份** ──
     #
@@ -1617,14 +1617,14 @@ def run():
             wd = round(2 + ((i * 13 + j * 7) % 22), 1)
             end = cur + timedelta(days=int(wd / dr) + 1)
             wo += 1
-            c.execute("INSERT INTO workorder VALUES(?,?,?,?,?,?,?,'在制',?)",
+            c.execute("INSERT INTO workorder(id,artisan,craft,ref,workdays,start_date,due_date,status,note) VALUES(?,?,?,?,?,?,?,'在制',?)",
                       (f"WO{8000+wo}", no, k, _ord_for(wo), wd,
                        cur.isoformat(), end.isoformat(), None))
             cur = end
     # 已完成的历史工单不占产能,但要有,否则看不出「这个师傅一直很忙」
     for i,(no,*_ ) in enumerate(ART[:10]):
         wo += 1
-        c.execute("INSERT INTO workorder VALUES(?,?,?,?,?,?,?,'已完成',?)",
+        c.execute("INSERT INTO workorder(id,artisan,craft,ref,workdays,start_date,due_date,status,note) VALUES(?,?,?,?,?,?,?,'已完成',?)",
                   (f"WO{8000+wo}", no, "KF11", f"ORD-{6900+i}", 6.0,
                    (_base - timedelta(days=40)).isoformat(),
                    (_base - timedelta(days=30)).isoformat(), None))
@@ -1923,7 +1923,7 @@ def run():
                    json.dumps([{"组名":"商品信息","图":[_img(spu,"intro")]},
                                {"组名":"保养","图":[_img(spu,"d2")]},
                                {"组名":"送货与退货","图":[_img(spu,"d3")]}], ensure_ascii=False)))
-        c.execute("INSERT INTO product_custom VALUES(?,?,?,?,?,?)",
+        c.execute("INSERT INTO product_custom(spu,xz,mt_opts,kf_opts,lead_days,note) VALUES(?,?,?,?,?,?)",
                   (spu, xz, ",".join(mts2), ",".join(kfs), lead,
                    None if len(mts2)==len(mts) else
                    "已剔除与所选工艺不相容的面料:" + "、".join(
@@ -2049,7 +2049,7 @@ def run():
                                    {"组名":"送货与退货","图":[_img(spu,"d3")]}],
                                   ensure_ascii=False)))
             if kind == "定制品":
-                c.execute("INSERT INTO product_custom VALUES(?,?,?,?,?,?)",
+                c.execute("INSERT INTO product_custom(spu,xz,mt_opts,kf_opts,lead_days,note) VALUES(?,?,?,?,?,?)",
                           (spu, _xz_name.get(ptxz, ptn), ",".join(mts), 生成改工艺.get(nm, kf),
                            est.get("备料天") and f"{est['备料天']}–{est['备料天']+20} 天" or "30–45 天",
                            f"由版型 {ptc} 生成;物料成本 ¥{cost} × {coef} 定价,"
@@ -2201,7 +2201,7 @@ def run():
         ("MI11","臂围","cm",0,13,"选填"),
         ("MI12","裤长","cm",0,14,"选填")]
     for code,nm,un,rq,so,note in MI:
-        c.execute("INSERT INTO measure_item VALUES(?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO measure_item(code,name,unit,required,sort,status,note) VALUES(?,?,?,?,?,?,?)",
           (code,nm,un,rq,so,"停用" if code=="MI12" else "启用",note))
     # ── 量体模版 ──
     # 编码从 MT 改成 LT:原来量体模版用 MT01,而材质里 MT01 是香云纱 ——
@@ -2292,10 +2292,10 @@ def run():
     TPL = [(c1, n1, d1, s1, it + [x for x in _补项.get(c1, []) if x not in it])
            for c1, n1, d1, s1, it in TPL]
     for code,nm,de,st,items in TPL:
-        c.execute("INSERT INTO measure_tpl VALUES(?,?,?,?,?,?)",
+        c.execute("INSERT INTO measure_tpl(code,name,descr,status,updated_by,updated) VALUES(?,?,?,?,?,?)",
           (code,nm,de,st,"60000008",f"2026-08-2{TPL.index((code,nm,de,st,items))} 16:16"))
         for j,it in enumerate(items):
-            c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j+1))
+            c.execute("INSERT INTO tpl_item(tpl,item,sort) VALUES(?,?,?)",(code,it,j+1))
     # ── 运费表(业务 2026-10-12 定:分区固定价 + 满额免邮)──────────────────
     # ⚠️ **这里只灌配置,不碰历史订单的 `ordr.freight`。**
     # 用户 2026-10-12 拍的是「**只管新单,历史不动**」——
@@ -2366,7 +2366,7 @@ def run():
         cu = c.execute("SELECT name,addr,shop,province,city FROM customer WHERE phone=? "
                        "ORDER BY created LIMIT 1", (ph,)).fetchone()
         pref = ["微信", "电话", "短信"][i % 3]
-        c.execute("INSERT INTO account VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO account(id,phone,login_name,pwd_algo,pwd_salt,pwd_hash,status,created,last_login,display_name,contact_pref,default_addr,home_shop,self_wearer_id,tos_version,privacy_version,marketing_consent,closed_at,purge_at,fail_count,locked_until) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (aid, ph, login, algo, salt, h, "正常", ago(200 - i % 150),
                    ago(i % 40) if i % 3 else None,
                    cu[0] if cu else None, pref,
@@ -2389,7 +2389,7 @@ def run():
         # 合并流程写着「手机号取新号」,不留别名就等于让客户失联:
         # **客户拿旧号来问,系统会说查无此人。**
         if i % 7 == 3:
-            c.execute("INSERT OR IGNORE INTO phone_alias VALUES(?,?,?,?)",
+            c.execute("INSERT OR IGNORE INTO phone_alias(phone,account_id,reason,since) VALUES(?,?,?,?)",
                       (f"1{(int(ph)+7_0000_0000) % 10_000_000_000:010d}", aid,
                        "换号,旧号保留", ago(120 + i % 60)))
 
@@ -2401,11 +2401,11 @@ def run():
         wid = f"W{cid[1:]}-{i}"
         # **身份绑账户,不绑门店档案** —— 档案可能有好几条,账户只有一个
         aid = c.execute("SELECT account_id FROM customer WHERE id=?", (cid,)).fetchone()[0]
-        c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO wearer(id,customer_id,account_id,name,gender,birthday,relation,phone,parent_a,parent_b,height,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (wid, cid, aid, name, gender, bday, rel, phone, pa, pb, h, "在用", T.isoformat()))
         return wid
     def _consent(n, wid, scope, by, rel, at):
-        c.execute("INSERT INTO consent VALUES(?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO consent(id,wearer_id,scope,granted_by,relation,channel,granted_at,revoked_at) VALUES(?,?,?,?,?,?,?,?)",
                   (f"CS{2000+n}", wid, scope, by, rel, "门店纸质", at, None))
 
     # ── 专门喂「注销的下游」那条路径的一对:**不进 MERGE 题集、不写真值** ──
@@ -2718,7 +2718,7 @@ def run():
     CK=["品牌故事","穿搭指南","工艺科普","活动预告"]
     CH=["小程序首页","会员中心","门店Pad","公众号"]
     for i in range(16):
-        c.execute("INSERT INTO content VALUES(?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO content(code,title,kind,status,channel,author,published,views) VALUES(?,?,?,?,?,?,?,?)",
           (f"CT{100+i}",
            ["云锦织造的七十二道工序","唐制齐胸襦裙的日常穿法","缂丝为什么被称为织中之圣",
             "秋季新品预览:妆花缎系列","如何挑选适合自己的马面裙","明制立领长衫的历史沿革",
@@ -2733,7 +2733,7 @@ def run():
     for i,(code,nm,kd,st,sd,ed,bg) in enumerate(ACTS):
         su=random.randint(30,480) if st!="未开始" else 0
         od=rows_n=random.randint(5,90) if st!="未开始" else 0
-        c.execute("INSERT INTO activity VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO activity(code,name,kind,status,start_d,end_d,shop,budget,signup,orders,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
           (code,nm,kd,st,sd,ed,ACT_SHOP.get(code,"全渠道") if kd=="门店" else "全渠道",
            bg,su,od,sd+" 09:00"))
         for k in range(3 if st!="未开始" else 1):
@@ -2758,7 +2758,7 @@ def run():
     for b,(act,n) in enumerate([("AC2603",40),("AC2605",30)]):
         for k in range(n):
             used = k < n//3
-            c.execute("INSERT INTO invite_code VALUES(?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO invite_code(code,batch,activity,status,used_by,used_at,created) VALUES(?,?,?,?,?,?,?)",
               (f"INV{b+1}{k:04d}",f"B{b+1:02d}",act,
                "已使用" if used else ("已作废" if k>=n-3 else "未使用"),
                cust[k%len(cust)][0] if used else None,
@@ -2769,7 +2769,7 @@ def run():
            ("PG03","秋季新品专题","小程序","草稿"),("PG04","门店预约引导页","小程序","已发布"),
            ("PG05","非遗联名专题","小程序","草稿"),("PG06","Pad 接待首屏","门店Pad","已发布")]
     for i,(code,nm,ch,st) in enumerate(PAGES):
-        c.execute("INSERT INTO page VALUES(?,?,?,?,?,?)",
+        c.execute("INSERT INTO page(code,name,channel,status,updated_by,updated) VALUES(?,?,?,?,?,?)",
           (code,nm,ch,st,"60000009",f"2026-08-{18+i%12:02d} 1{i%9}:30"))
         for k in range(2+i%3):
             kd=BK[(i+k)%4]
@@ -2791,7 +2791,7 @@ def run():
         ("SC-REF-05","退款失败码","商户账户余额不足","INSUFFICIENT_BALANCE",5),
         ("SC-REF-06","退款失败码","审批状态不允许","NOT_APPROVED",6)]
     for code,cat,nm,vl,so in SC:
-        c.execute("INSERT INTO sys_code VALUES(?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO sys_code(code,category,name,val,sort,status,note) VALUES(?,?,?,?,?,?,?)",
           (code,cat,nm,vl,so,"启用" if code!="SC-ORD-04" else "停用",
            "与支付渠道返回码一一对应" if cat=="退款失败码" else ""))
     # ── 下载任务 ──
@@ -2801,7 +2801,7 @@ def run():
         ("DL2608310004","客户档案","归属店铺=SH001","失败",0,0),
         ("DL2609010005","交易查询","状态=待付款","生成中",0,0)]
     for i,(did,kd,fl,st,rn,sz) in enumerate(DT):
-        c.execute("INSERT INTO download_task VALUES(?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO download_task(id,kind,filters,status,rows_n,size_kb,created_by,created,expire_at) VALUES(?,?,?,?,?,?,?,?,?)",
           (did,kd,fl,st,rn,sz,"60000008",f"2026-0{8+i%2}-3{i%2} 1{i}:0{i}",
            f"2026-09-0{2+i%3} 1{i}:0{i}"))
 
@@ -2812,7 +2812,7 @@ def run():
         ("L2","金卡",15000,4,2,"滚动 12 个月实付 ≥15000 元 或 完成订单 ≥4 单",10000,"下单实付每 1 元累积 1.5 分"),
         ("L3","黑金",30000,6,3,"滚动 12 个月实付 ≥30000 元 或 完成订单 ≥6 单",25000,"下单实付每 1 元累积 2 分")]
     for code,nm,am,od,so,nt,np_,pr in LV:
-        c.execute("INSERT INTO level_cfg VALUES(?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO level_cfg(code,name,amount,orders,sort,status,note,need_points,point_rule) VALUES(?,?,?,?,?,?,?,?,?)",
                   (code,nm,am,od,so,"启用",nt,np_,pr))
     # 按规则重算客户等级(每日计算,订单完成 7 个自然日后计入)
     def level_of(amt,od):
@@ -2827,7 +2827,7 @@ def run():
           ("TG07","重复购买","行为"),("TG08","仅线上","行为"),("TG09","到店频繁","行为"),
           ("TG10","已流失(停用)","行为")]
     for i,(code,nm,gp) in enumerate(TAGS):
-        c.execute("INSERT INTO tag VALUES(?,?,?,?,?,?)",
+        c.execute("INSERT INTO tag(code,name,grp,status,n,updated) VALUES(?,?,?,?,?,?)",
           (code,nm,gp,"停用" if code=="TG10" else "启用",random.randint(3,42),
            f"2026-08-{18+i%12:02d} 1{i%9}:20"))
     # ── 审批单(三类高风险操作,PRD 第 8 章)──
@@ -2837,7 +2837,7 @@ def run():
          ("AP-LV-002","等级调整","C10001",'{"from":"银卡","to":"金卡"}',"已通过","60000001"),
          ("AP-PT-002","积分调整","C10020",'{"delta":-2000,"reason":"重复发放回收"}',"已驳回","60000004")]
     for aid,kd,tg,pl,st,by in APV:
-        c.execute("INSERT INTO approval VALUES(?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO approval(id,kind,target,payload,status,applied_by,applied_at,decided_by,decided_at,note) VALUES(?,?,?,?,?,?,?,?,?,?)",
           (aid,kd,tg,pl,st,by,"2026-08-30 15:20",
            "60000008" if st!="待审批" else None,
            "2026-08-31 09:10" if st!="待审批" else None,
@@ -3050,17 +3050,17 @@ def run():
     # 负向题需要两种正向题里根本不存在的数据形态:一张没出问题的单、一张证据残缺的单。
     _cid = c.execute("SELECT id FROM customer LIMIT 1").fetchone()[0]
     # N1 健康单据:退款早已成功,压根没有失败可查
-    c.execute("INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)",
+    c.execute("INSERT INTO deposit(id,customer_id,appt_id,amount,status,idem_key,created,updated) VALUES(?,?,?,?,?,?,?,?)",
               ("D9001", _cid, None, 600.0, "已退", "IDEM-D9001", "2026-08-05 10:00", "2026-08-05 10:07"))
-    c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
+    c.execute("INSERT INTO payment_flow(id,deposit_id,direction,amount,channel,channel_serial,status,ts) VALUES(?,?,?,?,?,?,?,?)",
               ("PFD9001I", "D9001", "in", 600.0, "微信支付", "WX600100100100", "success", "2026-08-05 10:00"))
-    c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
+    c.execute("INSERT INTO payment_flow(id,deposit_id,direction,amount,channel,channel_serial,status,ts) VALUES(?,?,?,?,?,?,?,?)",
               ("PFD9001O", "D9001", "out", 600.0, "微信支付", "WX600200200200", "success", "2026-08-05 10:07"))
     c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
               " VALUES(?,?,?,?,?,?,?,?)",
               ("D9001", 1, "2026-08-05 10:07", "微信支付", 600.0, "SUCCESS", "退款成功", "IDEM-D9001"))
     # N2 证据残缺:有失败轨迹,但支付流水一条都没有 —— 无法判断钱到底动没动
-    c.execute("INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)",
+    c.execute("INSERT INTO deposit(id,customer_id,appt_id,amount,status,idem_key,created,updated) VALUES(?,?,?,?,?,?,?,?)",
               ("D9002", _cid, None, 1500.0, "退款失败", "IDEM-D9002", "2026-08-11 09:30", "2026-08-19 15:02"))
     for _a, _t in [(1, "2026-08-19 14:50"), (2, "2026-08-19 14:56"), (3, "2026-08-19 15:02")]:
         c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
@@ -3398,7 +3398,7 @@ def run():
     for k,wid in enumerate(_adults):
         if k % 9: continue                       # 九分之一的人有明显体型特征
         f,note=FEAT[(k//9)%4]
-        c.execute("INSERT INTO body_feature VALUES(?,?,?,?,?)",
+        c.execute("INSERT INTO body_feature(wearer_id,feature,note,recorded_by,ts) VALUES(?,?,?,?,?)",
                   (wid,f,note,_adv_any(),f"2026-0{6+k%3}-1{k%9} 14:40"))
 
     # ── C3:把时间锚点理顺(放在最后,等所有对象都建完)────────────────
@@ -3660,7 +3660,7 @@ def run():
         # 只铺面料的话,配置页上永远只有一半 —— 而客户选的是「云锦 + 苏绣」。
         for _i3, _b in enumerate(_bs, 1):
             for _k5 in _kfs:
-                c.execute("INSERT OR IGNORE INTO part_option VALUES(?,?,?,?,?,?,?)",
+                c.execute("INSERT OR IGNORE INTO part_option(spu,kind,part,material,addon,colors,sort) VALUES(?,?,?,?,?,?,?)",
                           (_r["spu"], "工艺", _b, _k5.strip(), 0.0, None, _i3))
         for _i3, _b in enumerate(_bs, 1):
             # **按部位该用的材料类别挑**,不是一律给整件可选主料。
@@ -3675,7 +3675,7 @@ def run():
                                       (_m2,)).fetchone() or [0])[0] or 0
                     _add2 = 0.0 if _m2 == _pool[0] else \
                         round(min(600, max(50, _mp2 * 2)) / 10) * 10
-                    c.execute("INSERT OR IGNORE INTO part_option VALUES(?,?,?,?,?,?,?)",
+                    c.execute("INSERT OR IGNORE INTO part_option(spu,kind,part,material,addon,colors,sort) VALUES(?,?,?,?,?,?,?)",
                               (_r["spu"], "面料", _b, _m2, _add2, None, _i3))
                 continue
             for _m in _mts:
@@ -3685,7 +3685,7 @@ def run():
                 _add = 0.0 if _m.strip() == _mts[0].strip() else \
                     round(min(2000, max(200, _mp * 1.5)) / 100) * 100
                 _cols = "、".join(["月白", "缃色", "绛", "藏青"][:2 + _i3 % 3])
-                c.execute("INSERT OR IGNORE INTO part_option "
+                c.execute("INSERT OR IGNORE INTO part_option(spu,kind,part,material,addon,colors,sort) "
                           "VALUES(?,?,?,?,?,?,?)",
                           (_r["spu"], "面料", _b, _m.strip(), _add, _cols, _i3))
                 _n_po += 1

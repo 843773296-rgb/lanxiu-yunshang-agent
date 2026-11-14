@@ -9983,8 +9983,8 @@
   "file": [
    {
     "path": "backend/seed.py",
-    "old": "            c.execute(\"INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)\",",
-    "new": "            c.execute(\"INSERT INTO deposit(advisor) VALUES(?,?,?,?,?,?,?,?)\","
+    "old": "            c.execute(\"INSERT INTO deposit(id,customer_id,appt_id,amount,status,idem_key,created,updated) VALUES(?,?,?,?,?,?,?,?)\",",
+    "new": "            c.execute(\"INSERT INTO deposit(id,advisor,customer_id,appt_id,amount,status,idem_key,created,updated) VALUES(?,?,?,?,?,?,?,?)\","
    }
   ],
   "预期红": "名字列不许回来(INSERT 里不许出现 advisor / measured_by)"
