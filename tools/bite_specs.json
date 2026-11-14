@@ -22171,5 +22171,17 @@
    }
   ],
   "预期红": "TL30 说清「没记录」和「没签字」不是一回事"
+ },
+ {
+  "script": "backend/pattern_role_check.py",
+  "改坏": "去掉 guards 里「没先看过就不许改」那道闸(只关这一支;「没写理由」那支留着 —— 那条用例看过了,关掉这支它照样被理由那支拦,所以不会被顺手挡住)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if short == \"set_piece_ratio\" and not _读了(short, 读过):\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "没先看过就改 → 拦下"
  }
 ]
