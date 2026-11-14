@@ -21577,5 +21577,101 @@
    }
   ],
   "预期红": "判不了该不该试的,不许放行开裁"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "让开单不查衣服和穿的人对不对得上",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "        if g != \"可以\":\n            return _deny(me, \"WEARER_MISMATCH\",",
+    "new": "        if False:\n            return _deny(me, \"WEARER_MISMATCH\","
+   }
+  ],
+  "预期红": "衣服和穿的人对不上(如女款开给男士)→ 拒"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "把开单时的 `status != '上架'` 那道闸去掉(待上架的款就能卖)",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "        if (s[\"status\"] or \"\") != \"上架\":\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "不是「上架」的款不能下单"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "删掉查订单里定制单「已发货」的状态说明",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    \"已发货\": \"工厂发往门店,还没到顾客手里 —— ",
+    "new": "    \"已发货\": \"已发货 —— "
+   }
+  ],
+  "预期红": "查已发货的定制单会说明「工厂发往门店、还没到顾客手里」"
+ },
+ {
+  "script": "backend/pickup_write_check.py",
+  "改坏": "让 not_fit() 把订单推进待完成",
+  "file": [
+   {
+    "path": "backend/pickup_write.py",
+    "old": "        c.execute(\"UPDATE pickup SET fit_result=COALESCE(NULLIF(fit_result,'合身'),'不合身') WHERE order_id=?\", (o[\"id\"],))\n",
+    "new": "        c.execute(\"UPDATE pickup SET fit_result=COALESCE(NULLIF(fit_result,'合身'),'不合身') WHERE order_id=?\", (o[\"id\"],))\n        c.execute(\"UPDATE ordr SET status='待完成' WHERE id=?\", (o[\"id\"],))\n"
+   }
+  ],
+  "预期红": "不合身 → 订单状态不动"
+ },
+ {
+  "script": "backend/pickup_write_check.py",
+  "改坏": "让 ratify() 不查签收满没满 15 天",
+  "file": [
+   {
+    "path": "knowledge/pickup.py",
+    "old": "    if 天 < 追认等几天:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "签收不满 15 天 → 不许追认"
+ },
+ {
+  "script": "backend/pickup_write_check.py",
+  "改坏": "让 get_order 的金额自检不算定制加价",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if abs(g+cu_+f-a)>0.01:\n",
+    "new": "    if abs(g+f-a)>0.01:\n"
+   }
+  ],
+  "预期红": "定制单查订单不报假的金额异常"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让 rating.要填金额吗() 对「部分退款」也返回不用填",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "    if 方式 == \"部分退款\":\n        return True, \"「部分退款」要填",
+    "new": "    if 方式 == \"部分退款\":\n        return False, \"「部分退款」要填"
+   }
+  ],
+  "预期红": "部分退款**不填金额** → 拒"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让 rating_write 从调用方传的 amount 里取订单额,而不是从库里现读",
+  "file": [
+   {
+    "path": "backend/rating_write.py",
+    "old": "    订单额 = _单[0][\"amount\"] if _单 else None\n",
+    "new": "    订单额 = d.get(\"amount\") if d.get(\"amount\") is not None else (_单[0][\"amount\"] if _单 else None)\n"
+   }
+  ],
+  "预期红": "全额退款**自己填了别的数** → 拒(金额就是订单额,系统现算)"
  }
 ]
