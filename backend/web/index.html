@@ -1750,7 +1750,7 @@ async function shopDetail(code){
      <span class="pill ${SPILL[d.status]}">${esc(d.status)}</span>
      <span class="mono" style="color:var(--ink3);font-size:13px">${esc(d.code)}</span></div>
    <div class="card"><div class="hd"><h3>基本信息:</h3>
-     ${ROLE==="总部运营"?`<span class="more" data-edit-shop>✎ 编辑</span>`:`<span class="more dead" title="店铺资料只有总部运营能改">✎ 编辑</span>`}</div>
+     ${ROLE==="总部运营"?`<span class="more" data-edit-shop>✎ 编辑</span> <span class="more" data-rename-shop>改店名</span> <span class="more" data-undo-rename>撤销上次改名</span>`:`<span class="more dead" title="店铺资料只有总部运营能改">✎ 编辑</span>`}</div>
     <div class="info">
      <div><div class="l">店铺编码</div><div class="v mono">${esc(d.code)}</div></div>
      <div><div class="l">店长</div><div class="v">${esc(d.manager)}</div></div>
@@ -1793,6 +1793,21 @@ async function shopDetail(code){
       {k:"province",label:"省市区",val:d.province||""},
       {k:"addr",label:"详细地址",val:d.addr||""}],
       v=>doOp("/api/shop-save",{...v,code:d.code},()=>view("shop",code)),true)});
+  // 11-14 夜:店名整库改名 —— 先预览会动哪些表多少行、哪些历史快照不改,确认后一个事务全改,改完可撤销
+  M.querySelectorAll("[data-rename-shop]").forEach(e=>e.onclick=()=>
+    modal(`改店名 · ${d.code} ${d.name}`,[{k:"new_name",label:"新店名(不带编码)",req:1,ph:"例如:西湖店"}],async v=>{
+      const p=await post("/api/shop-rename-preview",{code:d.code,new_name:v.new_name});
+      if(!p.ok){res(false,p.code||"ERR",p.reason||p.error||"");return false}
+      const 表=(p.要改||[]).filter(x=>x.行数).map(x=>`${x.表}.${x.列} ${x.行数} 行`).join("、");
+      const 快=(p.快照不改||[]).map(x=>`${x.是什么} ${x.行数} 处`).join("、");
+      const 回=await sure("确认整库改名",`${p.reason}\n会改:${表}\n保留原样:${快||"无"}\n改完这家店员工要重新登录;改错了可以点「撤销上次改名」。`,"确认改名");
+      if(!回)return false;
+      return doOp("/api/shop-rename",{code:d.code,new_name:v.new_name,expect_total:p.合计},()=>view("shop",code));
+    }));
+  M.querySelectorAll("[data-undo-rename]").forEach(e=>e.onclick=async()=>{
+    if(!await sure("撤销上次改名",`把 ${d.code} 最近一次改名按原样改回去(只能撤最近一次;店名之后又被改过就撤不了)。`,"撤销"))return;
+    doOp("/api/shop-rename-undo",{code:d.code},()=>view("shop",code));
+  });
   M.querySelectorAll("[data-shop]").forEach(e=>e.onclick=()=>
     modal(`${on?"停用":"启用"}店铺 · ${d.name}`,[{k:"note",type:"text",req:1,
       label:on?"停用原因(无效店铺将禁止新增业务)":"启用原因",ph:"例如:门店装修暂停营业"}],

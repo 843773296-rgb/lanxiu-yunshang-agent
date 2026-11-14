@@ -5251,6 +5251,11 @@ class H(BaseHTTPRequestHandler):
             return self._send(create_download(body.get("kind"),body.get("filters"),登录人["name"]))
         if p=="/api/shop-save":
             return self._send(save_shop(body, 登录人))
+        # 店名整库改名(11-14 夜拍板第五十八条):先预览、再带着预览合计真改、能撤销;只总部(闸在 shop_rename 里)
+        if p in ("/api/shop-rename-preview", "/api/shop-rename", "/api/shop-rename-undo"):
+            import shop_rename as _SR
+            f = {"/api/shop-rename-preview": _SR.预览, "/api/shop-rename": _SR.改名, "/api/shop-rename-undo": _SR.撤销}[p]
+            return self._send(f(body, 登录人))
         if p=="/api/product-save":
             return self._send(save_product(body,登录人["name"],role=登录人.get("role")))
         if p=="/api/block-save": return self._send(save_block(body,登录人["name"]))

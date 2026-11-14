@@ -134,6 +134,36 @@ async function 跑() {
     const P2 = 搭页面("店长", 假); await P2.等(20);
     await P2.跑('shopDetail("SH001")');
     ck("① 店长:编辑按钮是灰的(没有可点的)", P2.主.querySelectorAll("[data-edit-shop]").length === 0);
+    ck("① 店长:看不到「改店名」", P2.主.querySelectorAll("[data-rename-shop]").length === 0);
+  }
+
+  { // ①b 店铺详情:店名整库改名(11-14 夜)—— 先预览,确认后带着预览合计真改
+    const P = 搭页面("总部运营", 假); await P.等(20);
+    const 原 = P.ctx.fetch;
+    P.ctx.fetch = async (u, opt = {}) => {
+      if (String(u) === "/api/shop-rename-preview") {
+        P.发出.push({ u: String(u), 体: JSON.parse(opt.body || "{}") });
+        return { ok: true, status: 200, json: async () => ({ ok: true, code: "PREVIEW", 合计: 4321, reason: "预览",
+          要改: [{ 表: "ordr", 列: "shop", 行数: 4000 }], 快照不改: [{ 是什么: "签署时的合同正文", 行数: 3 }] }) };
+      }
+      return 原(u, opt);
+    };
+    let 问过 = 0;
+    P.ctx.__记问 = () => { 问过++; };
+    P.跑("sure = async () => { __记问(); return true; }");
+    await P.跑('shopDetail("SH001")');
+    const 钮 = P.主.querySelectorAll("[data-rename-shop]");
+    ck("①b 总部:「改店名」按钮渲染出来了", 钮.length === 1);
+    if (钮[0]) {
+      钮[0].onclick && 钮[0].onclick();
+      const w = P.弹窗.at(-1);
+      if (w) { await w.ok({ new_name: "西湖店" }); await P.等(5); }
+      const 两 = P.发出.slice(-2);
+      ck("①b 先发预览、问过一次、再发真改,真改带着预览给的合计",
+         两.length === 2 && 两[0].u === "/api/shop-rename-preview" && 两[1].u === "/api/shop-rename"
+         && 两[1].体.expect_total === 4321 && 两[1].体.new_name === "西湖店" && 两[1].体.code === "SH001" && 问过 === 1,
+         JSON.stringify(两) + " 问过=" + 问过);
+    }
   }
 
   { // ② 权限管理:编辑权限,不能改自己
