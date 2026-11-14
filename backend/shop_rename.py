@@ -46,7 +46,6 @@ import shop_key
     ("order_contract", "body"): "签署时的合同正文",
     ("order_mix_batch", "payload"): "当时提交的批次原文",
     ("triage", "ai_text"): "研判当时的模型原文", ("triage", "ai_root_cause"): "研判当时的模型原文", ("triage", "ai_evidence"): "研判当时引用的证据",
-    ("rating_shadow", "ai_text"): "评分影子当时的模型原文",
     ("store_report_doc", "body"): "已生成的门店报告正文", ("store_report_doc", "pack"): "已生成的门店报告附件",
     ("op_log", "reason"): "操作台账(历史)", ("op_log", "ctx"): "操作台账(历史)",
     ("op_log", "target"): "操作台账(历史)", ("op_log", "frm"): "操作台账(历史)", ("op_log", "too"): "操作台账(历史)",

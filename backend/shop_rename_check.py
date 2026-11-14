@@ -116,7 +116,7 @@ def main():
     print("\n⑧ 没登记的列")
     with closing(sqlite3.connect(副本)) as c, c:
         c.execute("CREATE TABLE _检查设置(k TEXT, v TEXT)")
-        c.execute("INSERT INTO _检查设置 VALUES('试运行门店', ?)", (json.dumps([老串, "别的"], ensure_ascii=False),))
+        c.execute("INSERT INTO _检查设置(k, v) VALUES('试运行门店', ?)", (json.dumps([老串, "别的"], ensure_ascii=False),))
     p8 = R.预览(dict(code=码, new_name=新名), 总部)
     r8 = R.改名(dict(code=码, new_name=新名, expect_total=p["合计"]), 总部)
     with closing(sqlite3.connect(副本)) as c, c:
