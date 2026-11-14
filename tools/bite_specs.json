@@ -22001,5 +22001,53 @@
    "UPDATE supplier SET defect_rate=0.02 WHERE code=(SELECT code FROM supplier WHERE kind='面料' LIMIT 1)"
   ],
   "预期红": "面料只填色差、外发只填返工率"
+ },
+ {
+  "script": "backend/example_counter_check.py",
+  "改坏": "把某一根因唯一那条进示例池的改成「评测」",
+  "file": [
+   {
+    "path": "agent/example-counter-cases.json",
+    "old": "   \"id\": \"MX-01\",\n   \"模板\": \"MERGE-08\",\n   \"进\": \"示例池\",",
+    "new": "   \"id\": \"MX-01\",\n   \"模板\": \"MERGE-08\",\n   \"进\": \"评测\","
+   }
+  ],
+  "预期红": "每个根因至少 3 条、恰好 1 条进示例池"
+ },
+ {
+  "script": "backend/example_counter_check.py",
+  "改坏": "把一条反例的编号改成冻结切分里已有的号",
+  "file": [
+   {
+    "path": "agent/example-counter-cases.json",
+    "old": "   \"id\": \"MX-02\",\n",
+    "new": "   \"id\": \"MERGE-14\",\n"
+   }
+  ],
+  "预期红": "反例编号不和冻结切分撞号"
+ },
+ {
+  "script": "backend/example_counter_check.py",
+  "改坏": "把一条合并反例的模板改成库里没有的工单",
+  "file": [
+   {
+    "path": "agent/example-counter-cases.json",
+    "old": "   \"模板\": \"MERGE-09\",\n",
+    "new": "   \"模板\": \"MERGE-99\",\n"
+   }
+  ],
+  "预期红": "每条反例的模板单据都在库里"
+ },
+ {
+  "script": "backend/example_counter_check.py",
+  "改坏": "在一条合并反例的「改」里写一个造法不认的键",
+  "file": [
+   {
+    "path": "agent/example-counter-cases.json",
+    "old": "   \"模板\": \"MERGE-10\",\n   \"进\": \"评测\",\n   \"bp\": \"BP-02\",\n   \"类\": \"同名、生日地址都不同\",\n   \"改\": {\n    \"同一账户\": true\n   },",
+    "new": "   \"模板\": \"MERGE-10\",\n   \"进\": \"评测\",\n   \"bp\": \"BP-02\",\n   \"类\": \"同名、生日地址都不同\",\n   \"改\": {\n    \"同一账户\": true,\n    \"同户\": true\n   },"
+   }
+  ],
+  "预期红": "「改」里只有造法认得的键"
  }
 ]

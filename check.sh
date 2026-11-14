@@ -731,6 +731,7 @@ run "评测 · 环境没验成和模型答错分开记(10-20 夜跑 tool_eval �
 run "隔离试运行 + 版本对比 · 遮干净、工具服务真改读副本、没凭证就停、对比不把跑挂算答错(用户 10-19 拍)" python3 backend/triage_trial_check.py
 run "退款执行写口 · 只有财务、先核实再重发、已退要流水号且不重复、通用入口绕不过(用户 10-15 拍)"    python3 backend/refund_write_check.py
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
+run "研判示例库 · 反例清单:每个根因 1 条示例 + ≥2 条评测、不撞号、模板在库里、「改」只用造法认得的键(4 条咬合)"    python3 backend/example_counter_check.py
 run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py
 run "客户软合并 · 数据不搬、留建档最早、能撤、只认总部运营;列表 / 详情 / 审批中心 / 研判办结都认它(库副本上自造)" python3 backend/merge_check.py
 run "方案保存 · 客户和版型真的存进去、编辑跟着变、不串单、挂错人会拒、按钮发名字也落编码(外部复审 10-19 · 3.1 / 10-22 实跑)" python3 backend/scheme_save_check.py
