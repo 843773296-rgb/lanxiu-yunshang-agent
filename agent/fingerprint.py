@@ -216,7 +216,7 @@ def selftest():
             if os.path.exists(db): os.remove(db)
             c = sqlite3.connect(db)
             c.execute("CREATE TABLE craft(id INTEGER PRIMARY KEY, name TEXT, note TEXT)")
-            c.executemany("INSERT INTO craft VALUES(?,?,?)", 值); c.commit(); c.close()
+            c.executemany("INSERT INTO craft(id,name,note) VALUES(?,?,?)", 值); c.commit(); c.close()
         基 = [(1, "盘扣", "手工"), (2, "缂丝", "通经断纬"), (3, "苏绣", "双面")]
         建(基); a = data_fp(db, ["craft"])
         建(基); b = data_fp(db, ["craft"])

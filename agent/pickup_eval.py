@@ -342,11 +342,21 @@ def 还原(前):
         cx.execute("DELETE FROM maintain WHERE id=?", (mid,))
     cx.execute("DELETE FROM pickup"); cx.execute("DELETE FROM fit_code")
     cx.execute("DELETE FROM pkg_pickup"); cx.execute("DELETE FROM pickup_item")
-    if u0: cx.executemany(f"INSERT INTO pkg_pickup VALUES({','.join('?' * len(u0[0]))})", u0)
-    if i0: cx.executemany(f"INSERT INTO pickup_item VALUES({','.join('?' * len(i0[0]))})", i0)
+    # 快照是 SELECT *,列序 = 建表列序;还原时按同一张表现读的列名写具名列(不靠位置对齐)
+    def _列(表):
+        return [r[1] for r in cx.execute(f"PRAGMA table_info({表})")]
+    def _占(列): return ",".join("?" * len(列))
+    if u0:
+        列 = _列("pkg_pickup")
+        cx.executemany(f"INSERT INTO pkg_pickup({','.join(列)}) VALUES({_占(列)})", u0)
+    if i0:
+        列 = _列("pickup_item")
+        cx.executemany(f"INSERT INTO pickup_item({','.join(列)}) VALUES({_占(列)})", i0)
     for pid, st, at in g0:
         cx.execute("UPDATE pkg SET status=?, arrived_at=? WHERE pkg_id=?", (st, at, pid))
-    if p0: cx.executemany(f"INSERT INTO pickup VALUES({','.join('?' * len(p0[0]))})", p0)
+    if p0:
+        列 = _列("pickup")
+        cx.executemany(f"INSERT INTO pickup({','.join(列)}) VALUES({_占(列)})", p0)
     for r in k0:
         cx.execute(f"INSERT INTO fit_code(rowid,order_id,code_hash,issued_at,expires_at,used_at,tries) "
                    f"VALUES(?,?,?,?,?,?,?)", r)

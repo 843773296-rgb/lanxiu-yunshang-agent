@@ -3338,7 +3338,7 @@
   "file": [
    {
     "path": "tools/backfill_rating.py",
-    "old": "    c.execute(\"INSERT OR REPLACE INTO world_meta VALUES('rating_built_on',?)\", (今s,))",
+    "old": "    c.execute(\"INSERT OR REPLACE INTO world_meta(k,v) VALUES('rating_built_on',?)\", (今s,))",
     "new": "    pass"
    }
   ],
@@ -3708,10 +3708,10 @@
  },
  {
   "script": "tools/insert_shape_check.py",
-  "改坏": "把 derive_xingzhi 里 `INSERT INTO xingzhi VALUES(?,?,?,?,?)` 删掉一个 ?",
+  "改坏": "把 seed.py 里 `INSERT INTO xingzhi VALUES(?,?,?,?,?)` 删掉一个 ?(11-15 夜 derive_xingzhi 那句已改具名,攻击点挪到仍按位置写的这一处)",
   "file": [
    {
-    "path": "knowledge/derive_xingzhi.py",
+    "path": "backend/seed.py",
     "old": "INSERT INTO xingzhi VALUES(?,?,?,?,?)",
     "new": "INSERT INTO xingzhi VALUES(?,?,?,?)"
    }
@@ -3744,10 +3744,10 @@
  },
  {
   "script": "tools/insert_shape_check.py",
-  "改坏": "把 derive_xingzhi 那句改成具名列、但不删欠债表",
+  "改坏": "把 seed.py 里 xingzhi 那句改成具名列、但不删欠债表(11-15 夜从 derive_xingzhi 挪过来,那边已还清)",
   "file": [
    {
-    "path": "knowledge/derive_xingzhi.py",
+    "path": "backend/seed.py",
     "old": "INSERT INTO xingzhi VALUES(?,?,?,?,?)",
     "new": "INSERT INTO xingzhi(code,name,alias,key_sizes,src_type) VALUES(?,?,?,?,?)"
    }

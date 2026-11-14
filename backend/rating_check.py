@@ -273,7 +273,7 @@ def 合成夹具自证():
     seed_rating.建表(c)
     好 = R.来源_顾客 if hasattr(R, "来源_顾客") else "顾客小程序"
     def 签(pkg, at="2026-09-20 15:00"):
-        c.execute("INSERT INTO pickup_item VALUES(?,?,'合身',?)", (abs(hash(pkg)) % 10**8, pkg, at))
+        c.execute("INSERT INTO pickup_item(order_item_id,pkg_id,fit_result,fit_at) VALUES(?,?,'合身',?)", (abs(hash(pkg)) % 10**8, pkg, at))
     def 评(pkg, **kw):
         d = dict(pkg_id=pkg, order_id="O1", customer_id=1, star=5, note="x",
                  rated_at="2026-09-20 16:00", src=好, advisor_no="S1", edit_cnt=0,

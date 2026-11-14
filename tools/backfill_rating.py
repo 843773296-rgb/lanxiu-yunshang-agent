@@ -698,10 +698,10 @@ def _自测():
         for shop, n in 分配.items():
             for _ in range(n):
                 k += 1
-                c.execute("insert into customer values(?,?)", (k, f"1380000{k:05d}"))
-                c.execute("insert into ordr values(?,?,?,'定制品订单')", (f"O{k}", k, shop))
-                c.execute("insert into pkg values(?,?,null)", (f"P{k}", f"O{k}"))
-                c.execute("insert into pickup_item values(?,?,?,'合身',?,'S001')",
+                c.execute("insert into customer(id,phone) values(?,?)", (k, f"1380000{k:05d}"))
+                c.execute("insert into ordr(id,customer_id,shop,kind) values(?,?,?,'定制品订单')", (f"O{k}", k, shop))
+                c.execute("insert into pkg(pkg_id,order_id,void_at) values(?,?,null)", (f"P{k}", f"O{k}"))
+                c.execute("insert into pickup_item(order_item_id,order_id,pkg_id,fit_result,fit_at,fit_verified_by) values(?,?,?,'合身',?,'S001')",
                           (k, f"O{k}", f"P{k}", f"{日} " + ("22:30" if "底" in ym else "15:00")))
     c.commit(); c.close()
 
