@@ -22199,5 +22199,17 @@
    "UPDATE world_meta SET v='2025-01|2025-02|2025-03' WHERE k='rating_window'"
   ],
   "预期红": "评价数据的三个月窗口就是今天该看的那三个月"
+ },
+ {
+  "script": "backend/rating_rebuild_check.py",
+  "改坏": "把 `shift_world` 里 `world_meta.v` 那条登记删掉(造数往这一列写了非日期值,而平移见到没登记的混合列会整个拒跑)—— 落成规格:键名改成一个不存在的列,登记表里就没有 world_meta.v 了(删整段要跨多行,改键名最窄)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "    \"world_meta.v\": \"这个演示世界的元信息。",
+    "new": "    \"world_meta.v_咬合停用\": \"这个演示世界的元信息。"
+   }
+  ],
+  "预期红": "造数写完 world_meta 之后,**混着日期的列都还登记着**"
  }
 ]
