@@ -1026,6 +1026,12 @@ selftest_registry_check / punct_coverage_check)全 rc=0。**还没提交。**
 - **下一步第一个动作**:看 /tmp/chain_1112j.txt 末行 `chain rc=` 和有没有 `PUSHED`(只认这两样)→ 绿了 `gh run list` 看 CI → 然后把报告 5.2 的第一张卡(落地与数据 4 题)用 AskUserQuestion 问用户;他没回之前按 5.1 前 8 条的顺序开工(第 1 条写口身份闸是纯收紧,不碰拍板)。
 - **悬而未决**:HANDOFF 这一节的六项是在门禁跑的中途加的,**还没提交**(工作区改动),要和下一批一起 `commit --only HANDOFF.md`;`.wip-glossary/patch_pickup_eval.py.已应用` 等 eureka-fc 推了 charset 改动再改回原名。
 
+### 🟡 11-14 10:4x · 后台已切 v11、第四轮推送前链在跑(scratchpad/pre_push7.log)
+- 对方 10:2x 推了 f1e8c979;我 rebase 完领先 41 笔(HANDOFF 按约定重建、待办清单重生成、bite_specs 两边都留 1764 条)。
+- 后台:规矩导入(新增 3、出新版 2)→ v10 代码导入 → 改回 → **v11 = v9 + TL82**(逐列比只差规矩两列)→ **生产 v9→v11 已切**;assistant_effect 「挑出的规矩」67 条对上。
+- 已喊对方:这 2 小时别跑全量门禁 / 别建表;它的门禁会红在 TL82(预期)。**链红了要 `python3 .wip-glossary/align_rules_v9.py --切 9` 切回**(脚本会先比列,v9 比 v11 少 TL82 会被「少了」拦 —— 切回时要直接调接口,别硬改脚本判据)。
+- 推成功 → SendMessage 对方;然后接清单 ③(get_member → TL83,每搬一次照 align 脚本做,做完告诉用户)。
+
 ### 🔴 11-14 10:1x · 第三轮推送前链红在门禁 5 条(**没推**;让对方先推,它 09:5x 起锁内推 3 笔)
 - pre_push6 收工 rc=1 09:23:咬合重放**过了**,红在 ④ 全量门禁 5 条。本地领先 39 笔(自 11-11 起都没推,不是 2 笔)。
 - 已修 4 条(4eb57598):pre_push.sh:46 `${K}`、SOP 重生成、G02「故意不给编号」注释、model_align_check 改读**本检出 + 主检出两份记录仪**
