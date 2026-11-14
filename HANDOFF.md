@@ -20,6 +20,11 @@
 - **14:5x 更新**:本地 3 笔未推 —— fbb4f445(pre_push 推 HEAD:main + g23 补丁 + 交接)、cf02a163(get_member 缩说明 + TL83 + get_aftersale,检查全绿、select 21/21)。**后台新版本等这批推上主干再出再切**(别再先切后推)。并行会话 77c78249 正在锁内推(表数 135,文档跟它走,别改);它推完我 rebase → pre_push。CI 两条我在查(派了子代理),查到归谁告诉它。
 - **下一步(按序)**:①(已做,见上)打 `.wip-glossary/shrink_get_member.py`(get_member 846→360 + TL83 原样 539 字 + get_aftersale 三参数可单独用;副本试跑过,未跑 prompts_check)→ prompts_check / select_eval 第一层 / vocab_check → `.wip-glossary/align_rules_v9.py` 出后台新版本并切(移动不改字,用户长期授权,做完告诉他;切前告诉并行会话)② g23 放宽补丁 `tools/放宽补丁/g23_告诫小标题_罩列表.py` 已进项目,交用户 `! python3 tools/放宽补丁/g23_告诫小标题_罩列表.py`,跑完补 guards_test 用例 ③ 迁移机制方案 `.wip-glossary/migration_plan.md`(加列清单 alter_inventory.txt;并行会话要推 customer_link / customer_tag 两张表,基线要算进去)。
 - **生产**:后台店长助手 = v11(v9 + TL82),和主干对上。
+- **未验证**:g23 补丁只在副本试跑(用户还没跑);get_member 缩说明没跑模型评测(只验了召回);接管兜底夜跑商机套待今晚。
+- **作废**:链日志第五轮「✅ 已推送」那行不等于进了主干(当时推成 origin/w75)—— 以后只认 `git ls-remote origin refs/heads/main`。
+- **禁区**:并行会话锁内推送期间(14:5x 起约 40 分钟)不跑门禁、不写共享库、不切后台生产;表数 135 / 文档 133 的差别是它没推导致的,别改文档;origin/w75 删前要问用户。
+- **下一步第一个动作**:等 CI 子代理回报(只读调查两条红)→ 把归因告诉并行会话;它说推了 → `git fetch && git rebase origin/main` → `./tools/pre_push.sh`(这次推 HEAD:main)。
+- **悬而未决**:CI 两条归谁修;迁移机制是否和并行会话的新表一起做基线。
 - **并行会话接下来推**:customer_link / customer_tag 新表(建 customer_tag 会把 tag.n 重算成 0)、三条新检查、server.py 新写口 + 匿名放行 /api/c/look、/api/c/use。
 
 ### ⏱️ 12 小时长任务清单(11-14 07:45 → 19:45)
