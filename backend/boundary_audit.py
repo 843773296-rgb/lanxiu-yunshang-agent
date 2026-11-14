@@ -816,6 +816,50 @@ def a_shop_by_non_hq():
         _sh.rmtree(d, ignore_errors=True)
 
 
+def a_inactive_shop_new_business():
+    """给无效店铺新增业务 —— 库副本上四刀(用户 11-14 夜拍板「无效店铺禁止新增业务」)。
+
+    原来是**真开着的门**:SH003 标着「无效」,这个月照样建了 94 条预约、364 张单 ——
+    店铺状态只是一个标签,没有任何写口看它。"""
+    import oplog as _ol, server as _S, order_write as _O, booking as _B
+    import shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq, datetime as _dt
+    原 = (_ol.DB, _S.DB, _O.DB, _B.DB)
+    d = _tf.mkdtemp(prefix="ba-inactive-"); p = _os.path.join(d, "lanxiu.db")
+    with _sq.connect(原[1]) as 真, _sq.connect(p) as 副:
+        真.backup(副)
+    _ol.DB = _S.DB = _O.DB = _B.DB = p
+    try:
+        c = _sq.connect(p)
+        顾 = c.execute("SELECT s.no, s.name, s.role, s.shop FROM staff s WHERE s.role='顾问' AND s.status='启用' "
+                      "AND EXISTS(SELECT 1 FROM customer x WHERE x.shop=s.shop AND x.archived=0) LIMIT 1").fetchone()
+        if not 顾:
+            c.close(); return "没有可攻击的样本(在职顾问 + 本店客户)—— 没攻击成,不算守住"
+        客 = c.execute("SELECT id, phone FROM customer WHERE shop=? AND archived=0 AND length(phone)=11 "
+                      "AND (SELECT COUNT(*) FROM customer y WHERE y.phone=customer.phone AND y.archived=0)=1 "
+                      "ORDER BY id LIMIT 1", (顾[3],)).fetchone()
+        c.execute("UPDATE shop SET status='无效' WHERE ?=code || ' ' || name", (顾[3],)); c.commit()
+        改了 = c.total_changes; c.close()
+        if not (客 and 改了):
+            return "没有可攻击的样本(可自助预约的客户 / 认得出的门店)—— 没攻击成,不算守住"
+        顾问 = dict(no=顾[0], name=顾[1], role=顾[2], shop=顾[3])
+        后天 = (_B._now() + _dt.timedelta(days=2)).replace(hour=14, minute=0, second=0, microsecond=0)
+        r = _S.create_customer(dict(name="越闸新客", phone="19900001234", shop=顾[3],
+                                    advisor=f"{顾[0]} {顾[1]}"), 顾[0], _role="顾问")
+        if r.get("ok"): return f"给无效店「{顾[3]}」新建了客户 —— 门没守住"
+        r = _S.create_appointment(dict(customer_id=客[0], shop=顾[3], advisor=f"{顾[0]} {顾[1]}",
+                                       start=后天.strftime("%Y-%m-%d %H:%M"),
+                                       end=(后天 + _dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")), 顾[0], _role="顾问")
+        if r.get("ok"): return f"给无效店「{顾[3]}」新建了预约 —— 门没守住"
+        r = _O.open_order(dict(customer_id=客[0], items=[]), 顾问)
+        if r.get("code") != "SHOP_INACTIVE": return f"给无效店的客户开单没被店铺闸拦(走到了 {r.get('code')})—— 门没守住"
+        r = _B.book(dict(phone=客[1], when=后天.strftime("%Y-%m-%d %H:%M")))
+        if r.get("ok"): return f"顾客在手机上给无效店「{顾[3]}」约上了 —— 门没守住"
+        raise PermissionError("四刀都被拦下")
+    finally:
+        _ol.DB, _S.DB, _O.DB, _B.DB = 原
+        _sh.rmtree(d, ignore_errors=True)
+
+
 def a_content_by_non_hq():
     """店长动内容 / 活动 / 页面 / 品类 —— 库副本上五刀(11-14 台账第四十五条)。
 
@@ -2101,6 +2145,10 @@ STRUCT = [
   a_customer_link_abuse, "库副本上:不存在的令牌、两次几乎同时点同一条链接、重发后用旧链接、过期后再用",
   "**靠结构**:令牌 32 字节随机、库里只存哈希;用之前先占位(UPDATE … WHERE used_at IS NULL,看改了几行);"
   "过期按真实时钟;重发把旧的作废。原来顾客侧核身份靠「订单号 + 手机后四位」,一万种组合、试错不留痕"),
+ ("无效店铺接不了新业务", "shop_key.停业理由 + 新建客户 / 导入 / 预约 / 开单 / 顾客自助预约五个入口(11-14 夜拍板)",
+  a_inactive_shop_new_business, "库副本上把一家店改成无效:新建客户、新建预约、开单、顾客手机自助预约",
+  "**靠结构**:五个新建入口都调同一个门店闸,状态不是「有效」就拒;只拦新增,在途的单子照常走完。"
+  "原来店铺状态只是标签 —— SH003 标着无效,一个月照样建了 94 条预约、364 张单"),
  ("改不了自己的权限,也提不了别人的权", "server.py save_staff_perm(11-14 台账第四十五条第四组)",
   a_staff_self_elevate, "库副本上:店长把自己提成总部运营、总部运营改自己、店长把顾问提成总部运营",
   "**靠结构**:身份只认会话;改自己一律拒(不分改什么);只总部运营能改、且不能提到比自己高。"

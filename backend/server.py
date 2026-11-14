@@ -2365,6 +2365,12 @@ def create_customer(d, actor, _role=None):
     # NEED_REVIEW 那条规则(姓名相似 + 尾号门店相同 → 转店长确认)
     # 要把疑似的那几条**带给人看**,不然店长凭什么确认。
     ok, code, why, suspects = rules.validate_customer(d, ex, actor_role=role)
+    if ok:
+        import shop_key as _SK0
+        with _conn() as _c0:
+            _停 = _SK0.停业理由(_c0, d.get("shop"))
+        if _停:
+            ok, code, why, suspects = False, "SHOP_INACTIVE", _停, []
     if not ok:
         log_op(actor, "customer", "-", "—", "新建", False, code, why,
                {"role": role, "suspects": [x["id"] for x in (suspects or [])]})
@@ -2455,6 +2461,12 @@ def create_appointment(d, actor, _role=None):
     import datetime
     role = _role or "顾问"
     ok, code, why = rules.validate_appointment(d, now=_wnow(), actor_role=role)   # 世界的当下(10-15):原来不传,落到机器时钟
+    if ok:
+        import shop_key as _SK0
+        with _conn() as _c0:
+            _停 = _SK0.停业理由(_c0, d.get("shop"))
+        if _停:
+            ok, code, why = False, "SHOP_INACTIVE", _停
     if not ok:
         log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
         return dict(ok=False, code=code, reason=why)
@@ -2631,6 +2643,15 @@ def import_customers(text,actor,role="顾问",dry=True):
     if fatal:
         log_op(actor,"import","-","—","导入",False,fatal[0],fatal[1],{})
         return dict(ok=False,code=fatal[0],reason=fatal[1])
+    # 无效店铺不接新客户(用户 11-14 夜拍板)—— 导入也是新建,逐行拦,进「错误」列给人看
+    import shop_key as _SK0
+    with _conn() as _c0:
+        _留 = []
+        for ln, d in good:
+            _停 = _SK0.停业理由(_c0, d.get("shop"))
+            if _停: err.append((ln, d.get("name"), f"[SHOP_INACTIVE] {_停}"))
+            else: _留.append((ln, d))
+        good = _留
     # 真实时钟:导入批次号,记的是真实世界里这次导入发生在哪一秒
     batch=f"IMP{datetime.datetime.now():%y%m%d%H%M%S}"
     if not dry:

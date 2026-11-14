@@ -143,6 +143,11 @@ def open_order(d, me):
         return dict(ok=False, code="NO_CUSTOMER", reason=f"没有客户 {cid}")
     if cu[0]["shop"] != me.get("shop"):
         return _deny(me, "OTHER_SHOP", f"这位客户在「{cu[0]['shop']}」,只能给本店客户开单", cid)
+    import shop_key as _SK0
+    with closing(sqlite3.connect(DB)) as _c0:
+        停 = _SK0.停业理由(_c0, cu[0]["shop"])
+    if 停:
+        return _deny(me, "SHOP_INACTIVE", 停, cid)
     items = d.get("items") or []
     if not items:
         return dict(ok=False, code="NO_ITEM", reason="一件商品都没有")

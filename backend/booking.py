@@ -214,6 +214,14 @@ def book(d):
         return dict(ok=False, code="TOO_MANY",
                     reason=f"你还有 {len(pend)} 个预约没完成,先完成或取消一个再约")
 
+    import shop_key as _SK0
+    with closing(sqlite3.connect(DB)) as _c0:
+        停 = _SK0.停业理由(_c0, cust.get("shop"))
+    if 停:
+        # 对外口子:不说店里内部状态的措辞,只说约不了、怎么办
+        return dict(ok=False, code="SHOP_INACTIVE",
+                    reason="你所在的门店暂时不接受新预约,请联系你的顾问或到其他门店预约")
+
     ok_n, code_n, why_n, 点名列 = 校验点名(cust.get("shop"), d, 对外=True)
     if not ok_n:
         return dict(ok=False, code=code_n, reason=why_n)

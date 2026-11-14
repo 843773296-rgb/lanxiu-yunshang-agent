@@ -21284,5 +21284,106 @@
    }
   ],
   "预期红": "执行处也拒跨账户合并(不靠建任务那头守)"
+ },
+ {
+  "script": "backend/shop_inactive_check.py",
+  "改坏": "shop_key.停业理由 永远返回 None",
+  "file": [
+   {
+    "path": "backend/shop_key.py",
+    "old": "    类, code = 认得出(串, 门店表(c))\n    if 类 != \"门店\":\n        return None\n    r = c.execute(\"SELECT name, status FROM shop WHERE code=?\"",
+    "new": "    类, code = 认得出(串, 门店表(c))\n    if True:\n        return None\n    r = c.execute(\"SELECT name, status FROM shop WHERE code=?\""
+   }
+  ],
+  "预期红": "后台新建客户:无效店被拦、有效店不拦"
+ },
+ {
+  "script": "backend/shop_inactive_check.py",
+  "改坏": "开单入口不调停业理由",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "    if 停:\n        return _deny(me, \"SHOP_INACTIVE\", 停, cid)\n",
+    "new": "    if False:\n        return _deny(me, \"SHOP_INACTIVE\", 停, cid)\n"
+   }
+  ],
+  "预期红": "开定制单:无效店被拦、有效店不拦"
+ },
+ {
+  "script": "backend/shop_inactive_check.py",
+  "改坏": "顾客自助预约不调停业理由",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "    if 停:\n        # 对外口子",
+    "new": "    if False:\n        # 对外口子"
+   }
+  ],
+  "预期红": "顾客自助预约:无效店被拦、有效店不拦"
+ },
+ {
+  "script": "backend/shop_inactive_check.py",
+  "改坏": "批量导入不逐行拦无效店",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            if _停: err.append((ln, d.get(\"name\"), f\"[SHOP_INACTIVE] {_停}\"))",
+    "new": "            if False: err.append((ln, d.get(\"name\"), f\"[SHOP_INACTIVE] {_停}\"))"
+   }
+  ],
+  "预期红": "后台批量导入客户:无效店被拦、有效店不拦"
+ },
+ {
+  "script": "backend/shop_rename_check.py",
+  "改坏": "改名的角色闸放行店长(两道都放)",
+  "file": [
+   {
+    "path": "backend/shop_rename.py",
+    "old": "    if me.get(\"role\") != \"总部运营\":\n        import oplog",
+    "new": "    if False:\n        import oplog"
+   },
+   {
+    "path": "backend/shop_rename.py",
+    "old": "    if me.get(\"role\") != \"总部运营\":\n        return None, _拒(\"WRONG_ROLE\"",
+    "new": "    if False:\n        return None, _拒(\"WRONG_ROLE\""
+   }
+  ],
+  "预期红": "① 店长 / 顾问预览、改名、撤销都被拒,库一行没动"
+ },
+ {
+  "script": "backend/shop_rename_check.py",
+  "改坏": "对账对不上也照样提交",
+  "file": [
+   {
+    "path": "backend/shop_rename.py",
+    "old": "            if 差:\n                c.execute(\"ROLLBACK\")",
+    "new": "            if False:\n                c.execute(\"ROLLBACK\")"
+   }
+  ],
+  "预期红": "⑦ 改到一半对账对不上 → 整个回滚,店名和各表都是原样"
+ },
+ {
+  "script": "backend/shop_rename_check.py",
+  "改坏": "不比预览合计",
+  "file": [
+   {
+    "path": "backend/shop_rename.py",
+    "old": "            if 期望 is None or int(期望) != 合计:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "⑥ 预览之后又进了新数据 → 拒改,什么都没动"
+ },
+ {
+  "script": "backend/shop_rename_check.py",
+  "改坏": "没登记的列只认整列相等",
+  "file": [
+   {
+    "path": "backend/shop_rename.py",
+    "old": "WHERE instr(\"{col}\", ?)>0', (老串,)",
+    "new": "WHERE \"{col}\"=?', (老串,)"
+   }
+  ],
+  "预期红": "⑧ 没登记的列文字里夹着整串老店名 → 预览报出来、真改拒绝"
  }
 ]

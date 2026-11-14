@@ -359,6 +359,8 @@ else
 fi
 run "资料编辑日志 · 日志要说实话,而且说得出改了什么" python3 backend/edit_log_check.py
 run "店铺资料写口 · 只总部运营能建 / 改 / 启停,新店默认无效,店名不许改(11-14 台账第四十五条)" python3 backend/shop_write_check.py
+run "无效店铺不接新业务 · 新建客户 / 导入 / 预约 / 开单 / 顾客自助预约五个入口都拦,有效店照常,只拦新增(11-14 夜拍板)" python3 backend/shop_inactive_check.py
+run "店名整库改名 · 只总部、先预览、一个事务全改、对账不上整个回滚、合同等快照不动、能撤销(11-14 夜拍板)" python3 backend/shop_rename_check.py
 run "内容 / 活动 / 品类 / 页面写口 · 只总部运营;新建先不对外;品类最多三级、有上架商品不许停用(11-14 台账第四十五条)" python3 backend/content_write_check.py
 run "编辑预约 / 定向运营 · 本店的人改本店的预约;定向运营只总部、派给归属导购、不连派两条(11-14 台账第四十七、四十八条)" python3 backend/appt_ops_write_check.py
 run "编辑权限 · 只总部运营、不能改自己、不能提到比自己高;名下有客户不许调走;改完旧会话作废(11-14 台账第四十五条)" python3 backend/staff_perm_check.py

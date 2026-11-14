@@ -63,17 +63,17 @@
 > 规矩同上一轮:gate_lock --who、不碰 eureka-fc 文件、改管理后台推前 make test-e2e-ci、scan_secrets 单独一步、commit --only;**加新列走 backend/migrations/**;写共享库前先跟 eureka-fc 说。
 > ⚠️ 开局时 eureka-fc 在跑推送前链(schema_version 那笔),**它推完之前别跑门禁、别写共享库**;本地待推 f0208b4a(白天汇总)。
 
-**交接(11-14 21:0x,压缩前)**
-- **下一步第一个动作**:第 3 项「无效店铺不许新增业务」—— 先 `git grep -n "def create_appointment\|def create_customer\|def create_order\|def book" backend/` 找四个新建入口,在入口处按 shop 状态拦(用 shop_key.码 换门店码再查 shop.status);**先查 tools/daily_fresh.py / seed 会不会往 SH003 造数**(它现在是「无效」,一拦每日造数就红)—— 所以顺序是:代码只在副本上验 → 等 eureka-fc 推完 → 锁内先把 SH003 改回有效(走 transit bk-shop,总部身份 + 原因,先告诉 eureka-fc)→ 再推拦截代码。
-- **本地未提交**:merge.py / merge_check.py / write_smoke_check.py / bite_specs.json / PRD / HANDOFF(第 4 项);**本地已提交未推**:f0208b4a(白天汇总)。
-- **判据**:SH003 本月 94 预约 / 364 单照常 → 用户判「无效」是错的;合并口径照旧(同户同名就并)。店名整库改名(第 8 项)**真改共享库前先给用户看预演、再问一次**。
-- **禁区**:eureka-fc 推完之前不跑门禁、不写共享库(它 20:29 起在跑 schema_version 那笔的门禁);加新列只许写 backend/migrations/m000N_*.py。
-- **未验证**:合并执行处的闸没跑全量门禁(只跑了相关 5 份检查)。
+**交接(11-14 22:2x,压缩前)**
+- **下一步第一个动作**:eureka-fc 已推 a4df89e5(迁移机制,表数 136,check.sh 加 migration_check,rebuild 51 步)。→ `git pull --rebase --autostash`(冲突:check.sh 我加了两行 shop_inactive/shop_rename 在 shop_write_check 后;bite_specs 我加了 9 条在末尾;PRD 我加了 2.4.3 节)→ 锁内 `python3 -c` 用 server.transit("bk-shop","SH003","有效",{"note":"用户 11-14 夜拍板:无效是标错的"},总部运营名,me=总部运营) 改回(已告诉 eureka-fc)→ 锁内 `boundary_audit.py --md > 安全边界审计.md`(剥锁提示行;条数 65→66,doc_numbers_check 看要不要改数)→ bite_run --only shop_rename(4 条没跑过)→ make_readme → git add backend/shop_inactive_check.py backend/shop_rename.py backend/shop_rename_check.py → scan_secrets 单独 → commit --only → chain_B 推。
+- **本地已提交未推**:f0208b4a(白天汇总)、c8e17595(合并执行处核同户同名)。**未提交**:shop_key.停业理由 + 五入口(server create_customer/import_customers/create_appointment、order_write.open_order、booking.book)、seed SH003→有效、ops_eval X08 去掉「无效」考点 + judgetest 3 条改写(349 全过)、shop_inactive_check(绿、咬合 4/4)、boundary_audit a_inactive_shop_new_business(守住)、oplog.log_op 加 conn= 参数、shop_rename.py + shop_rename_check.py(绿)、check.sh 两行、bite_specs 9 条、PRD 2.4.3。
+- **判据**:改名预览(真库只读):SH003→12104 行/12 表、SH001→29096、SH002→17670,没登记列 0;**account.home_shop 不在 shop_key.带门店键的 里**(1682 行 SH003),已放进 shop_rename.另外要改的。合同正文等只当快照不改。**真改共享库前先把预览给用户看、再问一次(用户拍板第五十八条原话)**;还没做页面按钮/路由(要动管理后台就得 make test-e2e-ci)。
+- **踩的**:server.import_customers(dry=True) 在真库上调了一次 → op_log 多 1 行 actor='x' 的「导入 试算」(只此一行,没删)。检查里拿 log_op 的表算「什么都没动」会误红(撤销本该多一行台账)。
+- **禁区**:同前;eureka-fc 接下来动 api.py 描述区 + prompts.py TL84,别碰。
 
 1. [ ] 等 eureka-fc 推完 → pull --rebase → 锁内 chain_B 推 f0208b4a
 2. [ ] ⑤⑤ SH003 改回有效:锁内走状态流转(总部身份、写原因、留 op_log),**先告诉 eureka-fc**(动共享库数据)
-3. [ ] ⑤⑤ 无效店铺不许新增业务:create_appointment / 开单 / create_customer / booking.book 都按 shop.status 拦;状态机说明那句兑现;检查 + 咬合 + 边界审计;先查造数(daily_fresh)会不会往无效店造数
-4. [x] ✅(20:5x,未提交)merge.并入 执行处核 判同一人;merge_check 样本改同账户同名(副档改名那条验完改回、丙也造成同户)+ 新用例「执行处也拒跨账户合并」+ 咬合 1;write_smoke 撤销合并那条准备时造同户同名;relabel / reopen / tag_level / 冒烟全绿;merge_account_duplicates 先过 判同一人 不受影响;PRD 已知缺口划掉。原:合并执行处补「同一账户」闸(merge.并入)+ 改 merge_check 样本为同账户同名(⑤⑥ 口径不变,只是执行处也守)
+3. [~] 代码+检查+咬合 4/4+审计已做(未提交,见交接)⑤⑤ 无效店铺不许新增业务:create_appointment / 开单 / create_customer / booking.book 都按 shop.status 拦;状态机说明那句兑现;检查 + 咬合 + 边界审计;先查造数(daily_fresh)会不会往无效店造数
+4. [x] ✅ c8e17595(未推)merge.并入 执行处核 判同一人;merge_check 样本改同账户同名(副档改名那条验完改回、丙也造成同户)+ 新用例「执行处也拒跨账户合并」+ 咬合 1;write_smoke 撤销合并那条准备时造同户同名;relabel / reopen / tag_level / 冒烟全绿;merge_account_duplicates 先过 判同一人 不受影响;PRD 已知缺口划掉。原:合并执行处补「同一账户」闸(merge.并入)+ 改 merge_check 样本为同账户同名(⑤⑥ 口径不变,只是执行处也守)
 5. [ ] 还代码欠账:位置参数 17 / 截断 23 / 咬合两份记录 39 / 预期红扫不到 5 / 写口冒烟 9 —— 每还一处把棘轮上限跟着降
 6. [ ] 给没红过的检查补对照:优先守钱 / 权限 / 顾客数据的
 7. [ ] 研判示例库第三版:退款「余额不足、补足后仍失败」+ 合并类(按 ⑤⑥ 口径出题);新根因要新判定规则 → 先摆选型卡
@@ -2810,14 +2810,14 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 20:40。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 22:03。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | f0208b4a · 2026-11-14 · 白天汇总 11-14 07:45→19:45 定稿并发飞书:两批推送、CI 两条老红修好后转绿(11-12 以来第一次)、示例库两版结论 |
-| 代码量 | 1111 个 Python 文件 / 204371 行(不含 .venv) |
-| 验收 | `./check.sh` 共 421 项 —— **接手第一件事就是跑它** |
+| 最新提交 | c8e17595 · 2026-11-14 · 合并执行处也核「同一账户 + 同名」:原来只在发起合并任务那头拦,直接调执行就能跨账户合并顾客档案(白天汇总里记的已知缺口) |
+| 代码量 | 1111 个 Python 文件 / 204481 行(不含 .venv) |
+| 验收 | `./check.sh` 共 423 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
@@ -2825,35 +2825,35 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ```
 M .feynman/tool-eval.json
  M HANDOFF.md
+ M agent/ops_eval.py
+ M agent/ops_eval_judgetest.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M backend/merge.py
- M backend/merge_check.py
- M backend/write_smoke_check.py
+ M backend/booking.py
+ M backend/boundary_audit.py
+ M backend/oplog.py
+ M backend/order_write.py
+ M backend/seed.py
+ M backend/server.py
+ M backend/shop_key.py
+ M check.sh
  M tools/bite_specs.json
  M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? .feynman/authprobe.log
-?? .feynman/authprobe.sh
-?? .feynman/backup-launchd.log
-?? .feynman/health/
-?? .feynman/multi-date/
-?? .feynman/nightly-aimc.log
-?? .feynman/nightly-eval-launchd.log
-?? .feynman/nightly-eval-ok
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+c8e17595 合并执行处也核「同一账户 + 同名」:原来只在发起合并任务那头拦,直接调执行就能跨账户合并顾客档案(白天汇总里记的已知缺口)
 f0208b4a 白天汇总 11-14 07:45→19:45 定稿并发飞书:两批推送、CI 两条老红修好后转绿(11-12 以来第一次)、示例库两版结论
 d7b9596d 交接:第六轮红剩后台 TL83,等并行会话推完切 v12 再跑第七轮
 459d4514 第六轮推送前链门禁红 5 条跟上 TL83:规矩数 103→104(四处)、工具表 / SOP / README 重生成、放宽补丁列表编号认全角点
 170b0abc 交接:并行会话认领 CI 两条,先推它第二批再单独修
-b92bd2f9 交接:CI 两条红根因(evaldb 改了门禁改道变量 / 假数据工厂不读 CHECK),已发并行会话认领
 ```
 <!--/AUTO-->
 ## 一句话在做什么

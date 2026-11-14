@@ -29,7 +29,7 @@ def _检查漏写了真库(目标=None):
     return True
 
 
-def log_op(actor, mid, target, frm, to, ok, code, reason, ctx, db=None):
+def log_op(actor, mid, target, frm, to, ok, code, reason, ctx, db=None, conn=None):
     """`db` 不给就写真库(112 个调用方都是这样,全是位置参数,加这个参数不影响它们)。
 
     ⚠️ **给 `db` 是为了「自己带着库路径跑」的那几个脚本。** 它们的 `db` 是参数 ——
@@ -47,6 +47,14 @@ def log_op(actor, mid, target, frm, to, ok, code, reason, ctx, db=None):
     """
     目标 = db or DB
     if _检查漏写了真库(目标):
+        return
+    if conn is not None:
+        # 11-14 夜加(店名整库改名):调用方自己开着事务,台账这一行要和业务改动**同生同死** ——
+        # 另开连接写会撞「库被锁」(save_level 栽过),写在提交之后又会出现「改了但没留痕」
+        conn.execute("INSERT INTO op_log(ts,actor,machine,target,frm,too,allowed,code,reason,ctx)"
+                     " VALUES(datetime('now','localtime'),?,?,?,?,?,?,?,?,?)",  # 真实时钟:同下
+                     (actor, mid, target, frm, to, 1 if ok else 0, code, reason,
+                      json.dumps(ctx, ensure_ascii=False)))
         return
     with closing(sqlite3.connect(目标)) as c, c:
         # 真实时钟:操作台账记「谁在什么时候真的点了这一下」—— 那是运维痕迹,
