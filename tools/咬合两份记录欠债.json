@@ -5,7 +5,6 @@
  "欠着的": {
   "agent/scheme_eval.py": 3,
   "agentsite/guards_test.py": 1,
-  "agentsite/layout_check.py": 2,
   "agentsite/tool_eval.py": 1,
   "backend/channel_check.py": 1,
   "backend/grading_check.py": 1,
@@ -21,13 +20,12 @@
   "fakedata/repro.py": 4,
   "fakedata/samekind.py": 2,
   "fakedata/stable.py": 2,
-  "tools/case_check.py": 1,
   "tools/cron_health_check.py": 2,
   "tools/delivered_images.py": 4,
   "tools/doc_numbers_check.py": 1,
   "tools/hook_sync_check.py": 1,
   "tools/impact.py": 1,
-  "tools/intent_check.py": 2,
+  "tools/intent_check.py": 1,
   "tools/repo_consistency_check.py": 2,
   "tools/runlog_check.py": 2
  }

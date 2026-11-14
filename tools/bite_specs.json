@@ -9710,12 +9710,12 @@
  },
  {
   "script": "tools/bite_check.py",
-  "改坏": "把欠债表里一个脚本的处数改小(等于声称已经还了一部分)—— 用 tools/intent_check.py(它的咬合钉在天天改的 HANDOFF 上,11-10 判断过不补,处数短期不会动)。⚠️ 11-11 改:原来钉在 backend/source_check.py 的 4 上,那 4 处一还(4→2)破坏点当场过期 ——**盯着一个会被还掉的数,还账本身就会让它漂**;哪天 intent_check 的处数变了,这条要跟着换",
+  "改坏": "把欠债表里一个脚本的处数改小(等于声称已经还了一部分)—— 用 tools/intent_check.py(它的咬合钉在天天改的 HANDOFF 上,11-10 判断过不补,处数短期不会动)。⚠️ 11-11 改:原来钉在 backend/source_check.py 的 4 上,那 4 处一还(4→2)破坏点当场过期 ——**盯着一个会被还掉的数,还账本身就会让它漂**;哪天 intent_check 的处数变了,这条要跟着换。⚠️ 11-15 夜又改:intent_check 那条「点名的 intent 都真的存在」补上了规格(2→1),这条又过期了 —— 换到 fakedata/repro.py 的 4(数据工厂那条线,我这边不还;它那边还了的话同样要跟着换)",
   "file": [
    {
     "path": "tools/咬合两份记录欠债.json",
-    "old": "\"tools/intent_check.py\": 2",
-    "new": "\"tools/intent_check.py\": 1"
+    "old": "\"fakedata/repro.py\": 4",
+    "new": "\"fakedata/repro.py\": 3"
    }
   ],
   "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
@@ -21388,7 +21388,7 @@
  },
  {
   "script": "tools/bite_check.py",
-  "改坏": "把 `_脚本键` 改回拿整串 script 当键(带参数的规格配不上自己那个文件的清单)",
+  "改坏": "把 `_脚本键` 改回拿整串 script 当键(带参数的规格配不上自己那个文件的清单)。⚠️ 11-15 夜改预期红:原来点名「欠债表里的…只许少不许多」,欠债表里带参数规格的脚本还清之后那条不再红 —— 改点名「不在欠债表里的」那条(大多数脚本不在欠债表里,还账不会让它漂)",
   "file": [
    {
     "path": "tools/bite_check.py",
@@ -21396,7 +21396,7 @@
     "new": "    return x.get(\"script\")\n"
    }
   ],
-  "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
+  "预期红": "不在欠债表里的脚本,清单里每一条都有可重放的规格"
  },
  {
   "script": "backend/chat_order_check.py",
@@ -22061,5 +22061,63 @@
    }
   ],
   "预期红": "写接口真跑,且库里真的变了"
+ },
+ {
+  "script": "agentsite/layout_check.py",
+  "改坏": "把 station.html 的 #ev 挪回 #main 里面(它的 height:100vh 会占满整屏,把聊天流顶出去)。做法:原来那块改名,在 #main 里、聊天流前面放一块 id=ev —— 盯结构,不盯样式值",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "<div id=\"ev\">",
+    "new": "<div id=\"ev-原位\">"
+   },
+   {
+    "path": "agentsite/web/station.html",
+    "old": "  <div id=\"stream\"></div>\n",
+    "new": "  <div id=\"ev\"></div>\n  <div id=\"stream\"></div>\n"
+   }
+  ],
+  "预期红": "#ev 必须和 #main 平级"
+ },
+ {
+  "script": "agentsite/layout_check.py",
+  "改坏": "把 #stream 挪出 #main:从主区删掉,放到 #ev 前面(和 #main 平级)",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "  <div id=\"stream\"></div>\n  <div id=\"composer\">",
+    "new": "  <div id=\"composer\">"
+   },
+   {
+    "path": "agentsite/web/station.html",
+    "old": "<div id=\"ev\">",
+    "new": "<div id=\"stream\"></div>\n<div id=\"ev\">"
+   }
+  ],
+  "预期红": "#stream 必须在 #main 里"
+ },
+ {
+  "script": "tools/case_check.py",
+  "改坏": "在某套评测里加一道题面写「这个客户的积分对得上吗」且不给编号 —— 把运维评测里一道不带指代的题面换成它(换,不是加:不碰题数)",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "q=\"现在工坊什么情况?有没有要拖的活?\",",
+    "new": "q=\"这个客户的积分对得上吗?\","
+   }
+  ],
+  "预期红": "题面里用了指代,就得给编号"
+ },
+ {
+  "script": "tools/intent_check.py",
+  "改坏": "在交接「没做完的」那一段**插一条**待办,点名一个不存在的 intent(盯结构插一条,不改现有待办 —— 交接每天在变,盯着某一条的名字会漂)",
+  "file": [
+   {
+    "path": "HANDOFF.md",
+    "old": "## 没做完的 —— 下一步第一个动作\n",
+    "new": "## 没做完的 —— 下一步第一个动作\n\n**⑫ 咬合注入的待办** [intent: no-such-intent-bite]\n"
+   }
+  ],
+  "预期红": "点名的 intent 都真的存在"
  }
 ]
