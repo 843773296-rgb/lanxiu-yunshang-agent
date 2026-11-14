@@ -602,6 +602,15 @@ def 对顾客说的那部分(text):
         要.add(k)
         for j in range(k - 1, -1, -1):          # 往上找第一个非空行当引导
             if 行[j].strip(): 要.add(j); break
+        else:
+            continue
+        # 放宽(用户 11-14 执行 tools/放宽补丁/g23_对客挑话术_带上小标题.py):引导行本身是列表项时,
+        # 顺着连续列表项往上,把断处那一行(小标题)也带上,最多 12 项 —— 否则长列表第三条起看不见「绝不能说的」
+        i, n = j, 0
+        while i >= 0 and 行[i].strip() and _列表项.match(行[i]) and n < 12:
+            要.add(i); i -= 1; n += 1
+        if n and n < 12 and i >= 0 and 行[i].strip():
+            要.add(i)
     out = "\n".join(行[k] for k in sorted(要))
     return out or None
 
