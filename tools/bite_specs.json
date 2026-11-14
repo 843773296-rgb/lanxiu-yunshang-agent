@@ -21385,5 +21385,17 @@
    }
   ],
   "预期红": "⑧ 没登记的列文字里夹着整串老店名 → 预览报出来、真改拒绝"
+ },
+ {
+  "script": "tools/bite_check.py",
+  "改坏": "把 `_脚本键` 改回拿整串 script 当键(带参数的规格配不上自己那个文件的清单)",
+  "file": [
+   {
+    "path": "tools/bite_check.py",
+    "old": "    return s[0] if s else None\n",
+    "new": "    return x.get(\"script\")\n"
+   }
+  ],
+  "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
  }
 ]
