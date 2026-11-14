@@ -22231,5 +22231,29 @@
    "UPDATE scheme SET status='已保存' WHERE status='已锁定' AND id NOT IN (SELECT MIN(id) FROM scheme WHERE status='已锁定' GROUP BY customer_id)"
   ],
   "预期红": "歧义场景:库里没有"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "重建时不造待确认的演示单(去掉 seed_pending_orders 那一步)。⚠️ 落成规格:不重建库,在库副本上把待确认单全改成已取消 —— 和「那一步没跑」留下的是同一个形状(演示库里一张待确认单都没有)",
+  "sql": [
+   "UPDATE ordr SET status='已取消' WHERE status='待确认'"
+  ],
+  "预期红": "演示库里有能确认的待确认单,也有被拦的"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "把 seed_fitting 里「该试没试」那条也建上记录(四种试衣状态少一种)。⚠️ 落成规格:不重建库,在库副本上给每一件**没有试衣记录**的定制单行补一条已签的记录 —— 「该试没试」就是「开裁了而没有记录」,补上记录这一档就空了(「还没到时候」可能一起空,红的还是同一条)",
+  "sql": [
+   "INSERT INTO fitting(item_id,order_id,wearer_id,round,ts,signed,signed_at) SELECT i.id,i.order_id,i.wearer_id,1,'2026-01-01',1,'2026-01-01' FROM ordr_item i JOIN ordr o ON o.id=i.order_id WHERE o.kind='定制品订单' AND i.id NOT IN (SELECT item_id FROM fitting WHERE item_id IS NOT NULL)"
+  ],
+  "预期红": "四种试衣状态每种都要有活用例"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "把 grading.py 的关键词「褶裥」窄回「褶裥片」(等价于 PT23 没被标上)。⚠️ 落成规格:文件级要重灌库才看得见(11-14 夜试过,删了规格),改成库级 —— 在库副本上直接把 PT23 腰围的「仅供参考」抹掉,就是「PT23 没被标上」那个结果本身",
+  "sql": [
+   "UPDATE size_spec SET caveat=NULL WHERE pattern='PT23' AND item='腰围'"
+  ],
+  "预期红": "有褶裥片的版型,腰围一个不漏地标了「仅供参考」"
  }
 ]
