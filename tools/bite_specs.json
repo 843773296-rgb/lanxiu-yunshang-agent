@@ -21957,5 +21957,49 @@
    }
   ],
   "预期红": "参数拼错了要拒跑"
+ },
+ {
+  "script": "knowledge/linkage.py",
+  "改坏": "算得出率的时候不再提醒「接待人≠促成人」",
+  "file": [
+   {
+    "path": "knowledge/linkage.py",
+    "old": "                      f\"⚠️ **但「追得到哪次接待」不等于「知道谁促成的」** —— \"\n",
+    "new": "                      f\"⚠️ —— \"\n"
+   }
+  ],
+  "预期红": "够算时要提醒接待人不等于促成人"
+ },
+ {
+  "script": "backend/draft_check.py",
+  "改坏": "把 grading.年龄段信号 里的品类那一路去掉(「男童」明制道袍会重新变成四个信号一致地说成人)",
+  "file": [
+   {
+    "path": "knowledge/grading.py",
+    "old": "        \"品类\":   \"童\" if (品类 or \"\").startswith(\"C0301\") else \"成\",\n",
+    "new": "        \"品类\":   \"成\",\n"
+   }
+  ],
+  "预期红": "童装 / 成人的五个信号不打架"
+ },
+ {
+  "script": "backend/syscode_check.py",
+  "改坏": "把欠账上限改成 0",
+  "file": [
+   {
+    "path": "backend/syscode_check.py",
+    "old": "对不上上限 = 6\n",
+    "new": "对不上上限 = 0\n"
+   }
+  ],
+  "预期红": "订单来源:数据里的值都在枚举表里,或都记在账上"
+ },
+ {
+  "script": "backend/supplier_check.py",
+  "改坏": "把一家面料商的 defect_rate 填上(两类的质量指标串了)",
+  "sql": [
+   "UPDATE supplier SET defect_rate=0.02 WHERE code=(SELECT code FROM supplier WHERE kind='面料' LIMIT 1)"
+  ],
+  "预期红": "面料只填色差、外发只填返工率"
  }
 ]
