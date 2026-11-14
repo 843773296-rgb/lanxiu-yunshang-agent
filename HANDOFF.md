@@ -19,14 +19,27 @@
 
 1. [x] ✅ 门店账 8 行空花费已删(07:40):备份 agentsite/usage/备份-空花费8行-20261114.jsonl + 整文件 .删前-20261114;本月 = 0 元 0 笔(账本不进版本库,无提交)
 2. [x] ✅ 08:29 夜间汇总已发飞书并回读(标题 / 「已拍」/「0 元 0 笔」/「07:15」都在;用户身份授权过期,改用发布脚本自己的令牌读回);一次性提醒 17cf0fd3 已删。原:08:25 上一轮夜间汇总发飞书(一次性提醒 17cf0fd3 08:26;汇总里第 1 件改成「已删」、第 2 件改成「11-23 前再问」;只本地提交,等 eureka-fc 推完再推)
-3. [ ] PRD 2.4.1 补第四十二到四十五条 + 发飞书
-4. [ ] 按钮第一组:门店 / 店铺资料(编辑门店、新增店铺、编辑店铺)—— backend/web/index.html 1567/1666/1692 一带;先查有没有现成写口和权限判定,写口走统一写入判定 + 留 op_log,只总部管理员
-5. [ ] 按钮第二组:内容 / 活动 / 品类(新建/编辑品类、编辑/下架内容、新建活动、新增页面、添加费用)
-6. [ ] 按钮第三组:预约 / 定向运营(编辑预约、定向运营、添加生命周期、设为默认值)
-7. [ ] 按钮第四组:权限编辑(1750 一带)—— 必须挡:自己给自己提权、给别人提到比自己高;边界审计加一条真攻击
+3. [x] ✅ PRD 2.4.2 补第四十二到四十八条 + 难点 B-121(店名锁死)+ 补齐 B-119 字段;08:3x 已发飞书并回读(四组落地状态那版待门禁绿后再发一次)。⚠️ 附录 B 另有 19 条老条目字段不全(严格汇总器报),欠账。原:PRD 2.4.1 补第四十二到四十五条 + 发飞书
+4. [x] ✅(未提交,等门禁)店铺:save_shop(新店默认无效 / 店名锁死 / 店长只能指本店在职店长)、客户详情「编辑门店」→「转移顾问」走客户转移审批;检查 backend/shop_write_check.py。原:按钮第一组:门店 / 店铺资料(编辑门店、新增店铺、编辑店铺)—— backend/web/index.html 1567/1666/1692 一带;先查有没有现成写口和权限判定,写口走统一写入判定 + 留 op_log,只总部管理员
+5. [x] ✅(未提交)save_content(补角色、作者记本人)/ save_activity / add_activity_cost / save_page / save_category + 新状态机 bk-content;**fsm.主数据岗**:店铺 / 商品 / 活动 / 页面 / 内容的状态只许总部运营切(原来谁登录都能点);检查 content_write_check.py。原:按钮第二组:内容 / 活动 / 品类(新建/编辑品类、编辑/下架内容、新建活动、新增页面、添加费用)
+6. [x] ✅(未提交)edit_appointment(本店的人改本店)、backend/targeted_ops.py(定向运营,逐个调 tasks.assign_task)、生命周期两个按钮换说明;检查 appt_ops_write_check.py。原:按钮第三组:预约 / 定向运营(编辑预约、定向运营、添加生命周期、设为默认值)
+7. [x] ✅(未提交)save_staff_perm + auth.作废(改完作废旧会话);检查 staff_perm_check.py;边界审计三条新攻击(店铺 / 内容 / 提权)。原:按钮第四组:权限编辑(1750 一带)—— 必须挡:自己给自己提权、给别人提到比自己高;边界审计加一条真攻击
 8. [ ] 顾客一次性链接:导购发、只能用一次、7 天过期 → 接顾客追评写口 + 签收告知单的顾客确认(先算法选型卡?时效/令牌规则已拍,按「已确认」直接做,PRD 附录 A 记)
-9. [ ] 11-22 前提醒用户看澜绣到期清理真清单(会话内定时器活不到那天 → 写进 待办清单 / intent)
+9. [x] ✅(未提交,随这批)写进 intent/log-retention-review-1122.md(状态「等人的活」),待办清单已重生成;intent_check 全绿。原:11-22 前提醒用户看澜绣到期清理真清单(会话内定时器活不到那天 → 写进 待办清单 / intent)
+> **11-14 08:4x 第二张拍板卡(台账第四十六到四十八条,PRD 2.4.2 要补)**:㊻ 生命周期「添加档位 / 设为默认」**不做成页面可改**,按钮换成说明(改档走评审 + 改知识库口径 + 重对真值)㊼ 定向运营 = **给这一档选中的客户批量建跟进任务**、分给各自归属导购、要填目的、内部任务不联系客户、一次最多 200 人、只总部发起 ㊽ 编辑预约 **和新建预约同一套权限**(门店的人改本店的),只改时间和顾问,规则同新建(rules.validate_appointment),已到店 / 完成 / 取消的不能改,留记录。
+> 第四组我自定的保守细节(未问):员工名下还有客户 / 未完成任务时不许改门店、改角色、停用(先转走客户)。
 > 每组按钮:写口 + 权限 + 咬合 + 页面接线测试;**新表照记忆「建新表连代码一起推」三处一起登**。
+
+**进度(11-14 09:2x)**:四组按钮代码 + 4 份新检查(已挂 check.sh)+ 14 条咬合规格 + 3 条边界审计攻击都写完、单跑全绿,**全部未提交**。锁内咬合重放在跑(scratchpad/bite_4groups.out,只认「四组咬合合计退出码」和「被包的命令退出码」)。之后:锁内 boundary_audit --md 重生成《安全边界审计.md》→ make_readme → rebase → chain_B(重启 8760/8770 + 冒烟 + 全量门禁 + 推)。没动 管理后台/,不用 e2e。eureka-fc 09:05 起跑 pre_push,推完才能推。
+**交接(11-14 09:2x,压缩前)**
+- **下一步第一个动作**:等后台 b5h2n0fk2(锁内 scratchpad/bite_4groups.sh,输出 scratchpad/bite_4groups.out)→ 只认每组「退出码=」和「四组咬合合计退出码=0」+「被包的命令退出码 0」。红了先看是不是锚点(old 串)对不上 —— 规格里 old 都是对当前工作区 assert 过的。
+- 绿了之后:① 锁内 `python3 backend/boundary_audit.py --md` 重生成《安全边界审计.md》(新加 3 条:店铺 / 内容活动页面品类 / 提权)② `git add` 新文件:backend/shop_write_check.py、content_write_check.py、appt_ops_write_check.py、staff_perm_check.py、targeted_ops.py ③ 等 eureka-fc 推完(它 09:05 起 pre_push)→ pull --rebase → 锁内 chain_B(scratchpad/chain_B.sh:重启 8760/8770 + 冒烟 + 全量门禁 + 推)→ scan_secrets 单独一步 → 提交 --only 自己的路径。**没动 管理后台/,不用 e2e**。
+- 我改过的文件(提交时 --only 这些):backend/server.py、fsm.py、auth.py、boundary_audit.py、web/index.html、4 份新检查 + targeted_ops.py、check.sh、tools/bite_specs.json、tools/doc_numbers_check.py(加「定向运营一次最多几人」规格)、产品需求文档、HANDOFF。
+- **判据**:店名锁死 = shop_key.码() 整串比对当前 shop 表,改名后老串换不出码(PRD B-121);新店默认无效 = 验收集 bk-shop-R8初始态;fsm.主数据岗 一改 = 店铺 / 商品 / 活动 / 页面 / 内容的 transit 都要总部运营(grep 过:没有别的检查 / 定时任务走这几台的 fsm.check;arrival_card 直接 UPDATE 上架,不经状态机)。
+- **未验证**:① 页面接线只做了源码对账(表单字段 = 写口字段),没在 DOM 桩里真点 ② 「不能提到比自己高」(ABOVE_ME)现在走不到 —— 只总部能改、总部最高;留作保险 ③ 全量门禁还没跑过这批,可能红在:状态机台数 / 写口登记类检查 / js_smoke / check_copy 文案 / selftest_registry。
+- **作废的结果**:「真库编辑日志 20 分钟多 159 条」是演示世界的未来日期商品日志,不是我写的(真库 content/activity/page/category/shop/schedule 都核过没变)。
+- **禁区**:页面上另外 6 处「本期未实现」(系统设置、新建退款 / 手动合并、标签配置、新增等级、新建标签)不在用户选的四组里,不动;第 8 项顾客一次性链接要建新表 → 等这批推完单独一批(三处登记 + db_build + make_readme + bite 锚点)。
+- **欠账**:PRD 附录 B 有 19 条老条目字段不全(write-product-doc 汇总器 --严格);门禁绿后 PRD 要再发一次飞书(四组落地那版还没发)。
 
 **交接(11-14 07:5x,压缩前)**
 - **下一步第一个动作**:第 4 项 —— 读 backend/web/index.html 1567(编辑门店)/1666(新增店铺)/1692(编辑店铺)附近,查 backend/server.py 有没有门店/店铺写口、身份闸怎么判「总部管理员」(参照已有写口的身份取法 + op_log);**还没开始读任何代码**。
@@ -18239,14 +18252,14 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-13 04:00。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 09:16。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 42308e82 · 2026-11-12 · 管理后台上线验收页(W41):十条场景逐条记录 + 店长签字,顶部算「做完」三项,拿不到数据的不算通过 |
-| 代码量 | 1088 个 Python 文件 / 199359 行(不含 .venv) |
-| 验收 | `./check.sh` 共 408 项 —— **接手第一件事就是跑它** |
+| 最新提交 | ef8d2285 · 2026-11-14 · 夜间汇总 11-13→11-14 发飞书:早上拍的两件(空花费 8 行已删 / 澜绣到期清理 11-23 前再问)写回汇总第一节 |
+| 代码量 | 1097 个 Python 文件 / 200839 行(不含 .venv) |
+| 验收 | `./check.sh` 共 415 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
@@ -18257,32 +18270,32 @@ M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
  M HANDOFF.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
+ M backend/auth.py
+ M backend/boundary_audit.py
+ M backend/fsm.py
+ M backend/server.py
+ M backend/web/index.html
+ M check.sh
+ M tools/bite_specs.json
+ M tools/doc_numbers_check.py
+ M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? .feynman/authprobe.log
 ?? .feynman/authprobe.sh
-?? .feynman/health/
-?? .feynman/multi-date/
-?? .feynman/nightly-aimc.log
-?? .feynman/nightly-eval-launchd.log
-?? .feynman/nightly-eval-ok
-?? .feynman/nightly-eval-tried
-?? .feynman/nightly-eval.log
-?? .feynman/world-shift-launchd.log
-?? .wip-glossary/
-?? .wip-muslin/
+?? .feynman/backup-launchd.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-42308e82 管理后台上线验收页(W41):十条场景逐条记录 + 店长签字,顶部算「做完」三项,拿不到数据的不算通过
-e2af62e6 W21 预约记下「客户点名了谁」三态 + 预约渠道、客户加来源渠道;派单建议读点名
-47bfe33b 夜跑评测结果 2026-11-13(自动提交:评测结果、报告、压缩过的运行日志)
-1f343ea5 修评测切库漏掉判分那一头:评测读库的变量叫 DBP,check_copy 只认 DB / DB_PATH
-d0eb3480 夜跑历史分档:「时对时错」的题不再标成 ❌
+ef8d2285 夜间汇总 11-13→11-14 发飞书:早上拍的两件(空花费 8 行已删 / 澜绣到期清理 11-23 前再问)写回汇总第一节
+c8b28a3e pool_notice 跟上门禁第二批:建表模块进库指纹「算」表、咬合锚点跟上加门店码的 INSERT、README 重生成
+f348f1d2 交接:eureka-fc 链红在咬合重放,让我先推;05:2x 起推 ccf2f4e9 + e518f1c7
+ccf2f4e9 公海知会每户表 pool_notice 跟上门禁:进 ensure_tables、加门店码、登进带门店键的;表数 132→133
+e518f1c7 设置页日志采集策略卡真走一遍:If-Match 是读到的 revision、体是页面填的数
 ```
 <!--/AUTO-->
 ## 一句话在做什么

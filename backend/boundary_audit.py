@@ -780,6 +780,111 @@ def a_product_template_by_manager():
     raise PermissionError(r.get("reason", "")[:90])
 
 
+def a_shop_by_non_hq():
+    """店长 / 顾问动店铺资料 —— 库副本上四刀,任何一刀成了都算破(11-14 台账第四十五条)。
+
+    启停那一刀是**原来真开着的门**:店铺启停走通用改状态,状态机 bk-shop 不带角色,
+    任何登录的人点一下就能把一家店停掉(无效店铺禁止新增业务)。请求体里自报「总部运营」也要拦。"""
+    import oplog as _ol, server as _S, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原 = (_ol.DB, _S.DB)
+    d = _tf.mkdtemp(prefix="ba-shop-"); p = _os.path.join(d, "lanxiu.db")
+    with _sq.connect(原[1]) as 真, _sq.connect(p) as 副:
+        真.backup(副)
+    _ol.DB = _S.DB = p
+    try:
+        c = _sq.connect(p)
+        店 = c.execute("SELECT no, name, role, shop FROM staff WHERE role='店长' AND status='启用' LIMIT 1").fetchone()
+        顾 = c.execute("SELECT no, name, role, shop FROM staff WHERE role='顾问' AND status='启用' LIMIT 1").fetchone()
+        铺 = c.execute("SELECT code, status FROM shop ORDER BY code LIMIT 1").fetchone()
+        c.close()
+        if not (店 and 顾 and 铺):
+            return "没有可攻击的样本(在职店长 / 顾问 / 店铺)—— 没攻击成,不算守住"
+        店长 = dict(no=店[0], name=店[1], role=店[2], shop=店[3])
+        顾问 = dict(no=顾[0], name=顾[1], role=顾[2], shop=顾[3])
+        r = _S.save_shop({"new": 1, "code": "SH990", "name": "越权新店"}, 店长)
+        if r.get("ok"): return "店长新增了店铺 —— 门没守住"
+        r = _S.save_shop({"code": 铺[0], "phone": "000-0000-0000"}, 店长)
+        if r.get("ok"): return f"店长改了 {铺[0]} 的资料 —— 门没守住"
+        到 = "无效" if 铺[1] == "有效" else "有效"
+        r = _S.transit("bk-shop", 铺[0], 到, {"note": "越权", "role": "总部运营"}, 顾问["name"], me=顾问)
+        if r.get("ok"): return f"顾问(请求体自报总部运营)把 {铺[0]} 改成了{到} —— 门没守住"
+        r = _S.save_shop({"code": 铺[0], "name": "越权改名"}, dict(店长, role="总部运营"))
+        if r.get("ok"): return f"总部运营把 {铺[0]} 改了名 —— 5 万多条「编码 + 店名」写法会换不出门店码"
+        raise PermissionError("四刀都被拦下")
+    finally:
+        _ol.DB, _S.DB = 原
+        _sh.rmtree(d, ignore_errors=True)
+
+
+def a_content_by_non_hq():
+    """店长动内容 / 活动 / 页面 / 品类 —— 库副本上五刀(11-14 台账第四十五条)。
+
+    取消活动、撤下已发布页面那两刀是**原来真开着的门**:两台状态机只有边、不带角色,
+    后台通用改状态谁登录都能点。新建内容那一刀也是:原来的写口不看角色。"""
+    import oplog as _ol, server as _S, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原 = (_ol.DB, _S.DB)
+    d = _tf.mkdtemp(prefix="ba-content-"); p = _os.path.join(d, "lanxiu.db")
+    with _sq.connect(原[1]) as 真, _sq.connect(p) as 副:
+        真.backup(副)
+    _ol.DB = _S.DB = p
+    try:
+        c = _sq.connect(p)
+        店 = c.execute("SELECT no, name, role, shop FROM staff WHERE role='店长' AND status='启用' LIMIT 1").fetchone()
+        活 = c.execute("SELECT code FROM activity WHERE status IN ('未开始','进行中') LIMIT 1").fetchone()
+        页 = c.execute("SELECT code FROM page WHERE status='已发布' LIMIT 1").fetchone()
+        c.close()
+        if not (店 and 活 and 页):
+            return "没有可攻击的样本(在职店长 / 没结束的活动 / 已发布页面)—— 没攻击成,不算守住"
+        店长 = dict(no=店[0], name=店[1], role=店[2], shop=店[3])
+        r = _S.transit("bk-activity", 活[0], "已取消", {"note": "越权", "role": "总部运营"}, 店长["name"], me=店长)
+        if r.get("ok"): return f"店长(请求体自报总部运营)取消了活动 {活[0]} —— 门没守住"
+        r = _S.transit("bk-page", 页[0], "草稿", {"role": "总部运营"}, 店长["name"], me=店长)
+        if r.get("ok"): return f"店长撤下了已发布页面 {页[0]} —— 门没守住"
+        r = _S.save_content({"title": "越权内容"}, 店长)
+        if r.get("ok"): return "店长建了内容 —— 门没守住"
+        r = _S.save_activity({"name": "越权活动", "kind": "门店", "start_d": "2026-12-01", "end_d": "2026-12-02",
+                              "shop": 店长["shop"]}, 店长)
+        if r.get("ok"): return "店长建了营销活动 —— 门没守住"
+        r = _S.save_category({"name": "越权品类"}, 店长)
+        if r.get("ok"): return "店长建了品类 —— 门没守住"
+        raise PermissionError("五刀都被拦下")
+    finally:
+        _ol.DB, _S.DB = 原
+        _sh.rmtree(d, ignore_errors=True)
+
+
+def a_staff_self_elevate():
+    """给自己提权 —— 库副本上三刀(11-14 台账第四十五条第四组:「权限编辑必须挡住给自己提权」)。
+
+    刀一:店长把自己改成总部运营。刀二:总部运营改自己(停用 / 换角色,都算「改自己」)。
+    刀三:店长把手下顾问提成总部运营。会话落盘挪到临时目录,不碰真登录态。"""
+    import oplog as _ol, server as _S, auth as _au, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原 = (_ol.DB, _S.DB, _au._文件)
+    d = _tf.mkdtemp(prefix="ba-perm-"); p = _os.path.join(d, "lanxiu.db")
+    with _sq.connect(原[1]) as 真, _sq.connect(p) as 副:
+        真.backup(副)
+    _ol.DB = _S.DB = p; _au._文件 = lambda: _os.path.join(d, "sessions.json")
+    try:
+        c = _sq.connect(p)
+        店 = c.execute("SELECT no, name, role, shop FROM staff WHERE role='店长' AND status='启用' LIMIT 1").fetchone()
+        总 = c.execute("SELECT no, name, role, shop FROM staff WHERE role='总部运营' AND status='启用' LIMIT 1").fetchone()
+        顾 = c.execute("SELECT no FROM staff WHERE role='顾问' AND status='启用' LIMIT 1").fetchone()
+        c.close()
+        if not (店 and 总 and 顾):
+            return "没有可攻击的样本(在职店长 / 总部运营 / 顾问)—— 没攻击成,不算守住"
+        店长 = dict(no=店[0], name=店[1], role=店[2], shop=店[3]); 总部 = dict(no=总[0], name=总[1], role=总[2], shop=总[3])
+        r = _S.save_staff_perm({"no": 店长["no"], "role": "总部运营", "shop": ""}, 店长)
+        if r.get("ok"): return "店长把自己提成了总部运营 —— 门没守住"
+        r = _S.save_staff_perm({"no": 总部["no"], "role": "店长", "shop": 店长["shop"]}, 总部)
+        if r.get("ok"): return "总部运营改了自己的权限 —— 门没守住"
+        r = _S.save_staff_perm({"no": 顾[0], "role": "总部运营", "shop": ""}, 店长)
+        if r.get("ok"): return "店长把顾问提成了总部运营(比自己高)—— 门没守住"
+        raise PermissionError("三刀都被拦下")
+    finally:
+        _ol.DB, _S.DB, _au._文件 = 原
+        _sh.rmtree(d, ignore_errors=True)
+
+
 def _verdict(name, reads=(), writes=()):
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "agentsite"))
@@ -1943,6 +2048,19 @@ STRUCT = [
  ("店长改不了定制品的量体模板", "同上",
   a_product_template_by_manager, "以店长身份改 template",
   "比改名字严重 —— 量体模板决定量哪些尺寸,改错了是照着错的口径去裁"),
+ ("改不了自己的权限,也提不了别人的权", "server.py save_staff_perm(11-14 台账第四十五条第四组)",
+  a_staff_self_elevate, "库副本上:店长把自己提成总部运营、总部运营改自己、店长把顾问提成总部运营",
+  "**靠结构**:身份只认会话;改自己一律拒(不分改什么);只总部运营能改、且不能提到比自己高。"
+  "改成功后作废那个人所有登录会话 —— 会话里的角色是登录时存的,不作废旧角色还能用 12 小时"),
+ ("内容 / 活动 / 页面 / 品类只有总部运营能建、能切状态", "server.py 第二组写口(_主数据闸)+ fsm.主数据岗(11-14 台账第四十五条)",
+  a_content_by_non_hq, "库副本上:店长自报总部运营取消活动、撤下已发布页面、建内容、建活动、建品类",
+  "**靠结构**:角色只认会话;状态闸在状态机上,后台通用改状态也绕不过。"
+  "取消活动 / 撤页面原来任何登录的人都能点;新建内容原来不看角色、作者写死成一个总部工号"),
+ ("店铺资料只有总部运营能建 / 改 / 启停", "server.py save_shop + fsm.主数据岗(启停,后台通用改状态也绕不过;11-14 台账第四十五条)",
+  a_shop_by_non_hq, "库副本上:店长新增店铺、店长改资料、顾问自报总部运营停店、总部运营改店名",
+  "**靠结构**:角色只认会话(me),请求体里自报的不算;被拒也进 op_log。"
+  "启停原来任何登录的人都能点(状态机不带角色)。店名这一期锁死 —— "
+  "11 张表 5 万多行存的是「编码 + 店名」,只改店铺表会让新写入换不出门店码"),
  ("无有效同意 → 取不到身体数据", "12-成长与生命周期.md 第七节 / 个保法 28 条",
   a_consent_body, "撤销身体数据同意后调推算", "工具层硬门,不靠模型自觉"),
  ("不满 14 周岁缺监护人同意 → 不能推算", "同上 / 个保法 31 条",

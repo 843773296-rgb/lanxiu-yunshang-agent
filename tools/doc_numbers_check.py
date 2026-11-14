@@ -152,6 +152,13 @@ def 购买推断上限():
     return oppo_obj.购买推断_单次上限
 
 
+def 定向运营上限():
+    """定向运营一次最多派多少人(用户 2026-11-14 拍,台账第四十七条;`backend/targeted_ops.py`)—— 业务数,会再调。"""
+    sys.path.insert(0, str(ROOT / "backend"))
+    import targeted_ops
+    return targeted_ops.上限
+
+
 def 购买回看月数():
     """购买喜好看最近几个月买的(用户 2026-10-10,`knowledge/purchase_pref.py`)。"""
     sys.path.insert(0, str(ROOT / "knowledge"))
@@ -175,6 +182,7 @@ def 顶栏项数():
 
 规格 = [
     S("购买推断每次上新最多几人", 购买推断上限, r"每次上新最多\s*(\d+)\s*人"),
+    S("定向运营一次最多几人", 定向运营上限, r"一次最多\s*(\d+)\s*人"),
     S("购买喜好回看月数", 购买回看月数, r"她近\s*(\d+)\s*个月买的"),
     S("门店助手顶栏项数", 顶栏项数,
       r"顶栏已经从 \d+ 项减到 (\d+) 项",

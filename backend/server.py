@@ -565,6 +565,10 @@ def transit(mid, target, to, ctx, actor, me=None):
         r=rows("SELECT * FROM activity WHERE code=?",target)
         if not r: return {"error":"活动不存在"}
         cur=r[0]["status"]
+    elif mid=="bk-content":
+        r=rows("SELECT * FROM content WHERE code=?",target)
+        if not r: return {"error":"内容不存在"}
+        cur=r[0]["status"]
     elif mid=="bk-page":
         r=rows("SELECT * FROM page WHERE code=?",target)
         if not r: return {"error":"页面不存在"}
@@ -581,6 +585,7 @@ def transit(mid, target, to, ctx, actor, me=None):
         r=rows("SELECT * FROM shop WHERE code=?",target)
         if not r: return {"error":"店铺不存在"}
         cur=r[0]["status"]
+        # 启停只许总部运营:闸在 fsm.主数据岗(11-14),后台通用改状态也绕不过
     elif mid=="bk-task":
         r=rows("SELECT * FROM schedule WHERE id=?",target)
         if not r: return {"error":"日程任务不存在"}
@@ -636,12 +641,14 @@ def transit(mid, target, to, ctx, actor, me=None):
     if not ok: return dict(ok=False,code=code,reason=why,frm=cur,to=to)
 
     tbl={"bk-deposit":"deposit","bk-appt":"appointment","bk-shop":"shop","bk-task":"schedule",
-         "bk-product":"product","bk-activity":"activity","bk-page":"page","bk-download":"download_task",
+         "bk-product":"product","bk-activity":"activity","bk-page":"page","bk-download":"download_task","bk-content":"content",
          "bk-order":"ordr","fe-scheme":"scheme"}[mid]
-    key={"bk-shop":"code","bk-product":"spu","bk-activity":"code","bk-page":"code"}.get(mid,"id")
+    key={"bk-shop":"code","bk-product":"spu","bk-activity":"code","bk-page":"code","bk-content":"code"}.get(mid,"id")
     _付款单 = None
     with _conn() as c:
         c.execute(f"UPDATE {tbl} SET status=? WHERE {key}=?",(to,target))
+        if mid=="bk-content" and to=="已发布":
+            c.execute("UPDATE content SET published=wnow() WHERE code=?",(target,))   # 发布时间 = 这次发布
         if mid=="bk-task" and to=="完结":
             c.execute("UPDATE schedule SET summary=? WHERE id=?",(ctx.get("summary") or "",target))
         if mid=="bk-task" and to=="取消":
@@ -881,6 +888,176 @@ def shop_detail(code):
     s["appt"]=rows(f"SELECT COUNT(*) c FROM appointment WHERE {_片}",*_参)[0]["c"]
     s["logs"]=rows("SELECT * FROM op_log WHERE target=? ORDER BY id DESC LIMIT 20",code)
     return s
+
+
+# 店铺字段的中文名(日志给人看)。**这几个就是 save_shop 那条 UPDATE 真写的字段** ——
+# 多记一个没写的,日志就会撒谎(edit_log_check 第一条讲的那种)。
+店铺字段名 = {"manager": "店长", "phone": "联系方式", "province": "省市区", "addr": "详细地址"}
+import re as _re_shop
+
+def save_shop(d, me):
+    """新增 / 编辑店铺资料(11-14,台账第四十五条:「本期未实现」按钮第一组)。
+
+    **只有总部运营** —— 店铺是全公司一份的主数据,和商品、系统编码同级(见 save_product 的说明)。
+    身份只从会话取(`me`),不认请求体里的角色。被拒也进 op_log。
+
+    ## 三条不是顺手定的
+
+    **① 店名这一期不许改。** 11 张表、约 5 万行存的是拼好的显示串「SH001 静安旗舰店」,
+    写口拿它去 `shop_key.码()` 换门店码时是**整串精确比对**当前 shop 表。店名一改,
+    凡是还带着老串的新写入(从员工 / 客户那一行抄 shop 的)都会换不出码 → shop_code 留空 →
+    按门店筛**安静地少几行**(shop_key.py 文件头写的就是这个病)。
+    要改名得连那 5 万行一起改写,是一次单独的整库操作,另拍。
+
+    **② 新店建出来是「无效」。** 验收集那条「新建对象的初始状态未定义」(bk-shop-R8初始态):
+    有效店铺会出现在选店、派单里,资料没核对完就对外生效不行。核对完用详情页「启用店铺」切
+    (那条走状态机,同样只许总部运营)。和新商品默认「下架」同一个道理。
+
+    **③ 店长只能指给这家店里在职的店长。** 这一栏页面上当「店长姓名」显示、店铺列表拿它对人,
+    填一个不在店里的名字,页面照样显示得出来、而谁都联系不上。新店还没有员工,店长先空着。
+
+    状态(有效 / 无效)**不在这里改** —— 走 /api/transit 的 bk-shop,启停要填原因。
+    """
+    角色 = (me or {}).get("role")
+    谁 = (me or {}).get("name") or "?"
+    新 = bool(d.get("new"))
+    code = str(d.get("code") or "").strip().upper()
+    目标 = code or "(新店)"
+    def 拒(码, 为何):
+        log_op(谁, "bk-shop", 目标, "新建" if 新 else "编辑", "拒绝", False, 码, 为何, {"role": 角色})
+        return dict(ok=False, code=码, reason=为何)
+    if 角色 != "总部运营":
+        return 拒("WRONG_ROLE", f"店铺资料只有总部运营能改,当前角色:{角色 or '未知'}。"
+                               f"店铺是全公司一份的主数据,门店改了别家店和总部看到的就不一样了")
+    phone = str(d.get("phone") or "").strip()
+    province = str(d.get("province") or "").strip()
+    addr = str(d.get("addr") or "").strip()
+    manager = str(d.get("manager") or "").strip()
+    if phone and not _re_shop.fullmatch(r"[0-9+\- ]{7,20}", phone):
+        return 拒("BAD_PHONE", "联系方式只能是数字、短横线和加号,7 到 20 位,例如 021-6200-1001")
+    if len(province) > 30: return 拒("TOO_LONG", "省市区最多 30 个字")
+    if len(addr) > 100: return 拒("TOO_LONG", "详细地址最多 100 个字")
+    import shop_key as _SK
+    if 新:
+        name = str(d.get("name") or "").strip()
+        if not _re_shop.fullmatch(r"SH\d{3}", code):
+            return 拒("BAD_CODE", "店铺编码要写成 SH 加三位数字,例如 SH004")
+        if rows("SELECT 1 FROM shop WHERE code=?", code):
+            return 拒("DUP_CODE", f"店铺编码 {code} 已经有了")
+        if not name: return 拒("NEED_NAME", "店铺名称必填")
+        if len(name) > 20 or _re_shop.search(r"\s", name):
+            return 拒("BAD_NAME", "店铺名称最多 20 个字、中间不能有空格(门店显示串是「编码 空格 店名」,多一个空格就拆错)")
+        if name in _SK.不是门店的:
+            return 拒("BAD_NAME", f"「{name}」是登记过的工坊 / 投放范围名,不能拿来当门店名")
+        if rows("SELECT 1 FROM shop WHERE name=?", name):
+            return 拒("DUP_NAME", f"已经有一家店叫「{name}」了")
+        if manager:
+            return 拒("NO_STAFF_YET", "新店还没有员工 —— 店长先空着,建好员工后在店铺详情里指定")
+        with _conn() as c:
+            c.execute("INSERT INTO shop(code,name,status,manager,phone,province,addr,updated)"
+                      " VALUES(?,?,'无效','',?,?,?,wnow())", (code, name, phone, province, addr))
+        log_op(谁, "bk-shop", code, "新建", "无效", True, "CREATE", f"{code} {name} · 新店默认无效,核对后再启用",
+               {"role": 角色})
+        log_edit(谁, (me or {}).get("no"), "店铺", code, f"新增店铺 {code} {name}",
+                 [{"字段": cn, "改前": "", "改后": v} for cn, v in
+                  (("店铺名称", name), ("状态", "无效"), ("联系方式", phone), ("省市区", province), ("详细地址", addr)) if v])
+        return dict(ok=True, code="CREATE", id=code,
+                    reason=f"已新增 {code} {name}。新店默认「无效」—— 资料核对完,到店铺详情点「启用店铺」")
+    old = rows("SELECT * FROM shop WHERE code=?", code)
+    if not old: return 拒("NO_SHOP", f"没有店铺 {code}")
+    old = old[0]
+    if d.get("name") not in (None, "") and str(d.get("name")).strip() != old["name"]:
+        return 拒("NAME_LOCKED", "店名这一期不能在这里改:5 万多条业务记录存的是「编码 + 店名」的写法,"
+                                 "只改店铺表会让新写入认不出是哪家店。要改名请找总部单独安排")
+    if manager:
+        with _conn() as _c:
+            _片, _参 = _SK.门店条件(_c, code)
+        ok_m = rows(f"SELECT no FROM staff WHERE {_片} AND role='店长' AND status='启用' AND name=?", *_参, manager)
+        if not ok_m:
+            return 拒("BAD_MANAGER", f"「{manager}」不是 {code} 在职的店长 —— 店长只能指给这家店里角色是店长、状态启用的员工")
+    新值 = dict(manager=manager, phone=phone, province=province, addr=addr)
+    with _conn() as c:
+        # ⚠️ 这条 SET 的字段要和上面 店铺字段名 一模一样(日志只 diff 这几个)
+        c.execute("UPDATE shop SET manager=?,phone=?,province=?,addr=?,updated=wnow() WHERE code=?",
+                  (manager, phone, province, addr, code))
+    改了 = diff_fields(dict(old), 新值, 店铺字段名)
+    log_op(谁, "bk-shop", code, "编辑", "已保存", True, "UPDATE",
+           "、".join(x["字段"] for x in 改了) or "无改动", {"role": 角色})
+    log_edit(谁, (me or {}).get("no"), "店铺", code, f"编辑店铺 {code} {old['name']}", 改了)
+    return dict(ok=True, code="UPDATE", id=code,
+                reason=f"已保存:{'、'.join(x['字段'] for x in 改了)}" if 改了 else "没有改动(也留了一条记录)")
+
+# 角色的级别:**只用来挡「给别人提到比自己高」**,不是权限表(权限表在 staff_list 的 matrix 和各写口的角色闸)
+角色级别 = {"总部运营": 3, "店长": 2, "顾问": 1, "工匠": 1, "版师": 1, "财务": 1, "售后": 1}
+门店角色 = ("店长", "顾问")          # 必须挂在一家门店上
+总部角色 = ("总部运营", "财务", "售后", "版师")   # 不挂门店(页面显示「—— 总部」)
+员工字段名 = {"role": "角色", "shop": "归属", "status": "状态"}
+
+def save_staff_perm(d, me):
+    """编辑员工权限:角色 / 归属门店 / 启用停用(11-14,台账第四十五条第四组)。
+
+    用户拍的三条:**只总部运营**;**不能改自己**(给自己提权的门);**不能给别人提到比自己高**。
+    另外几道是这一次补的保守闸,每一道都对着一个「改完页面正常、数据悄悄坏了」的形状:
+
+      · 门店角色必须挂在一家门店上、工匠挂工坊、总部角色不挂门店 —— 否则按门店划范围的查询
+        (店长只看本店)会把这个人算到「不认识」那一类
+      · **名下还有客户 / 没办完的任务**,不许换门店、不许从顾问改走、不许停用 ——
+        「一个账户只归一位导购」(10-26),导购走了客户还挂在他名下,客户转移的「同店接手」也对不上
+      · 是某家店的现任店长,先在店铺资料里换人,才能降级或调走(店铺页上的店长名会对不上)
+      · 改完**作废这个人所有登录会话**:会话里的角色是登录那一刻存的,不作废的话旧角色还能用 12 小时
+    """
+    import shop_key as _SK, auth as _auth
+    no = str(d.get("no") or "").strip()
+    角色 = (me or {}).get("role"); 谁 = (me or {}).get("name") or "?"
+    def 拒(码, 为何):
+        log_op(谁, "staff", no or "?", "改权限", "拒绝", False, 码, 为何, {"role": 角色})
+        return dict(ok=False, code=码, reason=为何)
+    if 角色 != "总部运营": return 拒("WRONG_ROLE", f"改权限只有总部运营能做,当前角色:{角色 or '未知'}")
+    if no == str((me or {}).get("no") or ""):
+        return 拒("SELF_EDIT", "不能改自己的权限 —— 要改请找另一位总部运营")
+    old = rows("SELECT no,name,role,shop,shop_code,status FROM staff WHERE no=?", no)
+    if not old: return 拒("NO_STAFF", f"没有员工 {no}")
+    old = old[0]
+    新角色 = d.get("role") or old["role"]
+    新状态 = d.get("status") or old["status"]
+    新归属 = old["shop"] if d.get("shop") is None else str(d.get("shop") or "").strip()
+    if 新角色 not in 角色级别: return 拒("BAD_ROLE", f"角色只能是 {' / '.join(角色级别)}")
+    if 新状态 not in ("启用", "停用"): return 拒("BAD_STATUS", "状态只能是 启用 / 停用")
+    我级 = 角色级别.get(角色, 0)
+    if 角色级别[新角色] > 我级 or 角色级别.get(old["role"], 0) > 我级:
+        return 拒("ABOVE_ME", f"不能把别人提到比自己高,也不能改比自己高的人(你是{角色})")
+    with _conn() as _c:
+        类, 码 = _SK.认得出(新归属, _SK.门店表(_c))
+    if 新角色 in 门店角色 and 类 != "门店":
+        return 拒("NEED_SHOP", f"{新角色}要挂在一家门店上(写成「SH001 静安旗舰店」这样)")
+    if 新角色 == "工匠" and 类 != "工坊":
+        return 拒("NEED_WORKSHOP", "工匠要挂在登记过的工坊上")
+    if 新角色 in 总部角色 and 新归属:
+        return 拒("HQ_NO_SHOP", f"{新角色}是总部岗位,不挂门店 —— 归属留空")
+    动了人 = (新归属 != (old["shop"] or "")) or (新角色 != old["role"]) or (新状态 == "停用" and old["status"] != "停用")
+    if 动了人:
+        客 = rows("SELECT COUNT(*) n FROM customer WHERE advisor_no=?", no)[0]["n"]
+        任 = rows("SELECT COUNT(*) n FROM schedule WHERE assignee_no=? AND status='有效'", no)[0]["n"]
+        if (客 or 任) and (新归属 != (old["shop"] or "") or 新状态 == "停用" or old["role"] == "顾问"):
+            return 拒("HAS_WORK", f"{old['name']} 名下还有 {客} 位客户、{任} 条没办完的任务 —— "
+                                  f"先做客户转移 / 改派任务,再换门店、改角色或停用")
+        if old["role"] == "店长" and rows("SELECT 1 FROM shop WHERE manager=? AND code=?", old["name"], old["shop_code"] or ""):
+            if 新角色 != "店长" or 新归属 != old["shop"] or 新状态 == "停用":
+                return 拒("IS_MANAGER", f"{old['name']} 是 {old['shop']} 的现任店长 —— 先在店铺资料里换店长,再降级、调走或停用")
+    新值 = dict(role=新角色, shop=新归属, status=新状态)
+    with _conn() as c:
+        # ⚠️ SET 里「记进日志」的字段 = 员工字段名(shop_code 跟着 shop 走,updated_* 是戳)
+        c.execute("UPDATE staff SET role=?,shop=?,status=?,shop_code=?,updated_by=?,updated=wnow() WHERE no=?",
+                  (新角色, 新归属, 新状态, 码 if 类 == "门店" else None, (me or {}).get("no"), no))
+    改了 = diff_fields(dict(old, shop=old["shop"] or ""), 新值, 员工字段名)
+    下线 = _auth.作废(no) if 改了 else 0
+    log_op(谁, "staff", no, "改权限", "已保存", True, "UPDATE",
+           ";".join(f"{x['字段']} {x['改前'] or '空'}→{x['改后'] or '空'}" for x in 改了) or "无改动",
+           {"role": 角色, "下线会话": 下线})
+    log_edit(谁, (me or {}).get("no"), "员工", no, f"编辑权限 {no} {old['name']}", 改了)
+    return dict(ok=True, code="UPDATE", id=no,
+                reason=(f"已保存:{'、'.join(x['字段'] for x in 改了)}" + (f";{old['name']} 要重新登录才能用新权限" if 改了 else ""))
+                       if 改了 else "没有改动(也留了一条记录)")
 
 def staff_list(q, 本店=None):
     kw=(q.get("q") or [""])[0].strip()
@@ -2220,6 +2397,56 @@ def create_customer(d, actor, _role=None):
                 reason=f"已建档 {cid}。**生命周期初始是「潜在」** —— 它由每日重算决定,不接受手工流转")
 
 
+预约可改的状态 = ("待确认", "已预约")
+预约字段名 = {"start_ts": "开始时间", "end_ts": "结束时间", "advisor_no": "顾问"}
+
+def edit_appointment(d, me):
+    """编辑预约:改时间、换顾问(11-14,台账第四十八条「和新建预约同一套权限」)。
+
+    · 谁能改:门店的人改**本店**的预约;总部运营改全部(和 _店范围 同口径)
+    · 时间规则和新建**同一个函数**(rules.validate_appointment):提前量、补录过去的时间只有店长及以上
+    · 已到店 / 完成 / 取消 / 过期 / 爽约的不能改 —— 那是已经发生过的事
+    · 换的顾问要是**这家店在职的顾问**(预约归店,顾问跟着店走)
+    """
+    import shop_key as _SK
+    aid = str(d.get("id") or "").strip()
+    角色 = (me or {}).get("role"); 谁 = (me or {}).get("name") or "?"
+    def 拒(码, 为何):
+        log_op(谁, "appointment", aid or "?", "编辑", "拒绝", False, 码, 为何, {"role": 角色})
+        return dict(ok=False, code=码, reason=为何)
+    if not me: return 拒("NO_LOGIN", "请先登录")
+    a = rows("SELECT * FROM appointment WHERE id=?", aid)
+    if not a: return 拒("NO_APPT", f"没有预约 {aid}")
+    a = a[0]
+    if a["status"] not in 预约可改的状态:
+        return 拒("WRONG_STATE", f"预约已是「{a['status']}」—— 只有 {' / '.join(预约可改的状态)} 的能改")
+    if 角色 != "总部运营":
+        with _conn() as _c:
+            我店 = _SK.码(_c, me.get("shop"))
+        if not 我店 or 我店 != a["shop_code"]:
+            return 拒("OTHER_SHOP", "只能改本店的预约")
+    st = (d.get("start") or a["start_ts"] or "").replace("T", " ")
+    en = (d.get("end") or a["end_ts"] or "").replace("T", " ")
+    if (st, en) != (a["start_ts"], a["end_ts"]):
+        ok, code, why = rules.validate_appointment({"start": st, "end": en, "way": d.get("way")},
+                                                   now=_wnow(), actor_role=角色)
+        if not ok: return 拒(code, why)
+    adv = a["advisor_no"]
+    if d.get("advisor"):
+        adv = 顾问工号(d.get("advisor")) or str(d.get("advisor")).strip()
+        with _conn() as _c:
+            _片, _参 = _SK.门店条件(_c, a["shop_code"] or a["shop"])
+        if not rows(f"SELECT 1 FROM staff WHERE no=? AND role='顾问' AND status='启用' AND {_片}", adv, *_参):
+            return 拒("BAD_ADVISOR", f"{d.get('advisor')} 不是这家店在职的顾问")
+    新值 = dict(start_ts=st, end_ts=en, advisor_no=adv)
+    with _conn() as c:
+        # ⚠️ SET 的字段 = 预约字段名
+        c.execute("UPDATE appointment SET start_ts=?,end_ts=?,advisor_no=? WHERE id=?", (st, en, adv, aid))
+    改了 = diff_fields(dict(a), 新值, 预约字段名)
+    log_op(谁, "appointment", aid, "编辑", "已保存", True, "UPDATE", "、".join(x["字段"] for x in 改了) or "无改动", {"role": 角色})
+    log_edit(谁, me.get("no"), "预约", aid, f"编辑预约 {aid}", 改了)
+    return dict(ok=True, code="UPDATE", id=aid, reason=f"已保存:{'、'.join(x['字段'] for x in 改了)}" if 改了 else "没有改动(也留了一条记录)")
+
 def create_appointment(d, actor, _role=None):
     """新建预约。PRD:早于当前时间的补录只有店长及以上能做 —— 判据在 rules.py。"""
     import datetime
@@ -3172,16 +3399,204 @@ def save_syscode(d,actor,role="顾问"):
     log_op(actor,"sys_code",code,"—","新建",True,"CREATE",f"{d['category']} · {d['name']}={d['val']}",{"role":role})
     return dict(ok=True,code="CREATE",reason=f"系统编码 {code} 已创建")
 
-def save_content(d,actor):
-    ti=(d.get("title") or "").strip()
-    if not ti: return dict(ok=False,code="NEED_TITLE",reason="标题必填")
-    n=rows("SELECT COUNT(*) c FROM content")[0]["c"]
-    code=f"CT{100+n}"
+# ── 内容 / 活动 / 品类 / 页面(11-14,台账第四十五条:「本期未实现」按钮第二组)────────────
+# 规矩和第一组(save_shop)一样:**只总部运营**,身份只从会话取(me),被拒也进 op_log,
+# 改了什么进 edit_log(只记真改了的字段)。新建出来的东西一律先是「不对外」的状态
+# (内容 / 页面草稿、活动未开始),要发布 / 启动走状态机 —— 那几台的角色闸在 fsm.主数据岗。
+内容类型 = ("品牌故事", "穿搭指南", "工艺科普", "活动预告")
+内容渠道 = ("小程序首页", "会员中心", "门店Pad", "公众号")
+内容字段名 = {"title": "标题", "kind": "内容类型", "channel": "投放渠道"}
+活动类型 = ("线上", "门店", "联名")
+活动字段名 = {"name": "活动名称", "kind": "活动类型", "start_d": "开始日期", "end_d": "结束日期",
+              "shop": "投放范围", "budget": "预算"}
+页面渠道 = ("小程序", "门店Pad")
+费用开票 = ("待开票", "已开票")
+品类字段名 = {"name": "品类名称", "sort": "排序", "status": "状态"}
+
+def _主数据闸(me, 机, 目标, 动作):
+    """→ (谁, 拒) 。拒(码, 为何) 会留一条被拒的 op_log 再返回结果。"""
+    角色 = (me or {}).get("role"); 谁 = (me or {}).get("name") or "?"
+    def 拒(码, 为何):
+        log_op(谁, 机, 目标, 动作, "拒绝", False, 码, 为何, {"role": 角色})
+        return dict(ok=False, code=码, reason=为何)
+    return 谁, 拒, 角色 == "总部运营", 角色
+
+def _下一个码(表, 前缀, 宽):
+    """表里「前缀 + 宽位数字」的最大号 + 1。**不用 COUNT 推号** —— 删过一行就会撞上已有的码。"""
+    已 = [r["code"] for r in rows(f"SELECT code FROM {表} WHERE code LIKE ?", 前缀 + "%")]
+    号 = [int(c[len(前缀):]) for c in 已 if c[len(前缀):].isdigit() and len(c) == len(前缀) + 宽]
+    return f"{前缀}{(max(号) + 1 if 号 else 1):0{宽}d}"
+
+def save_content(d, me):
+    """新建 / 编辑内容。**原来**:谁登录都能建,作者一栏写死成 60000009,编码按 COUNT 推。"""
+    code = str(d.get("code") or "").strip()
+    谁, 拒, 准, 角色 = _主数据闸(me, "content", code or "(新内容)", "编辑" if code else "新建")
+    if not 准: return 拒("WRONG_ROLE", f"内容只有总部运营能建 / 改,当前角色:{角色 or '未知'}")
+    ti = str(d.get("title") or "").strip()
+    kind = d.get("kind") or "品牌故事"; ch = d.get("channel") or "小程序首页"
+    if not ti: return 拒("NEED_TITLE", "标题必填")
+    if len(ti) > 40: return 拒("TOO_LONG", "标题最多 40 个字")
+    if kind not in 内容类型: return 拒("BAD_KIND", f"内容类型只能是 {' / '.join(内容类型)}")
+    if ch not in 内容渠道: return 拒("BAD_CHANNEL", f"投放渠道只能是 {' / '.join(内容渠道)}")
+    if not code:
+        code = _下一个码("content", "CT", 3)
+        with _conn() as c:
+            c.execute("INSERT INTO content(code,title,kind,status,channel,author,published,views)"
+                      " VALUES(?,?,?,'草稿',?,?,NULL,0)", (code, ti, kind, ch, (me or {}).get("no")))
+        log_op(谁, "content", code, "—", "草稿", True, "CREATE", ti, {"role": 角色})
+        log_edit(谁, (me or {}).get("no"), "内容", code, f"新建内容 {code}",
+                 [{"字段": cn, "改前": "", "改后": v} for cn, v in (("标题", ti), ("内容类型", kind), ("投放渠道", ch))])
+        return dict(ok=True, code="CREATE", id=code, reason=f"内容 {code} 已创建,状态为草稿 —— 在列表里点「发布」才对外")
+    old = rows("SELECT * FROM content WHERE code=?", code)
+    if not old: return 拒("NO_CONTENT", f"没有内容 {code}")
+    新值 = dict(title=ti, kind=kind, channel=ch)
     with _conn() as c:
-        c.execute("INSERT INTO content VALUES(?,?,?,'草稿',?,'60000009',wtoday(),0)",
-                  (code,ti,d.get("kind") or "品牌故事",d.get("channel") or "小程序首页"))
-    log_op(actor,"content",code,"—","新建",True,"CREATE",ti,{})
-    return dict(ok=True,code="CREATE",reason=f"内容 {code} 已创建,状态为草稿")
+        # ⚠️ SET 的字段 = 内容字段名(日志只 diff 这几个)
+        c.execute("UPDATE content SET title=?,kind=?,channel=? WHERE code=?", (ti, kind, ch, code))
+    改了 = diff_fields(dict(old[0]), 新值, 内容字段名)
+    log_op(谁, "content", code, "编辑", "已保存", True, "UPDATE", "、".join(x["字段"] for x in 改了) or "无改动", {"role": 角色})
+    log_edit(谁, (me or {}).get("no"), "内容", code, f"编辑内容 {code}", 改了)
+    return dict(ok=True, code="UPDATE", id=code, reason=f"已保存:{'、'.join(x['字段'] for x in 改了)}" if 改了 else "没有改动(也留了一条记录)")
+
+def save_activity(d, me):
+    """新建营销活动。**新活动一律「未开始」**,启动走状态机(只总部运营)。
+    投放范围只能是一家门店的显示串或「全渠道」—— 门店码走 shop_key.码,不自己拆串。"""
+    谁, 拒, 准, 角色 = _主数据闸(me, "bk-activity", "(新活动)", "新建")
+    if not 准: return 拒("WRONG_ROLE", f"营销活动只有总部运营能建,当前角色:{角色 or '未知'}")
+    name = str(d.get("name") or "").strip(); kind = d.get("kind") or ""
+    sd = str(d.get("start_d") or "").strip(); ed = str(d.get("end_d") or "").strip()
+    shop = str(d.get("shop") or "").strip() or "全渠道"
+    if not name: return 拒("NEED_NAME", "活动名称必填")
+    if len(name) > 30: return 拒("TOO_LONG", "活动名称最多 30 个字")
+    if kind not in 活动类型: return 拒("BAD_KIND", f"活动类型只能是 {' / '.join(活动类型)}")
+    import datetime as _dt, shop_key as _SK
+    try:
+        a = _dt.date.fromisoformat(sd); b = _dt.date.fromisoformat(ed)
+    except ValueError:
+        return 拒("BAD_DATE", "起止日期要写成 2026-12-01 这样")
+    if b < a: return 拒("BAD_DATE", "结束日期不能早于开始日期")
+    try: budget = float(d.get("budget") or 0)
+    except (TypeError, ValueError): return 拒("BAD_BUDGET", "预算必须是数字")
+    if budget < 0: return 拒("BAD_BUDGET", "预算不能是负数")
+    with _conn() as _c:
+        码 = _SK.码(_c, shop)
+    if shop != _SK.全渠道 and not 码:
+        return 拒("BAD_SHOP", f"投放范围只能是一家门店(写成「SH001 静安旗舰店」这样)或「{_SK.全渠道}」")
+    code = _下一个码("activity", "AC" + sd[2:4], 2)
+    with _conn() as c:
+        c.execute("INSERT INTO activity(code,name,kind,status,start_d,end_d,shop,budget,signup,orders,created,shop_code)"
+                  " VALUES(?,?,?,'未开始',?,?,?,?,0,0,wnow(),?)", (code, name, kind, sd, ed, shop, budget, 码))
+    log_op(谁, "bk-activity", code, "—", "未开始", True, "CREATE", f"{name} · {shop} · ¥{budget:.0f}", {"role": 角色})
+    log_edit(谁, (me or {}).get("no"), "活动", code, f"新建活动 {code}",
+             [{"字段": 活动字段名[k], "改前": "", "改后": str(v)} for k, v in
+              (("name", name), ("kind", kind), ("start_d", sd), ("end_d", ed), ("shop", shop), ("budget", budget))])
+    return dict(ok=True, code="CREATE", id=code, reason=f"活动 {code} 已创建,状态「未开始」—— 到详情页点「启动活动」才开始")
+
+def add_activity_cost(d, me):
+    """给活动添一笔费用。金额必须大于 0;开票状态只认两种。录入人记工号(和存量那批一样)。"""
+    act = str(d.get("activity") or "").strip()
+    谁, 拒, 准, 角色 = _主数据闸(me, "bk-activity", act or "?", "加费用")
+    if not 准: return 拒("WRONG_ROLE", f"活动费用只有总部运营能录,当前角色:{角色 or '未知'}")
+    if not rows("SELECT 1 FROM activity WHERE code=?", act): return 拒("NO_ACTIVITY", f"没有活动 {act}")
+    item = str(d.get("item") or "").strip(); note = d.get("note") or "待开票"
+    if not item: return 拒("NEED_ITEM", "费用项必填")
+    if len(item) > 20: return 拒("TOO_LONG", "费用项最多 20 个字")
+    try: amt = round(float(d.get("amount")), 2)
+    except (TypeError, ValueError): return 拒("BAD_AMOUNT", "金额必须是数字")
+    if amt <= 0: return 拒("BAD_AMOUNT", "金额要大于 0")
+    if note not in 费用开票: return 拒("BAD_NOTE", f"开票状态只能是 {' / '.join(费用开票)}")
+    with _conn() as c:
+        c.execute("INSERT INTO activity_cost(activity,item,amount,note,created_by,created) VALUES(?,?,?,?,?,wnow())",
+                  (act, item, amt, note, (me or {}).get("no")))
+    log_op(谁, "bk-activity", act, "加费用", "已保存", True, "COST", f"{item} ¥{amt:.2f} · {note}", {"role": 角色})
+    log_edit(谁, (me or {}).get("no"), "活动", act, f"添加费用 {item}",
+             [{"字段": "费用", "改前": "", "改后": f"{item} ¥{amt:.2f}({note})"}])
+    return dict(ok=True, code="COST", id=act, reason=f"已记一笔 {item} ¥{amt:.2f}")
+
+def save_page(d, me):
+    """新增页面(只建页,区块在页面配置里加)。新页一律「草稿」,发布走状态机。"""
+    谁, 拒, 准, 角色 = _主数据闸(me, "bk-page", "(新页面)", "新建")
+    if not 准: return 拒("WRONG_ROLE", f"页面只有总部运营能建,当前角色:{角色 or '未知'}")
+    name = str(d.get("name") or "").strip(); ch = d.get("channel") or ""
+    if not name: return 拒("NEED_NAME", "页面名称必填")
+    if len(name) > 20: return 拒("TOO_LONG", "页面名称最多 20 个字")
+    if ch not in 页面渠道: return 拒("BAD_CHANNEL", f"投放渠道只能是 {' / '.join(页面渠道)}")
+    if rows("SELECT 1 FROM page WHERE name=? AND channel=?", name, ch):
+        return 拒("DUP_NAME", f"{ch} 已经有一个叫「{name}」的页面")
+    code = _下一个码("page", "PG", 2)
+    with _conn() as c:
+        c.execute("INSERT INTO page(code,name,channel,status,updated_by,updated) VALUES(?,?,?,'草稿',?,wnow())",
+                  (code, name, ch, (me or {}).get("no")))
+    log_op(谁, "bk-page", code, "—", "草稿", True, "CREATE", f"{name} · {ch}", {"role": 角色})
+    log_edit(谁, (me or {}).get("no"), "页面", code, f"新增页面 {code}",
+             [{"字段": "页面名称", "改前": "", "改后": name}, {"字段": "投放渠道", "改前": "", "改后": ch}])
+    return dict(ok=True, code="CREATE", id=code, reason=f"页面 {code} 已创建(草稿),到「配置」里加区块后再发布")
+
+def save_category(d, me):
+    """新建 / 编辑品类。品类是三级树(女装 → 上装 → 襦 / 衫),商品挂在没有下级的那一层。
+
+    三道闸,都是为了「商品挂的品类不会悄悄变成一个不该挂商品的地方」:
+      · 最多三级;**已经直接挂着商品的品类下面不许再建下级**(建了它就不再是末级,
+        商品表单只列末级 —— 那几件商品再编辑时品类会选不回来)
+      · 停用前**它和下级都不能还有上架商品**
+      · 上级停用着,下级不能启用
+    """
+    code = str(d.get("code") or "").strip()
+    谁, 拒, 准, 角色 = _主数据闸(me, "category", code or "(新品类)", "编辑" if code else "新建")
+    if not 准: return 拒("WRONG_ROLE", f"品类只有总部运营能建 / 改,当前角色:{角色 or '未知'}")
+    name = str(d.get("name") or "").strip()
+    if not name: return 拒("NEED_NAME", "品类名称必填")
+    if len(name) > 12: return 拒("TOO_LONG", "品类名称最多 12 个字")
+    def 子树(c0):
+        out, 待 = [c0], [c0]
+        while 待:
+            x = 待.pop()
+            for r in rows("SELECT code FROM category WHERE parent=?", x):
+                out.append(r["code"]); 待.append(r["code"])
+        return out
+    if not code:
+        parent = str(d.get("parent") or "").strip() or None
+        if parent:
+            p = rows("SELECT * FROM category WHERE code=?", parent)
+            if not p: return 拒("NO_PARENT", f"没有上级品类 {parent}")
+            if len(parent) >= 7: return 拒("TOO_DEEP", "品类最多三级,三级下面不能再建")
+            if rows("SELECT 1 FROM product WHERE category=?", parent):
+                return 拒("PARENT_HAS_PRODUCTS", f"{p[0]['name']} 下面直接挂着商品 —— 再建下级,那几件商品就挂在了非末级品类上")
+            if p[0]["status"] != "启用": return 拒("PARENT_OFF", f"上级 {p[0]['name']} 停用着,先启用上级")
+        if rows("SELECT 1 FROM category WHERE name=? AND COALESCE(parent,'')=COALESCE(?,'')", name, parent):
+            return 拒("DUP_NAME", f"同一层已经有「{name}」了")
+        code = _下一个码("category", parent or "C", 2)
+        sort = (rows("SELECT MAX(sort) m FROM category WHERE COALESCE(parent,'')=COALESCE(?,'')", parent)[0]["m"] or 0) + 1
+        with _conn() as c:
+            c.execute("INSERT INTO category(code,name,parent,sort,status) VALUES(?,?,?,?,'启用')", (code, name, parent, sort))
+        log_op(谁, "category", code, "—", "启用", True, "CREATE", f"{name}(上级 {parent or '无'})", {"role": 角色})
+        log_edit(谁, (me or {}).get("no"), "品类", code, f"新建品类 {code}",
+                 [{"字段": "品类名称", "改前": "", "改后": name}, {"字段": "上级", "改前": "", "改后": parent or "(一级)"}])
+        return dict(ok=True, code="CREATE", id=code, reason=f"品类 {code} {name} 已创建")
+    old = rows("SELECT * FROM category WHERE code=?", code)
+    if not old: return 拒("NO_CATEGORY", f"没有品类 {code}")
+    old = dict(old[0])
+    status = d.get("status") or old["status"]
+    if status not in ("启用", "停用"): return 拒("BAD_STATUS", "状态只能是 启用 / 停用")
+    try: sort = int(d.get("sort") if d.get("sort") not in (None, "") else old["sort"])
+    except (TypeError, ValueError): return 拒("BAD_SORT", "排序必须是整数")
+    if rows("SELECT 1 FROM category WHERE name=? AND COALESCE(parent,'')=COALESCE(?,'') AND code<>?", name, old["parent"], code):
+        return 拒("DUP_NAME", f"同一层已经有「{name}」了")
+    if status == "停用" and old["status"] != "停用":
+        树 = 子树(code); q = ",".join("?" * len(树))
+        n = rows(f"SELECT COUNT(*) n FROM product WHERE status='上架' AND category IN ({q})", *树)[0]["n"]
+        if n: return 拒("HAS_ON_SHELF", f"{old['name']} 和它的下级还有 {n} 件上架商品 —— 先下架或改挂别的品类再停用")
+    if status == "启用" and old["parent"]:
+        p = rows("SELECT name,status FROM category WHERE code=?", old["parent"])
+        if p and p[0]["status"] != "启用": return 拒("PARENT_OFF", f"上级 {p[0]['name']} 停用着,先启用上级")
+    新值 = dict(name=name, sort=sort, status=status)
+    with _conn() as c:
+        # ⚠️ SET 的字段 = 品类字段名
+        c.execute("UPDATE category SET name=?,sort=?,status=? WHERE code=?", (name, sort, status, code))
+    改了 = diff_fields(old, 新值, 品类字段名)
+    log_op(谁, "category", code, "编辑", "已保存", True, "UPDATE", "、".join(x["字段"] for x in 改了) or "无改动", {"role": 角色})
+    log_edit(谁, (me or {}).get("no"), "品类", code, f"编辑品类 {code}", 改了)
+    return dict(ok=True, code="UPDATE", id=code, reason=f"已保存:{'、'.join(x['字段'] for x in 改了)}" if 改了 else "没有改动(也留了一条记录)")
 
 def kb_search(q):
     """领域知识检索 —— 这是 Agent 的 kb_search 工具,当前由页面直接调用"""
@@ -4727,6 +5142,13 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/import":
             return self._send(import_customers(body.get("text"),登录人["name"],role=登录人.get("role"),
                                                dry=bool(body.get("dry",True))))
+        if p=="/api/staff-perm":
+            return self._send(save_staff_perm(body, 登录人))
+        if p=="/api/appt-edit":
+            return self._send(edit_appointment(body, 登录人))
+        if p=="/api/targeted-ops":
+            import targeted_ops as _to
+            return self._send(_to.发起(body, 登录人))
         if p=="/api/appt-create":
             return self._send(create_appointment(body, 登录人["name"], 登录人.get("role")))
         if p=="/api/followup-create":
@@ -4736,6 +5158,8 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/delay-told":       return self._send(delay_told(body, _me(self)))
         if p=="/api/download-create":
             return self._send(create_download(body.get("kind"),body.get("filters"),登录人["name"]))
+        if p=="/api/shop-save":
+            return self._send(save_shop(body, 登录人))
         if p=="/api/product-save":
             return self._send(save_product(body,登录人["name"],role=登录人.get("role")))
         if p=="/api/block-save": return self._send(save_block(body,登录人["name"]))
@@ -4745,7 +5169,11 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/mitem-save": return self._send(save_measure_item(body,登录人["name"],role=登录人.get("role")))
         if p=="/api/syscode-save":
             return self._send(save_syscode(body,登录人["name"],role=登录人.get("role")))
-        if p=="/api/content-save": return self._send(save_content(body,登录人["name"]))
+        if p=="/api/content-save": return self._send(save_content(body, 登录人))
+        if p=="/api/activity-save": return self._send(save_activity(body, 登录人))
+        if p=="/api/activity-cost-add": return self._send(add_activity_cost(body, 登录人))
+        if p=="/api/page-save": return self._send(save_page(body, 登录人))
+        if p=="/api/category-save": return self._send(save_category(body, 登录人))
         if p=="/api/toggle":
             # 表 / 键只认 TOGGLE_ALLOW 那四对(在 toggle 里判);列不收请求体的,固定 status
             return self._send(toggle(body.get("table"),body.get("key"),body.get("val"),actor=登录人["name"],role=登录人.get("role")))

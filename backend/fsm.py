@@ -34,6 +34,9 @@ SM["bk-activity"]=dict(id="bk-activity",name="营销活动",type="event",
 # 页面:草稿 ⇄ 已发布
 SM["bk-page"]=dict(id="bk-page",name="页面",type="event",
   states=["草稿","已发布"],edges=[["草稿","已发布"],["已发布","草稿"]],terminal=[])
+# 内容:草稿 ⇄ 已发布(11-14 加:原来内容只能新建成草稿,没有任何一条路能发布或下架)
+SM["bk-content"]=dict(id="bk-content",name="内容",type="event",
+  states=["草稿","已发布"],edges=[["草稿","已发布"],["已发布","草稿"]],terminal=[])
 # 下载任务:生成中 → 已完成/失败;已完成 → 已过期
 SM["bk-download"]=dict(id="bk-download",name="下载任务",type="event",
   states=["生成中","已完成","失败","已过期"],
@@ -123,6 +126,14 @@ IDEMPOTENT={("bk-deposit","退款审批中","退款处理中"),("bk-deposit","�
 
 def machine(mid): return SM.get(mid)
 
+# 11-14(台账第四十五条「默认只总部管理员能用」):**全公司一份的主数据,状态只许总部运营切。**
+# 原来这四台状态机只有边、不带角色,后台通用改状态谁登录都能点 —— 一个顾问就能停掉整家店、
+# 下架一个商品、取消一场活动、撤下一个已发布的页面。闸放在状态机上而不是各个写口里:
+# 后台通用改状态(server.transit)也绕不过。角色只认调用方从会话里取的(transit 用 me 覆盖 ctx)。
+主数据岗 = {"bk-shop": ("总部运营",), "bk-product": ("总部运营",),
+            "bk-activity": ("总部运营",), "bk-page": ("总部运营",),
+            "bk-content": ("总部运营",)}
+
 def check(mid, frm, to, ctx=None):
     """返回 (allowed, code, reason)。ctx 可含 amount / approved_by / idem_key / retries"""
     ctx=ctx or {}
@@ -148,6 +159,9 @@ def check(mid, frm, to, ctx=None):
         if need and ctx.get("role")!=need:
             return False,"WRONG_ROLE",f"「{frm}」→「{to}」须由{need}操作,当前角色:{ctx.get('role') or '未指定'}"
         return True,"OK",""
+    if (frm,to) in edges and mid in 主数据岗 and ctx.get("role") not in 主数据岗[mid]:
+        return False,"WRONG_ROLE",(f"「{m['name']}」的状态只有{'/'.join(主数据岗[mid])}能改,"
+                                   f"当前角色:{ctx.get('role') or '未指定'}")
     if (frm,to) in edges:
         # 合法边,再查附加约束
         key=(mid,frm,to)
@@ -343,6 +357,16 @@ if __name__=="__main__":
         hit=code==exp
         if not hit: bad+=1
         print(f"{'✅' if hit else '❗'} [{code:13s}] 客户合并({role}): {f} → {t}")
+    # 主数据只许总部运营切状态(11-14)—— 四台各验一条合法边:店长 / 顾问 / 不带角色被拒,总部运营放行
+    for mid,f,t in [("bk-shop","有效","无效"),("bk-product","上架","下架"),
+                    ("bk-activity","未开始","已取消"),("bk-page","已发布","草稿"),
+                    ("bk-content","草稿","已发布")]:
+        for role,exp in [("顾问","WRONG_ROLE"),("店长","WRONG_ROLE"),(None,"WRONG_ROLE"),("总部运营","OK")]:
+            ok,code,why=check(mid,f,t,{"role":role} if role else {})
+            hit=code==exp
+            if not hit: bad+=1
+            print(f"{'✅' if hit else '❗'} [{code:13s}] {SM[mid]['name']}({role or '没带角色'}): {f} → {t}"
+                  + ("" if hit else f"   期望 {exp}"))
     print("="*76)
     print(f"{'✅ 全部符合预期' if not bad else f'❌ {bad} 项与预期不符'}")
     import sys; sys.exit(1 if (bad or order_bad) else 0)

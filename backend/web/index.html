@@ -1027,14 +1027,14 @@ async function lifecycle(t){
     <div class="tylist">
      ${d.types.map(x=>`<div class="ty ${x.l===d.cur?"on":""}" data-t="${esc(x.l)}">
        <div class="n">${esc(x.l)}客户</div>
-       <div class="m">人数: ${x.n}<span style="color:var(--ink4);margin-left:8px" title="定向运营本期未实现">定向运营(未做)</span></div></div>`).join("")}
-     <div class="add dead" title="添加生命周期 · 本期未实现">添加生命周期</div></div>
+       <div class="m">人数: ${x.n}</div></div>`).join("")}
+     <div style="padding:10px 14px;font-size:12px;color:var(--ink3);line-height:1.6">档位和判定规则来自知识库口径(配着逐条标好的真值)。加档 / 改默认档要走产品评审、改口径并重新对账,不在页面上改(11-14 业务拍)</div></div>
     <div>
      <div class="card"><div class="bd" style="padding:18px 24px">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
         <h3 style="margin:0;font-size:16px">${esc(d.cur)}客户</h3>
-        <span style="font-size:13px;color:var(--ink2)" title="设为默认值本期未实现">设为默认值(未做): <span class="sw" style="opacity:.45;cursor:not-allowed"><i>默认</i></span></span>
-        <span style="margin-left:auto"><button class="btn sol" disabled title="定向运营 · 本期未实现">+ 定向运营</button></span></div>
+        <span style="font-size:12.5px;color:var(--ink3)">新客户落哪一档由口径自动判,不在页面设默认</span>
+        <span style="margin-left:auto">${ROLE==="总部运营"?`<button class="btn sol" data-lc-ops title="给下面勾选的客户各派一条跟进任务给归属导购">+ 定向运营</button>`:`<button class="btn sol" disabled title="定向运营只有总部运营能发起">+ 定向运营</button>`}</span></div>
       <div style="background:var(--tile);border-radius:6px;padding:14px 16px;font-size:13px;color:var(--ink2)">
         <div><b style="color:var(--ink)">判定规则</b> · ${esc(d.rule)}</div>
         <div style="margin-top:7px"><b style="color:var(--ink)">重算优先级</b> · 第 ${d.pri} 位 —
@@ -1071,6 +1071,15 @@ async function lifecycle(t){
       {k:"to",type:"select",label:"调整为",req:1,opts:d.priority},
       {k:"reason",type:"text",label:"调整原因(必填,每人都写入审计日志)",req:1,ph:"例如:客户已电话确认仍在服务中"}],
       v=>批量跑(ids,id=>post("/api/lifecycle-adjust",{id,to:v.to,reason:v.reason}),()=>view("lifecycle",d.cur)))});
+  // 11-14:定向运营 = 给勾选的客户各派一条跟进任务给他的归属导购(台账第四十七条:内部任务,不联系客户;一次最多 200 人)
+  M.querySelectorAll("[data-lc-ops]").forEach(e=>e.onclick=()=>{ const ids=已选(); if(!ids.length){没选();return}
+    modal(`定向运营 · ${d.cur}客户 · 已选 ${ids.length} 人`,[
+      {k:"type",type:"select",label:"跟进方式",req:1,opts:["电话回电","上门沟通"]},
+      {k:"end",label:"截止时间",req:1,it:"datetime-local"},
+      {k:"note",type:"text",label:"运营目的(必填,导购收到的任务里会写)",req:1,ph:"例如:秋冬新品上新,邀请老客到店试穿"}],
+      async v=>{const r=await doOp("/api/targeted-ops",{...v,ids,tier:d.cur});
+        if(r&&r.跳过&&r.跳过.length) res(true,"SKIP","跳过:"+r.跳过.slice(0,8).map(x=>x.客户+"("+x.为什么+")").join(";")+(r.跳过.length>8?` 等 ${r.跳过.length} 位`:""));
+        return r},true)});
   M.querySelectorAll(".ty[data-t]").forEach(e=>e.onclick=()=>view("lifecycle",e.dataset.t));
   M.querySelectorAll("[data-adj]").forEach(e=>e.onclick=()=>
     modal(`人工调整生命周期 · ${e.dataset.adj}`,[
@@ -1151,7 +1160,7 @@ async function apptDetail(aid){
      ${d.logs.map(l=>`<tr><td class="mono">${esc(l.ts)}</td><td>${esc(l.who)}</td>
       <td>${esc(l.title)}</td><td>${esc(l.src)}</td></tr>`).join("")}</tbody></table></div>
    </div>
-   <div class="fbar"><button class="btn sol" disabled title="编辑预约 · 本期未实现">编辑预约</button>
+   <div class="fbar">${["待确认","已预约"].includes(a.status)?`<button class="btn sol" data-edit-appt>编辑预约</button>`:`<button class="btn sol" disabled title="已${esc(a.status.replace(/^已/,""))}的预约不能再改">编辑预约</button>`}
      ${dep&&dep.status==="已付"?`<button class="btn sol" data-refund="${esc(dep.id)}" data-amt="${dep.amount}">退押金</button>`:""}
      ${dep&&dep.status==="退款审批中"?`<button class="btn sol" data-approve="${esc(dep.id)}" data-amt="${dep.amount}">退款复核</button>`:""}
      ${dep&&dep.status!=="已付"&&dep.status!=="已退"?`<button class="btn" data-dep="${esc(dep.id)}">查看退款</button>`:""}
@@ -1159,6 +1168,12 @@ async function apptDetail(aid){
      <button class="btn" data-back="appts">返回</button></div>`);
   M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
   M.querySelectorAll("[data-dep]").forEach(e=>e.onclick=()=>view("task","T"+e.dataset.dep));
+  // 11-14:编辑预约(台账第四十八条:和新建预约同一套权限 —— 门店的人改本店的;只改时间和顾问)
+  M.querySelectorAll("[data-edit-appt]").forEach(e=>e.onclick=()=>modal(`编辑预约 · ${a.id}`,[
+    {k:"start",label:"开始时间",req:1,it:"datetime-local",val:(a.start_ts||"").replace(" ","T").slice(0,16)},
+    {k:"end",label:"结束时间",req:1,it:"datetime-local",val:(a.end_ts||"").replace(" ","T").slice(0,16)},
+    {k:"advisor",type:"select",label:"顾问(须是这家店在职的)",opts:ADVS,val:ADVS.find(x=>x.endsWith(" "+a.advisor))||undefined}],
+    v=>doOp("/api/appt-edit",{...v,id:a.id},()=>apptDetail(aid)),true));
   M.querySelectorAll("[data-refund]").forEach(e=>e.onclick=()=>{
     const amt=Number(e.dataset.amt);
     // 2026-10-16(用户拍「真的两个人点」):原来这里有个「复核人」下拉框,发起人自己选「店长+财务」就算复核过了。
@@ -1564,7 +1579,7 @@ async function custDetail(cid){
        <span class="thumb" style="width:46px;height:46px;font-size:15px;background:#2B4D8C">${esc((c.shop||"  ").split(" ")[1]||"门店").slice(0,2)}</span>
        <div><div style="font-weight:600">${esc((c.shop||"").split(" ")[1]||"—")}</div>
          <div style="font-size:12.5px;color:var(--ink3);margin-top:3px">顾问: ${esc(c.advisor)}</div></div>
-       <span class="ed dead" style="margin-left:auto;font-size:13px" title="编辑门店 · 本期未实现">✎ 编辑</span></div></div>
+       ${(ROLE==="店长"||ROLE==="总部运营")?`<span class="ed" style="margin-left:auto;font-size:13px;cursor:pointer" data-xfer title="同店换顾问,提交后要审批">✎ 转移顾问</span>`:`<span class="ed dead" style="margin-left:auto;font-size:13px" title="转移顾问要店长或总部运营提交">✎ 转移顾问</span>`}</div></div>
      <div class="card">${calendar(marks)}
       <div style="padding:0 16px 14px;display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ink2)">
        ${Object.entries(APC).slice(0,4).map(([k,v])=>`<span><i style="display:inline-block;width:9px;height:2px;background:${v};vertical-align:3px;margin-right:4px"></i>${k}</span>`).join("")}
@@ -1583,6 +1598,13 @@ async function custDetail(cid){
     custDetail(cid)});
   M.querySelectorAll("[data-edit]").forEach(e=>e.onclick=()=>formEditCustomer(c,()=>custDetail(cid)));
   M.querySelectorAll("[data-fu]").forEach(e=>e.onclick=()=>formFollowup(cid,()=>custDetail(cid)));
+  // 11-14:原来这里是一个没接线的「编辑门店」灰按钮。客户换归属只有一条现成的路 —— 客户转移审批
+  // (同店换顾问;跨店搬客户从没拍过,不在这里开)。和客户列表的批量转移是同一个写口
+  M.querySelectorAll("[data-xfer]").forEach(e=>e.onclick=()=>modal(`转移顾问 · ${c.name||cid}`,[
+    {k:"advisor",type:"select",label:"转移至顾问(须和客户同一家店)",req:1,opts:ADVS},
+    {k:"note",type:"text",label:"转移原因(必填,提交后要审批)",req:1,ph:"同店转移会自动迁移未完成的跟进任务和未来预约"}],
+    v=>doOp("/api/approval-apply",{kind:"客户转移",target:cid,payload:{to_advisor:v.advisor,n:1},note:v.note},
+            ()=>custDetail(cid))));
   M.querySelectorAll("#mergeBox [data-cust]").forEach(e=>e.onclick=()=>custDetail(e.dataset.cust));
   // 撤销合并(软合并 10-14 立项时就写着「能撤」,而一直只有函数、没有入口):只撤这一条,原因必填、进操作日志
   M.querySelectorAll("[data-unmerge]").forEach(e=>e.onclick=()=>
@@ -1663,7 +1685,7 @@ async function shopList(){
   M.innerHTML=chrome([["首页","workbench"],"店铺配置","店铺管理"],`
    <div class="card">
     <div class="form">${fld("店铺名称","q",st,null,"请输入")}${fld("状态","status",st,d.facets.status)}${acts()}</div>
-    <div class="ops"><button class="btn sol" disabled title="新增店铺 · 本期未实现">+ 新增店铺</button></div>
+    <div class="ops">${ROLE==="总部运营"?`<button class="btn sol" data-new-shop>+ 新增店铺</button>`:`<button class="btn sol" disabled title="新增店铺只有总部运营能做">+ 新增店铺</button>`}</div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:100px">店铺编码</th><th style="width:170px">店铺名称</th>
      <th style="width:80px">状态</th><th style="width:100px">店长</th>
@@ -1677,6 +1699,14 @@ async function shopList(){
       <td><span class="lk" data-sh="${esc(r.code)}">详情</span></td></tr>`).join("")}
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-sh]").forEach(e=>e.onclick=()=>view("shop",e.dataset.sh));
+  // 11-14:新增店铺(只总部运营;新店默认「无效」,核对完在详情页启用)
+  M.querySelectorAll("[data-new-shop]").forEach(e=>e.onclick=()=>modal("新增店铺",[
+    {k:"code",label:"店铺编码",req:1,ph:"SH 加三位数字,例如 SH004"},
+    {k:"name",label:"店铺名称",req:1,ph:"最多 20 字,不带空格"},
+    {k:"phone",label:"联系方式",ph:"例如 021-6200-1001"},
+    {k:"province",label:"省市区",ph:"例如 上海市黄浦区"},
+    {k:"addr",type:"text",label:"详细地址",ph:"新店默认「无效」,资料核对完再到详情页启用"}],
+    v=>doOp("/api/shop-save",{...v,new:1},shopList),true));
   bindTable(st,shopList);
 }
 async function shopDetail(code){
@@ -1689,7 +1719,7 @@ async function shopDetail(code){
      <span class="pill ${SPILL[d.status]}">${esc(d.status)}</span>
      <span class="mono" style="color:var(--ink3);font-size:13px">${esc(d.code)}</span></div>
    <div class="card"><div class="hd"><h3>基本信息:</h3>
-     <span class="more dead" title="编辑店铺 · 本期未实现">✎ 编辑</span></div>
+     ${ROLE==="总部运营"?`<span class="more" data-edit-shop>✎ 编辑</span>`:`<span class="more dead" title="店铺资料只有总部运营能改">✎ 编辑</span>`}</div>
     <div class="info">
      <div><div class="l">店铺编码</div><div class="v mono">${esc(d.code)}</div></div>
      <div><div class="l">店长</div><div class="v">${esc(d.manager)}</div></div>
@@ -1722,6 +1752,16 @@ async function shopDetail(code){
    <div class="fbar"><button class="btn" data-back="shops">返回</button>
     <button class="btn sol" data-shop="${esc(code)}" data-to="${on?"无效":"有效"}">${on?"停用店铺":"启用店铺"}</button></div>`);
   M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+  // 11-14:编辑店铺资料。店名这一期不改(5 万多条记录存的是「编码 + 店名」,只改店铺表会对不上);
+  // 店长只能选这家店在职的店长;状态走下面的启用 / 停用(要填原因)
+  M.querySelectorAll("[data-edit-shop]").forEach(e=>e.onclick=()=>{
+    const 店长们=(d.staff||[]).filter(s=>s.role==="店长"&&s.status==="启用").map(s=>s.name);
+    modal(`编辑店铺 · ${d.code} ${d.name}(店名这一期不能改)`,[
+      {k:"manager",type:"select",label:"店长",opts:["",...店长们],val:d.manager||""},
+      {k:"phone",label:"联系方式",val:d.phone||""},
+      {k:"province",label:"省市区",val:d.province||""},
+      {k:"addr",label:"详细地址",val:d.addr||""}],
+      v=>doOp("/api/shop-save",{...v,code:d.code},()=>view("shop",code)),true)});
   M.querySelectorAll("[data-shop]").forEach(e=>e.onclick=()=>
     modal(`${on?"停用":"启用"}店铺 · ${d.name}`,[{k:"note",type:"text",req:1,
       label:on?"停用原因(无效店铺将禁止新增业务)":"启用原因",ph:"例如:门店装修暂停营业"}],
@@ -1733,7 +1773,7 @@ async function staffList(){
   M.innerHTML=chrome([["首页","workbench"],"系统","权限管理"],`
    <div class="card">
     <div class="form">${fld("工号/姓名","q",st,null,"请输入")}${fld("角色","role",st,d.facets.role)}${acts()}</div>
-    <div class="ops"><button class="btn" data-stf-exp title="改权限本期没有写接口,这里只能导出">导出所选</button></div>
+    <div class="ops"><button class="btn" data-stf-exp>导出所选</button></div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:44px"><span class="cb" data-cball></span></th>
      <th style="width:140px">工号</th><th style="width:120px">姓名</th>
@@ -1747,7 +1787,7 @@ async function staffList(){
       <td><span class="pill ${SPILL[r.status]}">${esc(r.status)}</span></td>
       <td class="mono">${esc(r.updated_by)}</td>
       <td class="mono" style="color:var(--ink3)">${esc(r.updated)}</td>
-      <td><span class="lk dead" title="编辑权限 · 本期未实现">编辑</span></td></tr>`).join("")}
+      <td>${ROLE==="总部运营"&&!(ME&&ME.no===r.no)?`<span class="lk" data-perm="${esc(r.no)}">编辑</span>`:`<span class="lk dead" title="${ME&&ME.no===r.no?"不能改自己的权限":"改权限只有总部运营能做"}">编辑</span>`}</td></tr>`).join("")}
     </tbody></table>${pagerC(d)}</div>
    <div class="card"><div class="hd"><h3>角色权限矩阵</h3>
      <span class="n">来源:后台 PRD 第 8 章与 6.2 —— 原设计稿的权限管理页无角色列,此表为按 PRD 补充</span></div>
@@ -1759,6 +1799,16 @@ async function staffList(){
       </tr>`).join("")}
     </tbody></table></div>`);
   M.querySelectorAll("[data-stf-exp]").forEach(e=>e.onclick=()=>导出所选("员工",[["工号","no"],["姓名","name"],["角色","role"],["门店","shop"],["状态","status"]],d.rows,"no"));
+  // 11-14:编辑权限(台账第四十五条第四组:只总部运营;不能改自己;不能给别人提到比自己高 —— 都在写口里拦)
+  // 名下还有客户 / 任务时换门店、改角色、停用会被拒;改完那个人要重新登录
+  M.querySelectorAll("[data-perm]").forEach(e=>e.onclick=()=>{
+    const r=d.rows.find(x=>x.no===e.dataset.perm)||{};
+    const 归属=[...new Set(["",...SHOPS,r.shop||""])];
+    modal(`编辑权限 · ${r.no} ${r.name}`,[
+      {k:"role",type:"select",label:"角色",opts:["顾问","店长","总部运营","财务","售后","版师","工匠"],val:r.role},
+      {k:"shop",type:"select",label:"归属(总部岗位留空)",opts:归属,val:r.shop||""},
+      {k:"status",type:"select",label:"状态",opts:["启用","停用"],val:r.status}],
+      v=>doOp("/api/staff-perm",{...v,no:r.no},staffList),true)});
   bindTable(st,staffList);
 }
 
@@ -2267,7 +2317,7 @@ async function categoryPage(){
   M.innerHTML=chrome([["首页","workbench"],"商品","品类管理"],`
    <div class="card"><div class="hd"><h3>品类管理</h3>
      <span class="n">${t.length} 个一级品类 · ${t.reduce((a,b)=>a+b.children.length,0)} 个二级品类</span>
-     <span class="more dead" title="新建品类 · 本期未实现">+ 新建品类</span></div>
+     ${ROLE==="总部运营"?`<span class="more" data-newcat>+ 新建品类</span>`:`<span class="more dead" title="品类只有总部运营能建">+ 新建品类</span>`}</div>
     <div class="bd" style="padding:16px 24px 22px">
      ${t.map(x=>`<div style="margin-bottom:18px">
       <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--tile);border-radius:6px">
@@ -2281,9 +2331,22 @@ async function categoryPage(){
          <span>${esc(c.name)}</span>
          <span class="mono" style="color:var(--ink3);font-size:12px">${esc(c.code)}</span>
          <span class="pill p-mut">${c.n} 个商品</span>
-         <span class="lk dead" style="margin-left:auto" title="编辑品类 · 本期未实现">编辑</span></div>`).join("")}
+         ${ROLE==="总部运营"?`<span class="lk" style="margin-left:auto" data-editcat="${esc(c.code)}">编辑</span>`:`<span class="lk dead" style="margin-left:auto" title="品类只有总部运营能改">编辑</span>`}</div>`).join("")}
       </div></div>`).join("")}
     </div></div>`);
+  // 11-14:新建 / 编辑品类(只总部运营)。上级只列一级、二级 —— 品类最多三级
+  const 全=[];t.forEach(x=>{全.push(x);(x.children||[]).forEach(c=>全.push(c))});
+  M.querySelectorAll("[data-newcat]").forEach(e=>e.onclick=()=>modal("新建品类",[
+    {k:"parent",type:"select",label:"上级品类(留空 = 新建一级)",opts:["",...全.map(x=>x.code+" "+x.name)]},
+    {k:"name",label:"品类名称",req:1,ph:"最多 12 字"}],
+    v=>doOp("/api/category-save",{name:v.name,parent:(v.parent||"").split(" ")[0]},categoryPage)));
+  M.querySelectorAll("[data-editcat]").forEach(e=>e.onclick=()=>{
+    const x=全.find(y=>y.code===e.dataset.editcat)||{};
+    modal(`编辑品类 · ${x.code||""}`,[
+      {k:"name",label:"品类名称",req:1,val:x.name||""},
+      {k:"sort",label:"排序(数字小的在前)",it:"number",val:String(x.sort??"")},
+      {k:"status",type:"select",label:"状态(还有上架商品时不能停用)",opts:["启用","停用"],val:x.status||"启用"}],
+      v=>doOp("/api/category-save",{...v,code:x.code},categoryPage))});
 }
 
 async function stockList(){
@@ -2510,11 +2573,16 @@ async function contentList(){
       <td><span class="pill ${r.status==="已发布"?"p-ok":"p-warn"}">${esc(r.status)}</span></td>
       <td class="mono" style="color:var(--ink3)">${esc(r.published)}</td>
       <td class="mono">${num(r.views)}</td>
-      <td><span class="lk dead" title="编辑内容 · 本期未实现">编辑</span>
-        <span class="lk dead" title="下架 · 本期未实现">下架</span></td></tr>`).join("")}
+      <td>${ROLE==="总部运营"?`<span class="lk" data-edct="${esc(r.code)}">编辑</span>
+        <span class="lk" data-ctto="${r.status==="已发布"?"草稿":"已发布"}" data-ct="${esc(r.code)}">${r.status==="已发布"?"下架":"发布"}</span>`
+        :`<span class="lk dead" title="内容只有总部运营能改">编辑</span>`}</td></tr>`).join("")}
      ${d.rows.length?"":'<tr><td colspan="8" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的内容</td></tr>'}
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-newct]").forEach(e=>e.onclick=()=>formContent(contentList));
+  // 11-14:编辑 / 发布 / 下架(只总部运营;下架 = 退回草稿,走状态机 bk-content)
+  M.querySelectorAll("[data-edct]").forEach(e=>e.onclick=()=>formContent(contentList,d.rows.find(r=>r.code===e.dataset.edct)));
+  M.querySelectorAll("[data-ct]").forEach(e=>e.onclick=()=>
+    doTransit("bk-content",e.dataset.ct,e.dataset.ctto,{},contentList));
   bindTable(st,contentList);
 }
 
@@ -2530,7 +2598,7 @@ async function activityList(){
    <div class="card">
     <div class="form">${fld("活动名称/编码","q",st,null,"请输入")}
       ${fld("活动类型","kind",st,F.kind)}${fld("状态","status",st,F.status)}${acts()}</div>
-    <div class="ops"><button class="btn sol" disabled title="新建活动 · 本期未实现">+ 新建活动</button></div>
+    <div class="ops">${ROLE==="总部运营"?`<button class="btn sol" data-newact>+ 新建活动</button>`:`<button class="btn sol" disabled title="营销活动只有总部运营能建">+ 新建活动</button>`}</div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      ${sortTh("活动编码","code",st,"110px")}${sortTh("活动名称","name",st)}
      <th style="width:80px">类型</th><th style="width:150px">起止</th>
@@ -2550,6 +2618,16 @@ async function activityList(){
       <td><span class="lk" data-ac="${esc(r.code)}">详情</span></td></tr>`).join("")}
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-ac]").forEach(e=>e.onclick=()=>view("activity",e.dataset.ac));
+  // 11-14:新建活动(只总部运营;新活动「未开始」,到详情页启动)。投放范围现查店铺表 —— 别用写死的 SHOPS
+  M.querySelectorAll("[data-newact]").forEach(e=>e.onclick=async()=>{
+    const 店=await get("/api/shops?per=100"), 范围=["全渠道",...(店.rows||[]).filter(r=>r.status==="有效").map(r=>r.code+" "+r.name)];
+    modal("新建活动",[
+      {k:"name",label:"活动名称",req:1,ph:"最多 30 字"},
+      {k:"kind",type:"select",label:"活动类型",req:1,opts:["线上","门店","联名"]},
+      {k:"start_d",label:"开始日期",req:1,it:"date"},{k:"end_d",label:"结束日期",req:1,it:"date"},
+      {k:"shop",type:"select",label:"投放范围",req:1,opts:范围},
+      {k:"budget",label:"预算(元)",it:"number",ph:"0"}],
+      v=>doOp("/api/activity-save",v,activityList),true)});
   bindTable(st,activityList);
 }
 async function activityDetail(code){
@@ -2572,7 +2650,7 @@ async function activityDetail(code){
      <div><div class="l">带来订单</div><div class="v mono">${d.orders}</div></div>
    </div></div>
    <div class="card"><div class="hd"><h3>费用明细</h3><span class="n">${d.costs.length} 笔 · 合计 ¥${money(d.cost_total)}</span>
-     <span class="more dead" title="添加费用 · 本期未实现">+ 添加费用</span></div>
+     ${ROLE==="总部运营"?`<span class="more" data-addcost>+ 添加费用</span>`:`<span class="more dead" title="活动费用只有总部运营能录">+ 添加费用</span>`}</div>
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:150px">费用项</th>
      <th style="width:150px">金额</th><th style="width:110px">开票</th>
      <th style="width:130px">录入人</th><th>录入时间</th></tr></thead><tbody>
@@ -2598,6 +2676,11 @@ async function activityDetail(code){
     ${NEXT?`<button class="btn sol" data-actr="${esc(code)}" data-to="${NEXT}">${NEXT==="进行中"?"启动活动":"结束活动"}</button>`:""}
     ${d.status==="未开始"||d.status==="进行中"?`<button class="btn" data-actr="${esc(code)}" data-to="已取消">取消活动</button>`:""}</div>`);
   M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+  M.querySelectorAll("[data-addcost]").forEach(e=>e.onclick=()=>modal(`添加费用 · ${d.name}`,[
+    {k:"item",label:"费用项",req:1,ph:"例如:场地租赁"},
+    {k:"amount",label:"金额(元)",req:1,it:"number"},
+    {k:"note",type:"select",label:"开票",opts:["待开票","已开票"]}],
+    v=>doOp("/api/activity-cost-add",{...v,activity:code},()=>view("activity",code))));
   M.querySelectorAll("[data-actr]").forEach(e=>e.onclick=()=>
     modal(`${e.dataset.to} · ${d.name}`,[{k:"note",type:"text",req:1,label:"操作说明",ph:"将写入操作日志"}],
       v=>doTransit("bk-activity",code,e.dataset.to,{note:v.note},()=>view("activity",code))));
@@ -2637,7 +2720,7 @@ async function pageList(){
    <div class="card">
     <div class="form">${fld("页面名称/编码","q",st,null,"请输入")}
       ${fld("投放渠道","channel",st,F.channel)}${fld("状态","status",st,F.status)}${acts()}</div>
-    <div class="ops"><button class="btn sol" disabled title="新增页面 · 本期未实现">+ 新增页面</button></div>
+    <div class="ops">${ROLE==="总部运营"?`<button class="btn sol" data-newpg>+ 新增页面</button>`:`<button class="btn sol" disabled title="页面只有总部运营能建">+ 新增页面</button>`}</div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      ${sortTh("页面编码","code",st,"110px")}${sortTh("页面名称","name",st)}
      <th style="width:120px">投放渠道</th><th style="width:100px">内容区块</th>
@@ -2650,6 +2733,11 @@ async function pageList(){
       <td><span class="lk" data-pgv="${esc(r.code)}">配置</span></td></tr>`).join("")}
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-pgv]").forEach(e=>e.onclick=()=>view("page",e.dataset.pgv));
+  // 11-14:新增页面(只总部运营;新页「草稿」,进「配置」加区块后再发布)
+  M.querySelectorAll("[data-newpg]").forEach(e=>e.onclick=()=>modal("新增页面",[
+    {k:"name",label:"页面名称",req:1,ph:"最多 20 字"},
+    {k:"channel",type:"select",label:"投放渠道",req:1,opts:["小程序","门店Pad"]}],
+    v=>doOp("/api/page-save",v,pageList)));
   bindTable(st,pageList);
 }
 const BKIC={"普通图片":"▭","轮播图片":"◫","商品列表":"▤","热点图":"◈"};
@@ -3846,12 +3934,12 @@ function formSyscode(after){
     {k:"note",type:"text",label:"说明",ph:"选填"},
   ],v=>doOp("/api/syscode-save",{...v},after),true);
 }
-function formContent(after){
-  modal("新建内容",[
-    {k:"title",label:"标题",req:1,ph:"例如:秋季新品预览"},
-    {k:"kind",type:"select",label:"内容类型",req:1,opts:["品牌故事","穿搭指南","工艺科普","活动预告"]},
-    {k:"channel",type:"select",label:"投放渠道",req:1,opts:["小程序首页","会员中心","门店Pad","公众号"]},
-  ],v=>doOp("/api/content-save",v,after),true);
+function formContent(after,old){
+  modal(old?`编辑内容 · ${old.code}`:"新建内容",[
+    {k:"title",label:"标题",req:1,ph:"例如:秋季新品预览",val:old?old.title:""},
+    {k:"kind",type:"select",label:"内容类型",req:1,opts:["品牌故事","穿搭指南","工艺科普","活动预告"],val:old?old.kind:undefined},
+    {k:"channel",type:"select",label:"投放渠道",req:1,opts:["小程序首页","会员中心","门店Pad","公众号"],val:old?old.channel:undefined},
+  ],v=>doOp("/api/content-save",old?{...v,code:old.code}:v,after),true);
 }
 
 Q.kb={};

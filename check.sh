@@ -357,6 +357,10 @@ else
   printf "  ⏸ 8770 没起 —— **不适用,不是通过**(先跑 ./start.sh;CI 上没有服务,所以那边也是这一支)\n"
 fi
 run "资料编辑日志 · 日志要说实话,而且说得出改了什么" python3 backend/edit_log_check.py
+run "店铺资料写口 · 只总部运营能建 / 改 / 启停,新店默认无效,店名不许改(11-14 台账第四十五条)" python3 backend/shop_write_check.py
+run "内容 / 活动 / 品类 / 页面写口 · 只总部运营;新建先不对外;品类最多三级、有上架商品不许停用(11-14 台账第四十五条)" python3 backend/content_write_check.py
+run "编辑预约 / 定向运营 · 本店的人改本店的预约;定向运营只总部、派给归属导购、不连派两条(11-14 台账第四十七、四十八条)" python3 backend/appt_ops_write_check.py
+run "编辑权限 · 只总部运营、不能改自己、不能提到比自己高;名下有客户不许调走;改完旧会话作废(11-14 台账第四十五条)" python3 backend/staff_perm_check.py
 run "商品表单 · 显示的字段就得改得了(对照设计稿)" python3 backend/product_form_check.py
 run "量体模版 / 测量项 · 改一个被引用的东西是最危险的动作" python3 backend/measure_tpl_check.py
 run "分部位可选料 · 部位从裁片归并,报价口径要跟着出" python3 backend/part_check.py

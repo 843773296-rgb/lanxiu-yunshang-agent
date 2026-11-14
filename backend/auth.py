@@ -165,6 +165,24 @@ def logout(token):
             _写盘(d)
 
 
+def 作废(no):
+    """把这个工号**所有**登录会话作废(内存 + 落盘),返回作废了几个。
+
+    11-14 加,给「编辑权限」用:会话里的角色是**登录那一刻**存下来的(见 who())。
+    不作废的话,一个刚被降成顾问的店长,手里那张旧 token 在 12 小时内照样以店长身份写库 ——
+    > 「权限已经改了」和「权限改了但旧会话还在用旧角色」,在员工列表上长得一模一样。
+    """
+    no = str(no or "")
+    if not no: return 0
+    with _LOCK:
+        内 = [t for t, s in _SESS.items() if str(s.get("no")) == no]
+        for t in 内: _SESS.pop(t, None)
+        d = _读盘(); 盘 = [k for k, v in d.items() if str(v.get("no")) == no]
+        for k in 盘: d.pop(k, None)
+        if 盘: _写盘(d)
+    return max(len(内), len(盘))      # 内存按 token、落盘按指纹记,同一个会话两边各一份
+
+
 def sessions():
     return len(_SESS)
 

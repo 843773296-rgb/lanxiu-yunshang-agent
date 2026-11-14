@@ -20775,5 +20775,173 @@
    }
   ],
   "预期红": "没登录调不动聊天站的智能体"
+ },
+ {
+  "script": "backend/shop_write_check.py",
+  "改坏": "把 save_shop 的角色闸改成「店长也放行」",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if 角色 != \"总部运营\":\n        return 拒(\"WRONG_ROLE\", f\"店铺资料只有总部运营能改",
+    "new": "    if 角色 not in (\"总部运营\", \"店长\"):\n        return 拒(\"WRONG_ROLE\", f\"店铺资料只有总部运营能改"
+   }
+  ],
+  "预期红": "① 顾问 / 店长新增、编辑店铺都被拒,被拒也留痕"
+ },
+ {
+  "script": "backend/shop_write_check.py",
+  "改坏": "把 bk-shop 从状态机的「主数据只许总部运营」表里拿掉(启停回到谁登录都能点)",
+  "file": [
+   {
+    "path": "backend/fsm.py",
+    "old": "主数据岗 = {\"bk-shop\": (\"总部运营\",), \"bk-product\"",
+    "new": "主数据岗 = {\"bk-product\""
+   }
+  ],
+  "预期红": "① 顾问 / 店长启停店铺被拒"
+ },
+ {
+  "script": "backend/shop_write_check.py",
+  "改坏": "把编辑时的「店名不许改」那段去掉(改名只改店铺表,5 万多条老写法换不出门店码)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if d.get(\"name\") not in (None, \"\") and str(d.get(\"name\")).strip() != old[\"name\"]:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "③ 改店名被拒,店名没动"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "把 bk-shop 从状态机的「主数据只许总部运营」表里拿掉(启停回到谁登录都能点)",
+  "file": [
+   {
+    "path": "backend/fsm.py",
+    "old": "主数据岗 = {\"bk-shop\": (\"总部运营\",), \"bk-product\"",
+    "new": "主数据岗 = {\"bk-product\""
+   }
+  ],
+  "预期红": "店铺资料只有总部运营能建 / 改 / 启停"
+ },
+ {
+  "script": "backend/content_write_check.py",
+  "改坏": "把 save_category 的「三级下面不能再建」去掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            if len(parent) >= 7: return 拒(\"TOO_DEEP\"",
+    "new": "            if False: return 拒(\"TOO_DEEP\""
+   }
+  ],
+  "预期红": "④ 三级下面不能再建"
+ },
+ {
+  "script": "backend/content_write_check.py",
+  "改坏": "把 save_activity 的「结束不能早于开始」去掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if b < a: return 拒(\"BAD_DATE\", \"结束日期不能早于开始日期\")",
+    "new": "    if False: return 拒(\"BAD_DATE\", \"结束日期不能早于开始日期\")"
+   }
+  ],
+  "预期红": "③ 结束早于开始被拒"
+ },
+ {
+  "script": "backend/content_write_check.py",
+  "改坏": "把 _主数据闸 的「只总部运营」改成谁都放行",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    return 谁, 拒, 角色 == \"总部运营\", 角色",
+    "new": "    return 谁, 拒, True, 角色"
+   }
+  ],
+  "预期红": "① 店长调五个写口都被拒,被拒也留痕,表没动"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "把 bk-activity 从状态机的「主数据只许总部运营」表里拿掉(店长就能取消活动)",
+  "file": [
+   {
+    "path": "backend/fsm.py",
+    "old": "            \"bk-activity\": (\"总部运营\",), ",
+    "new": "            "
+   }
+  ],
+  "预期红": "内容 / 活动 / 页面 / 品类只有总部运营能建、能切状态"
+ },
+ {
+  "script": "backend/appt_ops_write_check.py",
+  "改坏": "把 edit_appointment 的「只能改本店的预约」去掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if not 我店 or 我店 != a[\"shop_code\"]:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "① 别店的人改不了"
+ },
+ {
+  "script": "backend/appt_ops_write_check.py",
+  "改坏": "把定向运营的「同类没办完就跳过」去掉(一个客户会被连派两条)",
+  "file": [
+   {
+    "path": "backend/targeted_ops.py",
+    "old": "            if c.execute(\"SELECT 1 FROM schedule WHERE customer_id=? AND type=? AND status='有效'\", (cid, 类型)).fetchone():\n",
+    "new": "            if False:\n"
+   }
+  ],
+  "预期红": "② 再发一遍:全部跳过(不连派两条)"
+ },
+ {
+  "script": "backend/staff_perm_check.py",
+  "改坏": "把 save_staff_perm 的「不能改自己」去掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if no == str((me or {}).get(\"no\") or \"\"):\n        return 拒(\"SELF_EDIT\"",
+    "new": "    if False:\n        return 拒(\"SELF_EDIT\""
+   }
+  ],
+  "预期红": "① 总部运营改不了自己"
+ },
+ {
+  "script": "backend/staff_perm_check.py",
+  "改坏": "把改权限之后的「作废旧会话」去掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    下线 = _auth.作废(no) if 改了 else 0\n",
+    "new": "    下线 = 0\n"
+   }
+  ],
+  "预期红": "⑤ 改成功后这个人的旧会话全作废"
+ },
+ {
+  "script": "backend/staff_perm_check.py",
+  "改坏": "把「名下还有客户不许改」那道闸去掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if (客 or 任) and (新归属",
+    "new": "        if False and (新归属"
+   }
+  ],
+  "预期红": "③ 名下有客户的顾问:换门店、改角色、停用都被拒"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "把 save_staff_perm 的「不能改自己」去掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if no == str((me or {}).get(\"no\") or \"\"):\n        return 拒(\"SELF_EDIT\"",
+    "new": "    if False:\n        return 拒(\"SELF_EDIT\""
+   }
+  ],
+  "预期红": "改不了自己的权限,也提不了别人的权"
  }
 ]
