@@ -56,7 +56,7 @@ DONE = []
 
 # 还没有冒烟用例的写接口数。**只许降不许涨** —— 补一个改一次这个数。
 # 定在当前值而不是 0:一次补 17 个不现实,而「等补完再进门禁」的下场是永远补不完。
-欠账上限 = 6    # 11-15 夜补系统编码 / 测量项 / 审批驳回三条,9 → 6。 11-14 补「本期未实现」按钮四组时顺带补上 save_content 的冒烟,10 → 9(11-14 夜补的 import_customers 原在豁免名单里,不占这个数)
+欠账上限 = 2    # 11-15 夜补系统编码 / 测量项 / 审批驳回 / 模版新建 / 模版删除 / 页面区块六条 + 草稿状态改豁免(写文件不写库),9 → 2。 11-14 补「本期未实现」按钮四组时顺带补上 save_content 的冒烟,10 → 9(11-14 夜补的 import_customers 原在豁免名单里,不占这个数)
 
 
 def ck(name, ok, n, msg=""):
@@ -113,6 +113,9 @@ def 可达的写函数():
     "create_download": "建导出任务,产物落磁盘不落库;**待补**",
     "scheme_status": "方案状态流转,**待补**(等数据重建落地)",
     "merge_transit": "客户合并,**待补** —— 合并用例是 truth 夹具,冒烟会动到它们",
+    # 11-15 夜:它写的是 backend/drafts.json(一个**工作区里的真文件**),不写库。
+    # 这套冒烟只把库换成副本,真跑它会改掉工作区里那份草稿 —— 而「库里行数变没变」这条判据对它也无从判起
+    "set_draft_status": "改草稿状态,写的是 backend/drafts.json 文件、不写库;冒烟只沙箱了库,真跑会改到工作区里的真文件",
 }
 
 
@@ -150,6 +153,15 @@ def 取(sql, *a):
     try:
         r = c.execute(sql, a).fetchone()
         return dict(r) if r else None
+    finally:
+        c.close()
+
+
+def 取多(sql, *a):
+    c = sqlite3.connect(副本)
+    c.row_factory = sqlite3.Row
+    try:
+        return [dict(r) for r in c.execute(sql, a).fetchall()]
     finally:
         c.close()
 
@@ -424,6 +436,23 @@ def 用例表():
                 _a, "已驳回", "冒烟:驳回一次", _m["name"], _m["role"], me=_m),
                 # 驳回是**改**那张审批单的状态,不加行 —— 看它往操作日志里记没记(同 delay_told)
                 "op_log"))
+        _项 = [r["code"] for r in 取多("SELECT code FROM measure_item WHERE status='启用' ORDER BY code LIMIT 2")]
+        if len(_项) == 2:
+            出.append(("save_template", lambda s, _m=_部, _i=",".join(_项): s.save_template(
+                {"name": "冒烟模版" + str(id(s))[-5:], "items": _i}, _m["name"], _m["role"]), "measure_tpl"))
+            # 删模版要一个**没被引用**的 —— 当场新建一个再删。看操作日志(删是减行,行数变化看不出「真删了」,
+            # 而 del_template 删成功一定记一条 DELETE);新建那一步要是没写成,下面 code 取不到、删会返回 NOT_FOUND → 当场红
+            def _建了再删(s, _m=_部, _i=",".join(_项)):
+                名 = "冒烟待删模版" + str(id(s))[-5:]
+                s.save_template({"name": 名, "items": _i}, _m["name"], _m["role"])
+                码 = (s.rows("SELECT code FROM measure_tpl WHERE name=?", 名) or [{"code": ""}])[0]["code"]
+                return s.del_template({"code": 码, "why": "冒烟:建了再删"}, _m["name"], _m["role"])
+            出.append(("del_template", _建了再删, "op_log"))
+        _页 = 取("SELECT p.code FROM page p WHERE (SELECT COUNT(*) FROM page_block b WHERE b.page=p.code) < 10 LIMIT 1") \
+            if 有表("page_block") else None
+        if _页:
+            出.append(("save_block", lambda s, _p=_页["code"], _m=_部: s.save_block(
+                {"act": "add", "page": _p, "kind": "图文", "title": "冒烟区块"}, _m["name"]), "page_block"))
         出.append(("save_activity", lambda s, _m=_部: s.save_activity(
             {"name": "冒烟活动", "kind": "线上", "start_d": "2027-01-01", "end_d": "2027-01-02", "shop": "全渠道"}, _m), "activity"))
         活 = 取("SELECT code FROM activity LIMIT 1")
