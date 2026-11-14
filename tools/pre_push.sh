@@ -76,6 +76,8 @@ if [ "$NOPUSH" = 1 ]; then echo "${Y}⏸ --不推:门禁绿,按要求不推${D}"
 echo "⑤ 推之前再查一次 main 没动"
 git fetch -q origin; rc=$?; [ "$rc" = 0 ] || { echo "${R}❌ 第二次 fetch 失败${D}"; exit 1; }
 if ! contains_main; then echo "${R}❌ 门禁期间 main 动了 —— 回到 ① 重来(merge queue 的串行化)${D}"; exit 2; fi
-git push origin HEAD; rc=$?
+# ⚠️ 推到 main,不是 `HEAD`:在 worktree 的分支上(如 w75)`git push origin HEAD` 会推成远程同名分支,
+#    印「已推送」而主干一笔没动(2026-11-14 第五轮栽过:多出一个 origin/w75,手动 HEAD:main 才进主干)
+git push origin HEAD:main; rc=$?
 if [ "$rc" = 0 ]; then echo "${G}✅ 已推送${D}"; else echo "${R}❌ push rc=$rc${D}"; fi
 exit $rc

@@ -12,6 +12,15 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟢 11-14 14:3x · 已推主干 ed6cef10(Opus 5.5,worktree 工)
+
+- **已验证**:第五轮推送前链咬合 78/78 + 门禁全绿;链印「已推送」其实推成了 origin/w75(pre_push.sh 推的是 `HEAD`),手动 `HEAD:main` 快进进主干(f1e8c979→ed6cef10)。pre_push.sh 已改成推 `HEAD:main`(自测绿)。**origin/w75 这个多出来的远程分支还在,删要问用户。**
+- **CI 连红 7 次(都在 ed6cef10 之前,f1e8c979 起)**:① 「写库评测切库副本」判 `api._c()` 连副本那条不过 ② 「假数据工厂」崩在 `named_state` CHECK 约束 —— 本地都绿,CI 从零才红。已告诉并行会话,分工待定。
+- **接管兜底**:主检出现在才真有(推之前主检出 0 处 记兜底)→ 下一晚夜跑商机套看是不是绿了。
+- **下一步(按序)**:① 打 `.wip-glossary/shrink_get_member.py`(get_member 846→360 + TL83 原样 539 字 + get_aftersale 三参数可单独用;副本试跑过,未跑 prompts_check)→ prompts_check / select_eval 第一层 / vocab_check → `.wip-glossary/align_rules_v9.py` 出后台新版本并切(移动不改字,用户长期授权,做完告诉他;切前告诉并行会话)② g23 放宽补丁 `tools/放宽补丁/g23_告诫小标题_罩列表.py` 已进项目,交用户 `! python3 tools/放宽补丁/g23_告诫小标题_罩列表.py`,跑完补 guards_test 用例 ③ 迁移机制方案 `.wip-glossary/migration_plan.md`(加列清单 alter_inventory.txt;并行会话要推 customer_link / customer_tag 两张表,基线要算进去)。
+- **生产**:后台店长助手 = v11(v9 + TL82),和主干对上。
+- **并行会话接下来推**:customer_link / customer_tag 新表(建 customer_tag 会把 tag.n 重算成 0)、三条新检查、server.py 新写口 + 匿名放行 /api/c/look、/api/c/use。
+
 ### ⏱️ 12 小时长任务清单(11-14 07:45 → 19:45)
 > 用户 11-14 07:2x:「开始下一个12小时的长任务,有什么需要我拍板的吗?」→ 拍板卡 4 条(台账第四十二到四十五条,PRD 2.4.1 要补):
 > ① 门店账 8 行空花费 **先备份再删** ② 澜绣到期清理 **先不开,11-23 前再问**(那时给真清单)③ 顾客证明本人 = **导购发一次性链接**(只能用一次、7 天过期;接顾客追评 + 签收确认)④「本期未实现」按钮 **四组全做**:门店/店铺资料、内容/活动/品类、预约/定向运营、权限编辑(默认只总部管理员能用、每次改动留记录;权限编辑必须挡住给自己提权)。
