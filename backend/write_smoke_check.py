@@ -56,7 +56,7 @@ DONE = []
 
 # 还没有冒烟用例的写接口数。**只许降不许涨** —— 补一个改一次这个数。
 # 定在当前值而不是 0:一次补 17 个不现实,而「等补完再进门禁」的下场是永远补不完。
-欠账上限 = 9    # 11-14 补「本期未实现」按钮四组时顺带补上 save_content 的冒烟,10 → 9(11-14 夜补的 import_customers 原在豁免名单里,不占这个数)
+欠账上限 = 6    # 11-15 夜补系统编码 / 测量项 / 审批驳回三条,9 → 6。 11-14 补「本期未实现」按钮四组时顺带补上 save_content 的冒烟,10 → 9(11-14 夜补的 import_customers 原在豁免名单里,不占这个数)
 
 
 def ck(name, ok, n, msg=""):
@@ -410,6 +410,20 @@ def 用例表():
         出.append(("save_page", lambda s, _m=_部: s.save_page(
             {"name": "冒烟页" + str(id(s))[-4:], "channel": "小程序"}, _m), "page"))
         出.append(("save_category", lambda s, _m=_部: s.save_category({"name": "冒烟品类" + str(id(s))[-3:]}, _m), "category"))
+        # 11-15 夜补三条(欠账 9 → 6):系统编码 / 测量项都是**新建**(行数变得看得见),
+        # 审批走**驳回** —— 「通过」会执行审批内容(改归属、退款…),副本里的连带影响也是影响
+        出.append(("save_syscode", lambda s, _m=_部: s.save_syscode(
+            {"category": "订单来源", "name": "冒烟渠道", "val": "冒烟" + str(id(s))[-5:]},
+            _m["name"], _m["role"]), "sys_code"))
+        出.append(("save_measure_item", lambda s, _m=_部: s.save_measure_item(
+            {"name": "冒烟测量项" + str(id(s))[-5:], "unit": "cm", "required": 0, "sort": 99},
+            _m["name"], _m["role"]), "measure_item"))
+        _批 = 取("SELECT id FROM approval WHERE status='待审批' LIMIT 1") if 有表("approval") else None
+        if _批:
+            出.append(("decide_approval", lambda s, _m=_部, _a=_批["id"]: s.decide_approval(
+                _a, "已驳回", "冒烟:驳回一次", _m["name"], _m["role"], me=_m),
+                # 驳回是**改**那张审批单的状态,不加行 —— 看它往操作日志里记没记(同 delay_told)
+                "op_log"))
         出.append(("save_activity", lambda s, _m=_部: s.save_activity(
             {"name": "冒烟活动", "kind": "线上", "start_d": "2027-01-01", "end_d": "2027-01-02", "shop": "全渠道"}, _m), "activity"))
         活 = 取("SELECT code FROM activity LIMIT 1")
