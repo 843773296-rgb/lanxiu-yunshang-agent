@@ -640,8 +640,19 @@ def _有告诫(text, i):
     if any(w in 句 for w in 告诫): return True
     # **只数非空行**:空行也算进去的话,`rsplit` 会够到更上面那个告诫小标题 ——
     # 「绝不能说的:…」隔了三行之后又真的许了折扣,就会被放过(我自己的反向用例照出来的)
-    前 = [x for x in text[:i].splitlines() if x.strip()][-3:-1]
-    return any(w in x for x in 前 for w in 告诫)
+    行们 = [x for x in text[:i].splitlines() if x.strip()]
+    前 = 行们[-3:-1]
+    if any(w in x for x in 前 for w in 告诫): return True
+    # 放宽(用户 11-14 执行 tools/放宽补丁/g23_告诫小标题_罩列表.py):告诫小标题下面是**连续列表项**时,
+    # 一直罩到列表断为止(最多 12 项)。中间插一行普通文字就断 —— 断开后的列表项照旧严判
+    if not 行们 or not _列表项.match(行们[-1]): return False
+    k, n = len(行们) - 2, 0
+    while k >= 0 and _列表项.match(行们[k]) and n < 12:
+        k -= 1; n += 1
+    return k >= 0 and n < 12 and any(w in 行们[k] for w in 告诫)
+
+
+_列表项 = re.compile(r"^\s*(?:[-*•·]\s|\d+[.．、)）]|[（(]\d+[)）])")   # 符号后面要有空格:「**绝不能说的:**」的星号是加粗不是列表
 
 
 def _小句(text, i, span=40):
