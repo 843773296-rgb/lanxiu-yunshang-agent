@@ -3,7 +3,6 @@
  "怎么还": "把两边的那句话改成**逐字一样**(以判据里那条 ck 的名字为准),再把处数减掉;减到 0 **必须删掉那一行** —— 留着这个检查会红。",
  "登记于": "2026-10-20",
  "欠着的": {
-  "agent/scheme_eval.py": 3,
   "agentsite/guards_test.py": 1,
   "agentsite/tool_eval.py": 1,
   "backend/grading_check.py": 1,

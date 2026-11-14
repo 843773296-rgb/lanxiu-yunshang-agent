@@ -22211,5 +22211,25 @@
    }
   ],
   "预期红": "造数写完 world_meta 之后,**混着日期的列都还登记着**"
+ },
+ {
+  "script": "agent/scheme_eval_judgetest.py",
+  "改坏": "让「编了不存在的方案号」不再判错(编号轴那一支关掉)",
+  "file": [
+   {
+    "path": "agent/scheme_eval.py",
+    "old": "    if 编的:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "该挂"
+ },
+ {
+  "script": "agent/scheme_eval.py",
+  "改坏": "库副本上让每个客户最多一条「已锁定」(其余改成已保存)—— 歧义场景就挑不出样本(单条 / 失效 / 草稿三类不受影响,攻击点最窄)",
+  "sql": [
+   "UPDATE scheme SET status='已保存' WHERE status='已锁定' AND id NOT IN (SELECT MIN(id) FROM scheme WHERE status='已锁定' GROUP BY customer_id)"
+  ],
+  "预期红": "歧义场景:库里没有"
  }
 ]
