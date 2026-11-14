@@ -21673,5 +21673,101 @@
    }
   ],
   "预期红": "全额退款**自己填了别的数** → 拒(金额就是订单额,系统现算)"
+ },
+ {
+  "script": "backend/factory_inbox_check.py",
+  "改坏": "把订单状态机上的工厂回传闸去掉(生产中→已生产不再看有没有回传)",
+  "file": [
+   {
+    "path": "backend/fsm.py",
+    "old": "                and ctx.get(\"kind\",\"定制品订单\")==\"定制品订单\" and ctx.get(\"工厂回传\")!=\"有\":\n",
+    "new": "                and False:\n"
+   }
+  ],
+  "预期红": "后台直接改「生产中→已生产」被拦(只认工厂回传)"
+ },
+ {
+  "script": "backend/factory_inbox_check.py",
+  "改坏": "让接收写口不再回头放行暂存的回传",
+  "file": [
+   {
+    "path": "backend/factory_inbox.py",
+    "old": "    if r[\"结论\"] == \"收下\":\n        _放行暂存(c, oid, 今天, actor)\n",
+    "new": "    if False:\n        _放行暂存(c, oid, 今天, actor)\n"
+   }
+  ],
+  "预期红": "完工到了 → 暂存的质检通过被放行,订单到待发货"
+ },
+ {
+  "script": "backend/factory_inbox_check.py",
+  "改坏": "生产时间记成收到消息的时间,不记工厂报的时间",
+  "file": [
+   {
+    "path": "backend/factory_inbox.py",
+    "old": "                    c.execute(f\"UPDATE ordr SET {col}=? WHERE id=?\", (m[\"at\"], oid)); c.commit()",
+    "new": "                    c.execute(f\"UPDATE ordr SET {col}=? WHERE id=?\", (m[\"received_at\"], oid)); c.commit()"
+   }
+  ],
+  "预期红": "生产时间记的是工厂报的时间"
+ },
+ {
+  "script": "backend/factory_inbox_check.py",
+  "改坏": "接收写口不再把接单方传给口径",
+  "file": [
+   {
+    "path": "backend/factory_inbox.py",
+    "old": "接单方=接[0] if 接 else None,",
+    "new": "接单方=None,"
+   }
+  ],
+  "预期红": "接单的是检查厂,别家报完工 → 挂异常,订单不动"
+ },
+ {
+  "script": "backend/factory_inbox_check.py",
+  "改坏": "人工回退不连带作废已收的回传",
+  "file": [
+   {
+    "path": "backend/factory_inbox.py",
+    "old": "    for i in ids:\n        c.execute(\"UPDATE factory_msg SET void_at=?, void_by=? WHERE msg_id=?\", (_now(), me.get(\"no\"), i))\n",
+    "new": "    for i in []:\n        c.execute(\"UPDATE factory_msg SET void_at=?, void_by=? WHERE msg_id=?\", (_now(), me.get(\"no\"), i))\n"
+   }
+  ],
+  "预期红": "回退后工厂重新报发出 → 收下(不会被当成重复)"
+ },
+ {
+  "script": "backend/factory_inbox_check.py",
+  "改坏": "撤回时顺手把订单状态也退回去",
+  "file": [
+   {
+    "path": "backend/factory_inbox.py",
+    "old": "        c.execute(\"UPDATE pkg SET void_at=?, void_reason='工厂撤回了这条发出回传' WHERE msg_id=?\",\n                  (_now(), 效果[\"作废\"]))\n",
+    "new": "        c.execute(\"UPDATE pkg SET void_at=?, void_reason='工厂撤回了这条发出回传' WHERE msg_id=?\",\n                  (_now(), 效果[\"作废\"]))\n        c.execute(\"UPDATE ordr SET status='待发货' WHERE id=?\", (oid,))\n"
+   }
+  ],
+  "预期红": "工厂撤回一条发出 → 收下,那条作废,**订单状态不自动退**"
+ },
+ {
+  "script": "backend/factory_inbox_check.py",
+  "改坏": "延期后仍按原承诺日判超期",
+  "file": [
+   {
+    "path": "backend/factory_inbox.py",
+    "old": "    if d:\n        新 = c.execute(\"SELECT new_promise FROM factory_delay",
+    "new": "    if False:\n        新 = c.execute(\"SELECT new_promise FROM factory_delay"
+   }
+  ],
+  "预期红": "延期到以后 → 不再算该催"
+ },
+ {
+  "script": "backend/factory_inbox_check.py",
+  "改坏": "查订单只给回传记录,不给算好的进度",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    return {\"进度\": 进度, \"记录\": 记}\n",
+    "new": "    return {\"记录\": 记}\n"
+   }
+  ],
+  "预期红": "查订单带出按今天算好的「离承诺完工日已经过了几天」"
  }
 ]

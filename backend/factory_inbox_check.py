@@ -128,6 +128,10 @@ def 数据(D):
         差 = (_d.date.fromisoformat(今天) - _d.date.fromisoformat(过[1][:10])).days
         进 = (api.get_order(过[0]).get("工厂回传") or {}).get("进度") or {}
         ck("查订单带出按今天算好的「离承诺完工日已经过了几天」", 进.get("离承诺完工日") == f"已经过了 {差} 天", 进)
+    else:
+        # 11-15 夜补:原来这里没有 else —— 库里碰巧没有逾期的生产中单时,**这条判据一声不响地不跑**。
+        # 现在明说;代码对不对改由「活写口」那段在副本上自造一张逾期单来验(那一组永远有样本)。
+        print("  ⏸ 库里现在没有过了承诺完工日的生产中单 —— 这一条在真库上**不适用,不是通过**(副本上自造的那条照验)")
 
     # ── 说明里复述的日期,必须等于同一行的字段 ───────────────────────
     # 2026-09-24 平移演示世界时露出来:两张不同的单,reason 里写着**同一个**完工日,
@@ -244,6 +248,15 @@ def 活写口(T):
                                  AND f.result='收下') LIMIT 1""", (店长["shop"],)).fetchone()
     if 另:
         o2 = 另[0]
+        # ⚠️ 11-15 夜补:**先把这单的原承诺日挪到用例今天之前**(副本上)。
+        # 不挪的话原承诺日本来就在以后,「延期后不再算该催」不管延期生效没有都成立 ——
+        # 咬合「延期后仍按原承诺日判」改坏了却没红,就是这么查出来的。
+        # > 一个真的按新承诺日判的实现,和一个照旧按原承诺日判的,
+        # > **在「原承诺日本来就没过」的那张单上长得一模一样。**
+        c.execute("UPDATE factory_msg SET promise_date='2026-08-25' WHERE order_id=? AND event='接单' "
+                  "AND result='收下'", (o2,)); c.commit()
+        ck("延期之前这单是该催的(原承诺日已过 —— 不然下面「不再算该催」验不出延期生效没有)",
+           o2 in {x["订单"] for x in fi.该催清单(用例今天, 店长["shop"], db=T)})
         r = fi.收(dict(消息号="C10", 订单号=o2, 事件="延期", 时间="2026-08-30 09:00",
                       工厂=c.execute("SELECT factory FROM factory_msg WHERE order_id=? AND event='接单' "
                                     "AND result='收下' LIMIT 1", (o2,)).fetchone()[0],
@@ -274,6 +287,24 @@ def 活写口(T):
         ck("只出去这一条(别的待通知记录不受影响)",
            标前 - 标后 == {did}, f"少了 {sorted(标前 - 标后)}")
         ck("已经标过的再标 → 拒", fi.标记已通知(did, 顾问, db=T).get("code") == "DONE")
+
+    # ── 查订单带出算好的进度(副本上自造样本)──────────────────────────
+    # 11-15 夜补。「数据」那段的同名判据只在真库**碰巧**有逾期单时才跑 ——
+    # > 一条判据,如果它跑不跑取决于库里碰巧有什么,那它不是在验代码。
+    # 这里挑一张有接单回传的生产中定制单,把承诺完工日改到世界今天之前 3 天,再按订单号查。
+    import api as _api, datetime as _d
+    from seed import TODAY as _世界今天
+    _api.DB = T
+    样 = c.execute("""SELECT f.order_id FROM factory_msg f JOIN ordr o ON o.id=f.order_id
+                      WHERE f.event='接单' AND f.result='收下' AND f.void_at IS NULL
+                        AND o.kind='定制品订单' AND o.status='生产中' LIMIT 1""").fetchone()
+    ck("自造逾期单的样本挑得出来(挑不出来就是没验,不是通过)", bool(样))
+    if 样:
+        _诺 = str(_d.date.fromisoformat(_世界今天) - _d.timedelta(days=3))
+        c.execute("UPDATE factory_msg SET promise_date=? WHERE order_id=? AND event='接单' AND result='收下'",
+                  (_诺, 样[0])); c.commit()
+        进 = (_api.get_order(样[0]).get("工厂回传") or {}).get("进度") or {}
+        ck("查订单带出按今天算好的「离承诺完工日已经过了几天」", 进.get("离承诺完工日") == "已经过了 3 天", 进)
     c.close()
 
 

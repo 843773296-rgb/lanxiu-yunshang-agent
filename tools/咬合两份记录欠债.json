@@ -9,7 +9,6 @@
   "agentsite/tool_eval.py": 1,
   "backend/channel_check.py": 1,
   "backend/draft_check.py": 1,
-  "backend/factory_inbox_check.py": 8,
   "backend/grading_check.py": 6,
   "backend/initpath_check.py": 1,
   "backend/muslin_check.py": 2,
