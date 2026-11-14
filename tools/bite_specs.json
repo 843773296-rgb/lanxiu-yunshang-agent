@@ -21236,5 +21236,41 @@
    }
   ],
   "预期红": "带 CHECK 允许值的列:库里只见过一种值,也按 CHECK 认成枚举、三个值都给份额"
+ },
+ {
+  "script": "tools/migration_check.py",
+  "改坏": "把 backend/ops.py 的欠债登记从 5 改成 4 —— 等于 ops.py 里**新多出了一处**迁移目录外的 ALTER TABLE。棘轮必须红,而且红的是「多出了」那一条",
+  "file": [
+   {
+    "path": "tools/migration_check.py",
+    "old": "    \"backend/ops.py\": 5,",
+    "new": "    \"backend/ops.py\": 4,"
+   }
+  ],
+  "预期红": "迁移目录外面多出了 ALTER TABLE"
+ },
+ {
+  "script": "tools/migration_check.py",
+  "改坏": "把 backend/ops.py 的欠债登记从 5 改成 6 —— 囤着的豁免(实际 5 处、登记 6 处)和真欠着的在绿勾上长得一样,反向检查必须红",
+  "file": [
+   {
+    "path": "tools/migration_check.py",
+    "old": "    \"backend/ops.py\": 5,",
+    "new": "    \"backend/ops.py\": 6,"
+   }
+  ],
+  "预期红": "有欠债已经还了却没改登记"
+ },
+ {
+  "script": "tools/migration_check.py",
+  "改坏": "在第 1 条迁移文件末尾加一行注释 —— **做过的迁移被改了**:老库不会重跑、新库跑改过的版本,两个库悄悄分叉;库上记的指纹对不上必须红",
+  "file": [
+   {
+    "path": "backend/migrations/m0001_运行时加列收拢.py",
+    "old": "            f(c)\n",
+    "new": "            f(c)\n# 改过\n"
+   }
+  ],
+  "预期红": "库没做到最新"
  }
 ]

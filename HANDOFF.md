@@ -12,6 +12,16 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟢 11-14 19:2x · 已推 d7b9596d,后台生产 v13(Opus 5.5)
+
+- **已验证**:第七轮链咬合 51/51 + 门禁全绿;⑤ 第二次 fetch 网络失败 → 核 main 没动、HEAD 就是验过的 d7b9596d → 手动 `push HEAD:main`。CI 已绿(并行会话 857f805e 修了两条)。后台生产 v11→v13(= v11 + TL83,逐列只差规矩),assistant_effect 绿。funnel.jsonl 已放回。已告诉并行会话可以跑门禁 / 推。
+- **等用户**:① `! python3 tools/放宽补丁/g23_告诫小标题_罩列表.py`(放宽,跑完补 guards_test 用例)② origin/w75 多余远程分支删不删。
+- **未验证**:接管兜底今晚夜跑商机套(主检出现在才有 记兜底);get_member 缩说明没跑模型评测。
+- **④ 迁移机制第一步(19:3x–20:xx,本地提交,未推)**:backend/migrate.py(schema_version 表 + 按编号补齐 + 每条一个事务 + 做过的文件指纹对账)+ backend/migrations/m0001(原样调用 7 个纯补列函数,缺表跳过)+ tools/migration_check.py(迁移目录外 ALTER TABLE 棘轮 47 处 / 25 文件、反向、编号连续、真跑 --自测、库做到最新;副本里没 .git 时退回 os.walk)进 check.sh;rebuild.sh 在 ensure_tables 后跑 migrate;ensure_tables 登记 schema_version;db_build 指纹收进迁移目录;shift_world 登记 applied_at 不挪;咬合 3 条(--only 3/3)。**共享库已建 schema_version 并做到第 1 条**(锁内,并行会话 19:3x 放行)→ 表数 135→136,五份文档 11 处已改。
+  - **判据**:建表归 ensure_tables、加列归迁移;m0001 不抄列清单是为了不出第二份(原函数仍在原处被调,双保险)。**做过的迁移不许改**:要改结构就新加一条。
+  - **没做(下一步)**:服务启动时跑补齐(要改 server.py / aimc 启动 + 重启,先约并行会话);各模块 `建表(c)` 里顺带加列的 + 重建流水线一次性脚本还在原处(欠债里)。
+- **下一步**:推 ④ → ③ 剩 13 个长说明(每个:动 api.py 前喊并行会话 → 缩 → prompts_check / select_eval(用 agentsite/.venv/bin/python)/ vocab → 文档规矩数 + gen_doc_lists --写 + make_sop + make_readme → 推上去后 align_rules_v9.py 出版本、喊并行会话、--切)。**教训:后台切版本要在推送链跑之前,但并行会话门禁会红,所以先约窗口。**
+
 ### 🔴 11-14 17:1x · 第六轮推送前链红,等并行会话推完再切后台(Opus 5.5)
 
 - **状态**:本地领先 origin/main 8 笔(pre_push 推 HEAD:main / g23 补丁 / get_member 缩 + TL83 / 文档跟上 219bc9ac / 交接)。第六轮 16:56 门禁红 5 条:4 条(规矩数 103→104、工具表、SOP+README、补丁全角点)已修提交;**剩 assistant_effect「TL83 只在聊天站」** → 要后台出 v12 = v11 + TL83 并切生产。

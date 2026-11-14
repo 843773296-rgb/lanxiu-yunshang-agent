@@ -172,6 +172,12 @@ def 造数文件():
     for n in (os.listdir(kd) if os.path.isdir(kd) else []):
         if n.endswith(".md"):
             文.add(f"knowledge/{n}")
+    # 11-14:迁移文件是 migrate.py 用 importlib 按目录载入的,沿 import 走不到 —— 但它们改的是库结构,
+    # 重建时 migrate.py 会跑它们,所以整个迁移目录算进来(漏算的话改一条迁移指纹不动,正是这份文档开头那种「漏算」)
+    md = os.path.join(ROOT, "backend", "migrations")
+    for n in (os.listdir(md) if os.path.isdir(md) else []):
+        if n.endswith(".py"):
+            文.add(f"backend/migrations/{n}")
     return sorted(x for x in 文 if os.path.isfile(os.path.join(ROOT, x)))
 
 

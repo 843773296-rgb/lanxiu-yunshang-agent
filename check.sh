@@ -782,6 +782,7 @@ run "中文否定与子串(十次踩过的坑;含全角标点那四条 —— �
 run "标点不变量派生器 · 咬合(全角化只动中文句子 / 判定返回 bool 要拒收 / 样本量 0 算不过 / 截断说总数)" python3 agent/punct_invariant.py
 run "判分器对照接上标点不变量了没(棘轮:已接的不许变少;还剩几份要看得见;只 import 不调不算接)" python3 tools/punct_coverage_check.py
 run "正则字符集里有半角标点却缺对应全角(NFKC 反查派生,该要求哪些全角由本仓数据决定;棘轮:只许少不许多)" python3 tools/charset_fullwidth_check.py
+run "库结构迁移 · 加列走 backend/migrations/、散落的 ALTER TABLE 只许少不许多、做过的迁移不许改、库做到最新(用户 11-14 清单第四条)" python3 tools/migration_check.py
 run "罕见层时效闸 · 咬合(天数算得对 / 认不出的格式不许当成刚跑过 / 刚跑过的不许报过期)" python3 tools/rare_tier_freshness_check.py --自测
 run "罕见层(长尾)多久没跑了 —— 超 14 天红(用户 11-11 拍;题面依赖当时的库状态,很久不跑就测不到东西了)" python3 tools/rare_tier_freshness_check.py
 run "封存题 · 咬合(三态:认得出 / 不适用 / 读不了 —— 合成两态会拿 12 个无关文件去红,或者把「没验过」读成干净)" python3 tools/sealed_tier_check.py --自测

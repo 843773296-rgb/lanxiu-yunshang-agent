@@ -56,6 +56,7 @@ import report_template
 import ownership_release   # 公海知会清单的每户记录(11-14)
 import customer_link       # 顾客一次性链接(11-14,台账第四十四条)
 import tag_level_write     # 客户标签绑定(11-14,台账第四十九条)
+import migrate             # 库结构迁移的版本表(2026-11-14,清单第 ④ 条)
 import query_index          # 为真实查询加的索引(2026-10-24,只读审计第 4 条)
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
@@ -136,6 +137,9 @@ import query_index          # 为真实查询加的索引(2026-10-24,只读审�
     # ⚠️ 而 `why` 是**人当时写下的原话**,里面的日期不许挪 —— 已登记进
     # `shift_world` 的「文字里不挪」(同 skill_cfg_log.why)。
     (grade_diff, "确保表", ["grade_diff_check"]),
+    # 库结构迁移做到第几条(2026-11-14):`backend/migrate.py` 补齐时建、重建流水线紧跟这一步跑补齐 ——
+    # 在这里建死是因为表数对账:不建的话「跑没跑过迁移」会让表数漂。applied_at 是**机器的真实时间**(不是世界的钟,不平移)
+    (migrate, "建表", ["schema_version"]),
 ]
 
 
