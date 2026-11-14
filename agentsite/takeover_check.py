@@ -28,6 +28,8 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
      "兜底之后同一技能在窗口内当没接管"),
     ("把 `接管中()` 里 `if 在兜底中(技能): return None` 删掉(兜底只剩返回值那一半)",
      "兜底之后同一技能在窗口内当没接管"),
+    ("把 `发起()` 里 403 没权限那支删掉(权限拦下的也被技能绕过去做了)",
+     "明确拒绝(403 没权限)不兜底"),
 ]
 
 
@@ -106,6 +108,20 @@ def main():
         tc.记兜底("call-notes", 现在=_t.time() - tc.兜底窗口秒 - 1)
         ck("兜底窗口过了(15 分钟)又回到接管 —— 工作流修好之后不会一直绕着它走",
            (tc.接管中("call-notes") or {}).get("workflow_id") == "wf_1", tc.接管中("call-notes"))
+        # ── 明确拒绝不兜底(用户 2026-11-14 拍):真调 发起(),只把 _curl 换成回后台真回过的那几种 ──
+        原curl = tc._curl
+        try:
+            tc._兜底文件 = os.path.join(d, "fallback2.json")
+            tc._curl = lambda *a, **k: ("403", {"code": "FORBIDDEN", "message": "绑定的账号没有发起权限"})
+            ok, 回 = tc.发起("quote", "60000005", {}, "k3")
+            ck("明确拒绝(403 没权限)不兜底:不交还、不落盘,告诉用户找管理员开权限",
+               not ok and 回.get("兜底") is not True and 回.get("交还") is False and tc.在兜底中("quote") is False
+               and "管理员" in 回.get("说明", ""), 回)
+            tc._curl = lambda *a, **k: ("409", {"code": "NOT_BOUND", "message": "没绑定账号"})
+            ok, 回 = tc.发起("quote", "60000005", {}, "k4")
+            ck("没配好(409 没绑定)照旧兜底 —— 收窄只收 403 那一种", 回.get("兜底") is True and tc.在兜底中("quote"), 回)
+        finally:
+            tc._curl = 原curl
         tc._兜底文件 = 旧兜底
         for k in 旧环境:
             os.environ.pop(k, None)

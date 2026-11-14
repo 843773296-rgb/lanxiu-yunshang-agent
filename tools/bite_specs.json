@@ -21068,5 +21068,17 @@
    }
   ],
   "预期红": "兜底之后同一技能在窗口内当没接管"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "把 `发起()` 里 403 没权限那支删掉(权限拦下的也被技能绕过去做了)",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "    if 码 == \"403\" or 码文 == \"FORBIDDEN\":\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "明确拒绝(403 没权限)不兜底"
  }
 ]
