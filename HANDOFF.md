@@ -72,8 +72,8 @@
 10. [x] ✅ 已推 77c78249(15:3x):backend/tag_level_write.py(新表 customer_tag + 新建标签 / 打标签 / 新增等级先停用且门槛单调 / 手动合并只同户同名)+ 系统设置入口页 + 新建退款接退押金两人复核 + 页面六处;tag_level_check.py(进 check.sh)+ 咬合 3;登记:ensure_tables / db_build / worldclock.已发生的时间列(customer_tag.created_at)。⚠️ 建表时 tag.n 会按真实绑定重算 → 共享库里那些造出来的「已绑定 35 人」会变 0(诚实,PRD 要写)。已知缺口:merge.并入 执行那一步不核同一账户(加了会让 merge_check 23 条样本红,没硬改,只在手动发起那头拦)。原:剩下 5 处按钮(㊾):标签配置 / 新建标签、新增等级(主数据,照四组规矩:只总部、留记录);新建退款 / 手动合并 **走现成审批流**(退款两人复核、合并店长发起 → 总部审批),不另开直通写口;系统设置 = 系统类页面的入口
 11. [x] ✅ 已推 77c78249(15:3x):商品菜单加「裁片用料」页 —— GET /api/pieces、GET /api/pattern-rules(三张口径表只读)、POST /api/piece-ratio(with backend.as_user(登录人) 调现成的 api.set_piece_ratio,**只版师**,沿用原规矩 —— 我默认表里写过「版师和总部都能改」,以原规矩为准,汇报时要说);增删裁片不做(裁片是从知识库推导的,页面增删会和推导打架);检查:page_buttons_check ⑥ + tag_level_check ⑤。版师数据增删改查(51;11:2x 第四张卡细化:**裁片占比做维护页**(版师 + 总部能改、留记录、来源照实写);**三张表(童装档差 / 门幅 / 特体修版量)照生命周期** —— 留在 knowledge 口径里,页面只读展示 + 标「行业规范推算」,改要走评审)。原:版师数据增删改查(51):三张表 + 391 片用料占比,行业推算值转正式口径(来源字段照实写),维护页 + 写口 + 留记录
 12. [x] ✅ 已推 77c78249(两版对比 + 判分器修正;用户拍先不开)**13:0x 真跑完**(example-counter-ab-results.jsonl 末行):关 10/10、8/10(2 道交付前检查扣下没答成);开 9/10、9/10;照抄示例根因 0。开示例挂的两道:CX-08 判分器要「免费改」字样(模型判对我方 + 记录缺失,写的是改腰 / 返修)、CX-12 **我自编的标签有歧义**(缩水 + 告知过洗护 → 模型判洗护不当客方,返修判定表第 9 行也成立)。结论:题太容易(不带示例就近满分),测不出有没有用;能确定不退步、不照抄。**用户 13:0x 拍(台账第五十三条):先不开,下一版出难题再测。** **13:2x 第五张卡(台账第五十四条):退款「超时且实际未退」判定 = 说清没退 + 带防护地重发** → agent/eval.py 新一支 + eval_hit_judgetest 5 条对照 + 咬合 1;案例清单加 D9921–D9923(照 D2000–D2002 克隆、只删成功出账),缩水两题换成染色不均 / 洗后褪色(换的是题,不是答案);第二版 13:4x 跑完:原判 关 10/12 · 11/12、开 10/12 · 10/12 —— 退款两题 8 次里大半是**判分器认不出对的说法**(不是模型错);修判分器(只改认说法、口径不动)+ 钉 6 条真跑原话(对照 32 条全过),同一批原文重判 关 11/12 · 12/12、开 10/12 · 12/12,照抄 0;结论不变(测不出有用),「先不开」不用改。重判记录已追加到 results.jsonl(写明不是重跑)。PRD A-302 已记。本批还要 git add:无新文件(eval.py / eval_hit_judgetest.py 是改动)。 CX-12 / CX-15(缩水)下一版要换掉 —— **不能看了模型答案再改标签**,记成发现。(12:3x)案例清单 agent/example-counter-cases.json(15 条,全是售后判责 BP-03:尺寸需调整 超公差 / 公差内 / 记录不全 各 3,特性问题 已告知 / 未告知 各 3;每类 1 进示例池;CX-08 尺寸差和 CX-02 一模一样但真因是记录不全,CX-14 起球和 CX-10 一样但未告知)+ agent/example_counter_ab.py(evaldb.用副本 → 副本里克隆模板维修单 / 工单 + 插标注 → 进程里把示例池并上反例 → 开 / 关各 N 轮,结果追加 example-counter-ab-results.jsonl)。空跑过:真库 maintain 无 CX-、truth 仍 90 条。**真跑在后台**(b1js6azrt,输出 scratchpad/excounter.out,模型 Haiku 4.5 = 研判默认 / 一期 / 夜跑同一个)。退款 / 合并两类反例要新根因 → 新判定规则 → 先摆选型卡,这轮没做。原:研判示例库(52):自己按业务口径准备「表面一样、根因不同」的案例(来源照实标「项目方按业务口径整理」,不冒充业务)+ 维护能力;再按方案第 10 节测一轮看有没有用
-15. [x] ✅(15:5x 修完,门禁环境复现修前红 / 修后绿,待推)evaldb 跳过守卫模块和下划线变量(顺带堵住 ops._本库 被改指副本 → 评测里会把副本当真库往外上报)+ 自测 3 条守卫断言 + 咬合 1、锚点 1 处跟上;fakedata 反射时解析 CHECK(col IN …),discover 以它为准 + 回归 1 条 + 咬合 1。原:**CI 连红 7 次的两条老红归我**(eureka-fc 15:0x 只读查清、我认了;第二批推完再修,链跑着不改工作区):① agent/evaldb.py:40-45「指真库的变量一律改指副本」把 tools/gate_db/sitecustomize.py 的 _真 / _真实 也改了(只在 Linux 红,macOS /var 软链躲过)→ 循环跳过 sitecustomize / check_copy 模块和下划线变量 + 自测加「sitecustomize._真实 不变」下限断言,在非软链 TMPDIR 下复现 / 验 ② fakedata 崩在 appointment.named_state CHECK(CI 从零建库这列只有「不详」一个值 → discover.py:353 不足 2 值不判枚举 → 造乱字;schema.py:107 遇 CHECK 跳过)→ schema.py 解析 CHECK(col IN (...)) 交给 discover 当选项。修完单独一笔推,先告诉 eureka-fc
-14. [ ] 19:45 白天汇总发飞书:草稿 澜绣云裳agent-白天汇总-20261114.md 已起(13:2x),「待补」处补推送结果和示例库第二版结果 → feishu_publish → 回读 → 提交 → CronDelete 32071ca5
+15. [x] ✅ 已推 857f805e(17:2x;GitHub CI 43579683367 **18:2x 转绿**(11-12 以来第一次);之前 5287f9e9 那轮红的仍是这两条老红,没新的)evaldb 跳过守卫模块和下划线变量(顺带堵住 ops._本库 被改指副本 → 评测里会把副本当真库往外上报)+ 自测 3 条守卫断言 + 咬合 1、锚点 1 处跟上;fakedata 反射时解析 CHECK(col IN …),discover 以它为准 + 回归 1 条 + 咬合 1。原:**CI 连红 7 次的两条老红归我**(eureka-fc 15:0x 只读查清、我认了;第二批推完再修,链跑着不改工作区):① agent/evaldb.py:40-45「指真库的变量一律改指副本」把 tools/gate_db/sitecustomize.py 的 _真 / _真实 也改了(只在 Linux 红,macOS /var 软链躲过)→ 循环跳过 sitecustomize / check_copy 模块和下划线变量 + 自测加「sitecustomize._真实 不变」下限断言,在非软链 TMPDIR 下复现 / 验 ② fakedata 崩在 appointment.named_state CHECK(CI 从零建库这列只有「不详」一个值 → discover.py:353 不足 2 值不判枚举 → 造乱字;schema.py:107 遇 CHECK 跳过)→ schema.py 解析 CHECK(col IN (...)) 交给 discover 当选项。修完单独一笔推,先告诉 eureka-fc
+14. [x] ✅ 19:2x 用户说「现在发」→ 已发飞书并回读(https://aqvi2xbk5kd.feishu.cn/docx/Q28vdRCDio2gGJx5RegcRFc9nng;推送 / CI 转绿 / 示例库两版都在,无「待补」);**本地提交未推** —— eureka-fc 19:3x 要在共享库建 schema_version(表数 136),它推上去之前我不跑门禁,汇总 + 交接随下一笔推。每小时提醒 32071ca5、19:46 一次性提醒 55217937 已删。原:19:45 白天汇总发飞书:草稿 澜绣云裳agent-白天汇总-20261114.md 已起(13:2x),「待补」处补推送结果和示例库第二版结果 → feishu_publish → 回读 → 提交 → CronDelete 32071ca5
 13. [x] ✅(未提交,随下一批)只有 capability-request-verdict 真错(写着等用户拍,实际 11-11 已拍 ② 并落地)→ 改「进行中」等下一轮 ops;另三条「进行中」各有明写理由(等真跑 / 规矩持续照办),故意不动。原:intent 状态核对改正:capability-request-verdict / 算法选型卡 / 全量门禁 rebase / 罕见层方法(四条疑已做完)
 > **11-14 08:4x 第二张拍板卡(台账第四十六到四十八条,PRD 2.4.2 要补)**:㊻ 生命周期「添加档位 / 设为默认」**不做成页面可改**,按钮换成说明(改档走评审 + 改知识库口径 + 重对真值)㊼ 定向运营 = **给这一档选中的客户批量建跟进任务**、分给各自归属导购、要填目的、内部任务不联系客户、一次最多 200 人、只总部发起 ㊽ 编辑预约 **和新建预约同一套权限**(门店的人改本店的),只改时间和顾问,规则同新建(rules.validate_appointment),已到店 / 完成 / 取消的不能改,留记录。
 > **11-14 11:1x 第三张拍板卡(台账第四十九到五十二条,PRD 2.4.2 要补)**:㊾ 剩下 5 处「本期未实现」**全做**:新建退款 / 手动合并 / 标签配置 + 新建标签 / 新增等级 / 系统设置 ㊿ 昨晚工具评测 18/24 **先不管**(等下次夜跑)(51)版型三张表 + 391 片裁片用料占比:**行业推算值就是正式口径**,要做**增删改查**的维护能力,以后有需要再改(52)研判示例库:**「你就是业务」—— 我自己准备「表面一样、根因不同」的案例**,保留以后编辑 / 添加的能力。
@@ -85,6 +85,13 @@
 **进度(11-14 10:3x)**:✅ 10:2x 已推 ef8d2285 / bc317549 / f1e8c979(全量门禁 rc=0、PUSHED);已通知 eureka-fc rebase。它要跑约 2 小时的链,期间它的 ⑤(导规矩 / 切生产指针)写后台库前会喊我。
 **⛔ 延长到 ~15:10(eureka-fc 12:5x 第五轮推送前链;12:45 那轮红在 bite_run 副本里找不到主检出记录仪,已修 ed6cef10)—— 我回了「不用让路、等你推」。原:11-14 10:4x 起约 2 小时(到 eureka-fc 喊「推完」为止):它切了店长助手生产指针(v9 + TL82)、在跑推送链 —— **我不跑全量门禁、不建表、不重启服务、不推**。这期间我门禁的 assistant_effect_check 会红在「挑出的规矩」(后台多 TL82),是它造成的、预期。⚠️ backend/customer_link.py 的 发 / 看 / 用 **一调就 CREATE TABLE IF NOT EXISTS** —— 只许在把 customer_link.DB 指到副本的检查里调,别在 python 里对真库直接试。
 **下一步:第 8 项顾客一次性链接** —— 要建新表:**代码可以先写、只在库副本上验;在 eureka-fc 那条链跑完之前,不重启服务、不跑全量门禁、不推**(ensure_tables 一跑就会在共享库建出表,它的门禁会红在没碰过的地方)。建表那一笔同批登:ensure_tables / shop_key(有 shop 列时)/ 文档表数 133→134 / db_build 算或不算 / make_readme / bite 锚点 / shift_world(有日期列)/ table_origin。
+
+**交接(11-14 16:1x,压缩前)**
+- **已推**:ef8d2285 / bc317549 / f1e8c979(上午)、77c78249 / 5f01393c / 5287f9e9(15:3x)。**本地待推**:b3cc8694(CI 两条老红修复)。
+- ✅ 17:2x 已推 857f805e。**eureka-fc 现在切店长助手 v12(TL83)→ 推;它推上去之前我不跑门禁、不推**(切完那段主干 assistant_effect 会红在 TL83)。白天汇总 19:45 发飞书、本地提交,等它推完再推。原:后台 byt7gqlsc 在排队等锁跑 chain_B(scratchpad/chain_ci.txt;eureka-fc 15:4x 起推送前链、逐条咬合重放一直占锁)。它推完我这条链多半退出码 7「远程有新提交」→ `git pull --rebase --autostash` → 重跑 chain_B → 只认 PUSHED。
+- **之后**:19:45 前白天汇总定稿(澜绣云裳agent-白天汇总-20261114.md:把「二、等推送窗口」改成已推、补示例库第二版重判结果、补 CI 两条修复)→ feishu_publish → 回读 → 提交 → CronDelete 32071ca5。
+- **判据 / 未验证**:CI 两条修复只在本机照门禁环境复现过(挂 gate_db + 非软链 TMPDIR),**没在 Linux CI 上看到绿** —— 推完看下一次 CI。合并执行处不核同一账户(已知缺口,PRD 写了)。新页面没在真浏览器点过。
+- **禁区**:eureka-fc 的 pre_push.sh、api.py 工具描述区、prompts.py TL 段;它推完要切店长助手生产(TL83),切之前会喊我。
 
 **推送脚本已备好(14:1x)**:scratchpad/push_A.sh(锁内:建两张表 + 文档表数点名)→ 锁外照点名改「133 张」为 135 → scratchpad/push_B.sh(锁内:咬合重放 5 组 + boundary_audit --md 直接写文件 + make_readme;只认 bite_total_rc=0 和 boundary_audit rc=0)→ git add 新文件 → scan_secrets → commit --only → chain_B.sh。
 
@@ -2775,13 +2782,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 14:40。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-14 16:13。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 77c78249 · 2026-11-14 · 顾客一次性链接 + 剩下 5 处按钮 + 裁片用料维护页 + 研判示例库反例两版(11-14 台账第四十四、四十九到五十四条) |
-| 代码量 | 1110 个 Python 文件 / 204230 行(不含 .venv) |
+| 最新提交 | b3cc8694 · 2026-11-14 · 修 CI 连红 7 次的两条老红(都是我 11-13 那两笔带进来的;eureka-fc 只读查清):评测切库改了守卫的参照物 / 造数不认 CHECK 允许值 |
+| 代码量 | 1110 个 Python 文件 / 204323 行(不含 .venv) |
 | 验收 | `./check.sh` 共 421 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
@@ -2789,17 +2796,9 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 
 ```
 M .feynman/tool-eval.json
- M README.md
+ M HANDOFF.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M backend/boundary_audit.py
- M backend/customer_link_check.py
- M tools/bite_specs.json
- M tools/publish_prd.py
- M tools/publish_product_doc.py
- M "\345\256\211\345\205\250\350\276\271\347\225\214\345\256\241\350\256\241.md"
- M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\350\257\264\346\230\216.md"
- M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
@@ -2808,17 +2807,25 @@ M .feynman/tool-eval.json
 ?? .feynman/backup-launchd.log
 ?? .feynman/health/
 ?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? .feynman/world-shift-launchd.log
+?? .wip-glossary/
+?? .wip-muslin/
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+b3cc8694 修 CI 连红 7 次的两条老红(都是我 11-13 那两笔带进来的;eureka-fc 只读查清):评测切库改了守卫的参照物 / 造数不认 CHECK 允许值
+5287f9e9 第二批跟上门禁:匿名放行上限 3→5(顾客链接两条)、三个读口登记、真实时钟当场注明、示例对比加不撞号的闸、字符集全角、交接归档
+5f01393c 两张新表进共享库后跟上:文档表数 133→135、边界审计 64→65;「先占位」的咬合原来打不到 —— 改造出同时点的形状
 77c78249 顾客一次性链接 + 剩下 5 处按钮 + 裁片用料维护页 + 研判示例库反例两版(11-14 台账第四十四、四十九到五十四条)
 ed6cef10 推送前链第四轮红在模型对齐检查的咬合对照:副本不带 .git,找不到主检出的记录仪
-93e996e6 交接:后台已切 v11(v9 + TL82),第四轮推送前链;影响面棘轮 警示段落 391→393(自动涨,按它的提示提交)
-60499c1f 交接 + 待办清单:rebase 到并行会话 f1e8c979 后按约定重建(瘦身版为准,对方新节搬顶部);待办清单重生成
-675584d4 接管兜底收窄(用户 11-14 拍「只在没配好时兜底,明确拒绝的照旧拦」):403 没权限不兜
 ```
 <!--/AUTO-->
 ## 一句话在做什么
