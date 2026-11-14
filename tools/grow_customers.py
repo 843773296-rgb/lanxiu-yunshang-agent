@@ -173,7 +173,7 @@ def main():
         def consent(wid, scope, by, rel, at):
             nonlocal n_cs
             n_cs += 1
-            c.execute("INSERT INTO consent VALUES(?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO consent(id,wearer_id,scope,granted_by,relation,channel,granted_at,revoked_at) VALUES(?,?,?,?,?,?,?,?)",
                       (f"CS5{n_cs:05d}", wid, scope, by, rel, rng.choice(["门店纸质", "电子签"]), at, None))
 
         def measure(cid, wid, g, start, every, offset, shop, items_tpl=None, kid_h=None):
@@ -235,7 +235,7 @@ def main():
                 algo = f"pbkdf2_sha256${PWD_ITER}"
                 stats["账户带密码"] += 1
             wself = f"W{30000 + i}-0"
-            c.execute("INSERT INTO account VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO account(id,phone,login_name,pwd_algo,pwd_salt,pwd_hash,status,created,last_login,display_name,contact_pref,default_addr,home_shop,self_wearer_id,tos_version,privacy_version,marketing_consent,closed_at,purge_at,fail_count,locked_until) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (aid, ph, login, algo, salt, h, "正常", created.isoformat(),
                        last.isoformat() if rng.random() < 0.7 else None, nm,
                        rng.choice(["微信", "电话", "短信"]), addr, shop, wself,
@@ -244,7 +244,7 @@ def main():
                        1 if rng.random() < 0.65 else 0, None, None, 0, None))
             # 本人
             off = {it: rng.gauss(0, 3) for it in IDEAL[g]}
-            c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO wearer(id,customer_id,account_id,name,gender,birthday,relation,phone,parent_a,parent_b,height,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (wself, cid, aid, nm, g, bd.isoformat(), "本人", ph, None, None,
                        round(IDEAL[g]["MI01"] + off["MI01"], 1), "在用", created.isoformat()))
             stats["着装人"] += 1
@@ -260,7 +260,7 @@ def main():
                 spn = nm[0] + ("先生" if sg == "男" else "女士")
                 sbd = dt.date(bd.year + rng.randrange(-3, 4), rng.randrange(1, 13), rng.randrange(1, 29))
                 soff = {it: rng.gauss(0, 3) for it in IDEAL[sg]}
-                c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                c.execute("INSERT INTO wearer(id,customer_id,account_id,name,gender,birthday,relation,phone,parent_a,parent_b,height,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                           (wsp, cid, aid, spn, sg, sbd.isoformat(), "配偶", phone(), None, None,
                            round(IDEAL[sg]["MI01"] + soff["MI01"], 1), "在用", created.isoformat()))
                 stats["着装人"] += 1
@@ -277,7 +277,7 @@ def main():
                     wk = f"W{30000 + i}-2"
                     kn = nm[0] + rng.choice(KID_F if kg == "女" else KID_M)
                     pa, pb = (wself, wsp) if g == "男" else (wsp, wself)
-                    c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    c.execute("INSERT INTO wearer(id,customer_id,account_id,name,gender,birthday,relation,phone,parent_a,parent_b,height,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                               (wk, cid, aid, kn, kg, kbd.isoformat(), "女" if kg == "女" else "子",
                                None, pa, pb, None, "在用", created.isoformat()))
                     stats["着装人"] += 1

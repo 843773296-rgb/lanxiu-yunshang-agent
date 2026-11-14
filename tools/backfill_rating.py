@@ -562,7 +562,7 @@ def 铺(db=DB, 说=print):
     # 改顺序能修这一次,但**防不住下一个人再挪回来**,所以把「造数时的世界日期」记下来,
     # 由 `backend/rating_check.py` 断言它和现在的世界日期一致。
     c.execute("CREATE TABLE IF NOT EXISTS world_meta(k TEXT PRIMARY KEY, v TEXT)")
-    c.execute("INSERT OR REPLACE INTO world_meta VALUES('rating_built_on',?)", (今s,))
+    c.execute("INSERT OR REPLACE INTO world_meta(k,v) VALUES('rating_built_on',?)", (今s,))
     # 2026-11-03:**这批数据按哪三个月造的趋势**,另记一个键。rating_built_on 会跟着世界平移,
     # 拿它当守卫永远为真;这个键在 shift_world.world_meta里不挪的键 里登记了不挪(见那里的事故说明)
     c.execute("INSERT OR REPLACE INTO world_meta(k, v) VALUES('rating_window',?)", (窗口串(月目标),))

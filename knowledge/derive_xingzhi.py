@@ -115,7 +115,7 @@ def main():
         src_type TEXT)""")
     c.execute("DELETE FROM xingzhi")
     for code, name, alias, sizes, src in rows:
-        c.execute("INSERT INTO xingzhi VALUES(?,?,?,?,?)",
+        c.execute("INSERT INTO xingzhi(code,name,alias,key_sizes,src_type) VALUES(?,?,?,?,?)",
                   (code, name, alias, "、".join(sizes) or None, src))
     # **两个投影要一起刷新。** `craft`(cat='形制')和 `xingzhi` 都从这份 md 派生,
     # 但只有 `xingzhi` 能被这个脚本单独重建 —— `craft` 是整库 seed 的时候写的。

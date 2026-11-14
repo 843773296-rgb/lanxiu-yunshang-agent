@@ -69,29 +69,17 @@
    "person": 1,
    "shop": 1
   },
-  "knowledge/derive_xingzhi.py": {
-   "xingzhi": 1
-  },
   "tools/backfill_rating.py": {
    "customer": 1,
    "ordr": 1,
    "pickup_item": 1,
-   "pkg": 1,
-   "world_meta": 1
+   "pkg": 1
   },
   "tools/clamp_future_done.py": {
    "factory_msg": 2,
    "ordr": 4,
    "pickup": 1,
    "pickup_item": 1
-  },
-  "tools/grow_customers.py": {
-   "account": 1,
-   "consent": 1,
-   "wearer": 3
-  },
-  "tools/order_mix.py": {
-   "order_mix_batch": 1
   },
   "tools/shift_world.py": {
    "color_family": 1,
@@ -100,10 +88,6 @@
    "ordr": 2,
    "world_meta": 4,
    "新表": 1
-  },
-  "tools/simulate_sales.py": {
-   "sim_batch": 1,
-   "sim_batch_sku": 1
   }
  }
 }

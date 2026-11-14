@@ -369,7 +369,7 @@ def _manifest(c):
 
 
 def _记(c, what, key, payload=None):
-    c.execute("INSERT INTO order_mix_batch VALUES(?,?,?,?)",
+    c.execute("INSERT INTO order_mix_batch(what,key,payload,batch) VALUES(?,?,?,?)",
               (what, str(key), json.dumps(payload, ensure_ascii=False) if payload is not None
                else None, BATCH))
 

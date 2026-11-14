@@ -510,13 +510,13 @@ def write(c, orders, logs, final, skus):
                          VALUES(?,?,?,'标品',?,?,?,?,0,?,?,?)""",
                       (o["id"], i["sku"], i["name"], i["price"], i["qty"], i["spu"], i["base"],
                        i["base"], i["pv"], src_note if i["pv"] is not None else None))
-        c.execute("INSERT INTO sim_batch VALUES(?,?)", (o["id"], BATCH))
+        c.execute("INSERT INTO sim_batch(order_id,batch) VALUES(?,?)", (o["id"], BATCH))
     logs.sort(key=lambda r: r["ts"])
     c.executemany("""INSERT INTO stock_log(sku,spu,kind,delta,before_n,after_n,ref,operator,ts,note)
                      VALUES(:sku,:spu,:kind,:delta,:before_n,:after_n,:ref,:operator,:ts,:note)""", logs)
     for code, (stock, locked) in final.items():
         b = before[code]
-        c.execute("INSERT INTO sim_batch_sku VALUES(?,?,?,?)", (code, BATCH, b[0], b[1]))
+        c.execute("INSERT INTO sim_batch_sku(sku,batch,stock_before,locked_before) VALUES(?,?,?,?)", (code, BATCH, b[0], b[1]))
         c.execute("UPDATE sku SET stock=?, locked=? WHERE code=?", (stock, locked, code))
 
 
