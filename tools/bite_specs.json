@@ -21769,5 +21769,49 @@
    }
   ],
   "预期红": "查订单带出按今天算好的「离承诺完工日已经过了几天」"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "把 pattern_queue「建议先核」里的「影响」那一栏拿掉",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "                          影响=f\"挂 {r['商品数']} 个商品、{r['订单行']} 条订单行已按这个数备料\")",
+    "new": "                          )"
+   }
+  ],
+  "预期红": "建议先核的按影响面排序,而且说得出影响是什么"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "直接改库:把 PT01 的 L 码胸围改成 103,且不标 caveat",
+  "sql": [
+   "UPDATE size_spec SET value=103, caveat=NULL WHERE pattern='PT01' AND size='L' AND item='胸围'"
+  ],
+  "预期红": "每条尺码要么档差对得上,要么在表上标着「不作数」"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "抹掉一条订单行的 pattern_version",
+  "sql": [
+   "UPDATE ordr_item SET pattern_version=NULL WHERE id=(SELECT oi.id FROM ordr_item oi JOIN product p ON p.spu=oi.spu WHERE p.pattern IS NOT NULL AND p.pattern!='' AND oi.pattern_version IS NOT NULL LIMIT 1)"
+  ],
+  "预期红": "挂着版型的订单行都记了下单时的版本"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "把回填的 pattern_version_src 全置空",
+  "sql": [
+   "UPDATE ordr_item SET pattern_version_src=NULL WHERE pattern_version IS NOT NULL"
+  ],
+  "预期红": "回填的快照标着是回填的"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "删掉 PT04 的 pattern_rev 那一行",
+  "sql": [
+   "DELETE FROM pattern_rev WHERE pattern='PT04'"
+  ],
+  "预期红": "每个版型都有改动记录"
  }
 ]
