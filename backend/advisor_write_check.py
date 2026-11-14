@@ -122,7 +122,9 @@ def main():
                 if 名 in 列:
                     行 = src[:m.start()].count("\n") + 1
                     坏.append(f"{os.path.relpath(f, ROOT)}:{行} "
-                              f"INSERT INTO {表} 又写了 **{名}** —— "
+                              # 11-15 夜:原来写的是「INSERT INTO {表} 又写了」—— 那是一句**报错文案**,
+                              # 而 insert_shape_check 照着它记了一笔「写库不写列名」的账(它看不出 f-string 是话不是 SQL)
+                              f"往 {表} 写的那条 INSERT 又带上了 **{名}** —— "
                               f"名字列 2026-09-16 已删,该写 {名号[名]}")
 
     # ⚠️ 这条现在是**反着守**的:名字列已删,谁写它谁就是把副本又引回来了。
