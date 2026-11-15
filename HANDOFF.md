@@ -12,6 +12,16 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-15 09:4x · 让并行会话先推;后台临时切回 v13;⑥ 退货率草稿在 .wip-glossary/ret/(Opus 5.5)
+
+- **推送**:我 07:4x 那轮链 09:03 红在 muslin_check(白坯试衣说明里「责任转移 / 会拦」被缩掉)→ 6eef1cfa 修。重跑要 1.5h+,让并行会话先推它 19 笔;
+  **后台店长助手生产临时切回 v13**(直接 API,理由写了),它推完我:rebase → `--切 15`(v15 已存在,= v13 + TL84–89、91–93)→ assistant_effect → 预跑门禁 → pre_push。
+- **⑥ 退货率**:用户 11-15 又补拍两条:申请退货率和实际退货率**两个都给**(审批拒绝 / 还在审的只进申请);偏高**至少退过 3 件**(否决档越多越严)。
+  写的时候发现 Wilson 近似在率≈1% 时下限偏高(卖 9 退 1 判偏高)→ 换 Clopper-Pearson 精确区间(技术方法,没单问,做完要告诉用户)。
+  草稿:`.wip-glossary/ret/returns.py`(→ knowledge/returns.py)、`api_snippet.py`(→ api.py wear_risk 后)、`schema_snippet.txt`(→ SHOP_SCHEMAS)、`rule_snippet.py`(TL95)、`returns_check.py`(→ backend/,夹具 8 条全绿,真调那条待进项目验)。
+  **还要接**:domains.py analytics 组、sdk.py SHOP_TOOLS、api 分发表、check.sh、bite_specs、规矩登记(和 SALES_RANK_RULE 同处)、文档工具数 89→90 + gen_doc_lists、PRD 附录 A(写清没复用 A-35 的理由 + 换方法那次)、后台新版本要**打开这个工具**(新工具不是「只挪不改字」,做完告诉用户)、评测题。
+- **未验证**:接管兜底夜跑商机套(11-15 夜只跑了 2 套,没轮到);经营报告崩的完整日志(落盘代码 11-13 夜还没进主检出,下次轮到才有)。
+
 ### 🟡 11-15 07:4x · 后台生产 v15,缩说明那批推送前链在跑(Opus 5.5)
 
 - **已做**:rebase 到 aca71aa0(夜跑自动提交把并行会话 ~20 笔一起带上了 main,CI 绿)。后台店长助手生产 v13→v15(= v13 + TL84–89、91–93;TL94 只给版师,店长助手不带 wear_risk,对的)。assistant_effect 绿(77 条)。
