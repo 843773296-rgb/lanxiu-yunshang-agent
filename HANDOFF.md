@@ -16,7 +16,8 @@
 
 - **本地未推**(aca71aa0 之上):缩说明 3–12 + muslin 修 + intent 退货率口径 + **return_rate 新工具**(909fef32)+ 咬合欠账三笔(0cac1f93 / 047f7728)+ 交接。
 - **已在锁里单独重放过**:returns_check 4/4、tool_eval 2/2、guards_test 62/62、rounds 29/29。⚠️ guards_test 有 62 条规格,单跑约 2 小时 —— 别在并行会话要锁时单独跑它。
-- **后台**:店长助手生产临时是 v13(让并行会话先推);v15 已存在但没有 return_rate。推之前:`align_rules_v9.py --加开 return_rate` 出 v16 → 喊并行会话 → `--切 16 --加开 return_rate` → assistant_effect → 预跑门禁 → pre_push → **告诉用户打开了新工具**。
+- **14:4x 更新**:又做完分部位选料两个读工具 08ce696b(part_options / order_parts + TL96 + parts_check 9 条全绿 + 咬合 3 条待重放 + select_eval 25/25)。⑥ 只剩「标品交付告知(只出草稿,人点了才发)」。
+- **后台**:店长助手生产临时是 v13(让并行会话先推);v15 已存在但没有 return_rate。推之前:`align_rules_v9.py --加开 return_rate,part_options,order_parts`(三个新工具一起开) 出 v16 → 喊并行会话 → `--切 16 --加开 return_rate` → assistant_effect → 预跑门禁 → pre_push → **告诉用户打开了新工具**。
 - **并行会话**:14:1x 拿锁跑推送前链(约 40 分钟),PUSHED 后喊我;它的 20 笔会和我撞 check.sh 一行 / bite_specs 末尾(用 .wip-glossary/merge_specs.py)/ PRD 2.4.4 / HANDOFF / 待办清单。
 - **下一步第一个动作**:它说推了 → `git rebase origin/main`(冲突按上面)→ 重生成文档(sync_rule_docs.sh + doc_numbers 逐处改)→ 上面后台那串。
 
