@@ -90,6 +90,9 @@ ck("契约登记了这条接口", '"/workflows/{id}/nodes/{nid}/last-run"' in �
 ck("编辑器面板打开时真去请求它(填上次运行 被面板调用)",
    "/last-run`" in 前 and "填上次运行(n);" in 前 and "async function 填上次运行" in 前, 1)
 
+ck("面板重画不每次都请求:有 20 秒缓存,新的运行结果来了就作废", "图态.上次缓存" in 前 and "Date.now() - 旧.t < 20000" in 前
+   and "图态.上次缓存 = {};" in 前[前.index("function 记运行态"):前.index("function 记运行态") + 300], 1)
+
 print()
 if 挂:
     print(f"❌ {len(挂)} 条没过:{挂}")

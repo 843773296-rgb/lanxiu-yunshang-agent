@@ -4065,6 +4065,7 @@ function 运行态条(d, s) {
 }
 function 记运行态(d) {
   if (!图态) return;
+  图态.上次缓存 = {};   // 有新的运行结果来了,「上次运行」页签的缓存作废(填上次运行 那边的 20 秒缓存)
   const 态 = {};
   (d["步骤"] || []).forEach((s) => { 态[s["节点"]] = 运行态条(d, s); });
   const 等 = d["在等什么"]; if (等 && 等["步骤"]) 态[等["步骤"]] = { 状态: 等["种类"] === "human" ? "waiting_human" : "waiting_external" };
@@ -4135,8 +4136,15 @@ async function 填上次运行(n) {
   const 盒 = $("#lastrun");
   if (!盒 || !图态 || !图态.wid) return;
   let x;
-  try { x = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/nodes/${encodeURIComponent(n.id)}/last-run`); }
-  catch (e) { if ($("#lastrun") === 盒) 盒.innerHTML = `<div class="k">读不到上次运行:${esc(e.message || e)}</div>`; return; }
+  // 面板几乎每改一处就重画一次 —— 不缓存的话,打字时每个字都去问一次服务端。
+  // 缓存 20 秒,或者这一页又跑了一次(最近测试换了)就作废
+  const 缓 = (图态.上次缓存 = 图态.上次缓存 || {}), 键 = `${n.id}|${图态.最近测试 || ""}`, 旧 = 缓[n.id];
+  if (旧 && 旧.键 === 键 && Date.now() - 旧.t < 20000) x = 旧.x;
+  else {
+    try { x = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/nodes/${encodeURIComponent(n.id)}/last-run`); }
+    catch (e) { if ($("#lastrun") === 盒) 盒.innerHTML = `<div class="k">读不到上次运行:${esc(e.message || e)}</div>`; return; }
+    缓[n.id] = { 键, t: Date.now(), x };
+  }
   if ($("#lastrun") !== 盒 || 盒.dataset.nid !== n.id) return;   // 读回来时面板已经换成别的步骤了
   if (!x["有记录"]) { 盒.innerHTML = `<div class="k">${esc(x["说法"] || "这一步还没有跑过")}</div>`; return; }
   const 调 = x["调试"] || {};
