@@ -1025,6 +1025,11 @@ def a_cred_alias():  return api._rows(
 def a_cred_sub():    return api._rows(
     "SELECT p AS x FROM (SELECT pwd_hash p FROM account) t")
 
+# `_rows2`(取裸元组那个口)11-16 前自己开**可写**连接、三道检查一道不过 —— 同三刀砍它
+def a_rows2_truth(): return api._rows2("SELECT * FROM truth")
+def a_rows2_cred():  return api._rows2("select a.* from account a join wearer w on w.account_id=a.id")
+def a_rows2_write(): return api._rows2("UPDATE customer SET name='被改了' WHERE id='C10000'")
+
 
 _PH = __import__("re").compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
 
@@ -2070,6 +2075,15 @@ STRUCT = [
  ("账户凭据不经工具层暴露 · 子查询改名", "同上", a_cred_sub,
   "SELECT p AS x FROM (SELECT pwd_hash p FROM account) t",
   "两道锁各管一段:这条被语句文本那道接住"),
+ ("另一个取数口也过同三道 · truth", "backend/api.py _rows2 / _查",
+  a_rows2_truth, "拿 _rows2 去 SELECT * FROM truth",
+  "**这条 11-16 前是破的** —— `_rows2` 自己开连接、不过检查;现在和 `_rows` 共用 `_查`"),
+ ("另一个取数口也过同三道 · 凭据别名星号", "同上",
+  a_rows2_cred, "拿 _rows2 去 select a.* from account a join wearer …",
+  "查结果列名那道锁在 `_查` 里,两个口都过"),
+ ("另一个取数口也过同三道 · 写库", "同上",
+  a_rows2_write, "拿 _rows2 去 UPDATE 一条客户记录",
+  "**原来真能写**(普通连接);现在走同一条 mode=ro 连接"),
  ("对外一律脱敏手机号", "数据规范 F3",
   a_phone_leak, "把 23 个工具全调一遍,搜返回里的完整手机号",
   "**包在工具出口上,不是每个函数各自记得** —— "

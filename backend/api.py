@@ -83,19 +83,25 @@ def _门店条件(值, 别名="", c=None, 列="shop"):
 # 财务能看全部 ≠ 财务能跨店处理差评。读和写分两份,读这份只许比写那份宽。
 读跨店角色 = 跨店角色 + ("财务",)
 
-def _rows(sql,*a):
+def _查(c, sql, a):
+    """工具层取数的**那三道检查**,`_rows` 和 `_rows2` 共用这一份(11-16 收编:原来 `_rows2` 自己开一条
+    **可写**连接、三道一道都不过 —— 现有调用碰巧都是写死的 SELECT,而下一个调用者不一定)。"""
     if _CRED.search(sql): raise PermissionError(_CRED_MSG)
     if _TRUTH.search(sql):
         raise PermissionError(
             "truth 是评测答案表,**不允许经工具层访问**(任何语句形状都不行)。"
             "评测比对在 agent 之外做 —— 见 backend/boundary_audit.py 第 2 条。")
+    cur = c.execute(sql, a)
+    cols = [d[0].lower() for d in (cur.description or [])]
+    # **与语句写法无关的那道锁**:结果里只要出现凭据列,就不给。
+    # 星号、别名星号、子查询、以后新加的写法,全在这一关。
+    if any(x.startswith("pwd_") for x in cols): raise PermissionError(_CRED_MSG)
+    return cur
+
+
+def _rows(sql,*a):
     with _c() as c:
-        cur = c.execute(sql, a)
-        cols = [d[0].lower() for d in (cur.description or [])]
-        # **与语句写法无关的那道锁**:结果里只要出现凭据列,就不给。
-        # 星号、别名星号、子查询、以后新加的写法,全在这一关。
-        if any(x.startswith("pwd_") for x in cols): raise PermissionError(_CRED_MSG)
-        return [dict(r) for r in cur]
+        return [dict(r) for r in _查(c, sql, a)]
 
 def _认客户(customer):
     """按客户号或姓名认人,**认得软合并**(用户 2026-10-14 拍)。→ (人们, 注明)。
@@ -2952,9 +2958,10 @@ def my_workorders(status=None):
 
 
 def _rows2(sql, *a):
-    """只取一列的裸元组 —— `_rows` 会过列名黑名单,这里只要 id,不必走那一遍。"""
-    with closing(sqlite3.connect(DB)) as c, c:
-        return c.execute(sql, a).fetchall()
+    """取裸元组(`for cid, in …` / `dict(…)` 两列成对)。和 `_rows` **同一条只读连接、同三道检查**,
+    只是不转 dict —— 原来那句「只要 id,不必走那一遍」是省检查的理由,而检查省不得(W40②)。"""
+    with _c() as c:
+        return [tuple(r) for r in _查(c, sql, a)]
 
 
 def get_task(task_id):

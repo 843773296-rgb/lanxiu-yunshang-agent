@@ -22772,5 +22772,17 @@
    }
   ],
   "预期红": "补足:说了注销、也说了余额已补足,但建议里还让人充值 → 挂"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "让 _rows2 绕开 _查 直接执行(回到 11-16 前不过检查的样子;连接仍只读,免得攻击真写库)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        return [tuple(r) for r in _查(c, sql, a)]\n",
+    "new": "        return [tuple(r) for r in c.execute(sql, a)]\n"
+   }
+  ],
+  "预期红": "另一个取数口也过同三道 · truth"
  }
 ]
