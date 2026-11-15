@@ -8357,18 +8357,6 @@
  },
  {
   "script": "tools/bite_run.py",
-  "改坏": "把 `验规格` 里「一处破坏都没声明」那一支删掉(规格没写破坏动作也照跑)",
-  "file": [
-   {
-    "path": "tools/bite_run.py",
-    "old": "        if not s.get(\"sql\") and not s.get(\"file\"):\n            坏.append((i, s[\"script\"], \"一处破坏都没声明\" +\n                       (f\",而它带着执行器不认的键 {'/'.join(野)} —— 破坏大概写在那里了\" if 野 else \"\")))\n        elif 野:",
-    "new": "        if 野:"
-   }
-  ],
-  "预期红": "一处破坏都没声明"
- },
- {
-  "script": "tools/bite_run.py",
   "改坏": "把 `验规格` 里「带着执行器不认的键」那一支掏空(把 sql 拼成别的名字就静默跳过)",
   "file": [
    {
@@ -22344,18 +22332,6 @@
   "预期红": "欠债表里的都还欠着"
  },
  {
-  "script": "tools/bite_check.py",
-  "改坏": "把欠债表里一个脚本的处数改小(等于声称已经还了一部分)—— 用 tools/intent_check.py(它的咬合钉在天天改的 HANDOFF 上,11-10 判断过不补,处数短期不会动)。⚠️ 11-11 改:原来钉在 backend/source_check.py 的 4 上,那 4 处一还(4→2)破坏点当场过期 ——**盯着一个会被还掉的数,还账本身就会让它漂**;哪天 intent_check 的处数变了,这条要跟着换。⚠️ 11-15 夜又改:intent_check 那条「点名的 intent 都真的存在」补上了规格(2→1),这条又过期了 —— 换到 tools/delivered_images.py 的 4(数据工厂那条线,我这边不还;它那边还了的话同样要跟着换)",
-  "file": [
-   {
-    "path": "tools/咬合两份记录欠债.json",
-    "old": "  \"tools/delivered_images.py\": 4",
-    "new": "  \"tools/delivered_images.py\": 3"
-   }
-  ],
-  "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
- },
- {
   "script": "tools/truncation_check.py",
   "改坏": "往已经清空的欠债表里加一条指向一个已经改好的位置(runlog_check 那处早补了「还有几条」)",
   "file": [
@@ -22522,5 +22498,244 @@
    }
   ],
   "预期红": "拔钉留了痕"
+ },
+ {
+  "script": "tools/bite_run.py",
+  "改坏": "把 `验规格` 里「一处破坏都没声明」那一支删掉(规格没写破坏动作也照跑)",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "        if not s.get(\"sql\") and not s.get(\"file\") and not s.get(\"改坏命令\"):\n            坏.append((i, s[\"script\"], \"一处破坏都没声明\" +\n                       (f\",而它带着执行器不认的键 {'/'.join(野)} —— 破坏大概写在那里了\" if 野 else \"\")))\n        elif 野:",
+    "new": "        if 野:"
+   }
+  ],
+  "预期红": "一处破坏都没声明"
+ },
+ {
+  "script": "tools/bite_check.py",
+  "改坏": "从规格文件里删掉 anchor.py「拔钉留了痕」那一条规格 —— 它的清单里那句就成了「声称了却没有规格」,而欠债表里没登记它(11-15:原来盯着欠债表里某个脚本的处数改小,表清零后那个攻击点永远会漂,改成这样就不漂了)",
+  "file": [
+   {
+    "path": "tools/bite_specs.json",
+    "old": " {\n  \"script\": \"fakedata/anchor.py\",\n  \"改坏\": \"往解钉记录里加一条没写「为什么」的\",\n  \"file\": [\n   {\n    \"path\": \"fakedata/锚定.json\",\n    \"old\": \" \\\"解钉\\\": []\",\n    \"new\": \" \\\"解钉\\\": [{\\\"表\\\": \\\"sku\\\", \\\"列\\\": \\\"color\\\", \\\"键\\\": \\\"lxys_100451383\\\", \\\"何时\\\": \\\"2026-11-15\\\"}]\"\n   }\n  ],\n  \"预期红\": \"拔钉留了痕\"\n },\n",
+    "new": ""
+   }
+  ],
+  "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
+ },
+ {
+  "script": "tools/cron_health_check.py",
+  "改坏": "夹具:HOME 指进副本,假 plist 的 WorkingDirectory 指副本,两个标记都是刚写的;然后把 .feynman/world-shift-ok 改成 5 天前(装着、在跑、但没成功过)",
+  "前置": [
+   "mkdir -p .fakehome/Library/LaunchAgents .feynman && python3 -c \"import plistlib,os;plistlib.dump({'Label':'com.lanxiu.worldshift','WorkingDirectory':os.getcwd(),'ProgramArguments':['bash','tools/daily_shift.sh']},open('.fakehome/Library/LaunchAgents/com.lanxiu.worldshift.plist','wb'))\" && python3 -c \"import datetime;n=datetime.datetime.now();open('.feynman/world-shift-tried','w').write((n-datetime.timedelta(minutes=3)).isoformat());open('.feynman/world-shift-ok','w').write(n.isoformat())\""
+  ],
+  "env": {
+   "HOME": "{副本}/.fakehome"
+  },
+  "改坏命令": [
+   "python3 -c \"import datetime;open('.feynman/world-shift-ok','w').write((datetime.datetime.now()-datetime.timedelta(days=5)).isoformat())\""
+  ],
+  "预期红": "任务在跑,但没有成功过"
+ },
+ {
+  "script": "tools/cron_health_check.py",
+  "改坏": "同一套夹具;把 .feynman/world-shift-tried 也改成 5 天前(任务不跑了)",
+  "前置": [
+   "mkdir -p .fakehome/Library/LaunchAgents .feynman && python3 -c \"import plistlib,os;plistlib.dump({'Label':'com.lanxiu.worldshift','WorkingDirectory':os.getcwd(),'ProgramArguments':['bash','tools/daily_shift.sh']},open('.fakehome/Library/LaunchAgents/com.lanxiu.worldshift.plist','wb'))\" && python3 -c \"import datetime;n=datetime.datetime.now();open('.feynman/world-shift-tried','w').write((n-datetime.timedelta(minutes=3)).isoformat());open('.feynman/world-shift-ok','w').write(n.isoformat())\""
+  ],
+  "env": {
+   "HOME": "{副本}/.fakehome"
+  },
+  "改坏命令": [
+   "python3 -c \"import datetime;open('.feynman/world-shift-tried','w').write((datetime.datetime.now()-datetime.timedelta(days=5)).isoformat())\"",
+   "python3 -c \"import datetime;open('.feynman/world-shift-ok','w').write((datetime.datetime.now()-datetime.timedelta(days=5)).isoformat())\""
+  ],
+  "预期红": "任务装了却没在跑"
+ },
+ {
+  "script": "tools/hook_sync_check.py",
+  "改坏": "夹具:AIMC_HOOKS_DIR 指进副本,四份软链都指向副本里「另一个检出」的同名 hook(内容一致 → 绿);然后把那边那份 handoff-gate.mjs 的内容改掉",
+  "前置": [
+   "mkdir -p .fakehooks .other/tools && cp -R tools/hooks .other/tools/hooks && for f in tools/hooks/*.mjs; do ln -s \"$PWD/.other/$f\" \".fakehooks/$(basename $f)\"; done"
+  ],
+  "env": {
+   "AIMC_HOOKS_DIR": "{副本}/.fakehooks"
+  },
+  "改坏命令": [
+   "printf '\\n// 咬合\\n' >> .other/tools/hooks/handoff-gate.mjs"
+  ],
+  "预期红": "而内容已经不一样了"
+ },
+ {
+  "script": "tools/delivered_images.py",
+  "改坏": "夹具:从主检出拷一款(6 张)进副本 .fake_img,清单也只留这 6 张;然后把其中一张的字节改掉(文件名没变)",
+  "前置": [
+   "mkdir -p .fake_img && cp \"$LANXIU_SRC_ROOT\"/backend/static/img/lxys_100007919-*.png .fake_img/ && python3 -c \"import json;p='backend/交付图清单.json';d=json.load(open(p,encoding='utf-8'));d['图']={k:v for k,v in d['图'].items() if k.startswith('lxys_100007919-')};d['张数']=len(d['图']);json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False,indent=1)\""
+  ],
+  "参数": [
+   "--在",
+   ".fake_img"
+  ],
+  "改坏命令": [
+   "python3 -c \"open('.fake_img/lxys_100007919-d1.png','ab').write(b'x')\""
+  ],
+  "预期红": "图的内容和登记的一致"
+ },
+ {
+  "script": "tools/delivered_images.py",
+  "改坏": "同一套夹具;删掉一张登记过的图",
+  "前置": [
+   "mkdir -p .fake_img && cp \"$LANXIU_SRC_ROOT\"/backend/static/img/lxys_100007919-*.png .fake_img/ && python3 -c \"import json;p='backend/交付图清单.json';d=json.load(open(p,encoding='utf-8'));d['图']={k:v for k,v in d['图'].items() if k.startswith('lxys_100007919-')};d['张数']=len(d['图']);json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False,indent=1)\""
+  ],
+  "参数": [
+   "--在",
+   ".fake_img"
+  ],
+  "改坏命令": [
+   "rm .fake_img/lxys_100007919-d2.png"
+  ],
+  "预期红": "登记过的图都还在"
+ },
+ {
+  "script": "tools/delivered_images.py",
+  "改坏": "同一套夹具;往目录里放一张没登记的图",
+  "前置": [
+   "mkdir -p .fake_img && cp \"$LANXIU_SRC_ROOT\"/backend/static/img/lxys_100007919-*.png .fake_img/ && python3 -c \"import json;p='backend/交付图清单.json';d=json.load(open(p,encoding='utf-8'));d['图']={k:v for k,v in d['图'].items() if k.startswith('lxys_100007919-')};d['张数']=len(d['图']);json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False,indent=1)\""
+  ],
+  "参数": [
+   "--在",
+   ".fake_img"
+  ],
+  "改坏命令": [
+   "cp .fake_img/lxys_100007919-main.png .fake_img/lxys_999999999-main.png"
+  ],
+  "预期红": "目录里没有未登记的图"
+ },
+ {
+  "script": "tools/delivered_images.py",
+  "改坏": "同一套夹具;把一条记录的 spu 改成库里没有的编号(模拟两段式图位被 rpartition 切错)",
+  "前置": [
+   "mkdir -p .fake_img && cp \"$LANXIU_SRC_ROOT\"/backend/static/img/lxys_100007919-*.png .fake_img/ && python3 -c \"import json;p='backend/交付图清单.json';d=json.load(open(p,encoding='utf-8'));d['图']={k:v for k,v in d['图'].items() if k.startswith('lxys_100007919-')};d['张数']=len(d['图']);json.dump(d,open(p,'w',encoding='utf-8'),ensure_ascii=False,indent=1)\""
+  ],
+  "参数": [
+   "--在",
+   ".fake_img"
+  ],
+  "file": [
+   {
+    "path": "backend/交付图清单.json",
+    "old": "   \"spu\": \"lxys_100007919\",\n   \"图位\": \"d1\",",
+    "new": "   \"spu\": \"lxys_000000000\",\n   \"图位\": \"d1\","
+   }
+  ],
+  "预期红": "每条记录的商品号库里都有"
+ },
+ {
+  "script": "tools/repo_consistency_check.py",
+  "改坏": "副本里 git init 并把整棵树提交成基线(对象不落第二份);然后**提交**一条指着 HEAD 里没有的代码的规格",
+  "前置": [
+   "git init -q && git -c user.email=b@b -c user.name=b add -A . >/dev/null 2>&1; git -c user.email=b@b -c user.name=b commit -qm 副本基线 --no-verify"
+  ],
+  "file": [
+   {
+    "path": "tools/bite_specs.json",
+    "old": " }\n]\n",
+    "new": " },\n {\"script\": \"tools/bite_check.py\", \"改坏\": \"咬合专用:指着一句 HEAD 里没有的代码\", \"file\": [{\"path\": \"tools/bite_check.py\", \"old\": \"咬合专用:HEAD 里没有这一句\", \"new\": \"x\"}], \"预期红\": \"x\"}\n]\n"
+   }
+  ],
+  "改坏命令": [
+   "git -c user.email=b@b -c user.name=b commit -qm 咬合 --no-verify --only tools/bite_specs.json"
+  ],
+  "预期红": "可执行的咬合规格,指的代码都已经在仓库里"
+ },
+ {
+  "script": "tools/repo_consistency_check.py",
+  "改坏": "同一套 git 夹具;**提交**一行 check.sh 的 run,点名一个没提交的脚本",
+  "前置": [
+   "git init -q && git -c user.email=b@b -c user.name=b add -A . >/dev/null 2>&1; git -c user.email=b@b -c user.name=b commit -qm 副本基线 --no-verify"
+  ],
+  "file": [
+   {
+    "path": "check.sh",
+    "old": "run \"hook 同步 · 改了仓库那份不等于它生效了\" python3 tools/hook_sync_check.py\n",
+    "new": "run \"hook 同步 · 改了仓库那份不等于它生效了\" python3 tools/hook_sync_check.py\nrun \"咬合专用\" python3 tools/咬合专用_没提交的脚本.py\n"
+   }
+  ],
+  "改坏命令": [
+   "git -c user.email=b@b -c user.name=b commit -qm 咬合 --no-verify --only check.sh"
+  ],
+  "预期红": "门禁点名的脚本,仓库里都有"
+ },
+ {
+  "script": "tools/impact.py",
+  "改坏": "副本里 git init 提交基线;然后在一处 ⚠️ 警示行旁边改一行(未提交)—— 正常跑 impact(门禁只跑 --selftest,而这句只在正常跑时印)",
+  "前置": [
+   "git init -q && git -c user.email=b@b -c user.name=b add -A . >/dev/null 2>&1; git -c user.email=b@b -c user.name=b commit -qm 副本基线 --no-verify"
+  ],
+  "命令": [
+   "python3",
+   "tools/impact.py"
+  ],
+  "只报不拦": true,
+  "file": [
+   {
+    "path": "tools/insert_shape_check.py",
+    "old": "            # ⚠️ 不扫自己:咬合描述和提示语里都有 `INSERT INTO …`,\n",
+    "new": "            # ⚠️ 不扫自己:咬合描述和提示语里都有 `INSERT INTO …`,\n            # 咬合专用:在警示行旁边改了一行\n"
+   }
+  ],
+  "预期红": "处警示段落 —— 改之前先把它们读一遍"
+ },
+ {
+  "script": "tools/runlog_check.py",
+  "改坏": "夹具:先把门禁外每个脚本都记成今天跑过(对照里没有「从没成功跑过」);然后删掉一条记录",
+  "前置": [
+   "python3 -c \"import sys,json,datetime;sys.path.insert(0,'tools');import runlog_check as R;d=json.load(open(R.记录,encoding='utf-8'));now=datetime.datetime.now().strftime('%Y-%m-%d %H:%M');[d['跑过'].setdefault(x,now) for x in R.门禁外的检查()+sorted(R.支路)];d['跑过']={k:v for k,v in d['跑过'].items() if k in set(R.门禁外的检查())|set(R.支路)};json.dump(d,open(R.记录,'w',encoding='utf-8'),ensure_ascii=False,indent=1)\""
+  ],
+  "只报不拦": true,
+  "改坏命令": [
+   "python3 -c \"import sys,json;sys.path.insert(0,'tools');import runlog_check as R;d=json.load(open(R.记录,encoding='utf-8'));k=sorted(d['跑过'])[0];del d['跑过'][k];json.dump(d,open(R.记录,'w',encoding='utf-8'),ensure_ascii=False,indent=1)\""
+  ],
+  "预期红": "从没成功跑过"
+ },
+ {
+  "script": "tools/runlog_check.py",
+  "改坏": "同一套夹具;往记录里加一个已经不在「门禁外」清单里的脚本",
+  "前置": [
+   "python3 -c \"import sys,json,datetime;sys.path.insert(0,'tools');import runlog_check as R;d=json.load(open(R.记录,encoding='utf-8'));now=datetime.datetime.now().strftime('%Y-%m-%d %H:%M');[d['跑过'].setdefault(x,now) for x in R.门禁外的检查()+sorted(R.支路)];d['跑过']={k:v for k,v in d['跑过'].items() if k in set(R.门禁外的检查())|set(R.支路)};json.dump(d,open(R.记录,'w',encoding='utf-8'),ensure_ascii=False,indent=1)\""
+  ],
+  "只报不拦": true,
+  "改坏命令": [
+   "python3 -c \"import sys,json;sys.path.insert(0,'tools');import runlog_check as R;d=json.load(open(R.记录,encoding='utf-8'));d['跑过']['tools/咬合专用_已经删掉的脚本.py']='2026-11-15 00:00';json.dump(d,open(R.记录,'w',encoding='utf-8'),ensure_ascii=False,indent=1)\""
+  ],
+  "预期红": "记录里有、而它已经不在「门禁外」清单里了"
+ },
+ {
+  "script": "tools/intent_check.py",
+  "改坏": "把一份「等人的活」的 intent(piece-ratio-review,它的待办还挂在交接里)状态改成「做完了」",
+  "只报不拦": true,
+  "file": [
+   {
+    "path": "intent/piece-ratio-review.md",
+    "old": "- **状态**:`等人的活`",
+    "new": "- **状态**:`做完了`"
+   }
+  ],
+  "预期红": "交接里还挂着的待办,它的 intent 没有已经标「做完了」的"
+ },
+ {
+  "script": "backend/rating_rebuild_check.py",
+  "改坏": "前置:在副本库上清空 rating 重造一次(指纹和库里对得上);然后把造数的种子换一个 —— 指纹不变、号全变,这是「代码改了」的真形状",
+  "前置": [
+   "python3 -c \"import sys,sqlite3;sys.path[:0]=['tools','backend','knowledge'];c=sqlite3.connect('backend/lanxiu.db');c.execute('DELETE FROM rating');c.commit();c.close();import backfill_rating as B;sys.exit(B.铺(db='backend/lanxiu.db', 说=lambda *a, **k: None))\""
+  ],
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "种子 = 20260927\n",
+    "new": "种子 = 20260928\n"
+   }
+  ],
+  "预期红": "**重跑造出的那批号,和库里那批一模一样**(指纹一致,所以号不一样就是代码改了)"
  }
 ]

@@ -378,13 +378,45 @@ def 跑不了的理由(script):
     return None
 
 
-def 跑(sand, script):
-    cmd = 门禁怎么跑(script)
+def _填(x, sand):
+    """把规格里的 `{副本}` 换成副本路径(命令 / env / 参数 都过一遍)。"""
+    return x.replace("{副本}", sand) if isinstance(x, str) else x
+
+
+def _环境(sand, s):
+    """跑检查 / 前置 / 改坏命令时的环境:系统环境 + 规格的 `env`(值里的 `{副本}` 已换)。"""
+    env = dict(os.environ)
+    for k, v in (s or {}).get("env", {}).items():
+        env[k] = _填(v, sand)
+    return env
+
+
+def 跑命令们(sand, cmds, s, 名):
+    """按顺序在副本里跑一串 shell 命令;哪条失败就返回那条的理由(None = 都成了)。
+    前置和改坏命令共用 —— 失败都要**单独报**,不混进「改坏了却没红」。"""
+    for cmd in cmds:
+        cmd = _填(cmd, sand)
+        try:
+            pp = subprocess.run(cmd, shell=True, cwd=sand, capture_output=True,
+                                text=True, timeout=1800, env=_环境(sand, s))
+        except subprocess.TimeoutExpired:
+            return f"{名} `{cmd[:60]}` 跑了 30 分钟还没完"
+        if pp.returncode != 0:
+            尾 = (pp.stdout + pp.stderr).strip().split("\n")[-1][:120]
+            return f"{名} `{cmd[:60]}` 退出码 {pp.returncode}:{尾}"
+    return None
+
+
+def 跑(sand, script, s=None):
+    s = s or {}
+    cmd = [_填(x, sand) for x in s["命令"]] if s.get("命令") else 门禁怎么跑(script)
     if cmd is None:
         # 走到这里说明调用方漏了「这台检出验不了」那一支 —— **崩在这里比拿系统 python 糊过去好**
         raise SystemExit(f"❌ {script} 没有可用的解释器(缺 管理后台/.venv)—— "
                          f"调用方必须先用 跑不了的理由() 挑出来,别退回系统 python")
-    p = subprocess.run(cmd, cwd=sand, capture_output=True, text=True, timeout=600)
+    cmd = list(cmd) + [_填(x, sand) for x in s.get("参数", [])]
+    p = subprocess.run(cmd, cwd=sand, capture_output=True, text=True, timeout=600,
+                       env=_环境(sand, s))
     return p.returncode, p.stdout + p.stderr
 
 
@@ -499,14 +531,32 @@ def 验规格(specs, 根=None):
     · 这一关在**开跑之前对所有规格做完**:全量重放要跑近两个钟头,
       等跑到第 320 条才发现规格是坏的,前面那一个钟头已经花掉了。
     """
-    认得的键 = {"script", "改坏", "预期红", "sql", "file", "前置"}
+    # 2026-11-15 加了五个键(用户拍「扩重放工具把剩下 14 条真做成」):
+    #   `改坏命令`  破坏用 shell 命令施加(改时间戳、删文件、在副本里 git commit —— sql / file 够不着的)
+    #   `env`      跑检查时加的环境变量(HOME / AIMC_HOOKS_DIR 指进副本,让读「机器外文件」的检查读夹具)
+    #   `参数`     追加在门禁命令后面的参数(`--在 .fake_img` 之类,指向副本里的夹具目录)
+    #   `命令`     整条命令覆盖(门禁只跑 `--selftest` 而要验的那句在正常跑才印 —— 用它要在 `改坏` 里说清为什么)
+    #   `只报不拦` 这条判据按设计退出码永远 0,只看输出:**对照里不许有那句、改坏后必须有**
+    # 命令 / env / 参数 里的 `{副本}` 会换成副本路径;命令以副本为 cwd 跑。
+    认得的键 = {"script", "改坏", "预期红", "sql", "file", "前置",
+              "改坏命令", "env", "参数", "命令", "只报不拦"}
     坏, 提示 = [], []
     for i, s in enumerate(specs, 1):
         缺 = [k for k in ("script", "改坏", "预期红") if not s.get(k)]
         if 缺:
             坏.append((i, s.get("script", "?"), f"缺字段 {'/'.join(缺)}")); continue
         野 = sorted(set(s) - 认得的键)
-        if not s.get("sql") and not s.get("file"):
+        for k in ("改坏命令", "参数", "命令"):
+            v = s.get(k)
+            if v is not None and (not isinstance(v, list) or not v or not all(
+                    isinstance(x, str) and x.strip() for x in v)):
+                坏.append((i, s["script"], f"`{k}` 要是一串非空字符串(列表),现在是 {type(v).__name__}"))
+        if s.get("env") is not None and (not isinstance(s["env"], dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in s["env"].items())):
+            坏.append((i, s["script"], "`env` 要是 {名: 值} 的字典,值都是字符串"))
+        if s.get("只报不拦") is not None and not isinstance(s["只报不拦"], bool):
+            坏.append((i, s["script"], "`只报不拦` 要是 true / false"))
+        if not s.get("sql") and not s.get("file") and not s.get("改坏命令"):
             坏.append((i, s["script"], "一处破坏都没声明" +
                        (f",而它带着执行器不认的键 {'/'.join(野)} —— 破坏大概写在那里了" if 野 else "")))
         elif 野:
@@ -1002,17 +1052,10 @@ def main():
         # ⚠️ **有前置的规格不能共用对照缓存**:前置改了库,对照自然和别人不同。
         # 所以缓存的键是 (脚本, 前置),不是脚本。
         前置 = tuple(s.get("前置", ()))
+        # 对照缓存的键还要带上 env / 参数 / 命令:同一个脚本换一套环境跑,对照就是另一份
+        姿势 = json.dumps({k: s.get(k) for k in ("env", "参数", "命令")}, ensure_ascii=False, sort_keys=True)
         if 前置:
-            挂 = None
-            for cmd in 前置:
-                try:
-                    pp = subprocess.run(cmd, shell=True, cwd=work, capture_output=True,
-                                        text=True, timeout=1800)
-                except subprocess.TimeoutExpired:
-                    挂 = f"`{cmd}` 跑了 30 分钟还没完"; break
-                if pp.returncode != 0:
-                    尾 = (pp.stdout + pp.stderr).strip().split("\n")[-1][:120]
-                    挂 = f"`{cmd}` 退出码 {pp.returncode}:{尾}"; break
+            挂 = 跑命令们(work, 前置, s, 名="前置")
             if 挂:
                 # **单独报,不混进「改坏了却没红」** —— 这是今天最贵的那个教训:
                 # 三种失败报同一句话,13 条里有 5 条把人指向了错误的修复对象。
@@ -1028,9 +1071,9 @@ def main():
             验不了.append(s); continue
 
         # ② 对照要绿
-        键 = (script, 前置)
+        键 = (script, 前置, 姿势)
         if 键 not in 对照:
-            rc0, out0 = 跑(work, script)
+            rc0, out0 = 跑(work, script, s)
             对照[键] = (rc0, out0)
         rc0, out0 = 对照[键]
         if rc0 != 0:
@@ -1045,12 +1088,28 @@ def main():
             for f in s["file"]:
                 err = 改文件(work, f["path"], f["old"], f["new"])
                 if err: break
+        if not err and s.get("改坏命令"):
+            err = 跑命令们(work, s["改坏命令"], s, 名="改坏命令")
         if err:
             print(f"  ❌ [{i}/{len(specs)}] {script}  {err}")
             红.append(s); continue
 
         # ③ 红的必须是那一条
-        rc, out = 跑(work, script)
+        rc, out = 跑(work, script, s)
+        if s.get("只报不拦"):
+            # 这类判据退出码永远 0(它自己的设计:只提醒不拦),所以只看输出 ——
+            # 而且要两头都看:**对照里不许有那句**(有的话破坏什么都没证明),改坏后必须有。
+            if expect in out0:
+                print(f"  ❌ [{i}/{len(specs)}] {script}  对照的输出里**就有**那句 —— 这条咬合证明不了任何事")
+                红.append(s); continue
+            if expect not in out:
+                别的 = [l.strip() for l in out.split("\n") if l.strip()][-2:]
+                print(f"  ❌ [{i}/{len(specs)}] {script}  改坏了,输出里却**没出那句**(只报不拦的判据,看的就是这句)")
+                print(f"       预期:{expect}")
+                for l in 别的: print(f"       实际:{l[:110]}")
+                红.append(s); continue
+            print(f"  ✅ [{i}/{len(specs)}] {script}  {s['改坏']}(只报不拦:对照没那句、改坏后有了)")
+            continue
         # 红有两种长相:自己打 ❌ 的,和直接 assert 抛出来的。
         # 只认前者的话,用 assert 的脚本会被判成「红的不是那一条」——
         # 而那是**判据贴着字面(找 ❌ 这个符号)而不是含义(这一条失败了)**。
