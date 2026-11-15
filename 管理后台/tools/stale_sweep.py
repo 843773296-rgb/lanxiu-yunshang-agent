@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """清扫卡住的记录 —— **两档**:等外部的只报警,做不完的推到状态机允许的终态。
+(11-15 夜加第三类「孤儿运行」:后台任务全结束、没待办没待回执而运行还停在 running → incomplete / orphaned,判据在 卡住判定.判孤儿)
 
     python3 tools/stale_sweep.py                # 只报(默认)
     python3 tools/stale_sweep.py --做            # 真的改
@@ -127,6 +128,36 @@ def main():
                 要改.append(("execution_runs", "运行", r["id"], r["status"], 档,
                            为, r["project_id"]))
 
+        # 孤儿运行(W06,11-15 夜):running 而背后的后台任务全结束、没待办、没待回执的澜绣桥请求。
+        # 判据在 runtime/卡住判定.判孤儿;不等 72 小时(只留 30 分钟收尾宽限)。已经被上面 72 小时那档收进来的不重复算
+        已在 = {x[2] for x in 要改}
+        孤看了 = 0
+        for r in c.execute(text(
+                f"select r.id, r.status, r.project_id, "
+                f"       array_remove(array_agg(j.status), null) 任务状态们, "
+                f"       max(coalesce(j.updated_at, j.created_at)) 最后任务结束, "
+                f"       exists(select 1 from human_requests h where h.project_id=r.project_id "
+                f"              and h.execution_run_id=r.id and h.status='pending') 有待人工, "
+                f"       exists(select 1 from bridge_calls b where b.project_id=r.project_id "
+                f"              and b.execution_run_id=r.id and b.status='待执行') 有待桥 "
+                f"  from execution_runs r "
+                f"  left join jobs j on j.project_id=r.project_id and j.target_ref->>'run_id'=r.id "
+                f" where r.status='running'{项目条件.replace('project_id', 'r.project_id')} "
+                f" group by r.id, r.status, r.project_id"), 参).mappings():
+            孤看了 += 1
+            if r["id"] in 已在:
+                continue
+            try:
+                档, 为 = SJ.判孤儿(状态=r["status"], 任务状态们=r["任务状态们"], 最后任务结束=r["最后任务结束"],
+                                 有待人工=r["有待人工"], 有待桥=r["有待桥"], 现在=现在)
+            except SJ.判不了 as e:
+                判不了的.append(("execution_runs", r["id"], str(e)))
+                continue
+            if 档 == SJ.可标incomplete:
+                要改.append(("execution_runs", "运行", r["id"], r["status"], 档, 为, r["project_id"]))
+
+    print(f"  孤儿运行那一档看了 {孤看了} 条 running(0 条 = 现在没有在跑的运行,不是没扫)")
+
     # ── ① 只报警那一档 ───────────────────────────────────────────────
     print(f"\n  {Y}⏸ 只报警 {len(报警)} 条{D} —— **不动它们**")
     if 报警:
@@ -146,7 +177,7 @@ def main():
     改了 = 0
     拦下 = []
     for 表, 种类, i, 从, 档, 为, proj in 要改:
-        到 = "failed" if 档 == SJ.可标failed else "expired"
+        到 = {SJ.可标failed: "failed", SJ.可标incomplete: "incomplete"}.get(档, "expired")
         # ⚠️ **走状态机校验,不直接 UPDATE。**
         # `能不能走` 返回 bool,而且**认不出的状态当场抛**(不返回 False)——
         # 它的理由值得抄在这儿:「返回 False 的话,拼错一个状态名就等于
@@ -173,8 +204,8 @@ def main():
                        updated_at=now(), revision=revision+1
                  where project_id=:p and id=:i and status=:从"""),
                 {"到": 到, "从": 从, "p": proj, "i": i,
-                 "因": ("STALE_NO_CHECKPOINT" if 档 == SJ.可标failed
-                        else "STALE_NO_DEFINITION")}).rowcount
+                 "因": {SJ.可标failed: "STALE_NO_CHECKPOINT", SJ.可标incomplete: "orphaned"}.get(
+                        档, "STALE_NO_DEFINITION")}).rowcount
             改了 += n
     if 要改:
         c失败 = sum(1 for x in 要改 if x[4] == SJ.可标failed)
@@ -183,6 +214,9 @@ def main():
               f"(completion_reason=STALE_NO_CHECKPOINT)")
         print(f"     queued 没定义引用 → **expired**: {c过期} 条 "
               f"(completion_reason=STALE_NO_DEFINITION)")
+        c孤 = sum(1 for x in 要改 if x[4] == SJ.可标incomplete)
+        print(f"     孤儿运行(任务全结束、没人会再推)→ **incomplete**: {c孤} 条 "
+              f"(completion_reason=orphaned)")
         print(f"     ⚠️ expired 这一档**库里原来一条记录都没到过** —— "
               f"状态机给 queued 准备了它,而从没有人去执行")
         print(f"     {'已改' if a.做 else '将改'} {改了} 条")
