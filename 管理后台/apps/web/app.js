@@ -3146,7 +3146,7 @@ function 加节点(类型, 接 = null) {
       else 图逻辑.连(g.定义, 接.在后, 接.口, id);
     }
     const 前 = (接 && g.布局[接.在后]) || null;
-    const 已 = Object.keys(g.布局).filter((k) => k !== "$线").length;
+    const 已 = Object.keys(g.布局).filter((k) => !k.startsWith("$")).length;   // $线 折点、$注释 都不是步骤
     g.布局[id] = 前 ? { x: 前.x + 200, y: 前.y + 90 }
                    : { x: 40 + (已 % 4) * 200, y: 40 + Math.floor(已 / 4) * 110 };
     g.选中 = id; g.面板页 = "设置";

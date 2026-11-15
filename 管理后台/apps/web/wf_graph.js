@@ -453,6 +453,33 @@
     });
   };
 
+  // ── 注释(11-15,工作流一期第五件;照 Dify「注释节点:默认 240×88、6 种底色、显示作者、不参与执行」)────────
+  // **存在布局里(布局.$注释),不进定义** —— 和手动折点 $线 同一个做法:加一条注释不改逻辑哈希,
+  // 之前的跑通、验证记录照样算数;运行器、校验器、编译都看不到它,天然「不参与执行」。
+  逻.注释色 = { 黄: "#FEF7C3", 蓝: "#D1E9FF", 绿: "#D3F8DF", 粉: "#FCE7F6", 紫: "#EBE9FE", 灰: "#F2F4F7" };
+  逻.加注释 = function (布局, { x = 0, y = 0, 作者 = "" } = {}) {
+    const 表 = (布局.$注释 = 布局.$注释 || {});
+    let i = Object.keys(表).length + 1, id;
+    do { id = `note_${i++}`; } while (表[id]);
+    表[id] = { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)), w: 240, h: 88, 文: "", 色: "黄", 作者 };
+    return id;
+  };
+  逻.改注释 = function (布局, id, 改) {
+    const 原 = (布局.$注释 || {})[id]; if (!原) return false;
+    const 可改 = {};
+    if ("文" in 改) 可改.文 = String(改.文 ?? "").slice(0, 2000);
+    if ("色" in 改 && 改.色 in 逻.注释色) 可改.色 = 改.色;
+    ["x", "y"].forEach((k) => { if (k in 改) 可改[k] = Math.max(0, Math.round(+改[k] || 0)); });
+    ["w", "h"].forEach((k) => { if (k in 改) 可改[k] = Math.max(k === "w" ? 120 : 48, Math.round(+改[k] || 0)); });
+    Object.assign(原, 可改);
+    return true;
+  };
+  逻.删注释 = function (布局, id) {
+    if (!(布局.$注释 || {})[id]) return false;
+    delete 布局.$注释[id];
+    return true;
+  };
+
   根.图逻辑 = 逻;
   if (typeof module !== "undefined" && module.exports) module.exports = 逻;
 })(typeof globalThis !== "undefined" ? globalThis : this);

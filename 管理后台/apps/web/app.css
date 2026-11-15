@@ -539,3 +539,10 @@ button.mini{height:22px;padding:0 8px;font-size:12px}
 .rhpop{min-width:240px;max-height:66vh;overflow:auto}
 .rhpop button{display:block;width:100%;text-align:left}
 .rhbar{display:flex;gap:8px;align-items:center;margin:4px 0}
+/* 注释(11-15):压在步骤下面,不参与执行 */
+.wfnote{position:absolute;z-index:0;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);display:flex;flex-direction:column}
+.wfnote .nh{display:flex;gap:4px;align-items:center;padding:3px 6px;cursor:move;font-size:12px}
+.wfnote .nh .k{flex:1}
+.wfnote .nc{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.15);padding:0;cursor:pointer}
+.wfnote .nx{border:0;background:none;cursor:pointer;font-size:14px;line-height:1}
+.wfnote textarea{flex:1;border:0;background:transparent;resize:none;padding:4px 8px;font-size:13px;min-height:56px}

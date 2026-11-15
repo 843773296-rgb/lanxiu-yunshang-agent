@@ -254,7 +254,7 @@ function 画_节点() {
   const 丢 = 走不到的();
   const 失效 = new Set(图逻辑.失效引用(g.定义).map((x) => x.节点id));
   const 待 = s.待连;
-  $("#wf-nodes").innerHTML = g.定义.nodes.map((n) => {
+  $("#wf-nodes").innerHTML = 注释们HTML(改) + g.定义.nodes.map((n) => {
     const p = 位(n.id), 缺 = 缺项(n), 选 = s.选.has(n.id), h = 节点高(n);
     let 可连 = "";
     if (待) { const v = 图逻辑.连接校验(g.定义, 待.源, 待.口, n.id, 元); 可连 = n.id === 待.源 ? "" : (v.可以 ? "canlink" : "nolink"); }
@@ -278,6 +278,39 @@ function 画_节点() {
           ${改 ? "" : "disabled"}><i></i><span class="pl">${esc(o.名)}</span></button>`).join("")}
     </div>`;
   }).join("");
+}
+
+/* 注释(11-15,照 Dify):存在 布局.$注释,不进定义、不参与执行。默认 240×88、6 种底色、显示作者;
+ * 头上那条拖动,× 删除,色块换底色,文字框里直接写(失焦才记一次修改,能撤销)。底色用内联样式 —— 不拼 class 名 */
+function 注释们HTML(改) {
+  const 表 = 图态.布局.$注释 || {};
+  return Object.entries(表).map(([id, x]) => `<div class="wfnote" data-note="${esc(id)}" style="left:${+x.x || 0}px;top:${+x.y || 0}px;width:${+x.w || 240}px;min-height:${+x.h || 88}px;background:${图逻辑.注释色[x.色] || 图逻辑.注释色.黄}">
+      <div class="nh" data-noteh="${esc(id)}"><span class="k">注释${x.作者 ? ` · ${esc(x.作者)}` : ""}</span>
+        ${改 ? Object.keys(图逻辑.注释色).map((c) => `<button type="button" class="nc" data-notec="${esc(id)}|${esc(c)}" title="${esc(c)}" aria-label="底色改成${esc(c)}" style="background:${图逻辑.注释色[c]}"></button>`).join("")
+          + `<button type="button" class="nx" data-notex="${esc(id)}" aria-label="删除这条注释" title="删除">×</button>` : ""}</div>
+      <textarea data-notet="${esc(id)}" aria-label="注释内容" placeholder="写点说明,不参与执行" ${改 ? "" : "readonly"}>${esc(x.文 || "")}</textarea>
+    </div>`).join("");
+}
+function 加注释在(px, py) {
+  let id = null;
+  const c = 屏到图(px, py);
+  改图("添加注释", () => { id = 图逻辑.加注释(图态.布局, { x: c.x, y: c.y, 作者: typeof 我 !== "undefined" ? 我 : "" }); });
+  画_节点();
+  const t = id && document.querySelector(`textarea[data-notet="${CSS.escape(id)}"]`); if (t) t.focus();
+  轻提示("已添加注释(不参与执行)", { 撤销: true });
+  return id;
+}
+function 注释按下(ev, id) {
+  const 原 = { ...((图态.布局.$注释 || {})[id] || {}) }, z = 视口().z, 前 = 图逻辑.快照(图态.定义, 图态.布局);
+  手势(ev, {
+    移: (e, dx, dy) => {
+      图逻辑.改注释(图态.布局, id, { x: 原.x + dx / z, y: 原.y + dy / z });
+      const el = document.querySelector(`.wfnote[data-note="${CSS.escape(id)}"]`), x = 图态.布局.$注释[id];
+      if (el) { el.style.left = x.x + "px"; el.style.top = x.y + "px"; }
+    },
+    完: (e, 拖了) => { if (拖了 && 历史().记("移动注释", 前, 图逻辑.快照(图态.定义, 图态.布局))) 标脏(); },
+    取消: () => { 图逻辑.改注释(图态.布局, id, { x: 原.x, y: 原.y }); 画_节点(); },
+  });
 }
 
 /* 循环体外框:同一个 container 的步骤取坐标包围盒 + 边距,框头写循环名。
@@ -470,6 +503,14 @@ function 挂画布事件() {
     // 填什么、用什么跑法、写入类只能连接测试,都沿用面板里那一份(不在卡片上另做一份表单)
     const r1 = ev.target.closest("[data-run1]");
     if (r1) { ev.stopPropagation(); 去单测(r1.dataset.run1); }
+    const nc = ev.target.closest("[data-notec]");
+    if (nc) { ev.stopPropagation(); const [id, c] = nc.dataset.notec.split("|"); 改图("注释换底色", () => 图逻辑.改注释(图态.布局, id, { 色: c }) || false); }
+    const nx = ev.target.closest("[data-notex]");
+    if (nx) { ev.stopPropagation(); 改图("删除注释", () => 图逻辑.删注释(图态.布局, nx.dataset.notex) || false); 轻提示("已删除注释", { 撤销: true }); }
+  });
+  cv.addEventListener("change", (ev) => {
+    const t = ev.target.closest && ev.target.closest("[data-notet]");
+    if (t) 改图("改注释", () => 图逻辑.改注释(图态.布局, t.dataset.notet, { 文: t.value }) || false, { 合并键: `注释:${t.dataset.notet}`, 重绘: false });
   });
   // 右键菜单和「⋯」/ 连线工具条是同一套能力(§9:右键菜单和工具条提供相同能力,菜单关闭后焦点回原对象)
   cv.addEventListener("contextmenu", (ev) => {
@@ -491,6 +532,10 @@ function 画布按下(ev) {
   const out = t.closest("[data-out]");
   if (out && 能改图()) { ev.preventDefault(); return 出口按下(ev, out); }
   if (t.closest("[data-more]") || t.closest("[data-run1]")) return;
+  if (t.closest("[data-notec]") || t.closest("[data-notex]")) return;
+  const nh = t.closest("[data-noteh]");
+  if (nh) { if (能改图()) { ev.preventDefault(); 注释按下(ev, nh.dataset.noteh); } return; }
+  if (t.closest(".wfnote")) return;
   const eh = t.closest("[data-endh]");
   if (eh && 能改图()) { ev.preventDefault(); return 拖端点(ev, eh.dataset.endh); }
   const bd = t.closest("[data-bend]");
@@ -928,6 +973,7 @@ function 画布菜单(x, y) {
   m.className = "wfmenu"; m.id = "wf-menu"; m.setAttribute("role", "menu");
   const 项 = [
     改 ? ["lib", "添加步骤(打开步骤库)"] : null,
+    改 ? ["note", "添加注释(不参与执行)"] : null,
     改 && s.剪贴板 && s.剪贴板.节点们.length ? ["paste", `粘贴 ${s.剪贴板.节点们.length} 步(Ctrl/⌘+V)`] : null,
     改 ? ["tidy", "整理布局(Ctrl/⌘+O)"] : null,
     ["fit", "适应画布(Ctrl/⌘+1)"],
@@ -943,6 +989,7 @@ function 画布菜单(x, y) {
       关菜单();
       const k = b.dataset.ci;
       if (k === "lib") { s.库开 = true; 画_工具条态(); }
+      if (k === "note") 加注释在(x, y);
       if (k === "paste") 粘贴();
       if (k === "tidy") 整理布局();
       if (k === "fit") 适应画布();
@@ -1078,7 +1125,7 @@ function 画布按键(e) {
   }
 }
 
-if (typeof globalThis !== "undefined") globalThis.画布动作 = { 连上, 删线, 重连, 粘贴, 复制选中, 查找, 缩放到, 适应画布, 选节点, 选线, 画态, 视口, 节点按下, 出口按下, 画布按键, 整理布局, 画布菜单, 去单测 };
+if (typeof globalThis !== "undefined") globalThis.画布动作 = { 连上, 删线, 重连, 粘贴, 复制选中, 查找, 缩放到, 适应画布, 选节点, 选线, 画态, 视口, 节点按下, 出口按下, 画布按键, 整理布局, 画布菜单, 去单测, 加注释在 };
 
 
 /* ── 从其他工作流导入(第三批 · §5.3「跨项目导入需独立设计,不复用无校验的剪贴板粘贴」)──────────
