@@ -6861,7 +6861,8 @@ def draft_delivery_notice(order_id):
         return {"error": "定制单的交付告知走交付卡签收,这里只起草标品的"}
     名们 = [dict(名=r["name"]) for r in _rows("SELECT name FROM ordr_item WHERE order_id=? ORDER BY id", order_id)]
     稿 = _dn.起草(名们, 顾问名=me.get("name"))
-    已 = _rows("SELECT notified_at, notified_by, notified_channel FROM delivery_notice WHERE order_id=?", order_id) \
+    已 = _rows("SELECT d.notified_at, d.notified_by, s.name notified_by_name, d.notified_channel, d.notified_items "
+              "FROM delivery_notice d LEFT JOIN staff s ON s.no=d.notified_by WHERE d.order_id=?", order_id) \
         if "notified_at" in {r["name"] for r in _rows("PRAGMA table_info(delivery_notice)")} else []
     稿.update(订单=order_id, 状态=o["status"], 范围=范围话,
              已记过=(dict(已[0]) if 已 and 已[0]["notified_at"] else None),
