@@ -564,11 +564,7 @@ def 提交夜跑结果(报告):
     "oppo_eval.py": ("call-notes 技能被「聊天接管」拦下 → 按 TL76 转 start_workflow → 工作流没发布 → "
                      "takeover_client 回「别改用技能自己做」;用户 11-14 已拍「只在没配好时兜底、403 照旧拦」,11-14 14:3x 随 ed6cef10 上了主干;**等夜跑真跑出非 0 再删这条**",
                      "intent/optimization-program-2026-11.md"),
-    "store_report_eval.py": ("10-30 起每晚崩在 api._c「unable to open database file」。**根因没查到**:"
-                             "主检出路径、venv 解释器、空环境、256 描述符上限下都复现不出"
-                             "(连接不关那条是真隐患、已修,但对照没红 —— 不是这条路)。"
-                             "11-12 起夜跑把崩了的套**完整输出落盘**,等下一晚拿证据",
-                             "intent/optimization-program-2026-11.md"),
+    # store_report_eval:11-16 这晚没崩(1/3)—— 不再连续出事,按反向检查删掉(根因仍没查到,再崩就重新登记)
 }
 
 
