@@ -292,6 +292,18 @@ def main():
                 头 = (回h.decode("utf-8-sig").splitlines() or [""])[0] if isinstance(回h, bytes) else str(回h)
                 ck("店长导出客户 → 拿到 CSV,只有手机尾号没有整号(对照)",
                    码h == 200 and "客户号" in 头 and "手机尾号" in 头 and "手机号" not in 头.replace("手机尾号", ""), f"{码h} 表头:{头[:60]}")
+                # 11-16:页面上「导出所选」(浏览器里拼 CSV)也过同一道 —— 顾问报备 → 403 且记一笔被拒;店长 → 放行且记行数
+                码x, 回x = 打一次("/api/export-selected", {"file": "客户预约", "ids": ["A1", "A2"]}, cookie=ck_顾)
+                拒记 = server.rows("SELECT allowed, code FROM op_log WHERE target='客户预约' ORDER BY id DESC LIMIT 1")
+                ck("顾问导出所选 → 403(EXPORT_ROLE),操作日志记一笔被拒",
+                   码x == 403 and 码之(回x) == "EXPORT_ROLE" and bool(拒记) and 拒记[0]["code"] == "EXPORT_ROLE"
+                   and not 拒记[0]["allowed"], f"{码x} {str(回x)[:50]};日志 {拒记[:1]}")
+                码y, 回y = 打一次("/api/export-selected", {"file": "客户预约", "ids": ["A1", "A2", "A3"]}, cookie=ck_店)
+                放记 = server.rows("SELECT actor, code, reason FROM op_log WHERE target='客户预约' ORDER BY id DESC LIMIT 1")
+                ck("店长导出所选 → 放行,操作日志署名是店长、记了 3 行(对照)",
+                   码y == 200 and isinstance(回y, dict) and 回y.get("ok") and bool(放记)
+                   and 放记[0]["code"] == "EXPORT_SELECTED" and 放记[0]["actor"] == 店长["name"] and "3 行" in 放记[0]["reason"],
+                   f"{码y} {str(回y)[:50]};日志 {放记[:1]}")
                 最近 = server.rows("SELECT actor FROM op_log WHERE code='TOGGLE' ORDER BY id DESC LIMIT 1")
                 ck("toggle 的台账署名是登录的人,不是写死的真实员工",
                    bool(最近) and 最近[0]["actor"] == 店长["name"] != "魏欣新",

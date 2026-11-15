@@ -4777,6 +4777,23 @@ class H(BaseHTTPRequestHandler):
             if not 登录人:
                 return self._send({"error": "没登录", "code": "NO_LOGIN",
                                    "reason": "请先登录 —— 写操作要记下是谁做的,不替任何人署名"}, 401)
+        if p == "/api/export-selected":
+            # 页面上「导出所选」(11-09 拍「没有单条写接口的先做导出所选」)是**浏览器里**拼 CSV 的,
+            # 绕过了上面 GET /api/export/ 那道「店长以上 + 进操作日志」(用户 11-12 拍,台账第十六条)。
+            # 11-16 接上:页面先来这里报备,这里判角色、记一笔,**被拒就不生成文件**。
+            # ⚠️ 这是**约定级**的闸:数据本来就在这个人屏幕上(已按门店划范围、手机号已打码),
+            # 想绕过页面另存它拦不住 —— 它管的是「顺手一点就带走一张表、事后查不到谁导的」。
+            _导出人 = 登录人 or {}
+            _文件名 = str(body.get("file") or "")[:40] or "导出所选"
+            _行号们 = [str(x)[:40] for x in (body.get("ids") or [])][:500]
+            if _导出人.get("role") not in MANAGER_ROLES:
+                log_op(_actor_of(self), "download", _文件名, "—", "—", False, "EXPORT_ROLE",
+                       f"「{_导出人.get('role')}」导出所选被拒(店长以上才能导)", {"行数": len(_行号们)})
+                return self._send({"error": "导出要店长或总部运营来做 —— 表格出了门就收不回来",
+                                   "code": "EXPORT_ROLE"}, 403)
+            log_op(_actor_of(self), "download", _文件名, "—", "—", True, "EXPORT_SELECTED",
+                   f"导出所选 {len(_行号们)} 行(当前页勾选的,在浏览器里生成)", {"ids": _行号们})
+            return self._send({"ok": True, "行数": len(_行号们)})
         if p == "/api/reveal-contact":
             # 卡片上点「看完整号码」—— 身份只从 Cookie 换;每点一次进操作台账(用户 10-10 定)
             import arrival_card as _ac

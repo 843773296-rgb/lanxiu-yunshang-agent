@@ -892,10 +892,13 @@ function bindCb(){
 // 只作用于当前这一页勾选的行
 function 已选(){return [...M.querySelectorAll(".cb.ck[data-cb]")].map(x=>x.dataset.cb)}
 function 没选(){res(false,"没选","先勾选要操作的行(只算当前这一页)")}
-function 导出所选(文件,列,行们,键){
+// 11-16:先去后台报备(店长以上才放 + 记操作日志,用户 11-12 拍的导出规矩),被拒就不生成文件
+async function 导出所选(文件,列,行们,键){
   const ids=new Set(已选()); if(!ids.size){没选();return}
   const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
   const 选中=行们.filter(r=>ids.has(String(r[键])));
+  const 报=await post("/api/export-selected",{file:文件,ids:选中.map(r=>String(r[键]))});
+  if(!报||!报.ok){res(false,"没导出",(报&&(报.error||报.reason))||"后台没放行,这次没有生成文件");return}
   const csv="\ufeff"+[列.map(c=>q(c[0])).join(","),...选中.map(r=>列.map(c=>q(r[c[1]])).join(","))].join("\n");
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download=文件+".csv"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
