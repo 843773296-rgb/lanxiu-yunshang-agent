@@ -16,6 +16,7 @@
 
 - **推送**:我 07:4x 那轮链 09:03 红在 muslin_check(白坯试衣说明里「责任转移 / 会拦」被缩掉)→ 6eef1cfa 修。重跑要 1.5h+,让并行会话先推它 19 笔;
   **后台店长助手生产临时切回 v13**(直接 API,理由写了),它推完我:rebase → `--切 15`(v15 已存在,= v13 + TL84–89、91–93)→ assistant_effect → 预跑门禁 → pre_push。
+- **09:4x 更新**:return_rate 已接进项目并本地提交 909fef32(returns_check 全绿含真调、select_eval 23/23、PRD A-303、文档数字 106/90/74/58/115);咬合 4 条**还没重放**(锁被并行会话占着)。align 脚本加了 `--加开 return_rate`。等它推完:rebase(bite_specs 末尾两边都追加 → 按三元组并集;check.sh / PRD 2.4.4 / HANDOFF / 待办清单 会撞)→ `align_rules_v9.py --加开 return_rate` 出 v16 → 喊并行会话 → `--切 16 --加开 return_rate` → `bite_run --only backend/returns_check.py` → 预跑门禁 → pre_push → 告诉用户「打开了新工具」。
 - **⑥ 退货率**:用户 11-15 又补拍两条:申请退货率和实际退货率**两个都给**(审批拒绝 / 还在审的只进申请);偏高**至少退过 3 件**(否决档越多越严)。
   写的时候发现 Wilson 近似在率≈1% 时下限偏高(卖 9 退 1 判偏高)→ 换 Clopper-Pearson 精确区间(技术方法,没单问,做完要告诉用户)。
   草稿:`.wip-glossary/ret/returns.py`(→ knowledge/returns.py)、`api_snippet.py`(→ api.py wear_risk 后)、`schema_snippet.txt`(→ SHOP_SCHEMAS)、`rule_snippet.py`(TL95)、`returns_check.py`(→ backend/,夹具 8 条全绿,真调那条待进项目验)。
