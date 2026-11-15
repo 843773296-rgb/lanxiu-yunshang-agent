@@ -105,7 +105,23 @@
 > 规矩同上一轮:gate_lock --who、不碰 eureka-fc 文件、改管理后台推前 make test-e2e-ci、scan_secrets 单独一步、commit --only;**加新列走 backend/migrations/**;写共享库前先跟 eureka-fc 说。
 > ⚠️ 开局时 eureka-fc 在跑推送前链(schema_version 那笔),**它推完之前别跑门禁、别写共享库**;本地待推 f0208b4a(白天汇总)。
 
-**交接(11-15 10:0x,压缩前 —— 覆盖下面两段的「下一步」)**
+**交接(11-15 16:xx,还债收尾 —— 覆盖下面各段)**
+- **用户拍(15:xx)**:剩 14 条「不能重放」**扩重放工具真做成**(不是登记豁免)。已做:`tools/bite_run.py` 加五个键 `改坏命令 / env / 参数 / 命令 / 只报不拦`(`{副本}` 占位换副本路径;只报不拦 = 对照里不许有那句、改坏后必须有;--自测过),14 条规格全写进 bite_specs(26822ac3)。**两份记录欠债 16 → 2**(剩 guards_test / tool_eval 是 eureka-fc 的,它本地已改 0cac1f93);位置参数 0、截断 0、预期红 2(growth 刻意留、rounds eureka-fc 已改)。
+- **正在跑**:后台重放 16 个脚本的新 / 改规格(任务 bknjf1fu9,日志 scratchpad/replay_1115.log,每个脚本一次 bite_run --only,**排队等锁**,eureka-fc 的链在占)。看结果只认每段 `##### … rc=` 和「✅ N 条咬合规格全过」;红了**先疑夹具**(前置命令 / env / 参数),别先改判据。最可能红的:stable「批级加 date」(kind 不对就换)、delivered_images(`$LANXIU_SRC_ROOT` 要在 bite_run 进程环境里,它 `setdefault` 过)、repo_consistency / impact(副本里 git init + add -A 要能跑;.gitignore 生效)、rating_rebuild(前置重造 rating 要几分钟)。
+- **本地待推 5 笔**:a8646715 / b16afa5a / 26822ac3 + HANDOFF 随下笔。推法同前:eureka-fc 推完 → pull --rebase → scan_secrets 单独 → `pre_push.sh --不推` → 绿了请用户 `! git push origin main`。
+- **下一步第一个动作**:看重放结果 → 修红 → 提交 → 等 eureka-fc 推完走推送链 → 然后**11-12 那 27 件还债计划逐条核真实状态**(用户要的「还清」第二层;执行手册里 45 张工单只有 3 个 ✅,状态没人回填)→ 再开工作流一期第一件(执行器读超时 / 重试)。
+- **禁区**:同前;eureka-fc 切 v17 到推上去之间别跑全量门禁。
+
+**交接(11-15 15:xx,还债中)**
+- **已推** 3d0a3dc7(用户 14:4x 亲手 push;自动 push 被权限分类器拦,以后链用 `--不推`,绿了请用户敲 `! git push origin main`)。推后本地又 3 笔:a8646715(fakedata 15 处具名列 + 3 处截断,两张欠债表清空但文件留着)、b16afa5a(14 条 fakedata 咬合规格 + 修 3 条因欠债表清空过期的规格;**14 条还没 bite_run 重放**,锁在 eureka-fc 手里)、c3768173 / 3d0a3dc7 之前的见 git log。
+- **用户拍(15:xx)**:「先把欠的还清」再开工作流一期;eureka-fc 那三笔(tool_eval / guards_test / rounds)它已本地改好 0cac1f93,随它下一批推。
+- **欠债现状**:位置参数 0 / 截断 0 / 两份记录 16(其中 2 是 eureka-fc 的、随它推落地;其余 14 条**用现在的重放工具做不了**:cron_health 2 和 hook_sync 1 要机器外文件、delivered_images 4 图不进副本、repo_consistency 2 要真提交、impact 1 副本无 .git、runlog 2 和 intent 1 只报不拦、rating_rebuild 1 要指纹对得上的夹具库)/ 预期红 2(growth 刻意留、rounds eureka-fc 已改)。**已问用户**怎么处理这 14 条(登记成带理由的豁免 vs 扩重放工具)。
+- **下一步第一个动作**:eureka-fc 喊「推完」→ `git pull --rebase --autostash`(冲突点:bite_specs 末尾、咬合两份记录欠债.json「两边都减」、check.sh)→ 锁内 `python3 tools/bite_run.py --only fakedata/repro.py` 等 5 个脚本 + insert_shape_check + truncation_check + bite_check(14+3 条新/改规格;红了先疑攻击点:stable 那条「批级加 date」要是没红就换 kind)→ `./tools/pre_push.sh --不推` → 绿了请用户 push → 喊 eureka-fc。
+- **判据**:bite_run 取 check.sh 里**非 --自测 那行**的命令跑(anchor 用 `验 --db`、agree 用 `--db`、samekind 只有自测行就用它);多条红也算过,只要点名那条在其中。
+- **禁区**:eureka-fc 切 v17 到推上去之间别跑全量门禁(assistant_effect 会红在它的 11 条规矩);不碰它的文件;运行时日志三件(.feynman/tool-eval.json、agentsite/evals/funnel.jsonl、skill_usage.jsonl)谁都不 add,跑链前 `git checkout` 掉、跑完放回(备份在 scratchpad/dirty_bak)。
+- **作废**:早上「fakedata 那 14 条是别人的线不还」—— 用户 15:xx 拍了我来还,已还。
+
+**交接(11-15 10:0x,压缩前)**
 - **状态**:夜任务已收官(汇总发飞书 0bebc075、CronDelete addf3eab 已删)。本地 **20 笔**待推,最新 c425ee7d(台账六十三/六十四:退款「补足后仍失败」按最后一次失败定因 + 凭回码变了认补足,用户 09:3x 拍)。eureka-fc 09:4x 说「你先推」(它的链 09:03 红在 muslin_check 已修,生产临时切回 v13 和主干对齐)。
 - **正在跑**:`./tools/pre_push.sh --不推`(后台任务 bbybq1qje,日志 scratchpad/pre_push_1115b.log;09:5x 起,估 15–85 分钟)。**跑完只认日志里「被包的命令退出码」那行**。⚠️ 自动推被权限分类器拦了两次(「跑完直接 push」),所以改成 `--不推`;**绿了请用户敲 `! cd ~/Desktop/澜绣云裳agent && git push origin main`**,推完 SendMessage 告 eureka-fc(uds:/tmp/cc-socks/36041.sock),它再 rebase、切 v15。
 - **下一步第一个动作**:看 bbybq1qje 通知 → 读 pre_push_1115b.log 尾部 → 绿:让用户推;红:照日志修(别重跑没改的)。**然后把三个脏文件放回去**:`cp scratchpad/dirty_bak/{tool-eval.json→.feynman/,funnel.jsonl→agentsite/evals/,skill_usage.jsonl→agentsite/evals/}`(推前为了工作区干净 `git checkout` 掉了,它们是运行时滚动日志,**谁都不 add**)。
@@ -2883,21 +2899,24 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-15 09:40。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-15 15:42。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | c425ee7d · 2026-11-15 · 台账六十三、六十四:退款「补足后仍失败」按最后一次失败定因 + 必须说清余额已不是卡点;「补足」凭渠道返回原因变了认 |
-| 代码量 | 1119 个 Python 文件 / 205940 行(不含 .venv) |
+| 最新提交 | 26822ac3 · 2026-11-15 · 重放工具加五个键(改坏命令 / env / 参数 / 命令 / 只报不拦),剩下 14 条「只写说明不能重放」的咬合全部补成规格(两份记录欠债 16 → 2,剩的 2 条在并行会话手里) |
+| 代码量 | 1119 个 Python 文件 / 206002 行(不含 .venv) |
 | 验收 | `./check.sh` 共 426 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
+M .feynman/tool-eval.json
+ M HANDOFF.md
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+?? "--\350\207\252\346\265\213.log"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
@@ -2913,20 +2932,17 @@ M HANDOFF.md
 ?? .feynman/nightly-eval.log
 ?? .feynman/world-shift-launchd.log
 ?? .wip-glossary/
-?? .wip-muslin/
-?? .wip-rating-followup.patch
-?? .wip-store-report-SKILL.md
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-c425ee7d 台账六十三、六十四:退款「补足后仍失败」按最后一次失败定因 + 必须说清余额已不是卡点;「补足」凭渠道返回原因变了认
-0bebc075 夜间汇总 11-14 20:11 → 11-15 08:11:四条拍板落地、欠账 100→15 / 59→3 / 9→0 / 110→30、7 条「绿着没验」修掉、核出处 266 全对、工作流规划 + 早上四条拍板
-5883a254 工作流规划按用户 11-15 早四条拍板改定(台账五十九至六十二):一期全做、代码执行最小版、人工介入加飞书通知、导出导入都做
-543ac599 工作流整体与详细规划(照 Dify):现状对照 22 节点 / 编辑器逐项差距,四期路线,界面规范,4 件待拍
-2a9564a5 种子数据最后一处按位置写的 INSERT(形制表)改成具名列(位置参数欠债 16 → 15)
+26822ac3 重放工具加五个键(改坏命令 / env / 参数 / 命令 / 只报不拦),剩下 14 条「只写说明不能重放」的咬合全部补成规格(两份记录欠债 16 → 2,剩的 2 条在并行会话手里)
+b16afa5a 数据工厂 14 条「只写说明不能重放」的咬合补成可重放规格(两份记录欠债 30 → 16),顺带修三条因欠债表清空而过期的规格攻击点
+a8646715 数据工厂还债:15 处按位置写的 INSERT 改成具名列(位置参数欠债 15 → 0)、3 处截断报告补「还有几条」(截断欠债 3 → 0)
+3d0a3dc7 核出处工具里的全角减号改用 chr() 拼:字面字符会被字符集检查算进全项目该认的全角,别处 6 个老正则连带红(42→48);影响面基线 393→394 随门禁更新
+c3768173 推送前链红两处都是今早自己埋的:形制表那句改具名后两条咬合规格攻击点过期(挪到「5 列给 4 值」和「欠债表加回已还清的一处」,重放 5/5 过);PRD 新节一处阿拉伯数字被文档数字对账当成计数(改中文数词)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
