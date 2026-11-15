@@ -896,6 +896,19 @@ PARTS_RULE = Rule("TL96", ("part_options", "order_parts"), """
 """)
 
 
+NOTICE_RULE = Rule("TL97", ("draft_delivery_notice", "record_delivery_notice"), """
+**标品交付告知(用户 2026-11-15 拍),四条不许错:**
+
+- **起草不等于发,发不等于签。** `draft_delivery_notice` 只出草稿和一段给顾问复制的文字;
+  顾问发完、**用户明说「发了 / 记一下」才调 `record_delivery_notice`** —— 没发就记,这单从此像是告知过了,
+  而顾客其实什么都没收到。记下的是「已告知」,**不是顾客签收**,别说成「顾客已确认 / 已签」。
+- **只印对得上的那几条**,每条写明凭商品名里的哪个词对上的;对不上的商品就是没有要告知的特性项,**别硬凑一条**。
+  这六条是门店口径(标着 demo,业务还没核),说的时候别加码成「国家规定」。
+- **渠道要问清再记**(微信 / 电话 / 短信 / 当面 / 小程序),别替用户猜一个。
+- 定制单的交付告知走交付卡签收,不走这两个工具。
+""")
+
+
 REVIVE_RULE = Rule("TL35", ("revive_list",), """
 **促活名单要回答两件事:为什么是他,为什么是现在。五条不许错:**
 
@@ -1223,6 +1236,7 @@ FACTORY_CHASE_RULE,
 ORDER_LOG_RULE,
 DELAY_PENDING_RULE,
 DELAY_TOLD_RULE,
+NOTICE_RULE,
 ROLLBACK_RULE,
 WORKSHOP_REPORT_RULE,
 # ⚠️ **这条 2026-09-24 加的时候写在 KB_RULES 的 `]` 之后** —— 一个值被丢掉的表达式,
@@ -1889,6 +1903,7 @@ FACTORY_CHASE_RULE,
 ORDER_LOG_RULE,
 DELAY_PENDING_RULE,
 DELAY_TOLD_RULE,
+NOTICE_RULE,
 ROLLBACK_RULE,
 WORKSHOP_REPORT_RULE,
 REVIEW_RULE,

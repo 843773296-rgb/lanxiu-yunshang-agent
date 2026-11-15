@@ -41,6 +41,7 @@
     "fulfillment": ( # 生产与交付:产能、工单、报工、工厂回传、延期、白坯、开裁、签收
         "get_capacity", "get_workorder", "my_workorders", "report_production",
         "factory_chase", "delay_pending", "mark_delay_told", "rollback_order",
+        "draft_delivery_notice", "record_delivery_notice",   # 标品交付告知:起草(读)/ 记已告知(写),11-15
         "fitting_queue", "record_fitting", "start_cutting", "record_pickup",
         "verify_fit_code", "ratify_complete",
     ),

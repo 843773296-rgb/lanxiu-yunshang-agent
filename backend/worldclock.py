@@ -124,6 +124,7 @@ def 差几天(d):
     ("rating", "handled_at", "店长处理差评时间", "pkg_id"),
     ("rating", "followup_at", "顾客追评时间", "pkg_id"),
     ("customer_tag", "created_at", "给客户打标签的时间", "customer_id"),   # 11-14
+    ("delivery_notice", "notified_at", "交付告知发给顾客的时间", "order_id"),   # 11-15 第 2 条迁移加的列
     # 报价(2026-09-27):**报过价、作废过**都是已经发生的事,而且会被 shift_world 平移。
     # ⚠️ 当场登记,不等它漏一次 —— 评价那三列是这么做的,签收那五列是**漏了之后**才补的
     # (漏的那次代价:C4 / 平移前置闸 / clamp 三道闸同时的盲区)。

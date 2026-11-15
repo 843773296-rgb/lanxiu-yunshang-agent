@@ -495,6 +495,8 @@ SHOP_TOOLS = [
     "mcp__commerce__order_log",
     # 工厂延期待通知 + 通知完标一下(写)。规矩 TL55:你不联系顾客;「已通知」只有用户说了才标
     "mcp__fulfillment__delay_pending", "mcp__fulfillment__mark_delay_told",
+    # 标品交付告知(11-15):起草(只读)/ 记已告知(写,用户明说发了才调)。规矩 TL97
+    "mcp__fulfillment__draft_delivery_notice", "mcp__fulfillment__record_delivery_notice",
     # 人工回退(写):发错件 / 到店返工。规矩 TL56:只有店长能点,原因和理由只能照用户说的填
     "mcp__fulfillment__rollback_order",
 ]

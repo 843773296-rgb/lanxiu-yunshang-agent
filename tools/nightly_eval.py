@@ -562,7 +562,7 @@ def 提交夜跑结果(报告):
 # 已知的连续失败 —— **每条要理由 + 指向哪张卡**;`nightly_check` 反向守:套不再连续失败了这条就得删
 连续失败已知 = {
     "oppo_eval.py": ("call-notes 技能被「聊天接管」拦下 → 按 TL76 转 start_workflow → 工作流没发布 → "
-                     "takeover_client 回「别改用技能自己做」;生产同状态。等用户拍「接管出错时技能兜不兜底」",
+                     "takeover_client 回「别改用技能自己做」;用户 11-14 已拍「只在没配好时兜底、403 照旧拦」,11-14 14:3x 随 ed6cef10 上了主干;**等夜跑真跑出非 0 再删这条**",
                      "intent/optimization-program-2026-11.md"),
     "store_report_eval.py": ("10-30 起每晚崩在 api._c「unable to open database file」。**根因没查到**:"
                              "主检出路径、venv 解释器、空环境、256 描述符上限下都复现不出"

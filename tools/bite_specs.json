@@ -22786,13 +22786,13 @@
   "预期红": "另一个取数口也过同三道 · truth"
  },
  {
-  "script": "backend/authgate_check.py",
-  "改坏": "把「导出所选」报备口的店长以上判定删掉(顾问又能顺手导走一张表)",
+  "script": "backend/delivery_notice_check.py",
+  "改坏": "把第 3 条(纱罗)的排除词去掉 —— 香云纱 / 麻纱 / 真丝袜都会被当成纱罗,顾客收到一条和他的衣服无关的告知",
   "file": [
    {
-    "path": "backend/server.py",
-    "old": "            if _导出人.get(\"role\") not in MANAGER_ROLES:\n",
-    "new": "            if False:\n"
+    "path": "knowledge/delivery_notice.py",
+    "old": "r\"纱罗|杭罗|素罗|花罗|绡|欧根纱|乔其纱|纱\", r\"香云纱|莨纱|麻纱|真丝袜\"",
+    "new": "r\"纱罗|杭罗|素罗|花罗|绡|欧根纱|乔其纱|纱\", None"
    }
   ],
   "预期红": "顾问导出所选 → 403(EXPORT_ROLE),操作日志记一笔被拒"
@@ -22843,6 +22843,42 @@
     "new": "        if False:\n            c.execute(f\"DELETE FROM roster WHERE created_by='system'"
    }
   ],
-  "预期红": "夹具挑得到(副本上那两周是空的)"
+  "预期红": "香云纱不算纱罗、麻纱和真丝袜不误认"
+ },
+ {
+  "script": "backend/delivery_notice_check.py",
+  "改坏": "去掉「同一单记过就不覆盖」—— 第二次记会把第一次的渠道和时间盖掉",
+  "file": [
+   {
+    "path": "backend/delivery_notice_write.py",
+    "old": "    if 旧 and 旧[\"notified_at\"]:\n        c.close()",
+    "new": "    if False:\n        c.close()"
+   }
+  ],
+  "预期红": "同一单只记一次,第二次不覆盖"
+ },
+ {
+  "script": "backend/delivery_notice_check.py",
+  "改坏": "记已告知时不再按身份限范围 —— 顾问能给别人名下的单记已告知",
+  "file": [
+   {
+    "path": "backend/delivery_notice_write.py",
+    "old": "    o = c.execute(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\"\n                  + 范围where, (order_id, *范围args)).fetchone()",
+    "new": "    o = c.execute(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\"\n                  , (order_id,)).fetchone()"
+   }
+  ],
+  "预期红": "顾问记不了不归他的单"
+ },
+ {
+  "script": "backend/delivery_notice_check.py",
+  "改坏": "记已告知时顺手把签收时间也写上 —— 「告知过」被记成「顾客签了」,判责从此按已签收判",
+  "file": [
+   {
+    "path": "backend/delivery_notice_write.py",
+    "old": "        c.execute(\"UPDATE delivery_notice SET notified_at=?, notified_by=?, notified_channel=?, notified_items=? WHERE order_id=?\",\n                  (时, me.get(\"no\"), ch, json.dumps(号), order_id))\n    else:\n        c.execute(\"INSERT INTO delivery_notice(order_id, notified_at, notified_by, notified_channel, notified_items) VALUES(?,?,?,?,?)\",\n                  (order_id, 时, me.get(\"no\"), ch, json.dumps(号)))",
+    "new": "        c.execute(\"UPDATE delivery_notice SET notified_at=?, notified_by=?, notified_channel=?, notified_items=?, signed_at=? WHERE order_id=?\",\n                  (时, me.get(\"no\"), ch, json.dumps(号), 时, order_id))\n    else:\n        c.execute(\"INSERT INTO delivery_notice(order_id, notified_at, notified_by, notified_channel, notified_items, signed_at) VALUES(?,?,?,?,?,?)\",\n                  (order_id, 时, me.get(\"no\"), ch, json.dumps(号), 时))"
+   }
+  ],
+  "预期红": "记已告知不动签收"
  }
 ]
