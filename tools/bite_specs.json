@@ -22249,11 +22249,54 @@
   "预期红": "四种试衣状态每种都要有活用例"
  },
  {
-  "script": "backend/grading_check.py",
-  "改坏": "把 grading.py 的关键词「褶裥」窄回「褶裥片」(等价于 PT23 没被标上)。⚠️ 落成规格:文件级要重灌库才看得见(11-14 夜试过,删了规格),改成库级 —— 在库副本上直接把 PT23 腰围的「仅供参考」抹掉,就是「PT23 没被标上」那个结果本身",
+  "script": "backend/returns_check.py",
+  "改坏": "让观察期失效 —— 付款不满 14 天的件也算进分母(这些件还在退货期里,退货还没回来,率系统性偏低)",
   "sql": [
    "UPDATE size_spec SET caveat=NULL WHERE pattern='PT23' AND item='腰围'"
   ],
-  "预期红": "有褶裥片的版型,腰围一个不漏地标了「仅供参考」"
+  "预期红": "付款不满观察期的件分子分母一起不算",
+  "file": [
+   {
+    "path": "knowledge/returns.py",
+    "old": "    满 = lambda 行: (行.get(\"付款日\") or \"\")[:10] and (行[\"付款日\"][:10] <= 界)",
+    "new": "    满 = lambda 行: bool((行.get(\"付款日\") or \"\")[:10])"
+   }
+  ]
+ },
+ {
+  "script": "backend/returns_check.py",
+  "改坏": "把审批拒绝算进实际退货(没批的申请不是退货)",
+  "file": [
+   {
+    "path": "knowledge/returns.py",
+    "old": "没批的状态 = (\"审批拒绝\", \"提交申请\")",
+    "new": "没批的状态 = (\"提交申请\",)"
+   }
+  ],
+  "预期红": "审批拒绝只算申请退货、不算实际退货"
+ },
+ {
+  "script": "backend/returns_check.py",
+  "改坏": "去掉「至少退过 3 件」那道门槛(140 个商品档里凭运气就会冒出偏高)",
+  "file": [
+   {
+    "path": "knowledge/returns.py",
+    "old": "偏高最少件 = 3 ",
+    "new": "偏高最少件 = 1 "
+   }
+  ],
+  "预期红": "退 1–2 件的不判偏高"
+ },
+ {
+  "script": "backend/returns_check.py",
+  "改坏": "把换货并进退货",
+  "file": [
+   {
+    "path": "knowledge/returns.py",
+    "old": "        elif x[\"kind\"] == \"换货\" and x[\"status\"] not in 没批的状态:\n            t[\"换\"] += 1",
+    "new": "        elif x[\"kind\"] == \"换货\" and x[\"status\"] not in 没批的状态:\n            t[\"换\"] += 1; t[\"实际退\"] += 1"
+   }
+  ],
+  "预期红": "换货单独一个率,不并进退货"
  }
 ]

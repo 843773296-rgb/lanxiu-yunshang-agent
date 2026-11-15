@@ -6688,6 +6688,47 @@ def wear_risk(dim="面料"):
     return _nz(out)
 
 
+
+# ── 标品退货率 / 换货率 / 退货原因(2026-11-15,用户清单第六条 + 算法选型卡)─────────────
+_退货维度 = ("品类", "商品", "渠道")
+
+
+def return_rate(dim="品类", month=None):
+    """**标品退货率**(只读)—— 哪些品类 / 商品 / 渠道退得多,退的原因是什么。口径全在 knowledge/returns.py。
+
+    ⚠️ 全公司不分店:标品主要在官网 / 小程序 / 客服代下单,按门店切没有意义(同 product_ranking)。
+    ⚠️ month 是**付款月**(按付款日分批),不是退货发生的月 —— 退货发生在付款后 4–10 天,
+       按退货月切的话分子分母错位(同 wear_risk 不接月份的理由),按付款月分批就没有这个问题。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import returns as _ret
+
+    if dim not in _退货维度:
+        return {"error": f"dim 只能是 {' / '.join(_退货维度)},你给的是「{dim}」"}
+    if month and not re.fullmatch(r"\d{4}-\d{2}", str(month)):
+        return {"error": f"month 要写成 YYYY-MM(付款月),你给的是「{month}」"}
+    列 = {"品类": "COALESCE(cg.name, p.category, '(没分类)')", "商品": "COALESCE(p.name, i.spu)",
+          "渠道": "COALESCE(o.source, '(没填渠道)')"}[dim]
+    限 = " AND substr(o.paid_at,1,7)=?" if month else ""
+    a = [month] if month else []
+    卖 = _rows(f"SELECT o.paid_at 付款日, i.qty 件数, {列} 档"
+               " FROM ordr_item i JOIN ordr o ON o.id=i.order_id"
+               " LEFT JOIN product p ON p.spu=i.spu LEFT JOIN category cg ON cg.code=p.category"
+               " WHERE o.kind='标品订单' AND o.paid_at IS NOT NULL AND o.status NOT IN ('取消','待付款')" + 限, *a)
+    售 = _rows(f"SELECT o.paid_at 付款日, a.kind, a.status, a.reason, {列} 档"
+               " FROM aftersale a JOIN ordr o ON o.id=a.order_id"
+               " JOIN ordr_item i ON i.id=a.order_item_id"
+               " LEFT JOIN product p ON p.spu=i.spu LEFT JOIN category cg ON cg.code=p.category"
+               " WHERE o.kind='标品订单' AND a.kind IN ('退货退款','换货')" + 限, *a)
+    r = _ret.算(卖, 售, _wc.今天(), lambda x: x["档"])
+    r.update(维度=dim, 付款月=month or "不限(全部满观察期的)", 范围="全公司标品订单(不分店)")
+    if not r["全店"]["卖出件"]:
+        r["说明"] = ("这个范围里**没有满观察期的标品卖出**(或者整月都还在 14 天退货期里)—— "
+                   "不是退货率 0,是**没东西可算**")
+    return r
+
+
 def _签收日期(order_id):
     """这一单什么时候签收的 —— 按件签收之后取**最后一件**合身的时间,没有就退回订单级那一行。"""
     r = _rows("SELECT MAX(fit_at) t FROM pickup_item WHERE order_id=? AND fit_result='合身'", order_id)
@@ -7103,6 +7144,9 @@ SHOP_SCHEMAS=[
  {"name":"start_cutting","description":"**开裁(真的写进去)**:把一张定制单从「待生产」推进到「生产中」。只有版师能用。**要先过白坯试衣这道闸**(业务 09-22):单里每一件该试的都试过、而且客户签了字,才许开裁;有一件没过就整单拒绝,返回里列出是哪几件、缺什么(没试 / 没签 / 判不了该不该试又没试过 —— 判不了的先试一轮并签字就能裁)。被拒时**不要换个说法再试**,把卡在哪告诉用户,让顾问去约试衣或补签。⚠️ **开裁不可逆**,动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
  {"name":"channel_compare","description":"**多渠道表现对比** —— 四个下单渠道(微信小程序/官网/门店 Pad/客服代下单)各自的单量、客单价、待付款占比、退款率、售后率。⚠️ **这张表不能用来比渠道,而它和真的渠道对比长得一模一样。** 原因不是数据少,是这一列怎么填上去的:种子订单是**按订单序号轮着发的**(`SRC[i % 4]`),模拟订单是**按固定权重独立抽的**,两种机制都让渠道和金额、状态、客户**统计独立** —— 任何渠道间差异都是这两个机制的产物,**不是渠道的表现**。⚠️ **渠道和活动 100% 共线**:每个渠道恰好对应一个活动,一一对应没有例外,所以「这个渠道转化好」和「这个活动效果好」在这批数据上**分不开**(这条同时影响 activity_roi)。⚠️ **客服代下单不是一个渠道**,是人工补录,背后可能是电话/微信/门店 —— 当渠道分析会得出假结论。⚠️ **不给渠道排名**:11 单的样本排不出名次,排了会被当成结论去调预算;每个比率后面都带着「**一单值多少个百分点**」。","input_schema":{"type":"object","properties":{"include_sim":{"type":"boolean","description":"是否把 3826 单模拟订单也算进来。默认 false —— 它们的渠道是抽出来的,算进来只会让表看起来更可信,不会更真"}}}},
  {"name":"product_ranking","description":"**当月最受欢迎**(只读)——给版师的打版依据:这个月哪些商品卖得多,以及按**形制 / 面料 / 工艺**切开各档卖了多少。「这个月什么最受欢迎」「哪种面料卖得好」「圆领袍和马面裙哪个多」用它。⚠️ **两张榜并列给(按件数 / 按金额),不合成一个分数** —— 件数跟着打版的工作量走、金额跟着价值走,一件卖 3 件的重工和一件卖 30 件的常服按两种口径排出来不一样;用户没说按哪种时**两张都报**,别自己挑一张。⚠️ **返回里「这个月有销量的商品一共」是总数,榜上只给前 20 条** —— 报的时候要说出总数,否则看的人不知道这是全部还是冰山一角。⚠️ **待付款算进销量**(钱没付,但那是一次选择),占比单独给出来;占比高的时候要说一句。⚠️ **这张榜上「谁排第一」在这个库里是随机的** —— 商品热度是造演示数据时种进去的(名次随机打乱),返回里「撞在种下的规律上」那一条**必须一起报给版师**:一条种下的规律得出的结论,和一条真的发现,在报表上长得一模一样。⚠️ **这是相关不是因果** —— 能说「这个月它卖得最多」,不能说「改用它能让销量涨」。⚠️ **和 `sales_rank` 不是同一把尺**(范围:这里全量不分店 / 它随身份;待付款:这里算 / 它不算;维度:这里切形制面料工艺 / 它切商品 SKU 品类)——两边总件数不一样而**两个都对**,报数时说清是哪一把。","input_schema":{"type":"object","properties":{"month":{"type":"string","description":"月份 `YYYY-MM`,如 `2026-10`。默认世界的当月。「这个月」不替你猜成具体哪个月"},"dim":{"type":"string","description":"再按哪个维度切:形制 / 面料 / 工艺。不给就只给商品榜","enum":["形制","面料","工艺"]}}}},
+ {"name":"return_rate","description":"**标品退货率**(只读)—— 哪些品类 / 商品 / 渠道退得多,退的原因是什么。「哪类标品退货多」「退货主要是什么原因」「小程序和官网哪个退得多」用它。返回三个率并列(实际退货率 / 申请退货率 / 换货率,各带可信范围和「偏高 / 偏低 / 说不清」)、申请被拒件数、退货原因 6 类、观察期说明。全公司不分店。定制品不在这里(定制品不接受无理由退换)。","input_schema":{"type":"object","properties":{
+    "dim":{"type":"string","description":"按什么切:品类(默认)/ 商品 / 渠道"},
+    "month":{"type":"string","description":"只看某个**付款月**卖出的,YYYY-MM;不给 = 全部满观察期的"}},"required":[]}},
  {"name":"wear_risk","description":"**易损分析**(只读)—— 哪些面料 / 形制 / 工艺更容易出维保。「什么面料最容易坏」「刺绣是不是更容易报维保」用它。返回按率排(分子分母一起给,分母低于 30 件标「样本不足」)、「差异显不显著」一条和「撞在种下的规律上」一条。不接月份参数(故意的)。","input_schema":{"type":"object","properties":{"dim":{"type":"string","description":"按哪个维度切,默认面料","enum":["面料","形制","工艺"]}}}},
  {"name":"recovery_followup","description":"**(写)未成交挽回清单一键建跟进**:把 recovery_queue 清单上的几行(待付款的订单号、已取消 / 爽约 / 已过期的预约号)各派一条「电话回电」给顾问。items 是列表,每条 {号: 订单号或预约号, assignee?(不给 = 这一单的顾问), end?(截止,不给 = 今天 18:00), note?}。**逐行各自成败**:同一位客户还有没办完的电话回电 → 报「已经有人在跟」不重复派;不在清单里(已付 / 已成行 / 别店)→ 不派。一次最多 30 行。只有店长及以上能建。⚠️ **这只是派给人去联系,不是已经联系过客户** —— 不许说成「已经联系了」;发短信 / 打电话仍是人的事。⚠️ 先 recovery_queue 把清单念给店长,**他说跟哪几条**再调。","input_schema":{"type":"object","properties":{"items":{"type":"array","items":{"type":"object"},"description":"[{号, assignee?, end?, note?}…]"}},"required":["items"]}},
  {"name":"recovery_queue","description":"**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久、该按什么顺序跟。不传参数给两摊都要;传「待付款」或「预约」只要一摊。⚠️ **这个工具只出清单,不发任何东西** —— 发短信/微信/打电话是对外动作,按不按、怎么按是人的决定。⚠️ **它不划「超时」那条线**:定制品和标品的合理等待期本来就不一样,编一个数会把正常的单子算成流失。只排序不划线,按**金额 × 停留天数**排。⚠️ **三种未成行不许混成一类**:已取消是客户主动说了不来、爽约是没说就没来(**先确认人没事**)、已过期是系统判的(客户自己可能都不知道有这条预约)。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"待付款 或 预约;不传则两摊都给"}}}},
@@ -8373,7 +8417,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"get_product_images":get_product_images,"draft_capability_request":draft_capability_request,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"recovery_followup":recovery_followup,"shift_preview":shift_preview,"shift_draft":shift_draft,"shift_publish":shift_publish,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"get_product_images":get_product_images,"draft_capability_request":draft_capability_request,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"return_rate":return_rate,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"recovery_followup":recovery_followup,"shift_preview":shift_preview,"shift_draft":shift_draft,"shift_publish":shift_publish,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

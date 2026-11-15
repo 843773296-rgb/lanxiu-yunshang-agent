@@ -65,6 +65,7 @@
         "weekly_revenue", "sales_rank", "conversion_rate", "deal_credit",
         "appt_funnel", "activity_roi", "channel_compare", "rating_overview",
         "product_ranking", "wear_risk",
+        "return_rate",   # 标品退货率 / 换货率 / 退货原因(11-15,用户清单第六条)
     ),
 }
 
