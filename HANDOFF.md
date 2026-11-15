@@ -127,10 +127,11 @@
 
 - **已推**:8b97292a(缩说明 3–12、return_rate / part_options / order_parts + TL84–96、咬合欠账三笔)。后台生产 v17 与主干对上(用户 15:3x 批准新规矩 + 开三个新工具);新工具要 8760/8770 重启后才在聊天站出现(并行会话重启时一起)。
 - **本地未推**:交付告知 3 笔(在 worktrees/工2 分支 w75-dn 上做的,cherry-pick 回 w75 无冲突):knowledge/delivery_notice.py、backend/delivery_notice_write.py、m0002 迁移、api.draft_delivery_notice / record_delivery_notice、TL97、delivery_notice_check(15 条)、咬合 4 条(**还没重放**)、select_eval 27/27、管理后台「工具不可逆口径」不可逆一侧。
-- **推之前**:① 等并行会话用完锁(它 21:0x 起用 ~25 分钟)② 锁内 `python3 backend/migrate.py` 让共享库做到第 2 条(migration_check / spec_check C4 在那之前红)③ 后台出 v18(= v17 + TL97 + 打开 draft_delivery_notice / record_delivery_notice)—— **record_delivery_notice 是写工具,新工具要用户批准**,先问 ④ `bite_run --only backend/delivery_notice_check.py` ⑤ 预跑门禁 ⑥ pre_push。
+- **推之前**:① 等并行会话用完锁(它 21:0x 起用 ~25 分钟)② 锁内 `python3 backend/migrate.py` 让共享库做到第 2 条(migration_check / spec_check C4 在那之前红)③ 后台 **v19 已出**(= v17 + TL97 + 打开 draft_delivery_notice / record_delivery_notice;v18 是代码导入的中间版)—— **用户 21:3x 批准两个都开**;等并行会话的检查跑完、m0002 做完再 `--切 19 --加开 draft_delivery_notice,record_delivery_notice` ④ `bite_run --only backend/delivery_notice_check.py` ⑤ 预跑门禁 ⑥ pre_push。
 - **并行会话接了**:订单页交付告知按钮(server.py + 页面)+ server.py 启动时 `migrate.补齐(...)`(迁移机制第二步),它重启 8760 时生效。接口结构已发给它。
 - **判据 / 教训**:① 机器负载高时(load 47)门禁 15 分钟能拖到 3 小时 —— 估时要看 uptime ② 在 工2 里跑 `.wip-glossary/sync_rule_docs.sh` 必须用 工2 自己那份(脚本会 cd 到它自己所在的检出)③ 用户跑放宽补丁前确认没链在跑。
-- **工2 这个临时 worktree** 用完可以删(分支已 cherry-pick),删前问用户。
+- **工2 临时 worktree**:用户 21:3x 批准「推完这批就删」(目录 + 本地分支 w75-dn,远程从没推过)。
+- **用户 21:4x(经并行会话)**:今晚先推我这批交付告知;并行会话 16 笔留本地明早整理。它的 `pre_push.sh --不推` 在锁里,它喊「锁空了」之前别拿锁。
 
 ### 🟡 11-15 15:4x · 后台生产 v17(用户批准),预跑门禁绿,推送前链开跑(Opus 5.5)
 
