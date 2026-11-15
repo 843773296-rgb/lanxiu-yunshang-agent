@@ -33,6 +33,7 @@
     ),
     "commerce": (    # 商品与交易:商品、库存、方案、下单、订单
         "get_scheme", "get_order", "get_stock", "stock_alert", "can_order",
+        "part_options", "order_parts",   # 分部位选料:可选什么 / 这一单选了什么(11-15,用户清单第六条)
         "open_order", "confirm_order", "orders_by_date", "order_log",
         "summarize_products", "plan_for_event",
         "get_product_images", "draft_capability_request",   # 11-11:看商品图 / 起草能力申请(都只读)

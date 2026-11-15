@@ -22322,5 +22322,41 @@
    }
   ],
   "预期红": "照规矩拒绝 —— 句里也有「打折」两个字"
+ },
+ {
+  "script": "backend/parts_check.py",
+  "改坏": "去掉「加价合计 vs 定制部件金额」那一项对账 —— 收了钱而收的是什么钱对不上,没人看得见",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        if 选 and 额 is not None and abs((额 or 0) - 合计) > 0.005:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "加价合计对不上定制部件金额时核得出来"
+ },
+ {
+  "script": "backend/parts_check.py",
+  "改坏": "去掉「选的料在不在可选范围里」那一项对账",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            if 可 and (r[\"part\"], r[\"kind\"], r[\"material\"]) not in 可:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "选的料不在这款的可选范围里时核得出来"
+ },
+ {
+  "script": "backend/parts_check.py",
+  "改坏": "order_parts 不再按身份限范围(where 片段丢掉)—— 顾问能看任何人的单",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    单 = _rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\" + where,\n              order_id, *args)",
+    "new": "    单 = _rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\",\n              order_id, *args)"
+   }
+  ],
+  "预期红": "顾问看不到不归他的单"
  }
 ]

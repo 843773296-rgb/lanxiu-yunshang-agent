@@ -883,6 +883,19 @@ RETURN_RATE_RULE = Rule("TL95", ("return_rate",), """
 """)
 
 
+PARTS_RULE = Rule("TL96", ("part_options", "order_parts"), """
+**分部位选料(part_options / order_parts)的读法,四条不许错:**
+
+- **部位是客户看得见的地方**(领口 / 袖 / 裙),不是版房的裁片 —— 别对客户说「大襟贴边」这种版房的话。
+- **加价是这一项比基础款多收的钱,不是这一项的总价。** 报「换真丝要多少钱」时说加价,别把加价当成料钱总额。
+  用料米数要连「来源」一起说:来源是「估算」的,**别当实测去报价**。
+- **面料和工艺能不能配,查 `kb_combo`,不要凭印象** —— 相容和部位无关(苏绣能不能上真丝,跟在领口还是裙上没关系)。
+  `order_parts` 核出来「需评估」的,意思是这个组合要工艺负责人看过才做,**不是做不了,也不是可以直接做**。
+- **对账对不上的照实列**(选的料不在可选范围 / 加价合计 ≠ 定制部件金额)—— 不替人判是录错了还是另有约定,
+  建议找下单的顾问核对。「这一行没有分部位选料记录」的定制单,车间打印不出部位和料,要说出来。
+""")
+
+
 REVIVE_RULE = Rule("TL35", ("revive_list",), """
 **促活名单要回答两件事:为什么是他,为什么是现在。五条不许错:**
 
@@ -1176,6 +1189,7 @@ ORDERS_RANGE_RULE,
 ORDERS_RANGE_DESC_RULE,
 SALES_RANK_RULE,
 RETURN_RATE_RULE,
+PARTS_RULE,
 WEEKLY_REVENUE_RULE,
 STORE_REPORT_RULE,
 SUMMARIZE_PRODUCTS_RULE,
@@ -1840,6 +1854,7 @@ ORDERS_RANGE_RULE,
 ORDERS_RANGE_DESC_RULE,
 SALES_RANK_RULE,
 RETURN_RATE_RULE,
+PARTS_RULE,
 POPULARITY_RULE,
 WEAR_RISK_DESC_RULE,
 WEEKLY_REVENUE_RULE,

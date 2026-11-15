@@ -6729,6 +6729,107 @@ def return_rate(dim="品类", month=None):
     return r
 
 
+
+# ── 分部位选料:可选什么 / 这一单选了什么(2026-11-15,用户清单第六条;体检:2606 条可选料 + 24411 条已选,零工具)──
+def _部位模块():
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import part as _part
+    return _part
+
+
+def part_options(product):
+    """**这一款每个部位能选什么**(只读)—— 面料 / 工艺各自的可选项、加价、可选颜色,和这个部位吃多少料。
+
+    ⚠️ 部位是**客户看得见的地方**(领口 / 袖 / 裙),不是版房的裁片 —— 归并规则在 knowledge/part.py,是推断不是事实。
+    ⚠️ 加价是**这一项比基础款多收的钱**,不是这一项的总价;同一部位的面料和工艺要相容(查 kb_combo,和部位无关)。
+    ⚠️ 用料米数要连「来源」一起说:版师没核过的是估的,拿去报价会报偏(同商品页)。
+    """
+    _part = _部位模块()
+    q = str(product or "").strip()
+    if not q:
+        return {"error": "要给款式:商品编号(spu)或款名"}
+    候 = _rows("SELECT spu, name, kind, pattern FROM product WHERE spu=?", q) or \
+        _rows("SELECT spu, name, kind, pattern FROM product WHERE name LIKE ? ORDER BY spu LIMIT 21", f"%{q}%")
+    if not 候:
+        return {"error": f"没有「{q}」这一款", "说明": "查不到就说查不到,别拿名字像的款顶上"}
+    if len(候) > 1:
+        return {"hit": len(候), "候选": [dict(spu=r["spu"], 款名=r["name"], 类=r["kind"]) for r in 候[:20]],
+                "说明": "名字对上不止一款 —— **把候选列给人选**,别替他挑;20 条以上只列前 20"}
+    p = 候[0]
+    行 = _rows("SELECT kind, part, material, addon, colors, sort FROM part_option WHERE spu=? ORDER BY sort, kind, material",
+              p["spu"])
+    if not 行:
+        return {"spu": p["spu"], "款名": p["name"], "类": p["kind"], "部位": [],
+                "说明": ("这一款**没有分部位选料**" + ("(标品不分部位,规格就是 SKU)" if p["kind"] == "标品" else
+                        "(定制品却没登记可选料 —— 这是数据缺口,不是「什么都能选」)"))}
+    按 = {}
+    for r in 行:
+        按.setdefault(r["part"], {"面料": [], "工艺": []}).setdefault(r["kind"], []).append(
+            dict(名=r["material"], 加价=r["addon"], 可选颜色=[x for x in (r["colors"] or "").split("、") if x]))
+    c = _c()
+    出 = []
+    for b in [x for x in _part.部位顺序 if x in 按] + [x for x in 按 if x not in _part.部位顺序]:
+        米, 源 = _part.部位用料(c, p["pattern"], b) if p["pattern"] else (None, None)
+        出.append(dict(部位=b, 可选面料=按[b].get("面料", []), 可选工艺=按[b].get("工艺", []), 用料米=米, 用料来源=源))
+    return {"spu": p["spu"], "款名": p["name"], "类": p["kind"], "部位": 出,
+            "报价口径": _part.报价口径,
+            "说明": "加价是比基础款多收的钱,不是这一项的总价;同一部位的面料和工艺要相容(kb_combo 查,和部位无关);用料米数带着来源,估的别当实测"}
+
+
+def order_parts(order_id):
+    """**这一单每个部位实际选了什么**(只读)—— 并核三件事:选的料在不在这款的可选范围里、面料和工艺相不相容、
+    各项加价加起来对不对得上订单行上的「定制部件金额」。范围跟身份走(同 get_order)。
+
+    ⚠️ 三项核对都是**查表对账**,对不上就照实列出来 —— 不替人判是录错了还是另有约定。
+    """
+    me = whoami()
+    if not me:
+        return {"error": "没登录,看不了订单"}
+    where, args, 范围话, _ = _订单范围(me)
+    单 = _rows("SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?" + where,
+              order_id, *args)
+    if not 单:
+        有 = _rows("SELECT 1 FROM ordr WHERE id=?", order_id)
+        return {"error": (f"订单 {order_id} 不在你能看的范围里({范围话})" if 有 else f"没有订单 {order_id}")}
+    件们 = _rows("SELECT id, spu, name, custom_amount FROM ordr_item WHERE order_id=? ORDER BY id", order_id)
+    相容 = {(r["k"], r["m"]): r["verdict"] for r in _rows(
+        "SELECT ck.name k, cm.name m, cc.verdict FROM craft_combo cc JOIN craft ck ON ck.code=cc.craft "
+        "JOIN craft cm ON cm.code=cc.material")}
+    出 = []
+    for it in 件们:
+        选 = _rows("SELECT kind, part, material, color, amount, note FROM item_part_choice WHERE item_id=? ORDER BY id", it["id"])
+        可 = {(r["part"], r["kind"], r["material"]) for r in _rows(
+            "SELECT part, kind, material FROM part_option WHERE spu=?", it["spu"])}
+        部位 = {}
+        for r in 选:
+            部位.setdefault(r["part"], []).append(r)
+        核 = []
+        for r in 选:
+            if 可 and (r["part"], r["kind"], r["material"]) not in 可:
+                核.append(f"{r['part']} 的{r['kind']}「{r['material']}」不在这款的可选范围里")
+        for b, rs in 部位.items():
+            面 = [r["material"] for r in rs if r["kind"] == "面料"]
+            工 = [r["material"] for r in rs if r["kind"] == "工艺"]
+            for k in 工:
+                for m in 面:
+                    v = 相容.get((k, m))
+                    if v is None:
+                        核.append(f"{b}:{k} × {m} 相容矩阵里没这一格(未定义,要转工艺负责人确认)")
+                    elif v != "可":
+                        核.append(f"{b}:{k} × {m} 相容判定是「{v}」")
+        合计 = round(sum(r["amount"] or 0 for r in 选), 2)
+        额 = it["custom_amount"]
+        if 选 and 额 is not None and abs((额 or 0) - 合计) > 0.005:
+            核.append(f"各项加价合计 ¥{合计:g},订单行上的定制部件金额是 ¥{额:g} —— 对不上")
+        出.append(dict(明细=it["id"], 款=it["name"], spu=it["spu"],
+                      选了=[dict(部位=r["part"], 类=r["kind"], 选=r["material"], 颜色=r["color"] or None, 加价=r["amount"]) for r in 选],
+                      加价合计=合计, 定制部件金额=额, 核对=核 or ["三项都对得上"],
+                      说明=None if 选 else "这一行没有分部位选料记录(标品,或定制品漏记 —— 漏记的话车间打印不出部位和料)"))
+    return {"订单": order_id, "类": 单[0]["kind"], "状态": 单[0]["status"], "范围": 范围话, "明细": 出,
+            "说明": "核对是查表对账:对不上照实说,不替人判是录错了还是另有约定"}
+
+
 def _签收日期(order_id):
     """这一单什么时候签收的 —— 按件签收之后取**最后一件**合身的时间,没有就退回订单级那一行。"""
     r = _rows("SELECT MAX(fit_at) t FROM pickup_item WHERE order_id=? AND fit_result='合身'", order_id)
@@ -7144,6 +7245,10 @@ SHOP_SCHEMAS=[
  {"name":"start_cutting","description":"**开裁(真的写进去)**:把一张定制单从「待生产」推进到「生产中」。只有版师能用。**要先过白坯试衣这道闸**(业务 09-22):单里每一件该试的都试过、而且客户签了字,才许开裁;有一件没过就整单拒绝,返回里列出是哪几件、缺什么(没试 / 没签 / 判不了该不该试又没试过 —— 判不了的先试一轮并签字就能裁)。被拒时**不要换个说法再试**,把卡在哪告诉用户,让顾问去约试衣或补签。⚠️ **开裁不可逆**,动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
  {"name":"channel_compare","description":"**多渠道表现对比** —— 四个下单渠道(微信小程序/官网/门店 Pad/客服代下单)各自的单量、客单价、待付款占比、退款率、售后率。⚠️ **这张表不能用来比渠道,而它和真的渠道对比长得一模一样。** 原因不是数据少,是这一列怎么填上去的:种子订单是**按订单序号轮着发的**(`SRC[i % 4]`),模拟订单是**按固定权重独立抽的**,两种机制都让渠道和金额、状态、客户**统计独立** —— 任何渠道间差异都是这两个机制的产物,**不是渠道的表现**。⚠️ **渠道和活动 100% 共线**:每个渠道恰好对应一个活动,一一对应没有例外,所以「这个渠道转化好」和「这个活动效果好」在这批数据上**分不开**(这条同时影响 activity_roi)。⚠️ **客服代下单不是一个渠道**,是人工补录,背后可能是电话/微信/门店 —— 当渠道分析会得出假结论。⚠️ **不给渠道排名**:11 单的样本排不出名次,排了会被当成结论去调预算;每个比率后面都带着「**一单值多少个百分点**」。","input_schema":{"type":"object","properties":{"include_sim":{"type":"boolean","description":"是否把 3826 单模拟订单也算进来。默认 false —— 它们的渠道是抽出来的,算进来只会让表看起来更可信,不会更真"}}}},
  {"name":"product_ranking","description":"**当月最受欢迎**(只读)——给版师的打版依据:这个月哪些商品卖得多,以及按**形制 / 面料 / 工艺**切开各档卖了多少。「这个月什么最受欢迎」「哪种面料卖得好」「圆领袍和马面裙哪个多」用它。⚠️ **两张榜并列给(按件数 / 按金额),不合成一个分数** —— 件数跟着打版的工作量走、金额跟着价值走,一件卖 3 件的重工和一件卖 30 件的常服按两种口径排出来不一样;用户没说按哪种时**两张都报**,别自己挑一张。⚠️ **返回里「这个月有销量的商品一共」是总数,榜上只给前 20 条** —— 报的时候要说出总数,否则看的人不知道这是全部还是冰山一角。⚠️ **待付款算进销量**(钱没付,但那是一次选择),占比单独给出来;占比高的时候要说一句。⚠️ **这张榜上「谁排第一」在这个库里是随机的** —— 商品热度是造演示数据时种进去的(名次随机打乱),返回里「撞在种下的规律上」那一条**必须一起报给版师**:一条种下的规律得出的结论,和一条真的发现,在报表上长得一模一样。⚠️ **这是相关不是因果** —— 能说「这个月它卖得最多」,不能说「改用它能让销量涨」。⚠️ **和 `sales_rank` 不是同一把尺**(范围:这里全量不分店 / 它随身份;待付款:这里算 / 它不算;维度:这里切形制面料工艺 / 它切商品 SKU 品类)——两边总件数不一样而**两个都对**,报数时说清是哪一把。","input_schema":{"type":"object","properties":{"month":{"type":"string","description":"月份 `YYYY-MM`,如 `2026-10`。默认世界的当月。「这个月」不替你猜成具体哪个月"},"dim":{"type":"string","description":"再按哪个维度切:形制 / 面料 / 工艺。不给就只给商品榜","enum":["形制","面料","工艺"]}}}},
+ {"name":"part_options","description":"**这一款每个部位能选什么**(只读)—— 定制品分部位选料:每个部位(领口 / 袖 / 主身 / 裙…)可选的面料和工艺、各自的加价和可选颜色、这个部位吃多少料(带来源:估的还是版师核过的)。「这款领口能选什么料」「袖子换真丝加多少钱」用它。给商品编号(spu)或款名;名字对上不止一款时返回候选。标品不分部位。面料和工艺能不能配用 `kb_combo`。","input_schema":{"type":"object","properties":{
+    "product":{"type":"string","description":"商品编号(spu)或款名"}},"required":["product"]}},
+ {"name":"order_parts","description":"**这一单每个部位实际选了什么**(只读)—— 每行订单明细上客户分部位选的面料 / 工艺 / 颜色 / 加价,并核三件事:选的料在不在这款的可选范围里、同一部位的面料和工艺相不相容、各项加价合计对不对得上订单行的定制部件金额。「客户领口选的是什么料」「这单加价怎么算出来的」用它。范围跟身份走(同 get_order)。","input_schema":{"type":"object","properties":{
+    "order_id":{"type":"string","description":"订单号"}},"required":["order_id"]}},
  {"name":"return_rate","description":"**标品退货率**(只读)—— 哪些品类 / 商品 / 渠道退得多,退的原因是什么。「哪类标品退货多」「退货主要是什么原因」「小程序和官网哪个退得多」用它。返回三个率并列(实际退货率 / 申请退货率 / 换货率,各带可信范围和「偏高 / 偏低 / 说不清」)、申请被拒件数、退货原因 6 类、观察期说明。全公司不分店。定制品不在这里(定制品不接受无理由退换)。","input_schema":{"type":"object","properties":{
     "dim":{"type":"string","description":"按什么切:品类(默认)/ 商品 / 渠道"},
     "month":{"type":"string","description":"只看某个**付款月**卖出的,YYYY-MM;不给 = 全部满观察期的"}},"required":[]}},
@@ -8417,7 +8522,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"get_product_images":get_product_images,"draft_capability_request":draft_capability_request,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"return_rate":return_rate,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"recovery_followup":recovery_followup,"shift_preview":shift_preview,"shift_draft":shift_draft,"shift_publish":shift_publish,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"get_product_images":get_product_images,"draft_capability_request":draft_capability_request,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"return_rate":return_rate,"part_options":part_options,"order_parts":order_parts,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"recovery_followup":recovery_followup,"shift_preview":shift_preview,"shift_draft":shift_draft,"shift_publish":shift_publish,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

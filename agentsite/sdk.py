@@ -481,6 +481,8 @@ SHOP_TOOLS = [
     "mcp__analytics__sales_rank",
     # 标品退货率(只读,11-15):实际 / 申请 / 换货三个率并列,带可信范围,偏高至少 3 件。规矩 TL95
     "mcp__analytics__return_rate",
+    # 分部位选料(只读,11-15):这款每个部位能选什么 / 这一单每个部位选了什么 + 三项对账。规矩 TL96
+    "mcp__commerce__part_options", "mcp__commerce__order_parts",
     # 按周营收(只读,周报用):实收减退款,按付款日 / 退款日归周。规矩 TL66
     "mcp__analytics__weekly_revenue",
     # 门店经营报告取数包(只读):日报 / 周报 / 月报共用,期内和存量分两栏。规矩 TL67

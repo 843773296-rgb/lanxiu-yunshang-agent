@@ -392,6 +392,7 @@ run "售后与维保 · 业务硬规则(库允许≠业务允许)" python3 backe
 run "换货 · 五条规则(走审批/要寄回/同渠道/差价多退少补)" python3 backend/exchange_check.py
 run "受欢迎与易损 · 性质检查(相对指标不标真值)" python3 backend/popularity_check.py
 run "标品退货率 · 观察期 / 精确可信范围 / 至少 3 件才判偏高 / 换货单列 / 申请与实际两个率(用户 11-15 拍)" python3 backend/returns_check.py
+run "分部位选料两个读工具 · 部位顺序 / 多款给候选 / 三项对账(加价合计、可选范围、相容)真核得出 / 范围跟身份走(库副本)" python3 backend/parts_check.py
 run "同意分档与撤回 · 一档不顶另一档,撤回真的走一遍" python3 backend/consent_check.py
 run "订单状态 · 定制品与标品两套状态必须分开" python3 backend/order_status_check.py
 run "演示数据集 · 形状(退款对得上 / 占比 / 面料有差异 / 汇总对得上 / 不是整数)" python3 backend/dataset_check.py
