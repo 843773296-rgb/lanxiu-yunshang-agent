@@ -259,7 +259,7 @@ def 自测(a):
     锚 = os.path.join(d, "锚定.json")
     c = sqlite3.connect(db)
     c.execute("CREATE TABLE product(spu TEXT PRIMARY KEY, color TEXT)")
-    c.executemany("INSERT INTO product VALUES(?,?)",
+    c.executemany("INSERT INTO product(spu,color) VALUES(?,?)",
                   [("s1", "藕荷"), ("s2", "天青"), ("s3", "竹青")])
     c.commit(); c.close()
 
@@ -307,7 +307,7 @@ def 自测(a):
        lambda: sql("UPDATE product SET color=? WHERE spu=?", "天青", "s2"))
     关("把库里某个钉住的行删掉", "钉住的行都还在",
        lambda: sql("DELETE FROM product WHERE spu=?", "s3"),
-       lambda: sql("INSERT INTO product VALUES(?,?)", "s3", "竹青"))
+       lambda: sql("INSERT INTO product(spu,color) VALUES(?,?)", "s3", "竹青"))
 
     def 加坏解钉():
         j = 读锚(锚); j["解钉"] = [{"表": "product", "列": "color", "键": "s9"}]; 写锚(锚, j)

@@ -74,10 +74,10 @@ def build_known_db(path):
                           # 于是「待付款 × 已生产」在源数据里一次都不出现 ——
                           # 这就是禁配检测该抓到的东西,而独立抽样必然会造出它。
                           "已生产" if st in ("已发货", "已完成") else "待生产"))
-    c.executemany("insert into ordr values(?,?,?,?,?,?,?,?,?)", ordrs)
+    c.executemany("insert into ordr(id,cust_id,amount,status,created,paid_at,shipped_at,cancelled_at,prd_status) values(?,?,?,?,?,?,?,?,?)", ordrs)
     items = [(None, o[0], f"SKU{j%7}", (j % 5) + 1)
              for j, o in enumerate(ordrs) for _ in (0,)]
-    c.executemany("insert into item values(?,?,?,?)", items)
+    c.executemany("insert into item(id,ordr,sku,qty) values(?,?,?,?)", items)
     c.commit(); c.close()
     return len(custs), len(ordrs), len(items)
 
@@ -895,12 +895,12 @@ def main():
     create table mark(order_id text primary key, batch text);   -- 映射表:列名和 line.order_id 一模一样
     """)
     _oids = [f"O{i:05d}" for i in range(80)]
-    _c.executemany("insert into ordr values(?,?,?)",
+    _c.executemany("insert into ordr(id,amount,created) values(?,?,?)",
                    [(o, 100.0 + i, "2026-03-%02d" % (i % 28 + 1)) for i, o in enumerate(_oids)])
     _c.executemany("insert into line(order_id,sku,qty) values(?,?,?)",
                    [(o, f"SKU{i%7:03d}", 1 + i % 3) for i, o in enumerate(_oids * 2)])
     # 映射表只盖住其中 75 个 —— **覆盖不满**,但列名完全相同
-    _c.executemany("insert into mark values(?,?)", [(o, "batch/v1") for o in _oids[:75]])
+    _c.executemany("insert into mark(order_id,batch) values(?,?)", [(o, "batch/v1") for o in _oids[:75]])
     _c.commit(); _c.close()
     cm = S.connect(mapdb)
     fm = D.discover(cm, cm.reflect())
@@ -1242,7 +1242,7 @@ def main():
     行 = [(f"P{i:04d}", ["杭州", "上海"][i % 2], ["普通", "银卡"][i % 2],
            5000.0 + i * 10, f"u{i // 5}@example.com") for i in range(300)]
     行.append(("P9999", "秘密城", "VIP-某某某专属", 999999.0, "u0@example.com"))
-    _c.executemany("insert into person values(?,?,?,?,?)", 行)
+    _c.executemany("insert into person(id,city,level,salary,email) values(?,?,?,?,?)", 行)
     _c.commit(); _c.close()
     cc = S.connect(普库)
     摘 = CS.普查(cc, cc.reflect(), k=5)
@@ -1382,10 +1382,10 @@ def main():
     create table cust(id text primary key, name text, shop text);
     create table ordr(id text primary key, cust_id text references cust(id), amount real);
     """)
-    _c.executemany("insert into shop values(?,?)", [(f"SH{i}", f"店{i}") for i in range(3)])
-    _c.executemany("insert into cust values(?,?,?)",
+    _c.executemany("insert into shop(id,name) values(?,?)", [(f"SH{i}", f"店{i}") for i in range(3)])
+    _c.executemany("insert into cust(id,name,shop) values(?,?,?)",
                    [(f"C{i}", f"客{i}", f"SH{i%3}") for i in range(30)])
-    _c.executemany("insert into ordr values(?,?,?)",
+    _c.executemany("insert into ordr(id,cust_id,amount) values(?,?,?)",
                    [(f"O{i}", f"C{i%30}", 100.0 + i) for i in range(60)])
     _c.commit(); _c.close()
     cs = S.connect(结构库); scs = cs.reflect()

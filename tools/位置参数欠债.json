@@ -2,26 +2,5 @@
  "说明": "INSERT 要写具名列 —— **列数恰好相等而顺序错了,是不报错的。**\n\n    python3 tools/insert_shape_check.py          # 门禁\n    python3 tools/insert_shape_check.py --登记     # 把现存的位置参数写进欠债表(只在第一次用)",
  "怎么还": "把那几处改成 `INSERT INTO 表(列1,列2,…) VALUES(…)`,再把处数减掉(减到 0 删掉那张表)。**减不减由这个检查强制** —— 改好了还留着,它会红。",
  "登记于": "2026-09-28",
- "欠着的": {
-  "fakedata/agree.py": {
-   "p": 1
-  },
-  "fakedata/anchor.py": {
-   "product": 2
-  },
-  "fakedata/generalize.py": {
-   "account": 1,
-   "order_line": 1,
-   "purchase_order": 1,
-   "support_ticket": 1
-  },
-  "fakedata/selftest.py": {
-   "cust": 1,
-   "item": 1,
-   "mark": 1,
-   "ordr": 3,
-   "person": 1,
-   "shop": 1
-  }
- }
+ "欠着的": {}
 }

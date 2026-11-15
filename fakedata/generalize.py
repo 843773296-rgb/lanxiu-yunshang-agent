@@ -84,7 +84,7 @@ def build_db(path):
              "2025-%02d-%02d" % (i % 12 + 1, i % 28 + 1),
              ["US", "GB", "DE", "JP"][i % 4],
              "active" if i % 7 else "suspended") for i in range(1, 121)]
-    c.executemany("insert into account values(?,?,?,?,?,?)", accs)
+    c.executemany("insert into account(id,email,display_name,signup_date,country_code,status) values(?,?,?,?,?,?)", accs)
     orders, k = [], 0
     for i, a in enumerate(accs):
         n = 0 if i % 2 == 0 else (1 if i % 3 else 9)
@@ -104,15 +104,15 @@ def build_db(path):
                            placed.strftime(f) if st != "pending" else None,
                            shipped.strftime(f) if st in ("shipped", "delivered") else None,
                            (shipped + _dt.timedelta(days=1)).strftime(f)))
-    c.executemany("insert into purchase_order values(?,?,?,?,?,?,?,?,?,?)", orders)
+    c.executemany("insert into purchase_order(id,account_id,order_no,amount_cents,currency,status,created_at,placed_at,shipped_at,updated_at) values(?,?,?,?,?,?,?,?,?,?)", orders)
     lines = [(j + 1, o[0], f"SKU-{j % 40:03d}", (j % 5) + 1, 300 + j)
              for j, o in enumerate(orders)]
-    c.executemany("insert into order_line values(?,?,?,?,?)", lines)
+    c.executemany("insert into order_line(id,order_id,sku_code,qty,unit_price_cents) values(?,?,?,?,?)", lines)
     tix = [(t + 1, accs[t % len(accs)][0], f"Issue about order {t}",
             ["low", "normal", "high"][t % 3],
             "2026-0%d-1%d 10:00:00" % (t % 8 + 1, t % 9), None if t % 3 else
             "2026-0%d-2%d 10:00:00" % (t % 8 + 1, t % 9)) for t in range(90)]
-    c.executemany("insert into support_ticket values(?,?,?,?,?,?)", tix)
+    c.executemany("insert into support_ticket(id,account_id,subject,severity,opened_at,closed_at) values(?,?,?,?,?,?)", tix)
     c.commit(); c.close()
     return len(accs), len(orders), len(lines), len(tix)
 

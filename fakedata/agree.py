@@ -149,7 +149,7 @@ def 查(conn, 声明, 报=print):
         # 而囤积的豁免和真豁免长得一模一样(stable.py 那边同一个道理)。
         该消的 += [f'{f["名"]}#{k}' for k in 认过的 if k not in 还在打的]
 
-    ck(not 坏落点, "每个落点的 SQL 都跑得了", "；".join(坏落点[:3]) if 坏落点 else "都跑通了")
+    ck(not 坏落点, "每个落点的 SQL 都跑得了", "；".join(坏落点[:3]) + (f"  ……还有 {len(坏落点) - 3} 条(共 {len(坏落点)})" if len(坏落点) > 3 else "") if 坏落点 else "都跑通了")
     ck(not 空落点, "每个落点都读到了东西",
        "、".join(空落点[:4]) + (f"  ……还有 {len(空落点)-4} 处(共 {len(空落点)})"
                                 if len(空落点) > 4 else "")
@@ -221,7 +221,7 @@ def 自测():
     db = os.path.join(d, "t.db")
     c = sqlite3.connect(db)
     c.execute("CREATE TABLE p(k TEXT PRIMARY KEY, 名 TEXT, 性别 TEXT)")
-    c.executemany("INSERT INTO p VALUES(?,?,?)",
+    c.executemany("INSERT INTO p(k,名,性别) VALUES(?,?,?)",
                   [("a", "童款襦裙", "童"), ("b", "齐胸襦裙", "成"), ("c", "童款马面", "童")])
     c.commit()
 
