@@ -528,3 +528,11 @@ button.mini{height:22px;padding:0 8px;font-size:12px}
 .pager{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0}
 .pager button{min-width:32px}
 .swcard ul{margin:6px 0 0;padding-left:18px}.swcard li{margin:2px 0}
+
+/* 变量唤出 + 变量标签(11-15,工作流一期第四件) */
+.vpick-pop{border:1px solid var(--line,#ddd);border-radius:6px;background:var(--bg,#fff);max-height:220px;overflow:auto;margin:2px 0 6px;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.vpick-pop .vopt{padding:5px 8px;cursor:pointer;font-size:13px}
+.vpick-pop .vopt.on,.vpick-pop .vopt:hover{background:#eef4ff}
+.vtags{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+.vtag{font-size:12px;padding:1px 6px;border-radius:10px;background:#eef4ff;color:#1d4ed8;border:1px solid #c7d7fe}
+.vtag.bad{background:#fff1f0;color:#cf1322;border-color:#ffa39e}

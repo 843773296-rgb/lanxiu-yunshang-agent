@@ -406,6 +406,53 @@
     catch (e) { return true; }
   };
 
+  // ── 变量唤出 + 变量标签(11-15,工作流一期第四件;照 Dify「输 { 或 / 弹选择器、选中渲染成标签、失效标红」)────
+  // 存的格式**不变**:模板里还是 {{名字}},名字 → 来源 还在「用到的数据」那张映射里 —— 老流程不用迁。
+  // 这里只管三件纯计算(页面那层只摆弹层、接键盘):光标前是不是在唤出、插进去之后文本和光标在哪、名字撞了怎么办。
+
+  /* 光标前是不是正在唤出变量:`{{词` / `{词` / `/词`(词里不含空白和括号,最多 20 字)。→ null | {起, 词, 触发} */
+  逻.变量唤出 = function (文本, 光标) {
+    const 前 = String(文本 || "").slice(0, 光标 == null ? undefined : 光标);
+    const m = 前.match(/(\{\{|\{|\/)([^\s{}\/]{0,20})$/);
+    if (!m) return null;
+    // 「/」只在开头或空白 / 标点后面才算唤出 —— 「1/2」「和/或」这种正常写字别弹
+    if (m[1] === "/" && m.index > 0 && !/[\s,，。;；:：(（]/.test(前[m.index - 1])) return null;
+    return { 起: m.index, 词: m[2], 触发: m[1] };
+  };
+
+  /* 把唤出那一段换成 {{名字}}。→ {文本, 光标}(光标落在插进去的标签后面) */
+  逻.插入变量 = function (文本, 光标, 唤, 名) {
+    const t = String(文本 || ""), 尾 = t.slice(光标 == null ? t.length : 光标);
+    const 头 = t.slice(0, 唤.起) + `{{${名}}}`;
+    return { 文本: 头 + 尾, 光标: 头.length };
+  };
+
+  /* 给新插的变量起名:来源已经在映射里 → 复用那个名字;名字被别的来源占了 → 加 2、3…(**不覆盖已有的那一项**) */
+  逻.变量名 = function (想要, 已有, 引用) {
+    const 同 = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
+    for (const [k, v] of Object.entries(已有 || {})) if (v && 同(v, 引用)) return k;
+    const 基 = String(想要 || "变量").replace(/[\s{}]/g, "") || "变量";
+    let 名 = 基, i = 2;
+    while (已有 && 名 in 已有 && 已有[名] != null && !同(已有[名], 引用)) 名 = 基 + i++;
+    return 名;
+  };
+
+  /* 模板里每个 {{名字}} 的标签:来源说得出就是好的;没选来源 / 来源那一步不在图里 / 来源不在上游 → 坏(标红)。
+   * `可选` = 上游字段那张 [值, 标签] 表(只列在这一步之前的)—— 「不在可选里」包括引用了下游、被删的步骤 */
+  逻.变量标签 = function (模板, 绑定, 可选, 定义, 引用值) {
+    const 名们 = [...new Set([...String(模板 || "").matchAll(/\{\{\s*([^{}\s]+)\s*\}\}/g)].map((m) => m[1]))];
+    const 表 = new Map(可选 || []), 在 = new Set(((定义 || {}).nodes || []).map((n) => n.id));
+    return 名们.map((名) => {
+      const r = (绑定 || {})[名];
+      if (!r) return { 名, 坏: true, 原因: "还没选来源" };
+      if (r.source === "constant") return { 名, 坏: false, 标签: `固定值 · ${r.value ?? ""}` };
+      if (r.source === "node" && !在.has(r.node_id)) return { 名, 坏: true, 原因: "无效的变量:来源那一步已经删了" };
+      const 值 = 引用值(r);
+      if (!表.has(值)) return { 名, 坏: true, 原因: "无效的变量:来源不在这一步前面(运行时取不到)" };
+      return { 名, 坏: false, 标签: 表.get(值) };
+    });
+  };
+
   根.图逻辑 = 逻;
   if (typeof module !== "undefined" && module.exports) module.exports = 逻;
 })(typeof globalThis !== "undefined" ? globalThis : this);

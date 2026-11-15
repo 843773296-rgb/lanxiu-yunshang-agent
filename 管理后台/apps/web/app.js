@@ -3185,6 +3185,7 @@ function 画_面板() {
     </div>`;
   挂单测(n);
   填上次运行(n);
+  挂变量唤出(n);
   const 高 = $("#pn").querySelector('[data-sec="高级"]');
   if (高) 高.ontoggle = () => { 图态.高级开 = 高.open; };
   if ($("#adv-cancel")) $("#adv-cancel").onclick = () => { $("#adv-json").value = JSON.stringify(n.config, null, 1); $("#adv-err").textContent = ""; };
@@ -3505,12 +3506,17 @@ function 表_设置(n) {
       重画();
     });
     体 += n.type === "answer" ? `<label class="f">回复什么</label>
-      <textarea data-k="${k}" data-lb="回复内容" rows="4" placeholder="例如:{{客户}}您好,您的需求已记下,店长核对后会联系您">${esc(c.template || "")}</textarea>
+      <textarea data-k="${k}" data-vpick="1" data-lb="回复内容" rows="4" placeholder="例如:{{客户}}您好,您的需求已记下,店长核对后会联系您">${esc(c.template || "")}</textarea>
       <div class="k">这句话会发回聊天里;管理后台试运行时用对话气泡显示。要带上前面的结果就写 <code>{{名字}}</code>,名字在下面「用到的数据」里选来源。</div>`
       : `<label class="f">模板</label>
-      <textarea data-k="${k}" data-lb="模板" rows="5" placeholder="例如:{{客户}} 想要 {{款式}},预算 {{预算}},下次跟进 {{日期}}">${esc(c.template || "")}</textarea>
+      <textarea data-k="${k}" data-vpick="1" data-lb="模板" rows="5" placeholder="例如:{{客户}} 想要 {{款式}},预算 {{预算}},下次跟进 {{日期}}">${esc(c.template || "")}</textarea>
       <div class="k">把前面的结果拼成一段文字,交给后面的步骤用(不发给聊天里的人)。写 <code>{{名字}}</code>,名字在下面「用到的数据」里选来源。
         只做替换 —— 要按条件写不同的话,用「条件分支」分开写。</div>`;
+    // 变量标签(11-15,照 Dify):模板里每个 {{名字}} 一枚 —— 来源说得出就写「步骤 → 字段」,没选 / 来源删了 / 不在上游就标红
+    const 标们 = 图逻辑.变量标签(c.template, c.bindings, 上游字段(n.id), 图态.定义, 引用值);
+    体 += `<div class="vpick-pop" id="vpick-pop" role="listbox" hidden></div>
+      <div class="k">输 <code>{</code> 或 <code>/</code> 选前面步骤的结果,会插成 <code>{{名字}}</code> 并自动填好来源。</div>`
+      + (标们.length ? `<div class="vtags">${标们.map((x) => `<span class="vtag${x.坏 ? " bad" : ""}" title="${esc(x.坏 ? x.原因 : x.标签)}">{{${esc(x.名)}}} ${x.坏 ? `· ${esc(x.原因)}` : `← ${esc(x.标签)}`}</span>`).join("")}</div>` : "");
     体 += `
       ${缺.length ? `<div class="ferr">模板里的 ${缺.map((x) => `「${esc(x)}」`).join("、")} 还没在「用到的数据」里 —— 运行前要选来源</div>` : ""}`;
   } else if (n.type === "list_operator") {
@@ -4018,6 +4024,49 @@ function 运行标(id) {
 }
 /* 每一步实际收到的 / 交出的(10-26)。没有「查看敏感输入」授权时接口只给形状(有哪些项、各多长),
  * 这里照实标出来 —— 不标的话,「<str · 1203 字>」会被当成这一步真的输出了这么一串 */
+/* 变量唤出(11-15,工作流一期第四件;照 Dify):回复 / 模板框里输 { 或 / 弹出前面步骤的结果,↑↓ 选、回车或点一下插入。
+ * 判断「在不在唤出」「插完文本和光标在哪」「名字撞了怎么办」都在 wf_graph.js(图逻辑.变量唤出 / 插入变量 / 变量名),这里只摆弹层。
+ * 插入走 改图 命令层:能撤销、标未保存 —— 和别的改动同一条路 */
+function 挂变量唤出(n) {
+  const 框 = $("#pn") && $("#pn").querySelector("textarea[data-vpick]"), 弹 = $("#vpick-pop");
+  if (!框 || !弹 || !能改图()) return;
+  let 唤 = null, 选 = 0, 项 = [];
+  const 关 = () => { 唤 = null; 弹.hidden = true; 弹.innerHTML = ""; };
+  const 画 = () => {
+    if (!项.length) { 弹.innerHTML = `<div class="k">前面没有叫「${esc(唤.词)}」的结果${上游字段(n.id).length ? "" : " —— 这一步前面还没有能取值的步骤"}</div>`; 弹.hidden = false; return; }
+    弹.innerHTML = 项.map(([v, t], i) => `<div class="vopt${i === 选 ? " on" : ""}" role="option" aria-selected="${i === 选}" data-v="${esc(v)}">${esc(t)}</div>`).join("");
+    弹.hidden = false;
+    弹.querySelectorAll(".vopt").forEach((el, i) => { el.onmousedown = (ev) => { ev.preventDefault(); 插(i); }; });
+  };
+  const 插 = (i) => {
+    const [v, t] = 项[i] || []; if (!v || !唤) return;
+    const 引 = 解引用(v), 字段 = String(t).split(/→|·/).pop().replace(/(仅部分路径有值)/, "").trim();
+    const 光 = 框.selectionStart, 唤住 = 唤;
+    关();
+    改图(`在「${业务名(n)}」里插入变量`, () => {
+      const c = n.config; c.bindings = c.bindings || {};
+      const 名 = 图逻辑.变量名(字段, c.bindings, 引);
+      const r = 图逻辑.插入变量(框.value, 光, 唤住, 名);
+      c.template = r.文本; c.bindings[名] = 引;
+      setTimeout(() => { const 新 = $("#pn") && $("#pn").querySelector("textarea[data-vpick]"); if (新) { 新.focus(); 新.setSelectionRange(r.光标, r.光标); } }, 0);
+    });
+  };
+  框.addEventListener("input", () => {
+    唤 = 图逻辑.变量唤出(框.value, 框.selectionStart);
+    if (!唤) return 关();
+    const 词 = 唤.词.toLowerCase();
+    项 = 上游字段(n.id).filter(([, t]) => !词 || String(t).toLowerCase().includes(词));
+    选 = 0; 画();
+  });
+  框.addEventListener("keydown", (ev) => {
+    if (!唤 || 弹.hidden || !项.length) { if (ev.key === "Escape") 关(); return; }
+    if (ev.key === "ArrowDown") { ev.preventDefault(); 选 = (选 + 1) % 项.length; 画(); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); 选 = (选 - 1 + 项.length) % 项.length; 画(); }
+    else if (ev.key === "Enter" || ev.key === "Tab") { ev.preventDefault(); 插(选); }
+    else if (ev.key === "Escape") { ev.preventDefault(); 关(); }
+  });
+  框.addEventListener("blur", () => setTimeout(关, 150));
+}
 /* 「上次运行」页签(11-15,工作流一期第三件;照 Dify 面板的「设置 / 上次运行」):这条流程这一步最近一次真跑到它的记录。
  * 从服务端读,刷新页面也还在;**和运行详情同一权限,原文里的手机号只露后四位**(用户 11-15 拍,打码在服务端做)。
  * 这一页里刚跑完的那次也会写进库,所以不再单独认页内的运行态 —— 两个来源会说不一样的话 */
