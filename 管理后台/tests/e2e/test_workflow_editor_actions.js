@@ -48,6 +48,11 @@ const ctx = {
     if (方法 === "GET" && 地址.includes("/versions/v_old"))
       return 回(200, { id: "v_old", 版本: "v1", 定义: { nodes: [{ id: "start", type: "start", config: {} }, { id: "end", type: "end", config: {} }],
         edges: [{ source: "start", target: "end", port: "success" }] }, 布局: { start: { x: 0, y: 0 }, end: { x: 200, y: 0 } }, 只读: true });
+    if (方法 === "GET" && 地址.includes("/execution-runs?workflow_id="))
+      return 回(200, { items: [{ id: "r9", 执行状态: "failed", 执行状态中文: "失败", 种类: "整条试运行", 请求人: "U002", 开始: new Date(Date.now() - 5 * 60000).toISOString() },
+                                { id: "r8", 执行状态: "succeeded", 执行状态中文: "成功", 种类: "单独测一步", 请求人: "U003", 开始: new Date(Date.now() - 2 * 3600000).toISOString() }], total: 2 });
+    if (方法 === "GET" && 地址.endsWith("/execution-runs/r9"))
+      return 回(200, { id: "r9", 执行状态中文: "失败", 步骤: [{ 节点: "llm_1", 状态: "failed", 错误码: "RATE_LIMIT" }] });
     if (方法 === "PATCH" && 地址.includes("/draft")) {
       if (挂住) return new Promise((r) => { 挂住.放 = () => r(回(200, { revision: 挂住.rev })); });
       if (草稿回 !== 200) return 回(草稿回, { code: 草稿回 === 409 ? "REVISION_CONFLICT" : "BOOM", message: "桩", advice: "桩" });
@@ -238,6 +243,23 @@ function 新图态() {
   const 菜 = 弹层们.slice(-1)[0] || "";
   ck("空白处右键菜单:添加步骤 / 整理布局 / 适应画布 / 试运行都在;剪贴板空时不摆「粘贴」", /添加步骤/.test(菜) && /整理布局/.test(菜) && /适应画布/.test(菜)
      && /试运行/.test(菜) && !/粘贴/.test(菜), 菜);
+
+  console.log("\n▸ 运行历史 + 只读回放(11-15,工作流一期第五件;照 Dify 顶栏的时钟)");
+  const 现 = Date.parse("2026-11-15T22:00:00Z");
+  ck("多久前:30 秒 → 刚刚 / 5 分钟 / 2 小时 / 3 天", 跑(`多久前("2026-11-15T21:59:30Z", ${现})`) === "刚刚" && 跑(`多久前("2026-11-15T21:55:00Z", ${现})`) === "5 分钟前"
+     && 跑(`多久前("2026-11-15T20:00:00Z", ${现})`) === "2 小时前" && 跑(`多久前("2026-11-12T22:00:00Z", ${现})`) === "3 天前");
+  新图态(); 弹层们 = [];
+  await 跑(`弹_运行历史(null)`);
+  const 历 = 弹层们.slice(-1)[0] || "";
+  ck("弹层列出两次运行:第 2 次(最新)在前,带种类、谁跑的、多久前", /第 2 次 · 整条试运行/.test(历) && /第 1 次 · 单独测一步/.test(历) && /5 分钟前/.test(历) && /U003/.test(历), 历);
+  await 跑(`回放运行("r9", 2)`);
+  ck("回放:画布上那一步标成失败(用的是运行详情里的步骤)", 跑("图态.运行态.llm_1 && 图态.运行态.llm_1.状态 === 'failed'"));
+  ck("回放时只读:改图被拒、草稿没动", 跑(`!能改图() && 改图("回放时改", () => { 节点("llm_1").name = "不该改"; }) === false && 节点("llm_1").name === "整理"`));
+  跑("退出回放()");
+  ck("返回编辑模式:能改了,画布上的回放状态清掉", 跑("能改图() && !图态.回放 && !Object.keys(图态.运行态).length"));
+  跑(`改图("改", () => { 节点("llm_1").name = "未存"; })`);
+  await 跑(`回放运行("r9", 2)`);
+  ck("有没保存的修改 → 不进回放(不然回放时只读、修改悬着)", 跑("!图态.回放"));
 
   跑完了 = true;
   console.log(`\n${挂.length ? "❌" : "✅"} 编辑器保存与命令层 ${过} 条过${挂.length ? `,挂 ${挂.length} 条:${挂.join(" / ")}` : ""}`);

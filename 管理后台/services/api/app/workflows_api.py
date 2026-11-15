@@ -2487,6 +2487,9 @@ def 运行列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
             "停止原因": r["completion_reason"],
             "任务达标": r["quality_evaluation_status"],
             "模式": r["execution_mode"], "请求人": r["principal"],
+            # 编辑器「运行历史」弹层要分得出整条试运行和单独测一步(11-15)
+            "种类": {"step_test": "单独测一步", "graph_draft": "整条试运行", "workflow_version": "跑这一版"}.get(
+                (r["definition_ref"] or {}).get("kind"), "其他"),
             "开始": r["started_at"].isoformat() if r["started_at"] else None,
             "结束": r["ended_at"].isoformat() if r["ended_at"] else None,
         })

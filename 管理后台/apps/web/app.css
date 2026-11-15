@@ -536,3 +536,6 @@ button.mini{height:22px;padding:0 8px;font-size:12px}
 .vtags{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
 .vtag{font-size:12px;padding:1px 6px;border-radius:10px;background:#eef4ff;color:#1d4ed8;border:1px solid #c7d7fe}
 .vtag.bad{background:#fff1f0;color:#cf1322;border-color:#ffa39e}
+.rhpop{min-width:240px;max-height:66vh;overflow:auto}
+.rhpop button{display:block;width:100%;text-align:left}
+.rhbar{display:flex;gap:8px;align-items:center;margin:4px 0}

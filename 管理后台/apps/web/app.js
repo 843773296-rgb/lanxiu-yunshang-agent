@@ -2681,6 +2681,7 @@ function 画_编排页() {
       <span class="seg" role="group" aria-label="视图"><button id="vw-s">列表</button><button id="vw-g">流程图</button></span>
       <button id="issues" hidden></button>
       <button id="trun" title="在右侧填一条输入试跑;跑完每一步标上结果" aria-pressed="false">▶ 试运行</button>
+      <button id="rhist" title="这条流程最近的运行;点一次运行在画布上看各步结果(只读)" aria-haspopup="true">🕘 运行历史</button>
       <button class="pri" id="freeze">生成版本</button>
       <details class="more"><summary aria-label="更多">⋯</summary><div class="menu">
         <button id="save">保存草稿</button>
@@ -2699,7 +2700,8 @@ function 画_编排页() {
   $("#freeze").onclick = 弹_准备发布;
   $("#trun").onclick = () => { 图态.试面板 = !图态.试面板; 画_面板(); $("#trun").setAttribute("aria-pressed", String(!!图态.试面板)); };
   $("#issues").onclick = () => { 图态.问题开 = !图态.问题开; 图态.底Tab = "问题"; 画_问题(); 摆问题区(); };
-  画_搭建(); 画_底栏(); 画_保存状态();
+  $("#rhist").onclick = () => 弹_运行历史($("#rhist"));
+  画_搭建(); 画_底栏(); 画_保存状态(); 画_回放条();
 }
 
 function 画_画布() {
@@ -2777,10 +2779,68 @@ function 画_保存状态() {
 
 /* ── 图编辑命令层(§12):所有改图的入口都从这里过 —— 记撤销、标未保存、判检查报告过期 ──
  * fn 返回 false = 这次不改(比如校验没过);fn 里抛错 = 回到改之前,不留半次。 */
-function 能改图() { return typeof 我的角色 === "undefined" || 我的角色 === "editor" || 我的角色 === "admin"; }
+function 能改图() {
+  // 回放某次运行时画布只读(11-15,照 Dify「运行历史 → 只读回放,顶栏出『返回编辑模式』」)
+  if (typeof 图态 !== "undefined" && 图态 && 图态.回放) return false;
+  return typeof 我的角色 === "undefined" || 我的角色 === "editor" || 我的角色 === "admin";
+}
+/* 「x 分钟前」—— 运行历史里每一项的时间。现在 可传入(测试用),不传就是此刻 */
+function 多久前(iso, 现在 = Date.now()) {
+  const t = Date.parse(iso || ""); if (!Number.isFinite(t)) return "";
+  const 秒 = Math.max(0, Math.round((现在 - t) / 1000));
+  if (秒 < 60) return "刚刚";
+  if (秒 < 3600) return `${Math.floor(秒 / 60)} 分钟前`;
+  if (秒 < 86400) return `${Math.floor(秒 / 3600)} 小时前`;
+  return `${Math.floor(秒 / 86400)} 天前`;
+}
+/* 运行历史弹层(11-15,工作流一期第五件;照 Dify 顶栏的时钟):这条流程最近 20 次运行,点一项 → 画布上回放那次各步的状态(只读) */
+async function 弹_运行历史(锚) {
+  const 旧 = $("#rh-pop"); if (旧 && 旧.isConnected) { 旧.remove(); return; }   // 再点一次 = 关
+  let r;
+  try { r = await 请求(`${P()}/execution-runs?workflow_id=${encodeURIComponent(图态.wid)}&limit=20`); }
+  catch (e) { 报错(e); return; }
+  const 全 = r["总数"] ?? r["total"] ?? (r.items || []).length;
+  const 标 = { succeeded: "✅", failed: "❌", cancelled: "⏹", waiting_approval: "⏸", waiting_external: "⏸", running: "⏳", queued: "⏳" };
+  const m = document.createElement("div");
+  m.className = "wfmenu rhpop"; m.id = "rh-pop"; m.setAttribute("role", "menu");
+  m.innerHTML = (r.items || []).length
+    ? (r.items || []).map((x, i) => `<button role="menuitem" data-rh="${esc(x.id)}" data-no="${全 - i}">${标[x["执行状态"]] || "·"} 第 ${全 - i} 次 · ${esc(x["种类"] || "")}
+        <span class="k">${esc(x["请求人"] || "")} · ${esc(多久前(x["开始"]))} · ${esc(x["执行状态中文"] || x["执行状态"])}</span></button>`).join("")
+    : `<div class="k">这条流程还没跑过。点「▶ 试运行」跑一次,这里就有了。</div>`;
+  document.body.appendChild(m);
+  const b = 锚 && 锚.getBoundingClientRect ? 锚.getBoundingClientRect() : { left: 0, bottom: 0 };
+  m.style.left = b.left + "px"; m.style.top = b.bottom + 4 + "px";
+  m.querySelectorAll("[data-rh]").forEach((x) => { x.onclick = () => { m.remove(); 回放运行(x.dataset.rh, +x.dataset.no); }; });
+  setTimeout(() => document.addEventListener("pointerdown", (e) => { if (!m.contains(e.target) && e.target !== 锚) m.remove(); }, { once: true }), 0);
+}
+async function 回放运行(rid, 序号) {
+  if (图态.脏) { 轻提示("还有没保存的修改 —— 先保存,再看运行历史(回放时画布只读)"); return; }
+  let d;
+  try { d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`); } catch (e) { 报错(e); return; }
+  图态.回放 = { rid, 序号, 态: d["执行状态中文"] };
+  记运行态(d);
+  画_回放条(); 重画全部();
+}
+function 退出回放() {
+  图态.回放 = null; 图态.运行态 = {};
+  画_回放条(); 重画全部();
+}
+function 画_回放条() {
+  let 条 = $("#rh-bar");
+  const g = 图态;
+  if (!g || !g.回放) { if (条 && 条.isConnected) 条.remove(); return; }
+  if (!条 || !条.isConnected) {
+    条 = document.createElement("div"); 条.id = "rh-bar"; 条.className = "note rhbar"; 条.setAttribute("role", "status");
+    const 体 = $("#tabbody"); if (体 && 体.parentNode && 体.parentNode.insertBefore) 体.parentNode.insertBefore(条, 体); else document.body.appendChild(条);
+  }
+  条.innerHTML = `正在看<b>第 ${esc(String(g.回放.序号 || ""))} 次运行</b>(${esc(g.回放.态 || "")})各步的结果 —— 画布只读。
+    <button id="rh-exit" class="pri">返回编辑模式</button>`;
+  const 钮 = 条.querySelector ? 条.querySelector("#rh-exit") : null; if (钮) 钮.onclick = 退出回放;
+}
 function 历史() { return 图态.历史 || (图态.历史 = 图逻辑.历史()); }
 function 改图(名, fn, { 合并键 = null, 重绘 = true } = {}) {
-  if (!能改图()) { 轻提示("只读:你没有「改编排草稿」的权限 —— 可以查看、缩放、查找"); return false; }
+  if (!能改图()) { 轻提示(图态 && 图态.回放 ? "正在回放运行记录(只读)—— 点上方「返回编辑模式」再改"
+                                : "只读:你没有「改编排草稿」的权限 —— 可以查看、缩放、查找"); return false; }
   const g = 图态, 前 = 图逻辑.快照(g.定义, g.布局);
   let r;
   try { r = fn(); } catch (e) { 回到(前); throw e; }
