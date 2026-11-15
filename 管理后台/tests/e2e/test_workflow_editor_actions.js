@@ -210,6 +210,35 @@ function 新图态() {
   跑(`改图("改", () => { 节点("llm_1").name = "新"; })`);
   ck("改了图 → 这份运行结果是修改前版本的(页面会标出来)", 跑("图态.最近测试定义 !== JSON.stringify(图态.定义)"));
 
+  console.log("\n▸ 快捷键 + 画布右键菜单(11-15,工作流一期第五件;照 Dify)");
+  新图态();
+  const 键 = (k, 补 = {}) => 跑(`画布按键(${JSON.stringify({ key: k, code: 补.code || "", ctrlKey: !!补.ctrl, metaKey: false, shiftKey: !!补.shift, altKey: !!补.alt })}
+    && Object.assign(${JSON.stringify({ key: k, code: 补.code || "", ctrlKey: !!补.ctrl, metaKey: false, shiftKey: !!补.shift, altKey: !!补.alt })},
+      { target: { closest: () => null, tagName: "DIV" }, preventDefault() {}, isComposing: false }))`);
+  // 画画的那几步碰的是真 DOM(缩放下拉的 options 之类),桩里没有 —— 这一节验的是「按了键做了哪件事」,画面交给真浏览器那份
+  跑(`画_视口 = () => {}; 画_节点 = () => {}; 画_线 = () => {}; 画_面板 = () => {}; 画_状态栏 = () => {}; 画_小地图 = () => {}; 定位到 = () => {};`);
+  跑(`画态().选 = new Set(["llm_1"]);`);
+  键("d", { ctrl: true });
+  ck("Ctrl+D → 选中那一步复制一份(多一步、能撤销)", 跑("图态.定义.nodes.length === 4 && 历史().能撤()"), 跑("图态.定义.nodes.map((n) => n.id)"));
+  弹层们 = [];
+  键("o", { ctrl: true });
+  ck("Ctrl+O → 弹出「整理布局」确认(只改位置)", 弹层们.some((h) => h.includes("整理布局") && h.includes("只改位置")), 弹层们.slice(-1));
+  键("!", { shift: true, code: "Digit1" });
+  ck("Shift+1 → 缩放到 100%(按 e.code 认,不认 e.key)", Math.abs(跑("视口().z") - 1) < 1e-9, 跑("视口().z"));
+  键("%", { shift: true, code: "Digit5" });
+  ck("Shift+5 → 50%", Math.abs(跑("视口().z") - 0.5) < 1e-9, 跑("视口().z"));
+  键("=", { ctrl: true });
+  ck("Ctrl+= → 放大一档", 跑("视口().z") > 0.5, 跑("视口().z"));
+  let 点了 = 0; 跑(`document.querySelector("#trun").click = () => { globalThis.__点了 = (globalThis.__点了 || 0) + 1; }`);
+  键("®", { alt: true, code: "KeyR" });
+  点了 = 跑("globalThis.__点了 || 0");
+  ck("Alt+R → 点了「试运行」(按 e.code,Mac 上 Alt+R 打出来是 ®)", 点了 === 1, 点了);
+  弹层们 = [];
+  跑(`画态().剪贴板 = null; 画布菜单(10, 10)`);
+  const 菜 = 弹层们.slice(-1)[0] || "";
+  ck("空白处右键菜单:添加步骤 / 整理布局 / 适应画布 / 试运行都在;剪贴板空时不摆「粘贴」", /添加步骤/.test(菜) && /整理布局/.test(菜) && /适应画布/.test(菜)
+     && /试运行/.test(菜) && !/粘贴/.test(菜), 菜);
+
   跑完了 = true;
   console.log(`\n${挂.length ? "❌" : "✅"} 编辑器保存与命令层 ${过} 条过${挂.length ? `,挂 ${挂.length} 条:${挂.join(" / ")}` : ""}`);
   process.exit(挂.length ? 1 : 0);

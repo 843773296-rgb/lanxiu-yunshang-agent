@@ -89,7 +89,7 @@ function 画_图() {
       </div>
       <div class="wfstage">
         <div class="wflib2" id="wf-lib"></div>
-        <div class="wfcv" id="cv" tabindex="0" aria-label="流程图画布。方向键移动选中的步骤,Delete 删除,Ctrl/Cmd+Z 撤销">
+        <div class="wfcv" id="cv" tabindex="0" aria-label="流程图画布。方向键移动选中的步骤,Delete 删除,Ctrl/Cmd+Z 撤销,Ctrl/Cmd+D 复制一份,Ctrl/Cmd+O 整理,Ctrl/Cmd+1 适应画布,Shift+1 100%,Shift+5 50%,Alt+R 试运行;空白处右键有菜单">
           <div class="wfworld" id="wf-world"><svg id="wf-svg" class="wfsvg" width="1" height="1"></svg><div id="wf-nodes"></div>
             <svg id="wf-svg2" class="wfsvg top" width="1" height="1"></svg>
             <div id="wf-marq" class="wfmarq" hidden></div></div>
@@ -469,17 +469,14 @@ function 挂画布事件() {
     // 节点上的 ▶(照 Dify 单步运行):选中这一步,右侧面板直接到「试这一步」,光标放在第一个要填的框 ——
     // 填什么、用什么跑法、写入类只能连接测试,都沿用面板里那一份(不在卡片上另做一份表单)
     const r1 = ev.target.closest("[data-run1]");
-    if (r1) {
-      ev.stopPropagation(); 选节点([r1.dataset.run1]);
-      const 段 = document.querySelector('#pn [data-sec="试这一步"]');
-      if (段) { 段.scrollIntoView({ block: "start" }); const 框 = 段.querySelector("textarea[data-st]") || $("#st-go"); if (框) 框.focus(); }
-    }
+    if (r1) { ev.stopPropagation(); 去单测(r1.dataset.run1); }
   });
   // 右键菜单和「⋯」/ 连线工具条是同一套能力(§9:右键菜单和工具条提供相同能力,菜单关闭后焦点回原对象)
   cv.addEventListener("contextmenu", (ev) => {
     const nd = ev.target.closest(".wfnode2"), ed = ev.target.closest("[data-edge]");
     if (nd) { ev.preventDefault(); if (!画态().选.has(nd.dataset.id)) 选节点([nd.dataset.id]); 节点菜单(nd.dataset.id, nd); }
     else if (ed) { ev.preventDefault(); 选线(ed.dataset.edge); }
+    else if (!ev.target.closest(".wfzoom, .wfmini, .wfedgebar")) { ev.preventDefault(); 画布菜单(ev.clientX, ev.clientY); }
   });
   cv.addEventListener("keydown", 画布按键);
   cv.addEventListener("keyup", (e) => { if (e.key === " " && s.空格) { s.空格 = false; 画_状态栏(); } });
@@ -880,7 +877,10 @@ function 节点菜单(id, 锚) {
   const m = document.createElement("div");
   m.className = "wfmenu"; m.id = "wf-menu"; m.setAttribute("role", "menu");
   const 项 = [
-    改 && n.type !== "start" ? ["copy", "复制"] : null,
+    改 && n.type !== "start" ? ["copy", "复制一份(Ctrl/⌘+D)"] : null,
+    // 照 Dify 节点菜单补的两项(11-15,工作流一期第五件):单独测这一步(和卡片上的 ▶ 同一条路)、关于(这类步骤是做什么的)
+    typeof 单测类型 !== "undefined" && 单测类型[n.type] ? ["run1", "单独测这一步"] : null,
+    ["about", "关于这类步骤"],
     ["refs", `定位引用(${用它.length})`],
     改 ? ["pos", "位置与对齐"] : null,
     改 && n.type !== "end" ? ["side", 出口边(id) === "下" ? "出口放回右边" : "出口改到下边"] : null,
@@ -901,6 +901,8 @@ function 节点菜单(id, 锚) {
       const k = b.dataset.mi;
       if (k === "copy") { 复制选中([id]); 粘贴(); }
       if (k === "refs") 弹_定位引用(id);
+      if (k === "run1") 去单测(id);
+      if (k === "about") { const 说 = 元(n.type) || {}; 弹层(`关于「${说["中文"] || n.type}」`, `<p>${esc(说["说明"] || "这类步骤还没有说明。")}</p>`); }
       if (k === "pos") 弹_位置(id);
       if (k === "side") 改图(出口边(id) === "下" ? "出口放回右边" : "出口改到下边", () => {
         const p = 图态.布局[id] = { ...位(id) }; if (出口边(id) === "下") delete p.出口边; else p.出口边 = "下"; });
@@ -908,6 +910,43 @@ function 节点菜单(id, 锚) {
       if (k === "reset") 弹_重置配置(id);
       if (k === "del") 弹_删除([id]);
       const nd = document.querySelector(`.wfnode2[data-id="${CSS.escape(id)}"]`); if (nd && k !== "del") nd.focus();
+    };
+  });
+  setTimeout(() => document.addEventListener("pointerdown", 菜单外点, { once: true }), 0);
+}
+/* 卡片上的 ▶ 和节点菜单「单独测这一步」走同一条路:选中这一步,右侧面板直接到「试这一步」,光标放在第一个要填的框 */
+function 去单测(id) {
+  选节点([id]);
+  const 段 = document.querySelector('#pn [data-sec="试这一步"]');
+  if (段) { 段.scrollIntoView({ block: "start" }); const 框 = 段.querySelector("textarea[data-st]") || $("#st-go"); if (框) 框.focus(); }
+}
+/* 画布空白处右键(11-15,工作流一期第五件;照 Dify「添加节点 · 粘贴到这里 · 测试运行」):全是现成的动作,只多一个入口 */
+function 画布菜单(x, y) {
+  关菜单();
+  const 改 = 能改图(), s = 画态();
+  const m = document.createElement("div");
+  m.className = "wfmenu"; m.id = "wf-menu"; m.setAttribute("role", "menu");
+  const 项 = [
+    改 ? ["lib", "添加步骤(打开步骤库)"] : null,
+    改 && s.剪贴板 && s.剪贴板.节点们.length ? ["paste", `粘贴 ${s.剪贴板.节点们.length} 步(Ctrl/⌘+V)`] : null,
+    改 ? ["tidy", "整理布局(Ctrl/⌘+O)"] : null,
+    ["fit", "适应画布(Ctrl/⌘+1)"],
+    $("#trun") ? ["run", "试运行(Alt+R)"] : null,
+  ].filter(Boolean);
+  m.innerHTML = 项.map(([k, t]) => `<button role="menuitem" data-ci="${k}">${esc(t)}</button>`).join("");
+  document.body.appendChild(m);
+  m.style.left = x + "px"; m.style.top = y + "px";
+  const 第一个 = m.querySelector("button"); if (第一个) 第一个.focus();
+  m.onkeydown = (e) => { if (e.key === "Escape") { 关菜单(); $("#cv")?.focus(); } };
+  m.querySelectorAll("[data-ci]").forEach((b) => {
+    b.onclick = () => {
+      关菜单();
+      const k = b.dataset.ci;
+      if (k === "lib") { s.库开 = true; 画_工具条态(); }
+      if (k === "paste") 粘贴();
+      if (k === "tidy") 整理布局();
+      if (k === "fit") 适应画布();
+      if (k === "run") $("#trun")?.click();
     };
   });
   setTimeout(() => document.addEventListener("pointerdown", 菜单外点, { once: true }), 0);
@@ -1002,6 +1041,15 @@ function 画布按键(e) {
   if (主 && k === "a") { e.preventDefault(); return 选节点(图态.定义.nodes.map((n) => n.id)); }
   if (主 && k === "c") { if (s.选.size) { e.preventDefault(); const c = 复制选中([...s.选]); 轻提示(`已复制 ${c} 步`); } return; }
   if (主 && k === "v") { if (改) { e.preventDefault(); 粘贴(); } return; }
+  // ── 照 Dify 补的快捷键(11-15,工作流一期第五件)。按 e.code 认数字键:Shift+1 在不同键盘布局上 e.key 不一样(美式是「!」)
+  if (主 && (k === "d" || k === "D")) { if (改 && s.选.size) { e.preventDefault(); 复制选中([...s.选]); 粘贴(); } return; }
+  if (主 && (k === "o" || k === "O")) { if (改) { e.preventDefault(); 整理布局(); } return; }
+  if (主 && e.code === "Digit1" && !e.shiftKey) { e.preventDefault(); return 适应画布(); }
+  if (e.shiftKey && !主 && !e.altKey && e.code === "Digit1") { e.preventDefault(); return 缩放到(1); }
+  if (e.shiftKey && !主 && !e.altKey && e.code === "Digit5") { e.preventDefault(); return 缩放到(0.5); }
+  if (主 && (k === "=" || k === "+")) { e.preventDefault(); return 缩放到(视口().z * 1.2); }
+  if (主 && k === "-") { e.preventDefault(); return 缩放到(视口().z / 1.2); }
+  if (e.altKey && !主 && e.code === "KeyR") { const b = $("#trun"); if (b) { e.preventDefault(); b.click(); } return; }
   if ((k === "Delete" || k === "Backspace") && 改) {
     e.preventDefault();
     if (s.线) return 删线(s.线);
@@ -1030,7 +1078,7 @@ function 画布按键(e) {
   }
 }
 
-if (typeof globalThis !== "undefined") globalThis.画布动作 = { 连上, 删线, 重连, 粘贴, 复制选中, 查找, 缩放到, 适应画布, 选节点, 选线, 画态, 视口, 节点按下, 出口按下, 画布按键, 整理布局 };
+if (typeof globalThis !== "undefined") globalThis.画布动作 = { 连上, 删线, 重连, 粘贴, 复制选中, 查找, 缩放到, 适应画布, 选节点, 选线, 画态, 视口, 节点按下, 出口按下, 画布按键, 整理布局, 画布菜单, 去单测 };
 
 
 /* ── 从其他工作流导入(第三批 · §5.3「跨项目导入需独立设计,不复用无校验的剪贴板粘贴」)──────────
