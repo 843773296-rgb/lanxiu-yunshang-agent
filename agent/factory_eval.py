@@ -429,7 +429,7 @@ def 造过期单():
     c.execute("UPDATE factory_msg SET promise_date=? WHERE rowid=?", (造["改后"], 造["行"]))
     c.commit(); c.close()
     print(f"  (库里没有过期单 —— 造了一张:订单 {造['订单']} 接单回传的承诺日 {造['原值']} → {造['改后']},"
-          (f"跑完改回;没改回的话记录在 {os.path.relpath(_造的记录, ROOT)})" if 在真库上() else "在库副本上,真库不碰)"))
+          + (f"跑完改回;没改回的话记录在 {os.path.relpath(_造的记录, ROOT)})" if 在真库上() else "在库副本上,真库不碰)"))
     return 造
 
 
