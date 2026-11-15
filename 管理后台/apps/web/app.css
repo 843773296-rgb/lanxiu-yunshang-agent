@@ -546,3 +546,7 @@ button.mini{height:22px;padding:0 8px;font-size:12px}
 .wfnote .nc{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.15);padding:0;cursor:pointer}
 .wfnote .nx{border:0;background:none;cursor:pointer;font-size:14px;line-height:1}
 .wfnote textarea{flex:1;border:0;background:transparent;resize:none;padding:4px 8px;font-size:13px;min-height:56px}
+.wfnote .nf{display:flex;gap:2px;padding:0 6px}
+.wfnote .nf button{border:0;background:rgba(255,255,255,.6);border-radius:4px;font-size:12px;min-width:20px;cursor:pointer}
+.wfnote .nv{padding:4px 8px;font-size:13px;min-height:40px;cursor:text;word-break:break-word}
+.wfnote .nv ul{margin:2px 0;padding-left:18px}

@@ -248,6 +248,15 @@ console.log("\n▸ 冲突看差异 / 整理布局 / 逻辑变没变");
   const id2 = 逻.加注释(布局, {});
   ck("第二条注释另起编号,不覆盖第一条", id2 !== id && Object.keys(布局.$注释).length === 2);
   ck("整理布局不动注释", JSON.stringify(逻.整理布局(定义, 布局).$注释) === JSON.stringify(布局.$注释));
+  const 渲 = 逻.注释渲染("**粗** *斜* ~~删~~ [官网](https://a.cn) <script>x</script>\n- 一\n- 二\n尾 [坏](javascript:alert(1))");
+  ck("格式:粗 / 斜 / 删 / 链接 / 列表都认", 渲.includes("<b>粗</b>") && 渲.includes("<i>斜</i>") && 渲.includes("<s>删</s>")
+     && 渲.includes('<a href="https://a.cn"') && 渲.includes("<ul><li>一</li><li>二</li></ul>"), 渲);
+  ck("🔑 格式:注释里写 <script> 原样显示;javascript: 链接不给链接", 渲.includes("&lt;script&gt;") && !渲.includes("<script>")
+     && !/href="javascript/.test(渲), 渲);
+  const 包 = 逻.注释加格式("先核对再写", 0, 2, "粗");
+  ck("工具栏:选中「先核」点加粗 → **先核**对再写,选区还框着那两个字", 包.文本 === "**先核**对再写" && 包.起 === 2 && 包.止 === 4, 包);
+  const 列 = 逻.注释加格式("甲\n乙", 3, 3, "列表");
+  ck("工具栏:列表加在光标所在那一行的行首", 列.文本 === "甲\n- 乙", 列);
   ck("删注释:删掉的那条没了,另一条还在;删不存在的返回 false", 逻.删注释(布局, id) && !布局.$注释[id] && !!布局.$注释[id2] && 逻.删注释(布局, "没有") === false);
 }
 

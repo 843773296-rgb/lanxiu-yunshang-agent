@@ -253,7 +253,9 @@ function 新图态() {
   const nid = 跑(`加注释在(100, 100)`);
   ck("加了一条注释(在布局里、带作者),记一条可撤销的修改", 跑(`!!(图态.布局.$注释 || {})["${nid}"] && 图态.布局.$注释["${nid}"].作者 === "U002" && 历史().能撤()`), nid);
   ck("画布上画出来了(带文字框、作者)", /data-notet/.test(跑(`注释们HTML(true)`)) && /U002/.test(跑(`注释们HTML(true)`)));
-  ck("只读时不给换色 / 删除,文字框只读", !/data-notex/.test(跑(`注释们HTML(false)`)) && /readonly/.test(跑(`注释们HTML(false)`)));
+  ck("只读时不给换色 / 删除 / 格式按钮,也没有文字框(只看排好版的)", !/data-notex/.test(跑(`注释们HTML(false)`)) && !/data-notef/.test(跑(`注释们HTML(false)`))
+     && !/data-notet/.test(跑(`注释们HTML(false)`)) && /data-notev/.test(跑(`注释们HTML(false)`)));
+  ck("能改时有五个格式按钮(粗 / 斜 / 删 / 链接 / 列表)", (跑(`注释们HTML(true)`).match(/data-notef=/g) || []).length === 5);
   跑("撤销()");
   ck("撤销 → 注释没了", 跑(`!(图态.布局.$注释 || {})["${nid}"]`));
 

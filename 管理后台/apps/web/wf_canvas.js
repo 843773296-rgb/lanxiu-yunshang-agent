@@ -322,7 +322,10 @@ function 注释们HTML(改) {
       <div class="nh" data-noteh="${esc(id)}"><span class="k">注释${x.作者 ? ` · ${esc(x.作者)}` : ""}</span>
         ${改 ? Object.keys(图逻辑.注释色).map((c) => `<button type="button" class="nc" data-notec="${esc(id)}|${esc(c)}" title="${esc(c)}" aria-label="底色改成${esc(c)}" style="background:${图逻辑.注释色[c]}"></button>`).join("")
           + `<button type="button" class="nx" data-notex="${esc(id)}" aria-label="删除这条注释" title="删除">×</button>` : ""}</div>
-      <textarea data-notet="${esc(id)}" aria-label="注释内容" placeholder="写点说明,不参与执行" ${改 ? "" : "readonly"}>${esc(x.文 || "")}</textarea>
+      ${改 ? `<div class="nf">${[["粗", "<b>B</b>", "加粗"], ["斜", "<i>I</i>", "斜体"], ["删", "<s>S</s>", "删除线"], ["链接", "🔗", "链接"], ["列表", "•", "列表"]]
+          .map(([k, t, 说]) => `<button type="button" data-notef="${esc(id)}|${k}" title="${说}" aria-label="${说}">${t}</button>`).join("")}</div>` : ""}
+      <div class="nv" data-notev="${esc(id)}">${x.文 ? 图逻辑.注释渲染(x.文) : `<span class="k">${改 ? "点这里写说明(不参与执行)" : ""}</span>`}</div>
+      ${改 ? `<textarea data-notet="${esc(id)}" aria-label="注释内容" placeholder="写点说明,不参与执行;**粗** *斜* ~~删~~ [字](https://…) 行首「- 」是列表" hidden>${esc(x.文 || "")}</textarea>` : ""}
     </div>`).join("");
 }
 function 加注释在(px, py) {
@@ -330,9 +333,17 @@ function 加注释在(px, py) {
   const c = 屏到图(px, py);
   改图("添加注释", () => { id = 图逻辑.加注释(图态.布局, { x: c.x, y: c.y, 作者: typeof 我 !== "undefined" ? 我 : "" }); });
   画_节点();
-  const t = id && document.querySelector(`textarea[data-notet="${CSS.escape(id)}"]`); if (t) t.focus();
+  注释编辑(id);
   轻提示("已添加注释(不参与执行)", { 撤销: true });
   return id;
+}
+/* 点注释的正文 → 换成文字框编辑;失焦 → 存(change 那条)并换回排好版的样子 */
+function 注释编辑(id) {
+  const t = id && document.querySelector(`textarea[data-notet="${CSS.escape(id)}"]`), v = id && document.querySelector(`[data-notev="${CSS.escape(id)}"]`);
+  if (!t) return;
+  t.hidden = false; if (v) v.hidden = true;
+  t.focus();
+  t.onblur = () => setTimeout(() => { if (document.activeElement && document.activeElement.closest && document.activeElement.closest(`[data-notef^="${CSS.escape(id)}|"]`)) return; 画_节点(); }, 120);
 }
 function 注释按下(ev, id) {
   const 原 = { ...((图态.布局.$注释 || {})[id] || {}) }, z = 视口().z, 前 = 图逻辑.快照(图态.定义, 图态.布局);
@@ -540,6 +551,18 @@ function 挂画布事件() {
     if (r1) { ev.stopPropagation(); 去单测(r1.dataset.run1); }
     const nc = ev.target.closest("[data-notec]");
     if (nc) { ev.stopPropagation(); const [id, c] = nc.dataset.notec.split("|"); 改图("注释换底色", () => 图逻辑.改注释(图态.布局, id, { 色: c }) || false); }
+    const nf = ev.target.closest("[data-notef]");
+    if (nf) {
+      ev.stopPropagation();
+      const [id, 种] = nf.dataset.notef.split("|"), ta = document.querySelector(`textarea[data-notet="${CSS.escape(id)}"]`);
+      const 原 = ((图态.布局.$注释 || {})[id] || {}).文 || "", 正在编 = ta && !ta.hidden;
+      const 起 = 正在编 ? ta.selectionStart : 原.length, 止 = 正在编 ? ta.selectionEnd : 原.length;
+      const r = 图逻辑.注释加格式(正在编 ? ta.value : 原, 起, 止, 种);
+      改图(`注释加${种}`, () => 图逻辑.改注释(图态.布局, id, { 文: r.文本 }) || false);
+      注释编辑(id);
+      const 新 = document.querySelector(`textarea[data-notet="${CSS.escape(id)}"]`);
+      if (新) { 新.value = r.文本; 新.setSelectionRange(r.起, r.止); }
+    }
     const nx = ev.target.closest("[data-notex]");
     if (nx) { ev.stopPropagation(); 改图("删除注释", () => 图逻辑.删注释(图态.布局, nx.dataset.notex) || false); 轻提示("已删除注释", { 撤销: true }); }
   });
@@ -567,7 +590,9 @@ function 画布按下(ev) {
   const out = t.closest("[data-out]");
   if (out && 能改图()) { ev.preventDefault(); return 出口按下(ev, out); }
   if (t.closest("[data-more]") || t.closest("[data-run1]")) return;
-  if (t.closest("[data-notec]") || t.closest("[data-notex]")) return;
+  if (t.closest("[data-notec]") || t.closest("[data-notex]") || t.closest("[data-notef]")) return;
+  const nv = t.closest("[data-notev]");
+  if (nv && 能改图() && !t.closest("a")) { ev.preventDefault(); 注释编辑(nv.dataset.notev); return; }
   const nh = t.closest("[data-noteh]");
   if (nh) { if (能改图()) { ev.preventDefault(); 注释按下(ev, nh.dataset.noteh); } return; }
   if (t.closest(".wfnote")) return;

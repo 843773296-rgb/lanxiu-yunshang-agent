@@ -474,6 +474,33 @@
     Object.assign(原, 可改);
     return true;
   };
+  /* 注释的格式(照 Dify 注释工具栏:加粗 / 斜体 / 删除线 / 链接 / 列表)。**存的还是纯文字**,用最小一套标记:
+   * **粗** · *斜* · ~~删~~ · [字](https://…) · 行首「- 」是列表。先整段转义再认标记 —— 注释里写 <script> 只会原样显示。
+   * 链接只认 http / https:javascript: 这类不给链接,原样当字显示 */
+  逻.注释渲染 = function (文) {
+    const 转 = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const 行内 = (t) => 转(t)
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, 字, 址) => `<a href="${址}" target="_blank" rel="noopener noreferrer">${字}</a>`)
+      .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/~~([^~]+)~~/g, "<s>$1</s>").replace(/(^|[^*])\*([^*]+)\*/g, "$1<i>$2</i>");
+    const 出 = []; let 列 = [];
+    const 收 = () => { if (列.length) { 出.push(`<ul>${列.map((x) => `<li>${x}</li>`).join("")}</ul>`); 列 = []; } };
+    String(文 || "").split("\n").forEach((行) => {
+      const m = 行.match(/^\s*[-•]\s+(.*)$/);
+      if (m) 列.push(行内(m[1])); else { 收(); 出.push(行内(行)); }
+    });
+    收();
+    return 出.join("<br>").replace(/<br><ul>/g, "<ul>").replace(/<\/ul><br>/g, "</ul>");
+  };
+  /* 工具栏按钮:把选中的那段包上标记(没选就插一对空标记,光标落中间)→ {文本, 起, 止} */
+  逻.注释加格式 = function (文, 起, 止, 种) {
+    const t = String(文 || ""), 选 = t.slice(起, 止);
+    if (种 === "列表") {
+      const 行首 = t.lastIndexOf("\n", 起 - 1) + 1;
+      return { 文本: t.slice(0, 行首) + "- " + t.slice(行首), 起: 起 + 2, 止: 止 + 2 };
+    }
+    const [左, 右] = { 粗: ["**", "**"], 斜: ["*", "*"], 删: ["~~", "~~"], 链接: ["[", "](https://)"] }[种] || ["", ""];
+    return { 文本: t.slice(0, 起) + 左 + 选 + 右 + t.slice(止), 起: 起 + 左.length, 止: 起 + 左.length + 选.length };
+  };
   逻.删注释 = function (布局, id) {
     if (!(布局.$注释 || {})[id]) return false;
     delete 布局.$注释[id];
