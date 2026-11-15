@@ -12,6 +12,14 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-15 14:1x · 本地 14 笔待推;咬合欠账三笔还清;等并行会话推完(Opus 5.5)
+
+- **本地未推**(aca71aa0 之上):缩说明 3–12 + muslin 修 + intent 退货率口径 + **return_rate 新工具**(909fef32)+ 咬合欠账三笔(0cac1f93 / 047f7728)+ 交接。
+- **已在锁里单独重放过**:returns_check 4/4、tool_eval 2/2、guards_test 62/62、rounds 29/29。⚠️ guards_test 有 62 条规格,单跑约 2 小时 —— 别在并行会话要锁时单独跑它。
+- **后台**:店长助手生产临时是 v13(让并行会话先推);v15 已存在但没有 return_rate。推之前:`align_rules_v9.py --加开 return_rate` 出 v16 → 喊并行会话 → `--切 16 --加开 return_rate` → assistant_effect → 预跑门禁 → pre_push → **告诉用户打开了新工具**。
+- **并行会话**:14:1x 拿锁跑推送前链(约 40 分钟),PUSHED 后喊我;它的 20 笔会和我撞 check.sh 一行 / bite_specs 末尾(用 .wip-glossary/merge_specs.py)/ PRD 2.4.4 / HANDOFF / 待办清单。
+- **下一步第一个动作**:它说推了 → `git rebase origin/main`(冲突按上面)→ 重生成文档(sync_rule_docs.sh + doc_numbers 逐处改)→ 上面后台那串。
+
 ### 🟡 11-15 09:4x · 让并行会话先推;后台临时切回 v13;⑥ 退货率草稿在 .wip-glossary/ret/(Opus 5.5)
 
 - **推送**:我 07:4x 那轮链 09:03 红在 muslin_check(白坯试衣说明里「责任转移 / 会拦」被缩掉)→ 6eef1cfa 修。重跑要 1.5h+,让并行会话先推它 19 笔;
