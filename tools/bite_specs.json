@@ -9955,12 +9955,12 @@
  },
  {
   "script": "agent/partial_write_check.py",
-  "改坏": "把 liability_eval 里「只跑了一部分不许覆盖结果文件」那层守卫去掉",
+  "改坏": "把 vision_eval 里「只跑了一部分不许覆盖结果文件」那层守卫去掉(11-15 从 liability_eval 挪过来:那套接了 rounds.跑并收尾,守卫进了共用收尾)",
   "file": [
    {
-    "path": "agent/liability_eval.py",
-    "old": "    if len(todo) < len(CASES):\n        print(f\"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 题,**不写结果文件** —— \"",
-    "new": "    if False:\n        print(f\"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 题,**不写结果文件** —— \""
+    "path": "agent/vision_eval.py",
+    "old": "    if len(todo) < len(CASES):\n        print(f\"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 张,**不写结果文件** —— \"",
+    "new": "    if False:\n        print(f\"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 张,**不写结果文件** —— \""
    }
   ],
   "预期红": "没有新增的「跑一部分却覆盖全量」"
@@ -17181,12 +17181,12 @@
  },
  {
   "script": "agent/rounds_check.py",
-  "改坏": "把 growth_eval 里 `import rounds` 那段去掉(它会变回单轮而没登记)",
+  "改坏": "把 vision_eval 里 `rounds.报(...)` 换成不存在的 `_不报(...)`(它会变回单轮而没登记;11-15 从 growth_eval 挪过来:那套接了 rounds.跑并收尾)",
   "file": [
    {
-    "path": "agent/growth_eval.py",
-    "old": "    rounds.报(多, 基线通过数=基线,",
-    "new": "    _不报(多, 基线通过数=基线,"
+    "path": "agent/vision_eval.py",
+    "old": "    rounds.报(多, 基线通过数=基线, 名=\"识图\", 原因=因, 基线来路=基线来路)",
+    "new": "    _不报(多, 基线通过数=基线, 名=\"识图\", 原因=因, 基线来路=基线来路)"
    }
   ],
   "预期红": "没有新增的单轮评测"

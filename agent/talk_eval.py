@@ -483,37 +483,19 @@ if __name__ == "__main__":
         return ({r["case"]: r["passed"] for r in rows},
                 {r["case"]: r.get("why") or [] for r in rows}, rows, cost)
 
-    轮数 = 1 if os.environ.get("LANXIU_一轮") else 2
-    多, 因, 明细, 花费 = [], [], None, 0.0
-    for _i in range(轮数):
-        if 轮数 > 1: print(f"  【第 {_i + 1} 轮】")
-        过, why, rows, c = 跑一轮()
-        多.append(过); 因.append(why); 明细 = rows; 花费 += c
-    ok_n = sum(1 for v in 多[-1].values() if v)
+    # 11-15 接共用收尾(执行手册 W12 后半):跑几轮、环境性失败、基线可比不可比、部分跑 / 跑挂不写结果文件,
+    # 全在 `rounds.跑并收尾` 里一份(和 chat / factory / member / fitting / intent 五套同一个口)。
+    # 原来这里自己写了一遍基线对账和「部分跑不写」—— 六套各一份,改一处漏五处(2026-09-21 G05 那次就是漏的那种)。
+    import rounds
+
+    def _一轮():
+        _过, _why, rows, _c = 跑一轮()
+        return rows
+
+    recs, _ = rounds.跑并收尾(_一轮, 名="销售话术",
+                              结果文件=os.path.join(HERE, "talk-eval-results.jsonl"),
+                              全集数=len(CASES), 本轮数=len(todo), 键="case")
+    ok_n = sum(1 for r in recs if r.get("passed"))
     print("=" * 104)
-    print(f"通过 {ok_n}/{len(todo)}  |  总花费 ${花费:.4f}")
-
-    基线, 基线来路 = None, None
-    try:
-        import subprocess as _sp
-        _t = _sp.run(["git", "show", "HEAD:agent/talk-eval-results.jsonl"],
-                     capture_output=True, text=True, cwd=ROOT).stdout
-        _b = [json.loads(l) for l in _t.splitlines() if l.strip()]
-        if _b and len(todo) == len(CASES) and {x.get("case") for x in _b} == {c["id"] for c in todo}:
-            基线 = sum(1 for x in _b if x.get("passed"))
-            基线来路 = {k: _b[0].get(k) for k in ("供应商", "模型", "代码")}
-            print(f"  (基线取自 git 里上一版结果:{基线}/{len(_b)})")
-        elif _b:
-            print("  ℹ️ 基线和现在的题对不上,**不拿它比**")
-    except Exception:
-        pass
-    rounds.报(多, 基线通过数=基线, 名="销售话术", 原因=因, 基线来路=基线来路)
-
-    out = os.path.join(HERE, "talk-eval-results.jsonl")
-    if len(todo) < len(CASES):
-        print(f"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 题,**不写结果文件** —— "
-              f"部分结果覆盖完整基线之后,文件上看不出来")
-    else:
-        evalrec.dump(out, 明细)
-        print(f"明细写到 {out}")
+    print(f"最后一轮 通过 {ok_n}/{len(todo)}  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}(最后一轮)")
     sys.exit(0 if ok_n == len(todo) else 1)
