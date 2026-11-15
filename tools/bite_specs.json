@@ -3743,18 +3743,6 @@
   "预期红": "没有新增的位置参数 INSERT"
  },
  {
-  "script": "tools/insert_shape_check.py",
-  "改坏": "往欠债表里加回 `backend/seed.py: xingzhi 1`,而代码里那句已经是具名列(11-15 早还清;囤积的欠债和真欠债长得一模一样)",
-  "file": [
-   {
-    "path": "tools/位置参数欠债.json",
-    "old": "  \"fakedata/agree.py\": {",
-    "new": "  \"backend/seed.py\": {\n   \"xingzhi\": 1\n  },\n  \"fakedata/agree.py\": {"
-   }
-  ],
-  "预期红": "欠债表里的都还欠着"
- },
- {
   "script": "knowledge/margin.py",
   "改坏": "让 一单() 缺物料成本时按 0 算",
   "file": [
@@ -9707,18 +9695,6 @@
    }
   ],
   "预期红": "不在欠债表里的脚本,清单里每一条都有可重放的规格(新加的检查别再添新账)"
- },
- {
-  "script": "tools/bite_check.py",
-  "改坏": "把欠债表里一个脚本的处数改小(等于声称已经还了一部分)—— 用 tools/intent_check.py(它的咬合钉在天天改的 HANDOFF 上,11-10 判断过不补,处数短期不会动)。⚠️ 11-11 改:原来钉在 backend/source_check.py 的 4 上,那 4 处一还(4→2)破坏点当场过期 ——**盯着一个会被还掉的数,还账本身就会让它漂**;哪天 intent_check 的处数变了,这条要跟着换。⚠️ 11-15 夜又改:intent_check 那条「点名的 intent 都真的存在」补上了规格(2→1),这条又过期了 —— 换到 fakedata/repro.py 的 4(数据工厂那条线,我这边不还;它那边还了的话同样要跟着换)",
-  "file": [
-   {
-    "path": "tools/咬合两份记录欠债.json",
-    "old": "\"fakedata/repro.py\": 4",
-    "new": "\"fakedata/repro.py\": 3"
-   }
-  ],
-  "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
  },
  {
   "script": "tools/bite_check.py",
@@ -17648,18 +17624,6 @@
   "预期红": "没有新增的静默截断"
  },
  {
-  "script": "tools/truncation_check.py",
-  "改坏": "把欠债表里某一条指向一个已经改好的位置",
-  "file": [
-   {
-    "path": "tools/截断欠债.json",
-    "old": " \"欠着的\": {\n",
-    "new": " \"欠着的\": {\n  \"tools/runlog_check.py\": [\n   \"坏\"\n  ],\n"
-   }
-  ],
-  "预期红": "欠债表里的都还欠着"
- },
- {
   "script": "tools/judge_tool_names_check.py",
   "改坏": "判据 need_tool 点名一个已下架的工具(piece_ratios)",
   "file": [
@@ -22366,5 +22330,197 @@
    }
   ],
   "预期红": "顾问看不到不归他的单"
+ },
+ {
+  "script": "tools/insert_shape_check.py",
+  "改坏": "往已经清空的欠债表里加回 `backend/seed.py: xingzhi 1`,而代码里那句已经是具名列(囤积的欠债和真欠债长得一模一样)",
+  "file": [
+   {
+    "path": "tools/位置参数欠债.json",
+    "old": " \"欠着的\": {}",
+    "new": " \"欠着的\": {\n  \"backend/seed.py\": {\n   \"xingzhi\": 1\n  }\n }"
+   }
+  ],
+  "预期红": "欠债表里的都还欠着"
+ },
+ {
+  "script": "tools/bite_check.py",
+  "改坏": "把欠债表里一个脚本的处数改小(等于声称已经还了一部分)—— 用 tools/intent_check.py(它的咬合钉在天天改的 HANDOFF 上,11-10 判断过不补,处数短期不会动)。⚠️ 11-11 改:原来钉在 backend/source_check.py 的 4 上,那 4 处一还(4→2)破坏点当场过期 ——**盯着一个会被还掉的数,还账本身就会让它漂**;哪天 intent_check 的处数变了,这条要跟着换。⚠️ 11-15 夜又改:intent_check 那条「点名的 intent 都真的存在」补上了规格(2→1),这条又过期了 —— 换到 tools/delivered_images.py 的 4(数据工厂那条线,我这边不还;它那边还了的话同样要跟着换)",
+  "file": [
+   {
+    "path": "tools/咬合两份记录欠债.json",
+    "old": "  \"tools/delivered_images.py\": 4",
+    "new": "  \"tools/delivered_images.py\": 3"
+   }
+  ],
+  "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
+ },
+ {
+  "script": "tools/truncation_check.py",
+  "改坏": "往已经清空的欠债表里加一条指向一个已经改好的位置(runlog_check 那处早补了「还有几条」)",
+  "file": [
+   {
+    "path": "tools/截断欠债.json",
+    "old": " \"欠着的\": {}",
+    "new": " \"欠着的\": {\n  \"tools/runlog_check.py\": [\n   \"坏\"\n  ]\n }"
+   }
+  ],
+  "预期红": "欠债表里的都还欠着"
+ },
+ {
+  "script": "fakedata/repro.py",
+  "改坏": "把 gen._dt 的 `_锚日()` 换成 `getattr(datetime.date, \"to\"+\"day\")()`(扫写法那条看不见,只有实测能抓)",
+  "file": [
+   {
+    "path": "fakedata/gen.py",
+    "old": "    hi = hi or _锚日()\n",
+    "new": "    hi = hi or getattr(datetime.date, \"to\" + \"day\")()\n"
+   }
+  ],
+  "预期红": "换一天跑,数据一样"
+ },
+ {
+  "script": "fakedata/repro.py",
+  "改坏": "行rng 的播种串里掺一个 `next(iter({\"甲\",\"乙\",\"丙\"}))`(集合遍历序随 PYTHONHASHSEED 变,扫写法看不见)",
+  "file": [
+   {
+    "path": "fakedata/gen.py",
+    "old": "    return rng_for(seed, tname, cname, \"行\", 键, *extra)\n",
+    "new": "    return rng_for(seed, tname, cname, \"行\", 键, next(iter({\"甲\", \"乙\", \"丙\"})), *extra)\n"
+   }
+  ],
+  "预期红": "换个进程跑,数据一样"
+ },
+ {
+  "script": "fakedata/repro.py",
+  "改坏": "把 gen._dt 直接改回 `hi = hi or datetime.date.today()`(扫写法那条该抓到)",
+  "file": [
+   {
+    "path": "fakedata/gen.py",
+    "old": "    hi = hi or _锚日()\n",
+    "new": "    hi = hi or datetime.date.today()\n"
+   }
+  ],
+  "预期红": "造数据的路上不取机器时间"
+ },
+ {
+  "script": "fakedata/repro.py",
+  "改坏": "把「先拿掉一列日期上界」那两行删掉 —— 兜底取「今天」那条路就没人走,这条检查没东西可看",
+  "file": [
+   {
+    "path": "fakedata/repro.py",
+    "old": "                g[\"range\"] = {}\n                去了上界 = f\"{t}.{c}\"\n",
+    "new": "                pass\n"
+   }
+  ],
+  "预期红": "这条检查有东西可看:有一列日期没有上界"
+ },
+ {
+  "script": "fakedata/samekind.py",
+  "改坏": "把代码轴改成按文本找(不走语法树):注释 / 文档字符串 / 字符串里的同名文本也算",
+  "file": [
+   {
+    "path": "fakedata/samekind.py",
+    "old": "            if isinstance(n, ast.Call) and _点名(n.func) == 种类:\n                出.append((os.path.relpath(p, ROOT), n.lineno))\n",
+    "new": "            pass\n        for i, l in enumerate(open(p, encoding=\"utf-8\").read().splitlines(), 1):\n            if 种类 + \"(\" in l:\n                出.append((os.path.relpath(p, ROOT), i))\n"
+   }
+  ],
+  "预期红": "注释和字符串里的不算"
+ },
+ {
+  "script": "fakedata/samekind.py",
+  "改坏": "把数据轴的同名列查询限定成只看第一张表",
+  "file": [
+   {
+    "path": "fakedata/samekind.py",
+    "old": "            \"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'\"):\n",
+    "new": "            \"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1\"):\n"
+   }
+  ],
+  "预期红": "同名列在别的表里也找得出来"
+ },
+ {
+  "script": "fakedata/stable.py",
+  "改坏": "gen.py 标量列的 `行rng(seed, 表, 列, 键)` 改成按下标 `i` 播种(同一批键换个顺序,值就跟着挪)",
+  "file": [
+   {
+    "path": "fakedata/gen.py",
+    "old": "                rr = 行rng(seed, tname, cname, 键)\n",
+    "new": "                rr = 行rng(seed, tname, cname, i)\n"
+   }
+  ],
+  "预期红": "每一行的值只由它自己的键决定"
+ },
+ {
+  "script": "fakedata/stable.py",
+  "改坏": "往「批级的」登记表里加 `date`(本来是稳定的列,登记了却不漂)",
+  "file": [
+   {
+    "path": "fakedata/gen.py",
+    "old": "批级的 = {\n    \"fk\":  \"引用密度形状:哪个父亲带几个孩子,要把 n 个孩子分完才知道\",\n}\n",
+    "new": "批级的 = {\n    \"fk\":  \"引用密度形状:哪个父亲带几个孩子,要把 n 个孩子分完才知道\",\n    \"date\": \"咬合:本来稳定的列\",\n}\n"
+   }
+  ],
+  "预期红": "登记的批级列确实是批级的"
+ },
+ {
+  "script": "fakedata/agree.py",
+  "改坏": "把一款商品自己写的性别翻过来(它挂的版型写的性别没动)—— 同一个事实两个落点打架",
+  "sql": [
+   "UPDATE product SET gender=CASE gender WHEN '男' THEN '女' ELSE '男' END WHERE spu=(SELECT p.spu FROM product p JOIN pattern pt ON pt.code=p.pattern WHERE pt.gender IS NOT NULL AND pt.gender<>'' AND p.gender IS NOT NULL AND p.gender<>'' LIMIT 1)"
+  ],
+  "预期红": "同一个事实的几个落点不打架"
+ },
+ {
+  "script": "fakedata/agree.py",
+  "改坏": "把「商品自己写的性别」那个落点的 SQL 条件写死成一个不存在的值(读不到东西)",
+  "file": [
+   {
+    "path": "fakedata/一致.json",
+    "old": "\"sql\": \"SELECT p.spu, p.gender FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>'' AND p.gender IS NOT NULL AND p.gender<>''\"",
+    "new": "\"sql\": \"SELECT p.spu, p.gender FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>'' AND p.gender IS NOT NULL AND p.gender<>'' AND p.gender='没有这个值'\""
+   }
+  ],
+  "预期红": "每个落点都读到了东西"
+ },
+ {
+  "script": "fakedata/agree.py",
+  "改坏": "把「这一单的商品金额」那个事实删到只剩一个落点(只有一个落点的事实永远不打架)",
+  "file": [
+   {
+    "path": "fakedata/一致.json",
+    "old": ",\n    {\n     \"名\": \"明细逐行加起来\",\n     \"sql\": \"SELECT order_id, CAST(ROUND(SUM(base_amount),2) AS TEXT) FROM ordr_item GROUP BY order_id\"\n    }",
+    "new": ""
+   }
+  ],
+  "预期红": "每个事实至少有两个落点"
+ },
+ {
+  "script": "fakedata/anchor.py",
+  "改坏": "把一款钉住颜色的商品(lxys_101781775,钉的是藕荷)的 SKU 颜色改掉",
+  "sql": [
+   "UPDATE sku SET color='咬合色' WHERE spu='lxys_101781775'"
+  ],
+  "预期红": "钉住的值和库里一致"
+ },
+ {
+  "script": "fakedata/anchor.py",
+  "改坏": "把一款钉住颜色的商品(lxys_102122292)从商品表里删掉(行没了,不是值变了)",
+  "sql": [
+   "DELETE FROM product WHERE spu='lxys_102122292'"
+  ],
+  "预期红": "钉住的行都还在"
+ },
+ {
+  "script": "fakedata/anchor.py",
+  "改坏": "往解钉记录里加一条没写「为什么」的",
+  "file": [
+   {
+    "path": "fakedata/锚定.json",
+    "old": " \"解钉\": []",
+    "new": " \"解钉\": [{\"表\": \"sku\", \"列\": \"color\", \"键\": \"lxys_100451383\", \"何时\": \"2026-11-15\"}]"
+   }
+  ],
+  "预期红": "拔钉留了痕"
  }
 ]

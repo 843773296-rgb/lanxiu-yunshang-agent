@@ -4,11 +4,6 @@
  "登记于": "2026-10-20",
  "欠着的": {
   "backend/rating_rebuild_check.py": 1,
-  "fakedata/agree.py": 3,
-  "fakedata/anchor.py": 3,
-  "fakedata/repro.py": 4,
-  "fakedata/samekind.py": 2,
-  "fakedata/stable.py": 2,
   "tools/cron_health_check.py": 2,
   "tools/delivered_images.py": 4,
   "tools/hook_sync_check.py": 1,
