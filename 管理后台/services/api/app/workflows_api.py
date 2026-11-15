@@ -1289,6 +1289,8 @@ def _定时出(c, project_id, s, 现在=None):
         return None
     规则 = {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"]}
     下次 = T.下次执行(规则, 现在 or datetime.now(timezone.utc)) if s["schedule_enabled"] else None
+    # 接下来 5 次(11-15,照 Dify):关着也算 —— 让人看清「打开的话会在这几天跑、各统计哪一段」
+    接下来 = T.接下来几次(规则, 现在 or datetime.now(timezone.utc), 5)
     return {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"], "开着": bool(s["schedule_enabled"]),
             "以谁的身份": s["principal"], "固定输入": s["input_snapshot"] or {},
             "打开于": s["armed_at"].isoformat() if s["armed_at"] else None,
@@ -1296,6 +1298,7 @@ def _定时出(c, project_id, s, 现在=None):
             "最近运行": s["last_run_id"], "记录": s["missed_detail"] or [],
             "下次": {"时刻": 下次[0].isoformat(), "统计起": 下次[1].isoformat(), "统计止": 下次[2].isoformat()}
                     if 下次 else None,
+            "接下来": [{"时刻": a.isoformat(), "统计起": b.isoformat(), "统计止": e.isoformat()} for a, b, e in 接下来],
             "revision": s["revision"]}
 
 

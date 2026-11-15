@@ -77,6 +77,16 @@ for x in 坏规则:
         拦.append(str(e))
 ck("周期 / 时刻 / 时区写错都拦,而且说清怎么写", len(拦) == len(坏规则) and all(拦), len(坏规则), 拦)
 
+print("\n▸ 接下来 5 次(11-15,照 Dify 面板;验收:「每周一 8:00」→ 5 次全是周一)")
+周规 = T.校验规则({"周期": "周", "时刻": "08:00"})
+五 = T.接下来几次(周规, datetime(2026, 11, 15, 22, 0, tzinfo=北京), 5)
+ck("周报:5 次全是周一 8:00、一周一次、各统计上一个自然周", len(五) == 5 and all(x[0].weekday() == 0 and x[0].hour == 8 for x in 五)
+   and all((五[i + 1][0] - 五[i][0]).days == 7 for i in range(4)) and all(x[1].weekday() == 0 and (x[2] - x[1]).days == 6 for x in 五), len(五), 五)
+月五 = T.接下来几次(T.校验规则({"周期": "月"}), datetime(2026, 11, 15, 22, 0, tzinfo=北京), 5)
+ck("月报:5 次都是 1 号,跨年那次(1 月 1 日)统计 12 月整月", [x[0].month for x in 月五] == [12, 1, 2, 3, 4]
+   and all(x[0].day == 1 for x in 月五) and 月五[1][1] == date(2026, 12, 1) and 月五[1][2] == date(2026, 12, 31), len(月五), 月五)
+ck("第一次就是「下次执行」那一次(同一套算法,不另写)", 五[0] == T.下次执行(周规, datetime(2026, 11, 15, 22, 0, tzinfo=北京)), 1)
+
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 for x in 挂:
     print(f"   · {x}")

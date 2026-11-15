@@ -4369,6 +4369,8 @@ async function 画_定时块(wid) {
     <div class="k">${s ? (s["开着"] ? `<span class="pill ok">开着</span> 以 ${esc(s["以谁的身份"])} 的身份跑`
         + (s["下次"] ? ` · 下次 ${时间(s["下次"]["时刻"])},统计 ${esc(s["下次"]["统计起"])} ~ ${esc(s["下次"]["统计止"])}` : "")
         : `<span class="pill">关着</span>`) : "还没设过定时。"}</div>
+    ${s && (s["接下来"] || []).length ? `<div class="k">${s["开着"] ? "接下来 5 次" : "打开的话,接下来 5 次"}(北京时间):${s["接下来"].map((x) =>
+        `${时间(x["时刻"])}(统计 ${esc(x["统计起"])}${x["统计起"] !== x["统计止"] ? ` ~ ${esc(x["统计止"])}` : ""})`).join(" · ")}</div>` : ""}
     <button class="pri" id="sc-on" ${d["生产版本"] ? "" : "disabled"}>${s && s["开着"] ? "保存" : "打开定时"}</button>
     ${s && s["开着"] ? `<button id="sc-off">关掉定时</button>` : ""}</div>
     ${记录.length ? `<h3>最近几期</h3><ul class="schedlog">${记录.map((x) => `<li>${期结果(x)}</li>`).join("")}</ul>` : ""}`;
