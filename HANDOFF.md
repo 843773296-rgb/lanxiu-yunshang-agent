@@ -63,7 +63,16 @@
 > 规矩同上一轮:gate_lock --who、不碰 eureka-fc 文件、改管理后台推前 make test-e2e-ci、scan_secrets 单独一步、commit --only;**加新列走 backend/migrations/**;写共享库前先跟 eureka-fc 说。
 > ⚠️ 开局时 eureka-fc 在跑推送前链(schema_version 那笔),**它推完之前别跑门禁、别写共享库**;本地待推 f0208b4a(白天汇总)。
 
-**交接(11-15 07:0x,压缩前 —— 覆盖下面 01:4x 那段里的「下一步」)**
+**交接(11-15 10:0x,压缩前 —— 覆盖下面两段的「下一步」)**
+- **状态**:夜任务已收官(汇总发飞书 0bebc075、CronDelete addf3eab 已删)。本地 **20 笔**待推,最新 c425ee7d(台账六十三/六十四:退款「补足后仍失败」按最后一次失败定因 + 凭回码变了认补足,用户 09:3x 拍)。eureka-fc 09:4x 说「你先推」(它的链 09:03 红在 muslin_check 已修,生产临时切回 v13 和主干对齐)。
+- **正在跑**:`./tools/pre_push.sh --不推`(后台任务 bbybq1qje,日志 scratchpad/pre_push_1115b.log;09:5x 起,估 15–85 分钟)。**跑完只认日志里「被包的命令退出码」那行**。⚠️ 自动推被权限分类器拦了两次(「跑完直接 push」),所以改成 `--不推`;**绿了请用户敲 `! cd ~/Desktop/澜绣云裳agent && git push origin main`**,推完 SendMessage 告 eureka-fc(uds:/tmp/cc-socks/36041.sock),它再 rebase、切 v15。
+- **下一步第一个动作**:看 bbybq1qje 通知 → 读 pre_push_1115b.log 尾部 → 绿:让用户推;红:照日志修(别重跑没改的)。**然后把三个脏文件放回去**:`cp scratchpad/dirty_bak/{tool-eval.json→.feynman/,funnel.jsonl→agentsite/evals/,skill_usage.jsonl→agentsite/evals/}`(推前为了工作区干净 `git checkout` 掉了,它们是运行时滚动日志,**谁都不 add**)。
+- **门禁跑着时禁区**:不改任何跟踪文件(测的必须是要推的那份);不跑别的门禁 / bite_run;不碰 eureka-fc 文件。
+- **接着做(等推完)**:① 退款「补足后仍失败」:`tools/seed_triage_tasks.退款真因` 加第四条(两次 INSUFFICIENT_BALANCE → 第三次 ACCOUNT_CLOSED 之类,已退 False);`agent/refund_sets.题们` 的「按前三次 resp_code 集合认真因」要改成按**最后一次**回码认(集合会和老三条重合);`判一题` 加分支:认出最后一次回码 + 「余额不足」那句必须被否定/说成已补足(用 textmatch 结构,不手写词表)+ 建议段里不许未被否定的「充值」;judgetest 加正反对照;示例库 v3 `example_counter_ab.造到副本` 加这一类克隆。② 工作流一期第一件:`管理后台/services/api/app/runtime/runner.py 跑一张图` 里节点调适配器处读 `timeout_seconds / retryable_errors / max_retries`(dsl.py 已有字段,grep runner/worker 无一处读);写类动作重试前先按幂等键查澜绣桥。改管理后台推前 `make test-e2e-ci`。
+- **未验证**:飞书规划文档标题被截成「…照Dify-」(疑脚本去日期后缀),没回读;PRD 2.4.4 新节是否过 doc_numbers 等文档检查 → 这轮全量会验。
+- **作废**:规划初稿「代码执行不做 / 只做导出」(用户否了);「用 nohup 起推送链」(被拦,别再试)。
+
+**交接(11-15 07:0x,压缩前)**
 - **状态**:本地 **18 笔**未推(origin/main 仍 aca71aa0);最新 5883a254(工作流规划按拍板改定 + PRD 2.4.4)、543ac599(工作流规划文档)、2a9564a5(seed xingzhi 具名列,位置参数欠债 16→15)。eureka-fc 06:5x 回话:已 rebase 到 aca71aa0,后台店长助手生产 v13→v15,**07:4x 推送前链开跑,估 1 小时内推完**;它推之前 assistant_effect 会红在 TL84–89/91–93,**照旧别跑门禁**。已回它「等你喊,我本地 18 笔」。
 - **下一步第一个动作**:eureka-fc 喊「推完」→ `git pull --rebase --autostash` → `./tools/scan_secrets.sh` 单独 → 锁内 `bash scratchpad/chain_B.sh`(重启 8760/8770 让改名路由上线 + 冒烟 + 全量 + 推);**只认「被包的命令退出码」和 PUSHED**;推完告诉 eureka-fc。然后开工**工作流一期第一件**:执行器读「单次超时 / 可重试错误 / 最大重试次数」(文件 管理后台/services/api/app/runtime/runner.py + workers/worker.py;DSL 字段已在 contract/dsl.py;写类动作重试前先按幂等键查澜绣桥,查不到停「待核实」);改管理后台推前 `make test-e2e-ci`。
 - **用户 07:0x 拍了四条(台账五十九至六十二,已写 PRD 2.4.4、规划文档第九节,已提交)**:工作流一期**全做**(先「真生效」三件再手感)/ 代码执行**做最小版**(管理员才能加、wasm 沙箱、Python 子集、四条真攻击进审计;11 条安全决定开工前合卡再问)/ 人工介入**加飞书通知** / 导出 + 导入**都做**。规划文档已发飞书产品文件夹(FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf):https://aqvi2xbk5kd.feishu.cn/docx/WFhHdxE34oKuDpx9lMxcBroMnvf。
@@ -2832,12 +2841,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-15 08:26。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-15 09:40。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 5883a254 · 2026-11-15 · 工作流规划按用户 11-15 早四条拍板改定(台账五十九至六十二):一期全做、代码执行最小版、人工介入加飞书通知、导出导入都做 |
+| 最新提交 | c425ee7d · 2026-11-15 · 台账六十三、六十四:退款「补足后仍失败」按最后一次失败定因 + 必须说清余额已不是卡点;「补足」凭渠道返回原因变了认 |
 | 代码量 | 1119 个 Python 文件 / 205940 行(不含 .venv) |
 | 验收 | `./check.sh` 共 426 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
@@ -2845,10 +2854,8 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 **未提交的改动:**
 
 ```
-M .feynman/tool-eval.json
- M HANDOFF.md
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
+M HANDOFF.md
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
@@ -2865,17 +2872,19 @@ M .feynman/tool-eval.json
 ?? .feynman/world-shift-launchd.log
 ?? .wip-glossary/
 ?? .wip-muslin/
+?? .wip-rating-followup.patch
+?? .wip-store-report-SKILL.md
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+c425ee7d 台账六十三、六十四:退款「补足后仍失败」按最后一次失败定因 + 必须说清余额已不是卡点;「补足」凭渠道返回原因变了认
+0bebc075 夜间汇总 11-14 20:11 → 11-15 08:11:四条拍板落地、欠账 100→15 / 59→3 / 9→0 / 110→30、7 条「绿着没验」修掉、核出处 266 全对、工作流规划 + 早上四条拍板
 5883a254 工作流规划按用户 11-15 早四条拍板改定(台账五十九至六十二):一期全做、代码执行最小版、人工介入加飞书通知、导出导入都做
 543ac599 工作流整体与详细规划(照 Dify):现状对照 22 节点 / 编辑器逐项差距,四期路线,界面规范,4 件待拍
 2a9564a5 种子数据最后一处按位置写的 INSERT(形制表)改成具名列(位置参数欠债 16 → 15)
-0da7d7e7 写库不写列名欠账 17 → 16:顾问工号检查里那一笔是**报错文案**,不是 SQL
-e45b950b 咬合两份记录还 3 处(33 → 30):三条「要重建库才打得到」的,改成在库副本上直接造出那个结果
 ```
 <!--/AUTO-->
 ## 一句话在做什么

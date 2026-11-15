@@ -60,13 +60,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 咬合 = [
-    ("把 seed.py 里 `INSERT INTO xingzhi VALUES(?,?,?,?,?)` 删掉一个 ?(11-15 夜 derive_xingzhi 那句已改具名,攻击点挪到仍按位置写的这一处)",
+    ("把 seed.py 里 xingzhi 那句具名 INSERT(5 列)删掉一个 ?(11-15 早那句改成具名列了,攻击点跟着换:列名 5 个、值 4 个)",
      "列数和建表语句对得上"),
     ("把 server.py 新建方案那句具名 INSERT 的表名改成不存在的 `schemex`",
      "每处 INSERT 都找得到建表语句"),
     ("在 server.py 新建方案那段加一句 `INSERT INTO scheme VALUES(?×14)`(列数对得上,只是位置参数)",
      "没有新增的位置参数 INSERT"),
-    ("把 seed.py 里 xingzhi 那句改成具名列、但不删欠债表(11-15 夜从 derive_xingzhi 挪过来,那边已还清)", "欠债表里的都还欠着"),
+    ("往欠债表里加回 `backend/seed.py: xingzhi 1`,而代码里那句已经是具名列(11-15 早还清;囤积的欠债和真欠债长得一模一样)", "欠债表里的都还欠着"),
     # 2026-10-24 新增:`_insert(表, {键…})` 这条路**绕开了上面四条** ——
     # 它不写 `INSERT INTO`,所以那个正则看不见它,而它照样在往库里写。
     ("把 create_appointment 的 `advisor_no` 键改回 `advisor`(表上没有这一列)",

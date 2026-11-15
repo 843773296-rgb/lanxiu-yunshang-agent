@@ -1,5 +1,7 @@
 # 交接 · 澜绣云裳 AI 管理后台
 
+> 11-15 10:0x:现行交接仍在仓库根目录 `HANDOFF.md` 最上面那段。管理后台这边下一件事 = 工作流一期第一件:让节点的「超时 / 可重试错误 / 最大重试」在 `services/api/app/runtime/runner.py` 执行器里真被读(DSL 字段已有,今天 grep runner / worker 一处不读);规划在根目录 `澜绣云裳agent-工作流整体与详细规划-照Dify-20261115.md`。
+
 > ⚠️ **这份从 10-10 起没再维护,现行交接在仓库根目录 `HANDOFF.md`(最上面那节)。** 下面是给落在这个目录里的人的最短版(11-06 刷):
 >
 > **Agent 执行器第 ④ 笔(工作流里的 Agent 步骤)—— 代码写完、未提交**:runtime/runner.py、workers/worker.py(`_agent` 适配器)、

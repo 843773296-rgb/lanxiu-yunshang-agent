@@ -3708,12 +3708,12 @@
  },
  {
   "script": "tools/insert_shape_check.py",
-  "改坏": "把 seed.py 里 `INSERT INTO xingzhi VALUES(?,?,?,?,?)` 删掉一个 ?(11-15 夜 derive_xingzhi 那句已改具名,攻击点挪到仍按位置写的这一处)",
+  "改坏": "把 seed.py 里 xingzhi 那句具名 INSERT(5 列)删掉一个 ?(11-15 早那句改成具名列了,攻击点跟着换:列名 5 个、值 4 个)",
   "file": [
    {
     "path": "backend/seed.py",
-    "old": "INSERT INTO xingzhi VALUES(?,?,?,?,?)",
-    "new": "INSERT INTO xingzhi VALUES(?,?,?,?)"
+    "old": "INSERT INTO xingzhi(code,name,alias,key_sizes,src_type) VALUES(?,?,?,?,?)",
+    "new": "INSERT INTO xingzhi(code,name,alias,key_sizes,src_type) VALUES(?,?,?,?)"
    }
   ],
   "预期红": "列数和建表语句对得上"
@@ -3744,12 +3744,12 @@
  },
  {
   "script": "tools/insert_shape_check.py",
-  "改坏": "把 seed.py 里 xingzhi 那句改成具名列、但不删欠债表(11-15 夜从 derive_xingzhi 挪过来,那边已还清)",
+  "改坏": "往欠债表里加回 `backend/seed.py: xingzhi 1`,而代码里那句已经是具名列(11-15 早还清;囤积的欠债和真欠债长得一模一样)",
   "file": [
    {
-    "path": "backend/seed.py",
-    "old": "INSERT INTO xingzhi VALUES(?,?,?,?,?)",
-    "new": "INSERT INTO xingzhi(code,name,alias,key_sizes,src_type) VALUES(?,?,?,?,?)"
+    "path": "tools/位置参数欠债.json",
+    "old": "  \"fakedata/agree.py\": {",
+    "new": "  \"backend/seed.py\": {\n   \"xingzhi\": 1\n  },\n  \"fakedata/agree.py\": {"
    }
   ],
   "预期红": "欠债表里的都还欠着"
