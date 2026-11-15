@@ -72,6 +72,10 @@ ck("记已告知不动签收", 行 is not None and 行[4] is None, f"signed_at={
 r2 = api.record_delivery_notice(oid, "电话")
 行2 = c.execute("SELECT notified_channel FROM delivery_notice WHERE order_id=?", (oid,)).fetchone()
 ck("同一单只记一次,第二次不覆盖", r2.get("code") == "DONE" and 行2[0] == "微信", f"{r2.get('code')} {行2}")
+已 = api.draft_delivery_notice(oid).get("已记过") or {}
+ck("记过之后再起草,「已记过」带时间 / 人 / 渠道 / 条目(订单页显示「已于 X 由 Y 经 Z 告知」用)",
+   已.get("notified_at") and 已.get("notified_by") == "U001" and 已.get("notified_channel") == "微信" and 已.get("notified_items"),
+   f"{已}")
 ck("操作台账记了一笔", c.execute("SELECT COUNT(*) FROM op_log WHERE target=? AND code='DELIVERY_NOTIFIED'", (oid,)).fetchone()[0] == 1)
 
 # ③ 拒绝:没交付 / 定制单 / 不归他的单
