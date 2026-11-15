@@ -22,6 +22,7 @@ bad, n = [], 0
     ("夜跑把 75 也算成判红", "夜跑:退出码 75 → 部分没验成(环境),和判红分开"),
     ("管理后台在也把 kb_rag 的题记成环境", "tool_eval:只有管理后台不在、又用到 kb_rag 的题才记成环境没验成"),
     ("残留的 PID 文件也当成在跑", "PID 文件:进程活着 → 在用;文件在但进程早没了(崩了留下的)→ 不算;没文件 → 不算"),
+    ("夜跑推送前不数待推几笔", "夜跑:本地还有别人没推的提交 → 只提交不推,远程一笔不动(11-16 把 33 笔带上主干那次)"),
     ("夜跑拉起管理后台之后不关", "夜跑:开跑前先确保管理后台在,跑完把自己拉起来的关掉,报告顶上写明这一晚的状态"),
 ]
 
@@ -147,6 +148,39 @@ ck(f"「单跑那晚」({_单跑那天})也带上了,而且排在前面(别被�
 
 ck("夜跑:跑完自动提交 —— 文件只从入库清单来,扫过密钥才提交,只提交这几个文件(--only),出错不抛",
    "入库清单(ROOT)" in _提 and _提.index("scan_secrets.sh") < _提.index('"commit", "--only"') and "except Exception" in _提)
+# ── 夜跑只推自己那一笔(2026-11-16 加)─────────────────────────────────────
+# 11-16 早上:主检出上停着并行会话没过推送前检查的 33 笔,夜跑提交后 `git push` 把它们一起推上了公开主干。
+# **真调 `提交夜跑结果`**:临时「远程 + 克隆」,克隆里先放一笔别人没推的提交,再跑夜跑提交 ——
+# 远程一笔都不许动;反过来,克隆干净时要真推上去(不然「永远不推」也能过这条)。
+def _夜跑推送场景(带别人的提交):
+    根 = tempfile.mkdtemp(prefix="nightly-push-")
+    远, 克 = os.path.join(根, "remote.git"), os.path.join(根, "clone")
+    g = lambda *a, cwd=克: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd,
+                                          capture_output=True, text=True)
+    g("init", "-q", "--bare", "-b", "main", 远, cwd=根); g("clone", "-q", 远, 克, cwd=根)
+    os.makedirs(os.path.join(克, "tools")); os.makedirs(os.path.join(克, "agent", "nightly"))
+    open(os.path.join(克, "tools", "scan_secrets.sh"), "w").write("#!/bin/sh\nexit 0\n")
+    os.chmod(os.path.join(克, "tools", "scan_secrets.sh"), 0o755)
+    open(os.path.join(克, "a.txt"), "w").write("0")
+    g("add", "-A"); g("commit", "-qm", "起点"); g("push", "-q", "-u", "origin", "main")
+    if 带别人的提交:
+        open(os.path.join(克, "a.txt"), "w").write("别人没推的"); g("commit", "-qam", "别人的")
+    open(os.path.join(克, "agent", "nightly", "agent__x-eval-results.jsonl"), "w").write("{}\n")
+    报 = os.path.join(克, "2099-01-01.md"); open(报, "w").write("报告")
+    原根 = ne.ROOT; ne.ROOT = 克
+    try:
+        话 = ne.提交夜跑结果(报)
+    finally:
+        ne.ROOT = 原根
+    远端 = g("log", "--format=%s", "main", cwd=远).stdout.split("\n")
+    shutil.rmtree(根, ignore_errors=True)
+    return 话, [x for x in 远端 if x]
+_话1, _远1 = _夜跑推送场景(True)
+ck("夜跑:本地还有别人没推的提交 → 只提交不推,远程一笔不动(11-16 把 33 笔带上主干那次)",
+   _远1 == ["起点"] and "不替它推" in _话1, f"远程={_远1} · 夜跑说:{_话1}")
+_话2, _远2 = _夜跑推送场景(False)
+ck("   ↳ 反向:本地只有夜跑自己那一笔 → 真推上去(不许退化成永远不推)",
+   len(_远2) == 2 and _远2[1] == "起点" and "已提交并推送" in _话2, f"远程={_远2} · 夜跑说:{_话2}")
 ck("夜跑:试跑(--试)不提交", 'if not 试:\n        说(f"结果入库:{提交夜跑结果(报)}")' in 夜)
 # 在一个临时空仓库里放真的 .gitignore 问 git —— 咬合副本里没有 .git,直接在 ROOT 问会崩
 _忽仓 = tempfile.mkdtemp(prefix="ignore-chk-")

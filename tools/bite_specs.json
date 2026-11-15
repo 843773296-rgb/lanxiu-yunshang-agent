@@ -22916,5 +22916,17 @@
    }
   ],
   "预期红": "没配管理后台地址也兜底"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "夜跑推送前不数待推几笔",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "        if 多.returncode or 多.stdout.strip() != \"1\":",
+    "new": "        if False:                                   # ← 改坏:不数,别人的提交一起推"
+   }
+  ],
+  "预期红": "夜跑:本地还有别人没推的提交 → 只提交不推,远程一笔不动(11-16 把 33 笔带上主干那次)"
  }
 ]
