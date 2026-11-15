@@ -69,11 +69,40 @@ for oid in 样本:
     非零 += 期望工钱(oid) > 0
     if r.get("工钱") != 期望工钱(oid):
         对不上.append((oid, r.get("工钱"), 期望工钱(oid)))
-ck(f"工钱和独立 SQL 现算的一致(验了 {验了} 张,其中工钱不为 0 的 {非零} 张)", not 对不上 and 非零 >= 1, 对不上[:3] or "工钱全是 0 —— 0 对 0 不算验过")
+ck(f"工钱和独立 SQL 现算的一致(验了 {验了} 张)", not 对不上 and 验了 >= 3, 对不上[:3] or f"只验了 {验了} 张")
+# 真库上「生产中」的单有几张已经开工,取决于每日平移把开工日挪到了哪 —— **那是数据分布,不是代码**
+# (11-16 早上 30 张在制单的开工日全在今天之后,工钱全 0,这条红了而代码一行没动)。
+# 所以真库上的非零张数**只打印不判红**;「算出了钱而且算对了」由下面库副本上自造的那张单来判。
+print(f"     ℹ️ 真库上这 {验了} 张里工钱不为 0 的 {非零} 张(只打印,不是判据 —— 取决于平移后开工日落在哪)")
+
+import cancel_fee as CF  # noqa: E402  —— 切库前先 import,之后才 import 的模块不会被改到
+import check_copy  # noqa: E402
+副本 = check_copy.用副本("cancel-fee-")
+ck("工具层已指向库副本(下面要改开工日)", os.path.realpath(api.DB) != os.path.realpath(check_copy.真库), api.DB)
+造 = 样本[-1] if 样本 else None
+if 造:
+    w = sqlite3.connect(api.DB)
+    check_copy.确认连的是(w, api.DB, "cancel_fee_check 自造在制单")
+    开工 = (worldclock.今天() - __import__("datetime").timedelta(days=3)).isoformat()
+    w.execute("UPDATE workorder SET start_date=? WHERE ref=? AND status!='已完成'", (开工, 造))
+    w.commit()
+    v = w.execute("""
+        SELECT SUM(CASE WHEN w.status='已完成' THEN w.workdays
+                        ELSE MIN(MAX(julianday(?) - julianday(substr(w.start_date,1,10)), 0), w.workdays) END
+                   * CASE WHEN cr.detail LIKE '%非遗:%' THEN 800 ELSE 300 END)
+        FROM workorder w LEFT JOIN craft cr ON cr.code=w.craft WHERE w.ref=?""", (今天, 造)).fetchone()[0]
+    期望 = round(v or 0, 2)
+    店_ = w.execute("SELECT shop FROM ordr WHERE id=?", (造,)).fetchone()[0]
+    w.close()
+    with api.as_user(店长们[店_]):
+        r_ = api.cancel_fee(造)
+    ck(f"自造一张三天前开工的在制单:工钱不为 0 且和独立 SQL 一致({造})", 期望 > 0 and r_.get("工钱") == 期望,
+       (r_.get("工钱"), 期望))
+else:
+    ck("自造在制单(没有样本可改)", False)
 
 # 算法层:直接拿**所有带工单的单**对账(生产中的单多半还没开工,工具层只有一两张算出钱;
 # 已完工的单在工具层直接回「全额」,这里绕过状态闸,只验折钱那一步算得对不对)
-import cancel_fee as CF
 全部 = [r[0] for r in c.execute("SELECT DISTINCT ref FROM workorder WHERE ref IS NOT NULL")]
 算错, 有钱 = [], 0
 for oid_ in 全部:
