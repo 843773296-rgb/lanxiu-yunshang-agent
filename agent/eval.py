@@ -22,6 +22,9 @@ def facts(case_id):
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
     tr = c.execute("SELECT * FROM refund_trace WHERE deposit_id=? ORDER BY attempt LIMIT 1",
                    (case_id,)).fetchone()
+    # 最后一次失败(11-15,台账第六十三条「按最后一次失败定因」):补足余额后再退,渠道回的原因换了 —— 认的是这一条
+    末 = c.execute("SELECT * FROM refund_trace WHERE deposit_id=? ORDER BY attempt DESC LIMIT 1",
+                   (case_id,)).fetchone()
     fin = c.execute("SELECT * FROM payment_flow WHERE deposit_id=? AND direction='in'",
                     (case_id,)).fetchone()
     out = c.execute("SELECT * FROM payment_flow WHERE deposit_id=? AND direction='out' "
@@ -30,7 +33,11 @@ def facts(case_id):
                 paid=fin["amount"] if fin else None,
                 out_id=out["id"] if out else None,
                 out_serial=out["channel_serial"] if out else None,
-                resp=tr["resp_code"] if tr else None)
+                resp=tr["resp_code"] if tr else None,
+                last_resp=末["resp_code"] if 末 else None,
+                last_msg=末["resp_msg"] if 末 else None,
+                codes=[r[0] for r in c.execute("SELECT resp_code FROM refund_trace WHERE deposit_id=? ORDER BY attempt",
+                                               (case_id,))])
 
 def nums_in(text, *vals):
     """答案里是否出现了这些真实金额(允许 800 / 800.0 / 800.00 / 1,200 几种写法)。"""
@@ -237,12 +244,49 @@ def hit(text, truth_rc, case_id=None):
                 return True, ""
         return False, "内容:没给出带防护的重发建议(要先核实真实状态,并用原幂等号、不换新号)"
 
+    # ③ter 余额补足后仍失败(用户 2026-11-15 拍,台账第六十三、六十四条)。和「商户账户余额不足」是一对「表面一样、根因不同」:
+    # 前几次渠道都回余额不足,财务充了值再退,**最后一次回的是另一个原因**(轨迹里回码变了 = 补足过,不另造充值记录)。
+    # **按最后一次失败定因**(排障惯例:以最近一次报错为准,前面的已经被处理过了)。三样都要:
+    #   ① 说出最后那次的原因 —— 针来自库里最后那条轨迹(回码 / 回执原文 / 那个回码的判别词根),不手写
+    #   ② 说清余额已经不是卡点 —— 查结构不枚举说法:「余额不足」被否定,或者讲余额的那一小句在说「已经…」/「…足」(补足、充足)
+    #   ③ 不许还在叫人充值 —— 「充值」是这个场景的业务动作名;被否定的、讲已经发生的(已充值、充值后)不算建议
+    if truth_rc.startswith("余额补足后仍失败"):
+        末码, 末说 = f.get("last_resp"), f.get("last_msg")
+        if not 末码 or 末码 == "INSUFFICIENT_BALANCE" or "INSUFFICIENT_BALANCE" not in (f.get("codes") or []):
+            return False, f"题面不成立:这张单的轨迹不是「先余额不足、最后换了原因」({f.get('codes')}) —— 没验,不算通过"
+        根 = _末因词根.get(末码)
+        if not (末码 in text or (末说 and 末说 in text) or (根 and re.search(根, text))):
+            return False, f"内容:没说出最后一次失败的原因(库里最后那条:{末码} / {末说})"
+        补足了 = any(tm.negated(text, m.start(), span=20) for m in re.finditer("余额不足", text))
+        if not 补足了:
+            for 句 in re.split(r"[。；;，,!!??\n]", text):
+                if "余额" in 句 and ("已" in 句[句.find("余额") - 6 if 句.find("余额") >= 6 else 0:] and "不足" not in 句
+                                      or re.search(r"余额[^不]{0,6}?(?<!不)(?:足|够)", 句)
+                                      # 「已充值(完成)」= 补足这件事已经发生了 —— 同一小句里「已」在「充值」前面
+                                      or re.search(r"已[^。；;，,\n]{0,3}充值", 句)):
+                    补足了 = True
+                    break
+        if not 补足了:
+            return False, "内容:没说清余额已经补足、不再是卡点(还停在「余额不足」上)"
+        for m in re.finditer("充值", text):
+            if tm.negated(text, m.start(), span=20, both_sides=True):
+                continue
+            if re.search(r"已[^。；;，,\n]{0,3}$", text[max(0, m.start() - 4):m.start()]) or re.match(r"(?:后|过|完成|到账)", text[m.end():]):
+                continue   # 「已充值」「充值后再退」是在讲已经发生的事,不是建议
+            return False, f"内容:还在建议充值(「{text[max(0, m.start() - 6):m.end() + 4]}」)—— 余额已经补足,卡点是最后那个原因"
+        return True, ""
+
     # ④ 其余三类没有可核对的数字,只认判别性词根
     ROOTS = {"原支付渠道已注销": r"注销", "商户账户余额不足": r"余额不足",
              "审批未完成即发起": r"审批", "幂等号重复提交": r"幂等"}
     pat = ROOTS.get(truth_rc)
     if pat and re.search(pat, text): return True, ""
     return False, f"内容:未指向真因「{truth_rc}」"
+
+# 「最后一次失败」那个回码的判别词根 —— 和 ④ 那张按真因名的表是同一批词,这里按回码索引(余额补足后仍失败那一支用)
+_末因词根 = {"ACCOUNT_CLOSED": r"注销", "NOT_APPROVED": r"审批", "DUPLICATE": r"重复|幂等",
+            "AMOUNT_EXCEED": r"超过|超额|超出", "TIMEOUT": r"超时"}
+
 
 def truths():
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row

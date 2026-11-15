@@ -60,6 +60,14 @@ def 造到副本(副本, 案):
                     行 = dict(zip(tl, r)); 行["deposit_id"] = x["id"]
                     if "id" in 行: 行["id"] = None if isinstance(行["id"], int) else f"{行['id']}-{x['id']}"
                     c.execute(f"INSERT INTO refund_trace({','.join(tl)}) VALUES({','.join('?' * len(tl))})", [行[k] for k in tl])
+                追 = x["改"].get("追加失败")
+                if 追:
+                    # 余额补足后仍失败(11-15,台账第六十三、六十四条):照最后一条轨迹再追加一次失败,只换回码 / 回执 ——
+                    # 「补足过」凭轨迹里回码变了认,不另造充值记录
+                    末 = c.execute("SELECT * FROM refund_trace WHERE deposit_id=? ORDER BY attempt DESC LIMIT 1", (x["id"],)).fetchone()
+                    行 = dict(zip(tl, 末)); 行.update(attempt=行["attempt"] + 1, resp_code=追["resp_code"], resp_msg=追["resp_msg"])
+                    if "id" in 行: 行["id"] = None if isinstance(行["id"], int) else f"{行['id']}-追"
+                    c.execute(f"INSERT INTO refund_trace({','.join(tl)}) VALUES({','.join('?' * len(tl))})", [行[k] for k in tl])
                 pl = [d[1] for d in c.execute("PRAGMA table_info(payment_flow)")]
                 for r in c.execute("SELECT * FROM payment_flow WHERE deposit_id=?", (模,)).fetchall():
                     行 = dict(zip(pl, r))

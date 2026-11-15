@@ -22748,5 +22748,29 @@
    }
   ],
   "预期红": "处警示段落 —— 改之前先把它们读一遍"
+ },
+ {
+  "script": "agent/eval_hit_judgetest.py",
+  "改坏": "余额补足后仍失败:不查「余额已不是卡点」",
+  "file": [
+   {
+    "path": "agent/eval.py",
+    "old": "        if not 补足了:\n            return False, \"内容:没说清余额已经补足",
+    "new": "        if False:\n            return False, \"内容:没说清余额已经补足"
+   }
+  ],
+  "预期红": "补足:说了注销,但把余额不足也当成现在的原因 → 挂"
+ },
+ {
+  "script": "agent/eval_hit_judgetest.py",
+  "改坏": "余额补足后仍失败:不查建议里还在叫人充值",
+  "file": [
+   {
+    "path": "agent/eval.py",
+    "old": "        for m in re.finditer(\"充值\", text):",
+    "new": "        for m in re.finditer(\"充值\", text[:0]):"
+   }
+  ],
+  "预期红": "补足:说了注销、也说了余额已补足,但建议里还让人充值 → 挂"
  }
 ]
