@@ -6998,18 +6998,6 @@
   "预期红": "两个参数都不给 → 报错(不替用户挑一张)"
  },
  {
-  "script": "tools/cron_health_check.py",
-  "改坏": "把标记目录改回「脚本自己的仓库根」(不再从 plist 的 WorkingDirectory 取)",
-  "file": [
-   {
-    "path": "tools/cron_health_check.py",
-    "old": "        目 = d.get(\"WorkingDirectory\")",
-    "new": "        目 = None"
-   }
-  ],
-  "预期红": "一次都没跑过"
- },
- {
   "script": "backend/role_check.py",
   "改坏": "把 需要 映射里的 \"aftersale\" 删掉(售后又变成「有身份没能力」)",
   "file": [
@@ -22512,18 +22500,6 @@
   "预期红": "一处破坏都没声明"
  },
  {
-  "script": "tools/bite_check.py",
-  "改坏": "从规格文件里删掉 anchor.py「拔钉留了痕」那一条规格 —— 它的清单里那句就成了「声称了却没有规格」,而欠债表里没登记它(11-15:原来盯着欠债表里某个脚本的处数改小,表清零后那个攻击点永远会漂,改成这样就不漂了)",
-  "file": [
-   {
-    "path": "tools/bite_specs.json",
-    "old": " {\n  \"script\": \"fakedata/anchor.py\",\n  \"改坏\": \"往解钉记录里加一条没写「为什么」的\",\n  \"file\": [\n   {\n    \"path\": \"fakedata/锚定.json\",\n    \"old\": \" \\\"解钉\\\": []\",\n    \"new\": \" \\\"解钉\\\": [{\\\"表\\\": \\\"sku\\\", \\\"列\\\": \\\"color\\\", \\\"键\\\": \\\"lxys_100451383\\\", \\\"何时\\\": \\\"2026-11-15\\\"}]\"\n   }\n  ],\n  \"预期红\": \"拔钉留了痕\"\n },\n",
-    "new": ""
-   }
-  ],
-  "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
- },
- {
   "script": "tools/cron_health_check.py",
   "改坏": "夹具:HOME 指进副本,假 plist 的 WorkingDirectory 指副本,两个标记都是刚写的;然后把 .feynman/world-shift-ok 改成 5 天前(装着、在跑、但没成功过)",
   "前置": [
@@ -22667,26 +22643,6 @@
   "预期红": "门禁点名的脚本,仓库里都有"
  },
  {
-  "script": "tools/impact.py",
-  "改坏": "副本里 git init 提交基线;然后在一处 ⚠️ 警示行旁边改一行(未提交)—— 正常跑 impact(门禁只跑 --selftest,而这句只在正常跑时印)",
-  "前置": [
-   "git init -q && git -c user.email=b@b -c user.name=b add -A . >/dev/null 2>&1; git -c user.email=b@b -c user.name=b commit -qm 副本基线 --no-verify"
-  ],
-  "命令": [
-   "python3",
-   "tools/impact.py"
-  ],
-  "只报不拦": true,
-  "file": [
-   {
-    "path": "tools/insert_shape_check.py",
-    "old": "            # ⚠️ 不扫自己:咬合描述和提示语里都有 `INSERT INTO …`,\n",
-    "new": "            # ⚠️ 不扫自己:咬合描述和提示语里都有 `INSERT INTO …`,\n            # 咬合专用:在警示行旁边改了一行\n"
-   }
-  ],
-  "预期红": "处警示段落 —— 改之前先把它们读一遍"
- },
- {
   "script": "tools/runlog_check.py",
   "改坏": "夹具:先把门禁外每个脚本都记成今天跑过(对照里没有「从没成功跑过」);然后删掉一条记录",
   "前置": [
@@ -22737,5 +22693,60 @@
    }
   ],
   "预期红": "**重跑造出的那批号,和库里那批一模一样**(指纹一致,所以号不一样就是代码改了)"
+ },
+ {
+  "script": "tools/cron_health_check.py",
+  "改坏": "把标记目录改回「脚本自己的仓库根」(不再从 plist 的 WorkingDirectory 取)(11-15 补夹具:plist 指到副本里另一个目录、那儿有新标记,副本自己的 .feynman 没有标记,plist 装了 10 天 —— 改回读自己的根就是「装了 10 天一次都没跑过」)",
+  "file": [
+   {
+    "path": "tools/cron_health_check.py",
+    "old": "        目 = d.get(\"WorkingDirectory\")",
+    "new": "        目 = None"
+   }
+  ],
+  "预期红": "一次都没跑过",
+  "前置": [
+   "mkdir -p .fakehome/Library/LaunchAgents .task_root/.feynman && rm -f .feynman/world-shift-tried .feynman/world-shift-ok && python3 -c \"import plistlib,os,time,datetime;p='.fakehome/Library/LaunchAgents/com.lanxiu.worldshift.plist';plistlib.dump({'Label':'com.lanxiu.worldshift','WorkingDirectory':os.path.abspath('.task_root'),'ProgramArguments':['bash','tools/daily_shift.sh']},open(p,'wb'));t=time.time()-10*86400;os.utime(p,(t,t));n=datetime.datetime.now();open('.task_root/.feynman/world-shift-tried','w').write((n-datetime.timedelta(minutes=3)).isoformat());open('.task_root/.feynman/world-shift-ok','w').write(n.isoformat())\""
+  ],
+  "env": {
+   "HOME": "{副本}/.fakehome"
+  }
+ },
+ {
+  "script": "tools/bite_check.py",
+  "改坏": "从规格文件里删掉 anchor.py「拔钉留了痕」那一条规格,同时把 anchor.py 以 0 处登进欠债表 —— 它清单里那句成了「声称了却没有规格」(1 处)而账上写着 0:只许少不许多(11-15 改:原来盯欠债表里某个数改小,表清零后那攻击点永远漂)",
+  "file": [
+   {
+    "path": "tools/bite_specs.json",
+    "old": " {\n  \"script\": \"fakedata/anchor.py\",\n  \"改坏\": \"往解钉记录里加一条没写「为什么」的\",\n  \"file\": [\n   {\n    \"path\": \"fakedata/锚定.json\",\n    \"old\": \" \\\"解钉\\\": []\",\n    \"new\": \" \\\"解钉\\\": [{\\\"表\\\": \\\"sku\\\", \\\"列\\\": \\\"color\\\", \\\"键\\\": \\\"lxys_100451383\\\", \\\"何时\\\": \\\"2026-11-15\\\"}]\"\n   }\n  ],\n  \"预期红\": \"拔钉留了痕\"\n },\n",
+    "new": ""
+   },
+   {
+    "path": "tools/咬合两份记录欠债.json",
+    "old": " \"欠着的\": {\n",
+    "new": " \"欠着的\": {\n  \"fakedata/anchor.py\": 0,\n"
+   }
+  ],
+  "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
+ },
+ {
+  "script": "tools/impact.py",
+  "改坏": "副本里 git init 提交基线;然后在 tools/case_tool_reachable_check.py 一处 ⚠️ 警示行(正则认的那种:带「不许 / 千万 / 永远不…」)旁边加一行(未提交)—— 正常跑 impact(门禁只跑 --selftest,而这句只在正常跑时印)",
+  "前置": [
+   "git init -q && git -c user.email=b@b -c user.name=b add -A . >/dev/null 2>&1; git -c user.email=b@b -c user.name=b commit -qm 副本基线 --no-verify"
+  ],
+  "命令": [
+   "python3",
+   "tools/impact.py"
+  ],
+  "只报不拦": true,
+  "file": [
+   {
+    "path": "tools/case_tool_reachable_check.py",
+    "old": "# ⚠️ **咬合不许只在脑子里。** 下面每一条都真跑过(2026-11-11),\n",
+    "new": "# ⚠️ **咬合不许只在脑子里。** 下面每一条都真跑过(2026-11-11),\n# 咬合专用:在警示行旁边改了一行\n"
+   }
+  ],
+  "预期红": "处警示段落 —— 改之前先把它们读一遍"
  }
 ]

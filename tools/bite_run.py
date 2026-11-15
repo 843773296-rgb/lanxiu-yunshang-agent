@@ -343,7 +343,10 @@ def 门禁怎么跑(script):
     #    长相和「判据死了」一模一样,实际是**跑错了那一行**。
     #    自测行只在**只有它**的时候才用(那时它就是门禁验的东西)。
     if 候选:
-        真跑 = [c for c in 候选 if not ({"--自测", "--selftest"} & set(c))]
+        # ⚠️ 11-15:自测行有三种写法 `--自测` / `--selftest` / 光秃秃的 `自测`(anchor / agree / delivered_images 用的是子命令)。
+        #    只认带横杠的两种时,`anchor.py 自测` 被当成真跑那行 → 三条 sql 规格全报「改坏了却没红」,
+        #    `delivered_images.py 自测 --在 …` 则「对照就是红的」—— 两种长相,同一个根因。
+        真跑 = [c for c in 候选 if not ({"--自测", "--selftest", "自测"} & set(c))]
         return (真跑 or 候选)[0]
     # 不在 check.sh 里的管理后台脚本(端到端测试之类):用管理后台自己的 venv 跑 —— 它的依赖(sqlalchemy / alembic)
     # 只装在那里;拿系统 python 跑,红的是 ImportError,和「改坏了之后它红没红」混在一起分不开(11-04 加)
@@ -1099,10 +1102,14 @@ def main():
         if s.get("只报不拦"):
             # 这类判据退出码永远 0(它自己的设计:只提醒不拦),所以只看输出 ——
             # 而且要两头都看:**对照里不许有那句**(有的话破坏什么都没证明),改坏后必须有。
-            if expect in out0:
-                print(f"  ❌ [{i}/{len(specs)}] {script}  对照的输出里**就有**那句 —— 这条咬合证明不了任何事")
+            # ⚠️ 「那句」要是**提醒行**(❌ ✗ ⚠️ ⬜ 🕐 开头那种),不是随便哪一行:
+            #    判据名在通过时也印(✅ 同一句话),只比子串会把对照判成「就有那句」(intent_check 那条栽过)。
+            def 只报行(l):
+                return any(k in l for k in ("❌", "✗", "⚠️", "⬜", "🕐"))
+            if any(只报行(l) and expect in l for l in out0.split("\n")):
+                print(f"  ❌ [{i}/{len(specs)}] {script}  对照的输出里**就有**那句提醒 —— 这条咬合证明不了任何事")
                 红.append(s); continue
-            if expect not in out:
+            if not any(只报行(l) and expect in l for l in out.split("\n")):
                 别的 = [l.strip() for l in out.split("\n") if l.strip()][-2:]
                 print(f"  ❌ [{i}/{len(specs)}] {script}  改坏了,输出里却**没出那句**(只报不拦的判据,看的就是这句)")
                 print(f"       预期:{expect}")
