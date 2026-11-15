@@ -22362,7 +22362,7 @@
    {
     "path": "backend/api.py",
     "old": "    单 = _rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\" + where,\n              order_id, *args)",
-    "new": "    单 = _rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\",\n              order_id, *args)"
+    "new": "    单 = _rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\",\n              order_id)"
    }
   ],
   "预期红": "顾问看不到不归他的单"
