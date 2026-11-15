@@ -12,6 +12,13 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-15 15:4x · 后台生产 v17(用户批准),预跑门禁绿,推送前链开跑(Opus 5.5)
+
+- **已做**:rebase 到 3d0a3dc7(补回合并时丢的 grading_check 咬合规格 6fdb036f;两份记录欠债表两边都减)。后台店长助手生产 v13 → v17(= v13 + TL84–89、91–93、95、96 + 打开 return_rate / part_options / order_parts)—— **新规矩和新工具不在长期授权里,用户 15:3x 批准了**;assistant_effect 绿(工具 77 / 规矩 79)。预跑门禁 15:37 全绿。
+- **用户说「推完告诉我」** → 推完第一件事告诉用户,再告诉并行会话(它在改 fakedata + 两张欠债表的 fakedata 行,等我推完再推)。
+- **交付告知(⑥ 最后一块)**:用户 11-15 下午拍三条(已记 intent)。口径模块草稿在 scratchpad/dn/delivery_notice.py(按商品名认词,143 款标品 35 款对得上);还要:m0002 迁移给 delivery_notice 加 notified_at / notified_by / notified_channel / notified_items、只读起草工具 + 写工具「记已告知」(照 mark_delay_told 登记:_写工具名单 / 分发 / domains / sdk / 规矩 / station.html 标签 / 管理后台 docs 口径 json)、订单页按钮(server.py,和并行会话商量谁做)。
+- **下一步第一个动作**:看 `.wip-glossary/pre_push15.log`「收工 rc=」→ 绿了核 ls-remote main == HEAD → 告诉用户 → 告诉并行会话 → 放回 funnel.jsonl。
+
 ### 🟡 11-15 14:1x · 本地 14 笔待推;咬合欠账三笔还清;等并行会话推完(Opus 5.5)
 
 - **本地未推**(aca71aa0 之上):缩说明 3–12 + muslin 修 + intent 退货率口径 + **return_rate 新工具**(909fef32)+ 咬合欠账三笔(0cac1f93 / 047f7728)+ 交接。
