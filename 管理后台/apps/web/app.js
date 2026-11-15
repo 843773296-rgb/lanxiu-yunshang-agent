@@ -3180,13 +3180,11 @@ function 画_面板() {
       ${段("用到的数据", "输入数据", 表_输入(n))}
       ${段("结果", "结果字段", 表_结果(n))}
       <details class="psec" data-sec="高级"${高开 ? " open" : ""}><summary class="psh">高级</summary>${表_高级(n)}</details>
-      ${(() => { const 跑 = g.运行态 && g.运行态[n.id];   // 上次跑这一步收到 / 交出了什么(10-26)+ 单独测这一步
-        const 上次 = 跑 ? `<div class="k">上次:${esc(运行状态中文[跑.状态] || 跑.状态)}${跑.错误码 ? ` · <code>${esc(跑.错误码)}</code>` : ""}</div>`
-          + (步骤IO({ 输入: 跑.输入, 输出: 跑.输出 }, 跑.原文, true) || `<div class="k">这一步没有记下输入输出(没跑到它,或是改版前跑的)。</div>`) : "";
-        const 测 = 单测表(n);
-        return 上次 || 测 ? 段("试这一步", "试这一步", 上次 + 测) : ""; })()}
+      ${n.type === "start" ? "" : 段("上次运行", "上次运行", `<div id="lastrun" data-nid="${esc(n.id)}"><div class="k">读取中…</div></div>`)}
+      ${(() => { const 测 = 单测表(n); return 测 ? 段("试这一步", "试这一步", 测) : ""; })()}
     </div>`;
   挂单测(n);
+  填上次运行(n);
   const 高 = $("#pn").querySelector('[data-sec="高级"]');
   if (高) 高.ontoggle = () => { 图态.高级开 = 高.open; };
   if ($("#adv-cancel")) $("#adv-cancel").onclick = () => { $("#adv-json").value = JSON.stringify(n.config, null, 1); $("#adv-err").textContent = ""; };
@@ -4020,6 +4018,31 @@ function 运行标(id) {
 }
 /* 每一步实际收到的 / 交出的(10-26)。没有「查看敏感输入」授权时接口只给形状(有哪些项、各多长),
  * 这里照实标出来 —— 不标的话,「<str · 1203 字>」会被当成这一步真的输出了这么一串 */
+/* 「上次运行」页签(11-15,工作流一期第三件;照 Dify 面板的「设置 / 上次运行」):这条流程这一步最近一次真跑到它的记录。
+ * 从服务端读,刷新页面也还在;**和运行详情同一权限,原文里的手机号只露后四位**(用户 11-15 拍,打码在服务端做)。
+ * 这一页里刚跑完的那次也会写进库,所以不再单独认页内的运行态 —— 两个来源会说不一样的话 */
+async function 填上次运行(n) {
+  const 盒 = $("#lastrun");
+  if (!盒 || !图态 || !图态.wid) return;
+  let x;
+  try { x = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/nodes/${encodeURIComponent(n.id)}/last-run`); }
+  catch (e) { if ($("#lastrun") === 盒) 盒.innerHTML = `<div class="k">读不到上次运行:${esc(e.message || e)}</div>`; return; }
+  if ($("#lastrun") !== 盒 || 盒.dataset.nid !== n.id) return;   // 读回来时面板已经换成别的步骤了
+  if (!x["有记录"]) { 盒.innerHTML = `<div class="k">${esc(x["说法"] || "这一步还没有跑过")}</div>`; return; }
+  const 调 = x["调试"] || {};
+  const 态 = x["按默认值继续"] ? `<span class="pill" data-run="defaulted">出错 · 按默认值继续</span>`
+    : `<span class="pill" data-run="${esc(x["状态"])}">${esc(运行状态中文[x["状态"]] || x["状态"])}</span>`;
+  const 秒 = x["耗时毫秒"] == null ? "" : ` · 用时 ${(x["耗时毫秒"] / 1000).toFixed(1)} 秒`;
+  盒.innerHTML = `<div>${态} <span class="k">${esc(x["来源"])}${x["跑法"] && x["跑法"] !== "正常" ? `(${esc(x["跑法"])})` : ""}`
+      + ` · ${esc((x["时间"] || "").replace("T", " ").slice(0, 16))}${秒}${x["尝试"] > 1 ? ` · 第 ${x["尝试"]} 次才成` : ""}</span></div>`
+    + (调["还算数"] === false ? `<div class="note">跑完之后流程改过了,这是<b>修改前</b>的结果${调["说法"] ? ":" + esc(调["说法"]) : ""}</div>` : "")
+    + (x["错误码"] ? `<div class="k">错误:<code>${esc(x["错误码"])}</code>${x["错误细节"] && x["错误细节"]["消息"] ? " · " + esc(x["错误细节"]["消息"]) : ""}</div>` : "")
+    + (步骤IO({ 输入: x["输入"], 输出: x["按默认值继续"] && x["错误细节"] ? x["错误细节"]["默认值"] : x["输出"] }, x["看得到原文"], true)
+       || `<div class="k">这一步没有记下输入输出(改版前跑的)。</div>`)
+    + (x["看得到原文"] ? `<div class="k">手机号只显示后四位${x["打码了几处手机号"] ? `(这次打码了 ${x["打码了几处手机号"]} 处)` : ""};要看完整号码去顾客档案。</div>` : "")
+    // 不摆跳转链接:编辑器里没有「打开某次运行」的现成入口,点了没反应比不摆糟 —— 写清在哪找
+    + (x["运行"] ? `<div class="k">这次运行的全部步骤:上方「运行记录」页签里找运行编号 <code>${esc(x["运行"])}</code></div>` : "");
+}
 function 步骤IO(s, 原文, 开 = false) {
   const 有入 = s["输入"] != null, 有出 = s["输出"] != null;
   if (!有入 && !有出) return "";

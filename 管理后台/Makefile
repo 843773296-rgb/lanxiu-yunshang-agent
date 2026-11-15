@@ -529,6 +529,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 编排页 · 列表迭代的配置面板(列表 / 每一项交出什么 / 某一项失败时 / 最多做几项;里面的步骤能选当前项、下标;不许套娃)"
 	@node tests/e2e/test_workflow_foreach_panel.js
 	@echo ""
+	@echo "▸ 设置页 · 日志采集策略卡(If-Match 是读到的 revision、体是页面填的数)"
+	@node tests/e2e/test_log_policy_page_actions.js
+	@echo ""
 	@echo "▸ 任务事件流 SSE(17 条:按 seq 续传、终态要发结束、流开着也重新鉴权)"
 	@echo "  **全后台最后一条「已实现未验」** —— 主要在打「空流和什么都没发生长得一样」"
 	@./.venv/bin/python tests/e2e/test_job_events_sse.py
@@ -779,6 +782,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_workflow_foreach_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_workflow_foreach_panel.log; exit 1; }
 	@tail -1 /tmp/prog-test_workflow_foreach_panel.log
+	@node tests/e2e/test_log_policy_page_actions.js > /tmp/prog-test_log_policy_page_actions.log 2>&1 \
+	  || { echo "  ❌ test_log_policy_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_log_policy_page_actions.log; exit 1; }
+	@tail -1 /tmp/prog-test_log_policy_page_actions.log
 	@./.venv/bin/python tests/e2e/test_job_events_sse.py > /tmp/prog-test_job_events_sse.log 2>&1 \
 	  || { echo "  ❌ test_job_events_sse 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_job_events_sse.log; exit 1; }
@@ -843,6 +850,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_alerts_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_alerts_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_alerts_flow.log
+	@./.venv/bin/python tests/e2e/test_log_policy_flow.py > /tmp/prog-test_log_policy_flow.log 2>&1 \
+	  || { echo "  ❌ test_log_policy_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_log_policy_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_log_policy_flow.log
 	@./.venv/bin/python tests/e2e/test_eval_dispatch_flow.py > /tmp/prog-test_eval_dispatch_flow.log 2>&1 \
 	  || { echo "  ❌ test_eval_dispatch_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_eval_dispatch_flow.log; exit 1; }
@@ -1096,6 +1107,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 失败后按默认值继续(11-15):只读步骤才行、写数据的业务动作挡在检查配置 / 编译、那一步仍记失败"
 	@./.venv/bin/python tests/orchestration/test_failure_default.py
+	@echo ""
+	@echo "▸ 编辑器「上次运行」页签(11-15):只认这条流程这一步、权限同运行详情、原文里手机号只露后四位"
+	@./.venv/bin/python tests/orchestration/test_last_run.py
 	@echo ""
 	@echo "▸ 有界循环:先判断后执行、跑满上限受限停止、每轮执行键不同、停在循环里等人恢复后轮数不清零"
 	@./.venv/bin/python tests/orchestration/test_loop_node.py

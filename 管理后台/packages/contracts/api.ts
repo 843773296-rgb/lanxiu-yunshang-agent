@@ -341,6 +341,7 @@ export const ENDPOINTS = [
   { method: "GET", path: "/workflows/{id}/releases", summary: "工作流各环境在跑哪一版", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/workflows/{id}/releases", summary: "把某一版发到某个环境", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/execution-runs", summary: "运行列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/workflows/{id}/nodes/{nid}/last-run", summary: "这一步上次运行", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/execution-runs/{id}", summary: "运行详情", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/execution-runs/{id}/raw-log", summary: "原始日志(只读库里已记下的原始记录)", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/execution-runs/{id}/raw-log/export", summary: "导出原始日志", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -356,4 +357,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 268 条接口 · 24 条异步 · 32 条要幂等键 · 40 条要 If-Match */
+/** 共 269 条接口 · 24 条异步 · 32 条要幂等键 · 40 条要 If-Match */

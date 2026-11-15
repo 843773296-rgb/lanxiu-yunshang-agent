@@ -2767,6 +2767,44 @@ def _回复们(步骤们, 看原文=True):
     return 出
 
 
+@router.get(前缀 + "/workflows/{wid}/nodes/{nid}/last-run")
+def 这一步上次运行(project_id: str, wid: str, nid: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """编辑器「上次运行」页签(工作流一期第三件,11-15;照 Dify)。
+
+    这条流程、这一步**最近一次真跑到它**的记录(整条试运行 / 单独测这一步 / 跑某一版都算;没跑到它的「跳过」不算)。
+    **和运行详情同一权限**,有「查看敏感输入」授权才给原文,**原文里的手机号只露后四位**(用户 11-15 拍)。
+    整理和打码在 runtime/上次运行.py(不碰库,夹具真调它)。"""
+    import 上次运行 as LR
+    看原文, _ = me.能("查看敏感输入/独立测试答案")
+    with 连接() as c:
+        步 = c.execute(text("""
+            select s.execution_run_id, s.node_id, s.status, s.attempt, s.error_code, s.error_detail,
+                   s.input_ref, s.output_ref, s.started_at, s.ended_at
+              from run_steps s join execution_runs r on r.project_id=s.project_id and r.id=s.execution_run_id
+             where s.project_id=:p and s.node_id=:n and r.kind='workflow' and r.definition_ref->>'id'=:w
+               and r.definition_ref->>'kind' in ('graph_draft', 'step_test', 'workflow_version')
+               and s.status not in ('skipped', 'queued')
+             order by coalesce(s.ended_at, s.started_at) desc nulls last limit 1
+        """), {"p": project_id, "n": nid, "w": wid}).mappings().first()
+        运行 = None
+        if 步:
+            运行 = c.execute(text("select * from execution_runs where project_id=:p and id=:i"),
+                           {"p": project_id, "i": 步["execution_run_id"]}).mappings().first()
+        包 = LR.整理(dict(步) if 步 else None, dict(运行) if 运行 else None, 看原文=看原文, 形状=_形状,
+                    解析=lambda v: v if isinstance(v, (dict, list)) else _解析json(v))
+        if 运行:
+            # 还算不算数(跑完之后流程改过没有)、花了多少 —— 和运行详情「调试」那一栏同一个函数
+            包["调试"] = _调试信息(c, project_id, 运行)
+    return 包
+
+
+def _解析json(v):
+    try:
+        return json.loads(v)
+    except (ValueError, TypeError):
+        return v
+
+
 @router.get(前缀 + "/execution-runs/{rid}")
 def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查看有权配置"))):
     看原文, _ = me.能("查看敏感输入/独立测试答案")
