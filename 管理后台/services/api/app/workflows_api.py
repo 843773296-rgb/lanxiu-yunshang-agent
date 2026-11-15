@@ -74,6 +74,15 @@ def _依赖查询(c, project_id):
                            f"{' and archived_at is null' if 表 not in ('connection_versions',) else ''}"),
                       {"p": project_id, "i": 值}).first()
         return r is not None
+
+    def 工具读写(tv):
+        # 校验器「写数据的业务动作不许按默认值继续」(用户 11-15 拍)靠它:查不到 → None,校验器当写入挡
+        if not tv:
+            return None
+        return c.execute(text("select side_effect_type from tool_versions where project_id=:p and id=:i"),
+                         {"p": project_id, "i": tv}).scalar()
+    # 挂在同一个函数上交出去:四处调用点(检查配置 / 冻结 / 编译 ×2)不用一处处改签名,漏改一处就漏挡一处
+    存在.工具读写 = 工具读写
     return 存在
 
 
@@ -1540,7 +1549,9 @@ def 工作流详情(project_id: str, wid: str,
         "节点库": [{"名": n["名"], "中文": n["中文"], "可用": n["实现"] == DS.已实现,
                   "端口": n["端口"], "配置": n["配置"], "必填": n["必填"],
                   "说明": n["说明"][:180],
-                  "不适用": n["不适用"]} for n in DS.节点表],
+                  "不适用": n["不适用"],
+                  # 失败后能不能选「按默认值继续」(11-15):只读的那几类;工具节点还要看它的读写登记,由检查配置挡
+                  "可按默认值继续": n["名"] in DS.默认值可用的类型} for n in DS.节点表],
         "note": "**查看历史版本时画布只读**(§4.3);要改就「基于此版创建草稿」",
     }
 

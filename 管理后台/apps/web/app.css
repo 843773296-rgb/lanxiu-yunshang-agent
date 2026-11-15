@@ -401,6 +401,7 @@ body.wf-full .wfstatus{top:auto;bottom:22px;left:50%;right:auto;transform:transl
 .wfpanel .phd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .wfpanel .stack{display:grid;gap:12px}
 .pill[data-run="succeeded"]{background:#e8ffea;color:#00a023;border-color:#aff0b5}
+.pill[data-run="defaulted"]{background:#fff7e8;color:#d25f00;border-color:#ffcf8b}
 .pill[data-run="failed"]{background:#ffece8;color:#f53f3f;border-color:#fbaca3}
 .pill[data-run="waiting_human"],.pill[data-run="waiting_external"]{background:#fff7e8;color:#d25f00;border-color:#ffcf8b}
 .pill[data-run="skipped"],.pill[data-run="cancelled"],.pill[data-run="pending"],.pill[data-run="running"]{background:var(--bg);color:var(--ink3)}

@@ -1094,6 +1094,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 节点级超时 / 重试真生效(11-15):白名单里的码才重试、次数算真、超时等不到就算失败、attempt 记真实次数"
 	@./.venv/bin/python tests/orchestration/test_node_timeout_retry.py
 	@echo ""
+	@echo "▸ 失败后按默认值继续(11-15):只读步骤才行、写数据的业务动作挡在检查配置 / 编译、那一步仍记失败"
+	@./.venv/bin/python tests/orchestration/test_failure_default.py
+	@echo ""
 	@echo "▸ 有界循环:先判断后执行、跑满上限受限停止、每轮执行键不同、停在循环里等人恢复后轮数不清零"
 	@./.venv/bin/python tests/orchestration/test_loop_node.py
 	@echo ""

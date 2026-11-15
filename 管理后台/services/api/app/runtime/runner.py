@@ -975,6 +975,24 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
             if 策 == "branch" and 错边:
                 当前 = 错边[0]
                 continue
+            默 = cfg.get("default_output")
+            if 策 == "default" and t in DS.默认值可用的类型 and isinstance(默, dict) and 默:
+                # 按默认值继续(工作流一期第二件,11-15;照 Dify「异常处理 · 默认值」):
+                # 这一步的输出换成人填好的默认值 + 真实的 error_type / error_message,运行照常走「成功」那条线。
+                # **步骤仍记失败**(上面那条 failed 不改,只补 handled=default)—— 把失败洗成成功,
+                # 运行记录里就看不出「这次的结果有一段是默认值顶上的」。
+                # 写数据的业务动作不许走到这里:校验器按读写登记挡(用户 11-15 拍),Agent / 人工 / 子流程不在可用类型里
+                出 = {**默, "error_type": e.code, "error_message": e.消息}
+                状态["节点"][当前] = 出
+                步骤[-1]["handled"] = "default"
+                步骤[-1]["default_output"] = 出
+                # 落库那一行只有 error_detail 这一格能带上它(不为这个加列):运行详情 / 上次运行页签照这两项标
+                # 「出错 · 按默认值继续」并显示顶上的是什么
+                步骤[-1]["error_detail"] = {**(步骤[-1].get("error_detail") or {}), "处理": "按默认值继续", "默认值": 出}
+                记事("node.default_used", {"node_id": 当前, "error_code": e.code})
+                下 = 后继[当前].get((DS.成功, None), [])
+                当前 = 下[0] if 下 else 循环回(当前)
+                continue
             if 帧们 and 帧们[-1].get("种类") == "foreach" and n.get("container") == 帧们[-1]["循环"]:
                 # 列表迭代里某一项的某一步失败了(11-12),而这一步自己没接「失败时」:交给迭代按「某一项失败时」处理
                 帧, 容 = 帧们[-1], 帧们[-1]["循环"]

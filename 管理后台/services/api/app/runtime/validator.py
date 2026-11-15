@@ -829,6 +829,76 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                            f"在右侧「用到的数据」里加一项叫「{k}」并选来源,或者把模板里的这个名字删掉",
                            node_id=n.get("id"), field_path="config.template"))
 
+    # ⑩ 失败后怎么办(工作流一期第二件,11-15;照 Dify「异常处理」)───────────────
+    # 面板上选了一种失败后的走法,运行时必须真照着走 —— 选了「走失败线」却没接线、
+    # 选了「按默认值继续」却没填默认值,运行时都会悄悄退回「整次运行失败」,而面板上看着已经配好了。
+    _读写 = getattr(依赖存在, "工具读写", None) if 依赖存在 is not None else None
+    for n in 节点们:
+        t, i = n.get("type"), n.get("id")
+        cfg = n.get("config") or {}
+        策 = cfg.get("failure_policy")
+        try:
+            元 = DS.找节点(t)
+        except KeyError:
+            continue
+        if "default_output" in cfg and 策 != "default":
+            出.append(问(警告, "FAILURE_DEFAULT_UNUSED", "这一步填了出错时的默认值,但失败后的走法不是「按默认值继续」,默认值不会生效",
+                       "在右侧「高级」里把「失败后怎么办」改成「按默认值继续」,或者把默认值清空",
+                       node_id=i, field_path="config.default_output"))
+        if 策 is None:
+            continue
+        if DS.失败 not in 元["端口"]:
+            出.append(问(阻断, "FAILURE_POLICY_INAPPLICABLE", f"「{元['中文']}」这类步骤没有失败后的走法可选,这项设置不会生效",
+                       "在右侧「高级」里把它清空", node_id=i, field_path="config.failure_policy"))
+            continue
+        if 策 not in DS.失败策略们:
+            出.append(问(阻断, "FAILURE_POLICY_UNKNOWN", "失败后怎么办选了一个系统不认识的走法",
+                       f"在右侧「高级」里重新选:{' / '.join(DS.失败策略们.values())}",
+                       node_id=i, field_path="config.failure_policy"))
+            continue
+        if 策 == "branch" and not any(e.get("source") == i and e.get("port") == DS.失败 for e in 边们):
+            出.append(问(警告, "FAILURE_BRANCH_NO_EDGE", "选了失败后「走『失败时』那条线」,但这一步的「失败时」出口没接任何步骤 —— 真失败时整次运行会失败",
+                       "从这一步的「失败时」出口拉一条线到处理失败的步骤;不想单独处理就改成「这次运行失败」",
+                       node_id=i, field_path="config.failure_policy"))
+        if 策 != "default":
+            continue
+        if t not in DS.默认值可用的类型:
+            出.append(问(阻断, "FAILURE_DEFAULT_NOT_ALLOWED",
+                       f"「{元['中文']}」这类步骤不能「按默认值继续」:它失败时假装成功往下走,后面的步骤会照着一个没发生的结果做事",
+                       "改成「这次运行失败」或「走『失败时』那条线」", node_id=i, field_path="config.failure_policy"))
+            continue
+        if t == "tool":
+            # 用户 11-15 拍:写数据的业务动作失败了不许按默认值继续 —— 后面可能照着「券已发」去通知顾客
+            tv = cfg.get("tool_version_id")
+            if _读写 is None:
+                跳过.append("按默认值继续的业务动作是不是只读(这次没给查询能力)—— 这不算通过,是没查")
+            else:
+                读写 = _读写(tv) if tv else None
+                if 读写 != "read_only":
+                    出.append(问(阻断, "FAILURE_DEFAULT_ON_WRITE",
+                               "这个业务动作会写数据(或者还查不到它的读写登记),失败了不能「按默认值继续」:"
+                               "比如发券失败却当成发了,后面会照着「券已发」去通知顾客",
+                               "改成「这次运行失败」或「走『失败时』那条线」,在失败线上安排人工处理",
+                               node_id=i, field_path="config.failure_policy"))
+                    continue
+        默 = cfg.get("default_output")
+        if not isinstance(默, dict) or not 默:
+            出.append(问(阻断, "FAILURE_DEFAULT_MISSING", "选了「按默认值继续」,但还没填出错时交出什么",
+                       "在右侧「高级」里把默认值填上:后面步骤要用的每一项都给一个值",
+                       node_id=i, field_path="config.default_output"))
+            continue
+        要 = set(((cfg.get("output_schema") or {}).get("required")) or [])
+        缺 = sorted(要 - set(默))
+        if 缺:
+            出.append(问(阻断, "FAILURE_DEFAULT_INCOMPLETE",
+                       f"出错时的默认值缺了这几项:{'、'.join(缺)} —— 后面步骤取它们时会取不到",
+                       "在右侧「高级」里把这几项的默认值补上", node_id=i, field_path="config.default_output"))
+        保留 = sorted({"error_type", "error_message"} & set(默))
+        if 保留:
+            出.append(问(阻断, "FAILURE_DEFAULT_RESERVED",
+                       f"默认值里不能自己填 {'、'.join(保留)}:这两项由系统在出错时写上真实的错误",
+                       "把这几项从默认值里删掉", node_id=i, field_path="config.default_output"))
+
     # 跳过的检查不能写成通过(§C.4)
     for s in 跳过:
         出.append(问(警告, "CHECK_SKIPPED", f"有一类没检查:{s}",

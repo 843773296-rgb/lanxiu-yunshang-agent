@@ -3811,8 +3811,32 @@ function 表_高级(n) {
       + `<div class="k">放进去之后:从循环的「进循环体」(迭代的「每一项做」)出口连到第一步;里面走到头 = 这一轮 / 这一项做完。</div>`;
   }
   if ((元(n.type)["端口"] || []).includes("error")) {
-    体 += `<label class="f">失败后怎么办</label>` + 下拉(c.failure_policy || "fail_run",
-      [["fail_run", "这次运行失败"], ["branch", "走「失败时」那条线"]], (el) => { c.failure_policy = el.value; });
+    // 11-15 工作流一期第二件:第三种走法「按默认值继续」(照 Dify「异常处理 · 默认值」)。
+    // 只给只读的那几类步骤;**写数据的业务动作不许**(用户 11-15 拍)—— 选了也会在「检查配置」里被挡住
+    const 可默认 = !!元(n.type)["可按默认值继续"];
+    const 走法 = [["fail_run", "这次运行失败"], ["branch", "走「失败时」那条线"]];
+    if (可默认 || c.failure_policy === "default") 走法.push(["default", "按默认值继续(结果换成下面填的默认值)"]);
+    体 += `<label class="f">失败后怎么办</label>` + 下拉(c.failure_policy || "fail_run", 走法,
+      (el) => { c.failure_policy = el.value; if (el.value !== "default") delete c.default_output; 重画(); });
+    if (c.failure_policy === "default") {
+      体 += `<div class="k">这一步出错时,后面的步骤拿到的是这里填的值,外加系统自动写上的「错误类型 / 错误说明」两项;运行记录里这一步仍记「出错」。`
+        + (n.type === "tool" ? `<b>会写数据的业务动作不能这样用</b>(发券失败却当成发了,后面会照着去通知顾客)—— 检查配置会挡住。` : "") + `</div>`;
+      const 属性 = ((c.output_schema || {}).properties) || {};
+      const 名们 = Object.keys(属性).length ? Object.keys(属性) : Object.keys(c.default_output || {});
+      名们.forEach((k) => {
+        const 型 = (属性[k] || {}).type || "string";
+        const 现 = (c.default_output || {})[k];
+        体 += `<label class="f">出错时「${esc(k)}」给什么</label>` + 输入框(现 === undefined ? "" : (型 === "string" ? 现 : JSON.stringify(现)), (el) => {
+          const t = String(el.value);
+          let v = t;
+          if (型 !== "string") { try { v = JSON.parse(t); } catch (_) { v = t; } }
+          c.default_output = { ...(c.default_output || {}) };
+          if (t === "") delete c.default_output[k]; else c.default_output[k] = v;
+          if (!Object.keys(c.default_output).length) delete c.default_output;
+        }, 型 === "string" ? "比如:暂时查不到,请稍后再试" : `填 ${型} 的值`);
+      });
+      if (!名们.length) 体 += `<div class="k">这一步还没定输出长什么样 —— 先在「基本」里把输出字段定好,这里才知道要填哪几项。</div>`;
+    }
   }
   if (n.type === "llm") {
     体 += `<label class="f">最多输出多少 token</label>` + 数字框(c.max_output_tokens ?? "", (v) => {
@@ -3971,7 +3995,7 @@ const 运行状态中文 = { succeeded: "成功", failed: "失败", waiting_huma
  * 还算数 = 服务端拿那次运行对着的逻辑哈希和**现在的草稿**比出来的 —— 前端不自己比,只照着标 */
 function 运行态条(d, s) {
   const 调 = d["调试"] || {};
-  return { 状态: s["状态"], 错误码: s["错误码"], 分支: s["走的分支"], 输入: s["输入"], 输出: s["输出"], 原文: !!d["看得到原文"],
+  return { 状态: s["状态"], 默认顶上: ((s["错误细节"] || {})["处理"] === "按默认值继续"), 错误码: s["错误码"], 分支: s["走的分支"], 输入: s["输入"], 输出: s["输出"], 原文: !!d["看得到原文"],
     时间: s["结束于"] || s["开始于"], 运行: d.id, 还算数: 调["还算数"], 说法: 调["说法"] };
 }
 function 记运行态(d) {
@@ -3991,6 +4015,7 @@ function 定位步骤(id) {
 }
 function 运行标(id) {
   const x = 图态 && 图态.运行态 && 图态.运行态[id];
+  if (x && x.默认顶上) return `<span class="pill" data-run="defaulted" title="这一步出错了,按设置用默认值顶上、流程接着往下走">出错 · 按默认值继续</span>`;
   return x ? `<span class="pill" data-run="${esc(x.状态)}">${esc(运行状态中文[x.状态] || x.状态)}</span>` : "";
 }
 /* 每一步实际收到的 / 交出的(10-26)。没有「查看敏感输入」授权时接口只给形状(有哪些项、各多长),
