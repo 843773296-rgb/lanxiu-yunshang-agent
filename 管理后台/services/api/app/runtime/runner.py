@@ -66,6 +66,40 @@ class 需要等待(Exception):
           "external": ("waiting_external", "waiting_external")}
 
 
+def _限时(fn, cfg, 实参, 秒):
+    """在 `秒` 内调完适配器,否则抛 节点失败(TIMEOUT)。没配超时就直接调。
+
+    ⚠️ 用线程等,**不是**取消:Python 里没法从外面掐死一个正在等网络的调用。超时后那个线程在后台
+    可能还在跑 —— 对只读的步骤(模型、取数、读文档)没有后果;对写类工具这里**不负责**:桥工具在
+    适配器里抛 需要等待 挂起、不在进程里等,写的幂等靠桥那边的「先登记再调外部」。
+    代价写清楚:超时那一刻起 worker 的这条连接可能被后台线程再用一下 —— 适配器真调外部前先把库里的
+    事读完(现在的三个适配器都是这样),所以实际碰不到。
+    """
+    if not 秒:
+        return fn(cfg, 实参)
+    try:
+        秒 = float(秒)
+    except (TypeError, ValueError):
+        return fn(cfg, 实参)
+    import threading
+    盒 = {}
+
+    def 跑():
+        try:
+            盒["r"] = fn(cfg, 实参)
+        except BaseException as e:                                           # noqa: BLE001
+            盒["e"] = e
+    th = threading.Thread(target=跑, daemon=True)
+    th.start()
+    th.join(秒)
+    if th.is_alive():
+        raise 节点失败("TIMEOUT", f"这一步超过 {秒:g} 秒没有回应",
+                     "外部服务慢或没应。要让它自己再试,在右侧「高级」里把 TIMEOUT 加进「允许重试的错误」并设重试次数")
+    if "e" in 盒:
+        raise 盒["e"]
+    return 盒["r"]
+
+
 class 节点失败(Exception):
     def __init__(self, code, 消息, 建议):
         self.code, self.消息, self.建议 = code, 消息, 建议
@@ -268,12 +302,11 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
         if 帧们:
             状态["scope"] = 帧们[-1]["状态"]
 
-    def 记一步(i, st, *, 入=None, 出=None, **kw):
+    def 记一步(i, st, *, 入=None, 出=None, attempt=1, **kw):
         步 = dict(node_id=i, kind=节点[i]["type"], status=st,
-                  # **唯一执行键**(§8)。现在没有循环和列表迭代,
-                  # 路径段固定是 "/" 和 attempt=1 —— 但**键的形状现在就定下来**,
-                  # 否则加循环的那天要改所有读这个键的地方。
-                  execution_key=f"{run_id}:{i}:{路径()}:1", attempt=1, **kw)
+                  # **唯一执行键**(§8)。路径段来自循环帧;attempt 从 11-15 起是真的
+                  # (重试过几次就记几,原来恒为 1)—— **传输重试不改变逻辑副作用键**,改变的只是这个执行键
+                  execution_key=f"{run_id}:{i}:{路径()}:{attempt}", attempt=attempt, **kw)
         # 这一步实际收到的 / 交出的(用户 10-26 拍「记录每一步的输入输出」,方案 §8.3「节点记录」那一层)。
         # ⚠️ **只放进步骤,不放进事件载荷** —— 运行详情把事件原样返回、不按授权打码,
         # 放进去等于让没有「查看敏感输入」授权的人也读到客户原文。None = 这一步没有这一侧,不是「值为空」
@@ -290,6 +323,41 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
     完成原因, 执行状态, 输出 = None, "succeeded", {}
     检查点 = None
 
+    def _调外部(fn, cfg, 实参, 节点id):
+        """按这一步配的「单次超时 / 允许重试的错误 / 最大重试次数」真调适配器 → (结果, 第几次成的)。
+
+        11-15(工作流一期第一件):这三个字段 DSL 收、校验器查、**执行器一处不读**(11-12 体检查实)——
+        面板上能填、填了不算,「配了重试三次可它没重试」看着像重试逻辑坏了。规矩:
+          · 超时 → 这一次算失败,code=TIMEOUT(那次调用在后台可能还在跑,**不等它**;见 _限时 的说明)
+          · 只有 code 在 `retryable_errors` 白名单里的失败才重试,**认不出的错误不重试**(DSL 原话);
+            适配器抛的别种异常统一算 ADAPTER_ERROR —— 要重试它就得在白名单里写明
+          · 最多重试 `max_retries` 次(0 = 不重试);每次重试记一条 node.retry 事件,**失败 / 成功那一步的 attempt 记真实次数**
+          · 挂起(需要等待)原样透传,不算失败:桥工具 / 人工核对走自己的恢复路径,写类动作的幂等在那边
+        """
+        白 = set(cfg.get("retryable_errors") or [])
+        try:
+            最多 = max(0, int(cfg.get("max_retries") or 0))
+        except (TypeError, ValueError):
+            最多 = 0
+        秒 = cfg.get("timeout_seconds")
+        尝试 = 0
+        while True:
+            尝试 += 1
+            try:
+                return _限时(fn, cfg, 实参, 秒), 尝试
+            except 需要等待:
+                raise
+            except 节点失败 as e:
+                err = e
+            except Exception as e:                                           # noqa: BLE001
+                err = 节点失败("ADAPTER_ERROR", f"{type(e).__name__}: {str(e)[:200]}",
+                             "外部服务没应或适配器出错;看这一步的详情")
+            if err.code not in 白 or 尝试 > 最多:
+                err.尝试 = 尝试
+                raise err
+            记事("node.retry", {"node_id": 节点id, "attempt": 尝试, "code": err.code,
+                                "max_retries": 最多, "消息": err.消息})
+
     def _拿注入(i):
         """恢复时停着的那一步:结果带 `失败` 就当这一步失败,否则它就是这一步的输出。"""
         r = 注入.pop(i)
@@ -304,6 +372,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
         t = n["type"]
         cfg = n.get("config") or {}
         本步入 = None          # 这一步解出来的入参 —— 挂起 / 失败时也要记得它收到了什么
+        本步尝试 = 1           # 这一步第几次才成(重试过就 >1);不调外部的步骤恒 1
         记事("node.started", {"node_id": 当前, "kind": t})
         try:
             if t == "start":
@@ -404,9 +473,10 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     用量["模型调用"] += int((r.get("本段用量") or {}).get("模型回合") or 0)
                     用量["工具调用"] += int((r.get("本段用量") or {}).get("工具尝试") or 0)
                 else:
-                    r = fn(cfg, 实参)
+                    r, 尝试 = _调外部(fn, cfg, 实参, 当前)
+                    本步尝试 = 尝试
                 if t == "llm":
-                    用量["模型调用"] += 1
+                    用量["模型调用"] += 本步尝试   # 重试过的每一次都真调了模型,都算账
                     # ⚠️ **普通 LLM 节点不执行它提出的工具调用**(§6.1、附录 C.2
                     # 「普通 LLM 请求工具」那一行:「不擅自执行,**明确类型处理**」)。
                     # 这是 Workflow 和 Agent 的分界线本身:
@@ -424,7 +494,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 if t == "tool":
                     用量["工具调用"] += 1
                 状态["节点"][当前] = r
-                记一步(当前, 成功, execution_mode=r.get("execution_mode"), 入=实参, 出=r)
+                记一步(当前, 成功, execution_mode=r.get("execution_mode"), 入=实参, 出=r, attempt=本步尝试)
                 下 = 后继[当前].get((DS.成功, None), [])
                 当前 = 下[0] if 下 else 循环回(当前)
                 continue
@@ -899,7 +969,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
             # 失败也可以带输出(比如模型原文):走和成功输出同一条存储 —— 「看这一步的原文」才真看得到(11-02)
             记一步(当前, 失败, error_code=e.code, error_detail={"消息": e.消息,
                                                             "建议": e.建议}, 入=本步入,
-                  出=getattr(e, "出", None))
+                  出=getattr(e, "出", None), attempt=getattr(e, "尝试", 1))
             策 = (cfg.get("failure_policy") or "fail_run")
             错边 = 后继[当前].get((DS.失败, None), [])
             if 策 == "branch" and 错边:
