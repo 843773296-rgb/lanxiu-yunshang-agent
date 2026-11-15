@@ -13820,7 +13820,7 @@
     "new": "        return 库.get(\"build_logic_fp\")"
    }
   ],
-  "预期红": "n=0 的空集合指纹 → **不许**说成「同一版库」"
+  "预期红": "**不许**说成「同一版库」(None==None 那个假的真)"
  },
  {
   "script": "agent/rounds.py",
@@ -22298,5 +22298,29 @@
    }
   ],
   "预期红": "换货单独一个率,不并进退货"
+ },
+ {
+  "script": "agentsite/tool_eval.py",
+  "改坏": "把用例截到只剩 3 条 —— **空集合上所有性质都成立**:用例被清空时上面每一条检查都会通过,而那和「全都合格」长得一模一样",
+  "file": [
+   {
+    "path": "agentsite/tool_eval.py",
+    "old": "    cs = spec[\"cases\"]\n",
+    "new": "    cs = spec[\"cases\"][:3]\n"
+   }
+  ],
+  "预期红": "低于下限"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "把 g23(不让价)的否定检查关掉(`if not tm.被否定了(...)` 改成 `if True`)—— 「我们不打折」这种照规矩拒绝的话会被当成许折扣拦下",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if not tm.被否定了(text, m.start(), m.end(), both_sides=True):",
+    "new": "        if True:"
+   }
+  ],
+  "预期红": "照规矩拒绝 —— 句里也有「打折」两个字"
  }
 ]
