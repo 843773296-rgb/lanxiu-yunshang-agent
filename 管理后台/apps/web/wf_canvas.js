@@ -58,6 +58,39 @@ function 线路径(a, b, 折) {
   if (a.向 === "下") return `M${a.x},${a.y} C${a.x},${a.y + dx} ${b.x - dx},${b.y} ${b.x},${b.y}`;
   return `M${a.x},${a.y} C${a.x + dx},${a.y} ${b.x - dx},${b.y} ${b.x},${b.y}`;
 }
+/* 导出图片(11-15,工作流一期第五件最后一样;照 Dify 左上工具条「导出图片」)。只出 SVG(矢量,放大不糊;PNG / JPEG 没做)。
+ * 几何**复用画布自己那几个函数**(出口点 / 入口点 / 线路径 / 节点高)—— 另算一套,导出来的图和屏幕上的会对不上。
+ * 整条流程(不是当前视口);注释一起画;不带运行状态、不带内部编号 */
+function 画布SVG() {
+  const g = 图态, 边距 = 24, 注们 = Object.values(g.布局.$注释 || {});
+  const 框们 = g.定义.nodes.map((n) => ({ n, p: 位(n.id), h: 节点高(n) }));
+  const xs = [...框们.map((b) => b.p.x), ...注们.map((x) => x.x)], ys = [...框们.map((b) => b.p.y), ...注们.map((x) => x.y)];
+  const 右 = Math.max(0, ...框们.map((b) => b.p.x + 画布.W), ...注们.map((x) => x.x + (x.w || 240)));
+  const 下 = Math.max(0, ...框们.map((b) => b.p.y + b.h), ...注们.map((x) => x.y + (x.h || 88)));
+  const 左 = Math.min(0, ...xs) - 边距, 上 = Math.min(0, ...ys) - 边距, 宽 = 右 - 左 + 边距, 高 = 下 - 上 + 边距;
+  const 线 = (g.定义.edges || []).map((e) => {
+    const a = 节点(e.source), b = 节点(e.target); if (!a || !b) return "";
+    const p = 出口点(a, { port: e.port, branch_key: e.branch_key ?? null }), q = 入口点(b);
+    const d = 线路径(p, q, (g.布局.$线 || {})[图逻辑.边键(e)]);
+    const 标 = e.port === "branch" ? (e.branch_key === "else" ? "都不满足" : e.branch_key) : (e.port === "error" ? "失败时" : "");
+    return `<path d="${d}" fill="none" stroke="${e.port === "error" ? "#F04438" : "#98A2B3"}" stroke-width="1.5"/>`
+      + (标 ? `<text x="${(p.x + q.x) / 2}" y="${(p.y + q.y) / 2 - 4}" font-size="11" fill="#667085" text-anchor="middle">${esc(标)}</text>` : "");
+  }).join("");
+  const 注 = 注们.map((x) => `<rect x="${x.x}" y="${x.y}" width="${x.w || 240}" height="${x.h || 88}" rx="8" fill="${图逻辑.注释色[x.色] || 图逻辑.注释色.黄}"/>`
+    + String(x.文 || "").split("\n").slice(0, 5).map((行, i) => `<text x="${x.x + 8}" y="${x.y + 20 + i * 16}" font-size="12" fill="#344054">${esc(行.slice(0, 30))}</text>`).join("")).join("");
+  const 点 = 框们.map(({ n, p, h }) => `<rect x="${p.x}" y="${p.y}" width="${画布.W}" height="${h}" rx="10" fill="#FFFFFF" stroke="#D0D5DD"/>`
+    + `<text x="${p.x + 12}" y="${p.y + 21}" font-size="13" font-weight="600" fill="#101828">${esc(业务名(n).slice(0, 14))}</text>`
+    + `<text x="${p.x + 12}" y="${p.y + 40}" font-size="11" fill="#667085">${esc(次级标签(n))}</text>`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${左} ${上} ${宽} ${高}" width="${宽}" height="${高}" font-family="PingFang SC, Microsoft YaHei, sans-serif">`
+    + `<rect x="${左}" y="${上}" width="${宽}" height="${高}" fill="#F9FAFB"/>${注}${线}${点}</svg>`;
+}
+function 导出图片() {
+  const 文 = 画布SVG(), 名 = `${(图态.名称 || "工作流").replace(/[\\/:*?"<>|]/g, "_")}.svg`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([文], { type: "image/svg+xml" })); a.download = 名;
+  document.body.appendChild(a); if (a.click) a.click(); if (a.remove) a.remove();
+  轻提示(`已导出「${名}」(整条流程,矢量图)`);
+}
 function 屏到图(cx, cy) {
   const r = $("#cv").getBoundingClientRect(), v = 视口();
   return { x: (cx - r.left - v.x) / v.z, y: (cy - r.top - v.y) / v.z };
@@ -100,6 +133,7 @@ function 画_图() {
             <button id="wf-zi" aria-label="放大">+</button>
             <button id="wf-fit">适应画布</button><button id="wf-loc">定位选中</button>
             <button id="wf-minitg" aria-pressed="true">小地图</button>
+            <button id="wf-export" title="把整条流程导出成一张矢量图(SVG)">导出图片</button>
           </div>
           <div class="wfmini" id="wf-mini" aria-hidden="true"></div>
           <div class="wfstatus" id="wf-status" role="status"></div>
@@ -483,6 +517,7 @@ function 挂画布事件() {
   $("#wf-libtg").onclick = () => { s.库开 = !s.库开; 画_工具条态(); };
   $("#wf-import").onclick = 弹_导入;
   $("#wf-minitg").onclick = () => { s.小地图 = !s.小地图; 画_工具条态(); 画_小地图(); };
+  $("#wf-export").onclick = 导出图片;
   $("#wf-zo").onclick = () => 缩放到(视口().z - 0.25);
   $("#wf-zi").onclick = () => 缩放到(视口().z + 0.25);
   $("#wf-zsel").onchange = (e) => 缩放到(+e.target.value / 100);
@@ -977,6 +1012,7 @@ function 画布菜单(x, y) {
     改 && s.剪贴板 && s.剪贴板.节点们.length ? ["paste", `粘贴 ${s.剪贴板.节点们.length} 步(Ctrl/⌘+V)`] : null,
     改 ? ["tidy", "整理布局(Ctrl/⌘+O)"] : null,
     ["fit", "适应画布(Ctrl/⌘+1)"],
+    ["export", "导出图片(SVG)"],
     $("#trun") ? ["run", "试运行(Alt+R)"] : null,
   ].filter(Boolean);
   m.innerHTML = 项.map(([k, t]) => `<button role="menuitem" data-ci="${k}">${esc(t)}</button>`).join("");
@@ -993,6 +1029,7 @@ function 画布菜单(x, y) {
       if (k === "paste") 粘贴();
       if (k === "tidy") 整理布局();
       if (k === "fit") 适应画布();
+      if (k === "export") 导出图片();
       if (k === "run") $("#trun")?.click();
     };
   });
@@ -1125,7 +1162,7 @@ function 画布按键(e) {
   }
 }
 
-if (typeof globalThis !== "undefined") globalThis.画布动作 = { 连上, 删线, 重连, 粘贴, 复制选中, 查找, 缩放到, 适应画布, 选节点, 选线, 画态, 视口, 节点按下, 出口按下, 画布按键, 整理布局, 画布菜单, 去单测, 加注释在 };
+if (typeof globalThis !== "undefined") globalThis.画布动作 = { 连上, 删线, 重连, 粘贴, 复制选中, 查找, 缩放到, 适应画布, 选节点, 选线, 画态, 视口, 节点按下, 出口按下, 画布按键, 整理布局, 画布菜单, 去单测, 加注释在, 画布SVG, 导出图片 };
 
 
 /* ── 从其他工作流导入(第三批 · §5.3「跨项目导入需独立设计,不复用无校验的剪贴板粘贴」)──────────
