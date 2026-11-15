@@ -56,19 +56,30 @@ def 码(d):
 
 
 def 规矩样本():
-    """后台导入的规矩里挑几条:{编号: (needs, avoid)}。要有「跟着某个工具」的,也要有「总带着」的。"""
-    s, d = 打("GET", f"{P}/prompts?limit=100")
-    if s != 200:
-        return {}
-    out = {}
-    for it in d["items"]:
-        if not (it["key"][:2] in ("TL", "TK")):
-            continue
-        s, x = 打("GET", f"{P}/prompts/{it['id']}")
-        pa = ((x or {}).get("草稿") or {}).get("params") or {}
-        if "铁律编号" in pa:
-            out[pa["铁律编号"]] = (pa.get("装了这些工具才发") or [], pa.get("装了这些工具就不发") or [])
-        if len(out) >= 40:
+    """后台导入的规矩里挑几条:{编号: (needs, avoid)}。要有「跟着某个工具」的,也要有「总带着」的。
+
+    ⚠️ 11-15:原来只拉第一页 100 条、抽到 40 条就停。列表按最近改动排,并行会话一批加了十几条「跟着工具」的
+       规矩之后,前 40 条里一条「总带着」的都没有 → 红在「样本够」,而规矩源里总带着的有 14 条(TL01 / TL03 …)。
+       **样本不够就翻下一页,两种都凑到了再停**;接口每页最多 100(limit 上限),所以按 cursor 翻,最多翻 3 页。
+    """
+    out, cursor = {}, None
+    for _页 in range(3):
+        s, d = 打("GET", f"{P}/prompts?limit=100" + (f"&cursor={cursor}" if cursor else ""))
+        if s != 200:
+            break
+        for it in d["items"]:
+            if not (it["key"][:2] in ("TL", "TK")):
+                continue
+            s2, x = 打("GET", f"{P}/prompts/{it['id']}")
+            pa = ((x or {}).get("草稿") or {}).get("params") or {}
+            if "铁律编号" in pa:
+                out[pa["铁律编号"]] = (pa.get("装了这些工具才发") or [], pa.get("装了这些工具就不发") or [])
+            有跟 = any(len(n) == 1 and not a and n[0] not in ("写", "图片") for n, a in out.values())
+            有总 = any(not n and not a for n, a in out.values())
+            if 有跟 and 有总 and len(out) >= 12:
+                return out
+        cursor = d.get("next_cursor")
+        if not cursor:
             break
     return out
 

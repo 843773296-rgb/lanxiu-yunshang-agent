@@ -105,7 +105,24 @@
 > 规矩同上一轮:gate_lock --who、不碰 eureka-fc 文件、改管理后台推前 make test-e2e-ci、scan_secrets 单独一步、commit --only;**加新列走 backend/migrations/**;写共享库前先跟 eureka-fc 说。
 > ⚠️ 开局时 eureka-fc 在跑推送前链(schema_version 那笔),**它推完之前别跑门禁、别写共享库**;本地待推 f0208b4a(白天汇总)。
 
-**交接(11-15 16:xx,还债收尾 —— 覆盖下面各段)**
+**交接(11-15 21:3x,压缩前 —— 覆盖下面各段)**
+- **eureka-fc 21:1x 推了 8b97292a**(3d0a3dc7 之上 17 笔:缩说明 / return_rate / part_options / order_parts 三个新读工具 / TL84–96)。我已 `pull --rebase --autostash` 到它之上,**冲突三处都按规矩合了**:bite_specs.json 按规格身份三方合(上游保留、我的改动=删旧加新;脚本 scratchpad/resolve.py)、咬合两份记录欠债.json「两边都减」→ **空表(两边都还清了)**、HANDOFF 自动暂存回来。本地 **14 笔**待推(最新 746c4212)。
+- **还清之后的连带修**:bite_check 那两条「只许少不许多 / 一致了就删」在空表上红成「样本量 0」—— 空表是目标态,样本量改成按空表算 1(746c4212);「加回 anchor 0 处」那条规格锚点改到空表。
+- **正在跑(机器 load 47,慢)**:① 重放 6 个脚本(任务 b8hs02t97,日志 scratchpad/replay_1115c.log,锁内):anchor 3 / delivered 4 / cron 5 **已全过**;bite_check 那组跑在空表修复之前报「对照就是红的」—— **已另起 b2uwkrha5 重跑**(日志 replay_1115d.log,排在 ① 之后拿锁);impact / intent 还没出结果。② 管理后台 `make test-e2e-ci`(任务 b5g4s2e1x,日志 scratchpad/e2e_1115.log;工作流一期第一件 d0106757 改了执行器,推前必须过)。**判绿只看每段 rc= 行和「N 条咬合规格全过」**;e2e 看日志末尾的汇总行。两个都完了 → `./tools/pre_push.sh --不推` → 绿了请用户 `! git push origin main` → 喊 eureka-fc(它等着推交付告知那批 + m0002 迁移)→ 它推完我 rebase → 跑 `tools/.wip_交付告知订单页.py` → write_smoke / js_check → 重启 8760/8770(新工具随之上线;重启前看有没有门禁在打服务)→ 提交。
+- **8760/8770 重启时**:eureka-fc 的三个新读工具才会出现在聊天站;server.py 启动补齐迁移那句随 wip 脚本进。
+- **一期 1-2(异常处理:默认值 / 异常分支)已读完代码、还没写**:failure_policy 现在只有 fail_run / branch(runner 898 行、app.js 表_高级 3814 行下拉、DSL 无取值校验);要加 "default":通用字段加 `default_output`(dsl.节点通用字段 + 非外部节点自动不适用 —— N() 会检查漏标)、runner 失败分支里 策=="default" → 节点输出 = default_output + error_type / error_message、步骤记 failed + handled="default"、运行照常走成功边;validator 加 branch 没接失败边 / default 没给默认值 / 写类工具不许 default;UI 下拉加一项 + 按 output_schema 属性出默认值输入;运行详情步骤状态加「异常 · 按默认值继续」;测试照 tests/orchestration/test_node_timeout_retry.py 的样子。
+- **禁区**:同前;eureka-fc 等我喊完才拿锁;运行时三件日志别 add(备份在 scratchpad/dirty_bak2,推完放回)。
+
+**交接(11-15 16:3x)**
+- **本地 11 笔未推**(a8646715 … db311968 / f8dd44ed / 24c7ca61):fakedata 还债、重放工具五个键 + 14 条规格、重放第一轮红 6 处的修法(7180bf2e)、执行手册「工单状态回填」(✅14 🟡9 ⬜1 👤1 ❔2,三次更正都有提交)、判分严格度后半 4/5(growth / liability / talk / oppo 接 rounds.跑并收尾;vision 留着 —— 图指纹那层共用收尾没有)。推法同前(eureka-fc 推完 → rebase → pre_push --不推 → 用户 push)。
+- **重放第二轮没跑成**:排队等锁满 60 分钟 bite_run 自动放弃(rc=3),我 17:4x 把队列停了(eureka-fc 的咬合重放从 16:20 起一条条占锁)。**等它推完再跑**:`for k in fakedata/anchor.py tools/delivered_images tools/cron_health_check tools/bite_check.py tools/impact.py tools/intent_check; do python3 tools/bite_run.py --only "$k"; done`(约 15 分钟),只认每段「✅ N 条咬合规格全过」。**工作流一期第一件代码已提交 d0106757**(runner 读三件套 + 16 条自测 + Makefile 挂上),**make test-e2e-ci 还没跑**,推前跑(不占锁但吃 CPU,放在它推完之后)。第一轮 6 处红的根因都查清了:anchor 3 + delivered 4 = bite_run 把光秃秃的「自测」行当真跑行(已修);cron [1/5] 是旧规格在主检出就是任务目录的机器上不可观测(补了夹具);bite_check 826 要同时把 anchor 以 0 登账;impact 锚的 ⚠️ 行不带正则认的词(换到 case_tool_reachable_check);intent 只报不拦误判 ✅ 行(只认提醒行,已修)。
+- **接了 eureka-fc 一件(用户 11-15 下午拍「标品交付告知聊天 + 订单页两处都要」)**:它那半在 w75-dn 分支(knowledge/delivery_notice.py、backend/delivery_notice_write.py、api.draft_delivery_notice / record_delivery_notice、迁移 m0002 给 delivery_notice 加 notified_at/by/channel/items),随它下一批推。**我做订单页那半(server.py + backend/web/index.html,我的文件)**,等它推完 rebase 再做:标品且状态 已发货 / 待完成 / 完成 的订单页显示「交付告知草稿」块 = `api.draft_delivery_notice(order_id)`(出错 {"error"};正常 {订单, 状态, 范围, 适用:[{编号 1–6, 告知, 依据:[…]}], 没对上的商品:[…], 文字:str|None(None=一条都没对上不用发), 出处, 说明, 已记过:None|{notified_at, notified_by, notified_by_name, notified_channel, notified_items(JSON 串)}, 下一步})+ 复制文字 + 渠道下拉(**读 `delivery_notice_write.渠道们` 元组,别抄**:微信 / 电话 / 短信 / 当面 / 小程序)+「记已告知」按钮 → 后端 `delivery_notice_write.记已告知(order_id, channel, me, 范围where="", 范围args=(), db=None)` → {ok, code, reason…},ok 时另有 订单 / 告知了:[编号] / 渠道 / 时间;code:NO_LOGIN / BAD_CHANNEL / NO_COLUMN(库没迁移)/ OUT_OF_SCOPE / NO_ORDER / NOT_STANDARD / NOT_DELIVERED / DONE(记过不覆盖)/ NOTHING_TO_NOTIFY / NOTIFIED。范围where 里表别名 `o`(ordr)`cu`(customer),? 占位,订单页用 _门店条件 按这两个别名拼。记过后 draft 的 已记过 非空、下一步=「这单已经记过已告知了」→ 页面显示「已于 notified_at 由 notified_by_name(notified_by)经 notified_channel 告知」。共享库迁移 eureka-fc 推那批时锁内跑;之前 记已告知 回 NO_COLUMN。**代码已写成一键应用脚本 `tools/.wip_交付告知订单页.py`(未入库、别 add)**(里面还带 eureka-fc 托付的一句:server.py 启动时 `migrate.补齐(sqlite3.connect(DB))`,放 `_转写工人()` 之前,迁移机制第二步):server.py 两个函数 + 两条 POST 路由、index.html 订单日志页一块卡 + JS、write_smoke 用例(调 api.draft_delivery_notice 挑「真有文字」的单;没迁移就不造)。**等它推完 rebase 后再跑这个脚本**(写口冒烟欠账上限 0,新路由没用例会红,而用例要它那半才跑得通)→ write_smoke_check / js_check → 重启 8760 看页 → 提交。不动管理后台,不用 e2e。
+- **store_report 夜跑崩「unable to open database file」**:ulimit -n 256 下进程内跑取数包 6 秒正常 → fd 那条路现在不是原因;**没有 *.崩.log** 的原因 eureka-fc 查清了:落盘代码 47dc2d0c 在 11-13 那晚还不在主干上,之后 store_report 没再轮到(11-14 整晚跳过、11-15 周日只跑 ops_eval);崩.log 刻意不入库、只留主检出本地。**今晚(周一)23 套全跑 → 明早看 `.feynman/nightly-eval/2026-11-16-store_report_eval.py.崩.log`**;oppo 也是兜底上线后第一次真跑。根因仍未知,别再在 fd 上限那条路上花时间。
+- **W22 费用上限其实三件齐**(月上限 store_usage.py、80% 提醒 cost_alert.py、到顶不升级 app.py 825 行费用闸);追评 11-14 用一次性链接补了门;聚合三档 11-13 就有 —— 我第一遍核错了三条,都已更正并提交。
+- **下一步第一个动作**:看 bqg0cef2f 结果 → 红的修 → eureka-fc 喊推完 → rebase → `pre_push.sh --不推` → 用户 push → 做订单页交付告知按钮 → 然后工作流一期第一件(执行器读超时 / 重试)。
+- **禁区**:同前;eureka-fc 切 v17 到推上去之间别跑全量门禁;运行时三件日志别 add。
+
+**交接(11-15 16:xx,还债收尾)**
 - **用户拍(15:xx)**:剩 14 条「不能重放」**扩重放工具真做成**(不是登记豁免)。已做:`tools/bite_run.py` 加五个键 `改坏命令 / env / 参数 / 命令 / 只报不拦`(`{副本}` 占位换副本路径;只报不拦 = 对照里不许有那句、改坏后必须有;--自测过),14 条规格全写进 bite_specs(26822ac3)。**两份记录欠债 16 → 2**(剩 guards_test / tool_eval 是 eureka-fc 的,它本地已改 0cac1f93);位置参数 0、截断 0、预期红 2(growth 刻意留、rounds eureka-fc 已改)。
 - **正在跑**:后台重放 16 个脚本的新 / 改规格(任务 bknjf1fu9,日志 scratchpad/replay_1115.log,每个脚本一次 bite_run --only,**排队等锁**,eureka-fc 的链在占)。看结果只认每段 `##### … rc=` 和「✅ N 条咬合规格全过」;红了**先疑夹具**(前置命令 / env / 参数),别先改判据。最可能红的:stable「批级加 date」(kind 不对就换)、delivered_images(`$LANXIU_SRC_ROOT` 要在 bite_run 进程环境里,它 `setdefault` 过)、repo_consistency / impact(副本里 git init + add -A 要能跑;.gitignore 生效)、rating_rebuild(前置重造 rating 要几分钟)。
 - **本地待推 5 笔**:a8646715 / b16afa5a / 26822ac3 + HANDOFF 随下笔。推法同前:eureka-fc 推完 → pull --rebase → scan_secrets 单独 → `pre_push.sh --不推` → 绿了请用户 `! git push origin main`。
@@ -2899,23 +2916,20 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-15 15:42。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-15 21:10。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 26822ac3 · 2026-11-15 · 重放工具加五个键(改坏命令 / env / 参数 / 命令 / 只报不拦),剩下 14 条「只写说明不能重放」的咬合全部补成规格(两份记录欠债 16 → 2,剩的 2 条在并行会话手里) |
-| 代码量 | 1119 个 Python 文件 / 206002 行(不含 .venv) |
-| 验收 | `./check.sh` 共 426 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 746c4212 · 2026-11-15 · 两份记录欠债两边都还到 0 之后:bite_check 那两条「只许少不许多 / 一致了就删」在空表上红成「样本量 0」—— 空表是还清了的目标态,样本量改成按空表算 1;顺带把「加回 anchor 0 处」那条规格的锚点改到空表 |
+| 代码量 | 1123 个 Python 文件 / 206552 行(不含 .venv) |
+| 验收 | `./check.sh` 共 428 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M .feynman/tool-eval.json
- M HANDOFF.md
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
+M HANDOFF.md
 ?? "--\350\207\252\346\265\213.log"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
@@ -2932,17 +2946,20 @@ M .feynman/tool-eval.json
 ?? .feynman/nightly-eval.log
 ?? .feynman/world-shift-launchd.log
 ?? .wip-glossary/
+?? .wip-muslin/
+?? .wip-rating-followup.patch
+?? .wip-store-report-SKILL.md
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-26822ac3 重放工具加五个键(改坏命令 / env / 参数 / 命令 / 只报不拦),剩下 14 条「只写说明不能重放」的咬合全部补成规格(两份记录欠债 16 → 2,剩的 2 条在并行会话手里)
-b16afa5a 数据工厂 14 条「只写说明不能重放」的咬合补成可重放规格(两份记录欠债 30 → 16),顺带修三条因欠债表清空而过期的规格攻击点
-a8646715 数据工厂还债:15 处按位置写的 INSERT 改成具名列(位置参数欠债 15 → 0)、3 处截断报告补「还有几条」(截断欠债 3 → 0)
-3d0a3dc7 核出处工具里的全角减号改用 chr() 拼:字面字符会被字符集检查算进全项目该认的全角,别处 6 个老正则连带红(42→48);影响面基线 393→394 随门禁更新
-c3768173 推送前链红两处都是今早自己埋的:形制表那句改具名后两条咬合规格攻击点过期(挪到「5 列给 4 值」和「欠债表加回已还清的一处」,重放 5/5 过);PRD 新节一处阿拉伯数字被文档数字对账当成计数(改中文数词)
+746c4212 两份记录欠债两边都还到 0 之后:bite_check 那两条「只许少不许多 / 一致了就删」在空表上红成「样本量 0」—— 空表是还清了的目标态,样本量改成按空表算 1;顺带把「加回 anchor 0 处」那条规格的锚点改到空表
+9fbef804 工作流规划:一期 1-1 记进度(执行器半做完 d0106757,实际约 1.5 小时 vs 估 3 人日)
+b3c1a46a 工作流一期第一件:节点的「单次超时 / 允许重试的错误 / 最大重试次数」执行器真读了(原来 DSL 收、校验器查、执行器一处不读)
+991b22c3 执行手册:费用上限其实三件都做了(月上限在 store_usage、到顶不升级在 app.py 的费用闸),原标 🟡 是漏看了一层
+b081769f 执行手册:判分严格度后半 4/5 已做,识图留着的原因写明
 ```
 <!--/AUTO-->
 ## 一句话在做什么
