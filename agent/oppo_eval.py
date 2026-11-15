@@ -329,33 +329,25 @@ def main():
                 print(f"        {w[:92]}")
         return rows
 
-    轮数 = 1 if os.environ.get("LANXIU_一轮") else 2
-    多, 因, rows = [], [], []
-    for i in range(轮数):
-        print(f"  【第 {i + 1} 轮】")
-        rows = 跑一轮()
-        多.append({r["case"]: r["passed"] for r in rows})
-        因.append({r["case"]: r["why"] for r in rows})
-    过 = sum(多[-1].values())
+    # 11-15 接共用收尾(执行手册 W12 后半):跑几轮、环境性失败、基线对账、部分跑 / 跑挂不写结果文件都在 `rounds.跑并收尾` 里一份。
+    # 原来这套只报轮间抖动、不比基线;接上之后基线也从 git 里上一版结果取(可比才比)。
+    recs, _ = rounds.跑并收尾(跑一轮, 名="通话整理",
+                              结果文件=os.path.join(HERE, "oppo-eval-results.jsonl"),
+                              全集数=len(全), 本轮数=len(todo), 键="case")
+    rows = recs
+    过 = sum(1 for r in rows if r.get("passed"))
     print("=" * 104)
-    print(f"末轮通过 {过}/{len(todo)}  ·  走了技能 {sum(1 for r in rows if r['技能'] == 'call-notes')}/{len(rows)}"
-          f"  ·  花费 ${sum(r['cost'] for r in rows):.4f}(末轮)")
-    # 挂在哪一类 —— 判断错和格式错的下一步完全不同
+    print(f"末轮通过 {过}/{len(todo)}  ·  走了技能 {sum(1 for r in rows if r.get('技能') == 'call-notes')}/{len(rows)}"
+          f"  ·  花费 ${sum(r.get('cost') or 0 for r in rows):.4f}(末轮)")
     类 = {}
     for r in rows:
-        for w in r["why"]:
+        for w in r.get("why") or []:
             k = w.split(":", 1)[0]; 类[k] = 类.get(k, 0) + 1
     if 类:
         print("  末轮挂的类别:" + " · ".join(f"{k} {v}" for k, v in sorted(类.items(), key=lambda kv: -kv[1])))
-    rounds.报(多, 名="通话整理", 原因=因)
-    out = os.path.join(HERE, "oppo-eval-results.jsonl")
     if len(todo) < len(全):
-        print(f"⚠️ 只跑了 {len(todo)}/{len(全)} 通,**不写结果文件**(部分结果覆盖完整基线,文件上看不出来)")
-        # 原文还是要留 —— 不留的话失败了只能重跑才知道它说了什么(写到另一个文件,不碰基线)
+        # 共用收尾不写正式结果文件;部分跑的明细照旧单放一份,事后好查
         evalrec.dump(os.path.join(HERE, "oppo-eval-results.partial.jsonl"), rows)
-    else:
-        evalrec.dump(out, rows)
-        print(f"明细写到 {out}")
     return 0 if 过 == len(todo) else 1
 
 
