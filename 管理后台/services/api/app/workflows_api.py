@@ -61,9 +61,10 @@ _引用表 = {
 }
 
 
-def _依赖查询(c, project_id):
+def _依赖查询(c, project_id, 本工作流=None):
     """给校验器用的 `依赖存在()`。**按项目范围查** —— 这是跨项目引用的第一道闸,
-    第二道是数据库的复合外键(那道不靠任何人记得检查)。"""
+    第二道是数据库的复合外键(那道不靠任何人记得检查)。
+    `本工作流` = 正在校验的是哪条工作流的草稿(11-16 子工作流静态禁递归要知道「我是谁」);不给就查不出绕回自己那种。"""
     def 存在(字段, 值):
         if 字段 not in _引用表:
             # 认不出的引用字段**当场当成不存在**,不放行。
@@ -82,8 +83,18 @@ def _依赖查询(c, project_id):
             return None
         return c.execute(text("select side_effect_type from tool_versions where project_id=:p and id=:i"),
                          {"p": project_id, "i": tv}).scalar()
+    def 取版本(vid):
+        # 子工作流(11-16):校验器顺着「这一版引了谁」走递归链、看子流程里有没有等人的步骤、要哪些输入 —— 只给它定义,不给别的
+        if not vid:
+            return None
+        v = c.execute(text("""select workflow_id, nodes, edges, input_schema, output_schema from workflow_versions
+                              where project_id=:p and id=:i"""), {"p": project_id, "i": vid}).mappings().first()
+        return {"workflow_id": v["workflow_id"], "nodes": v["nodes"] or [], "edges": v["edges"] or [],
+                "input_schema": v["input_schema"] or {}, "output_schema": v["output_schema"] or {}} if v else None
     # 挂在同一个函数上交出去:四处调用点(检查配置 / 冻结 / 编译 ×2)不用一处处改签名,漏改一处就漏挡一处
     存在.工具读写 = 工具读写
+    存在.取版本 = 取版本
+    存在.本工作流 = 本工作流
     return 存在
 
 
@@ -905,10 +916,15 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                                  where td.project_id=:p and td.archived_at is null and td.status='active'
                                  order by td.id, tv.version_no desc"""), {"p": project_id}).mappings().all()
         # HTTP 请求节点选的工具连接(11-16 三期 3-1):**密钥一个字都不给**(连形状也不用,面板只要选哪一条);端点白名单给出来,面板按序号选
-        连 = c.execute(text("""select id, name, adapter, allowed_endpoints, status
+        连 = c.execute(text("""select id, name, adapter, allowed_endpoints, status, auth
                                  from capability_connections
                                 where project_id=:p and archived_at is null
                                 order by name, created_at"""), {"p": project_id}).mappings().all()
+        # 子工作流节点选的冻结版本(11-16 三期 3-3):本项目里每条工作流的所有冻结版本,带它要什么输入 / 返回什么(面板按它配映射、列结果)
+        版们 = c.execute(text("""select v.id, v.workflow_id, v.version_no, v.input_schema, v.output_schema, w.name wname, w.archived_at
+                                   from workflow_versions v join workflows w on w.project_id=v.project_id and w.id=v.workflow_id
+                                  where v.project_id=:p and w.archived_at is null
+                                  order by w.name, v.version_no desc"""), {"p": project_id}).mappings().all()
         import glossaries_api as _GA
         术语们 = _GA.可选术语版本(c, project_id)
     读写 = {"read_only": "只读", "write": "写入", "irreversible": "写入 · 不可撤"}
@@ -928,7 +944,10 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                   "入参": r["input_schema"] or {}, "版本": r["version_no"]}
                  for r in sorted(工, key=lambda x: (x["adapter"] != "lanxiu_bridge", x["name"]))],
         "工具连接": [{"id": r["id"], "名": r["name"], "适配器": r["adapter"],
-                    "允许的端点": list(r["allowed_endpoints"] or []), "状态": r["status"]} for r in 连],
+                    "允许的端点": list(r["allowed_endpoints"] or []), "状态": r["status"],
+                    "鉴权方式": ((r["auth"] or {}).get("方式") or "无")} for r in 连],
+        "工作流版本": [{"id": r["id"], "工作流id": r["workflow_id"], "名": f"{r['wname']} v{r['version_no']}", "版本": r["version_no"],
+                    "入参结构": r["input_schema"] or {}, "出参结构": r["output_schema"] or {}} for r in 版们],
         "角色": [{"码": r, "中文": PM.角色中文.get(r, r), "能审批": r in 能批} for r in PM.角色们],
         # 开始节点「这条流程用哪一版术语」的下拉框(11-06 深夜补:接口早就收 glossary_version_id,页面上却选不了)
         "术语": 术语们,
@@ -1698,6 +1717,10 @@ async def 改图草稿(project_id: str, wid: str, request: Request,
         定义 = 体.get("定义")
         if 定义 is not None and not isinstance(定义, dict):
             raise _错(422, "VALIDATION", "定义要是一个对象", "检查提交的 JSON 形状")
+        if 定义 is not None:
+            # 顶层 input/output_schema 改成开始 / 结束节点那份的派生副本(11-16 B-123):编辑器只改节点里的,顶层原来没人同步 →
+            # 校验器 / 编译器 / 冻结三处曾各自读顶层而拿到老结构。三处读法已统一到节点,这里再把顶层对齐,两份不再分家
+            DS.同步顶层结构(定义)
         # **布局单独存**(§15.1:画布坐标单独记录,不改变执行语义)
         布局 = 体.get("布局")
         新版 = int(d["revision"]) + 1
@@ -1732,7 +1755,7 @@ def 校验图(project_id: str, wid: str, me: 身份 = Depends(要权限("查看�
                       {"p": project_id, "i": wid}).mappings().first()
         if not d:
             raise _错(404, "NOT_FOUND", "没有这条工作流的草稿", "回列表重新进入")
-        问题们 = V.校验(d["definition"] or {}, 依赖存在=_依赖查询(c, project_id))
+        问题们 = V.校验(d["definition"] or {}, 依赖存在=_依赖查询(c, project_id, 本工作流=wid))
         报告 = V.报告(问题们)
         c.execute(text("""update graph_drafts set validation_report=:r, updated_at=now()
                           where project_id=:p and workflow_id=:i"""),
@@ -1777,14 +1800,14 @@ async def 冻结版本(project_id: str, wid: str, request: Request,
         if not d:
             raise _错(404, "NOT_FOUND", "没有这条工作流的草稿", "回列表重新进入")
         定义 = d["definition"] or {}
-        问题们 = V.校验(定义, 依赖存在=_依赖查询(c, project_id))
+        问题们 = V.校验(定义, 依赖存在=_依赖查询(c, project_id, 本工作流=wid))
         if V.有阻断(问题们):
             # 一张有阻断的图冻结出来的版本,发布清单指着它却跑不起来
             raise _错(422, "VALIDATION", f"还有 {sum(1 for p in 问题们 if p['级别'] == V.阻断)} 处没配好,暂时不能生成版本",
                       "按下面列出的逐处改好,再点「准备发布」",
                       field_errors={_遮凭据词((p["node_id"] or "图") + "." + (p["field_path"] or "")):
                                     _遮凭据词(p["消息"]) for p in 问题们 if p["级别"] == V.阻断})
-        计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id))
+        计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id, 本工作流=wid))
         哈希 = 计划["逻辑哈希"]
         上一版 = c.execute(text("""
             select version_no, logical_hash from workflow_versions
@@ -1841,7 +1864,8 @@ def 看冻结版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(�
     """一个冻结版本的图(只读)。**冻结版本不可原地编辑**(交互控件设计 §10.4)——
     这里只给看;要在它的基础上改,前端「复制为草稿」走 PATCH 草稿(乐观锁照旧,会覆盖当前草稿,前端先确认)。"""
     with 连接() as c:
-        v = c.execute(text("""select id, version_no, nodes, edges, layout, logical_hash, change_note, created_at, created_by
+        v = c.execute(text("""select id, version_no, nodes, edges, layout, logical_hash, change_note, created_at, created_by,
+                                     input_schema, output_schema
                                 from workflow_versions where project_id=:p and workflow_id=:w and id=:v"""),
                       {"p": project_id, "w": wid, "v": vid}).mappings().first()
         验证 = _验证记录(c, project_id, wid, v["logical_hash"]) if v else None
@@ -1854,6 +1878,8 @@ def 看冻结版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(�
     return {"id": v["id"], "版本": f"v{v['version_no']}", "逻辑哈希": v["logical_hash"], "变更说明": v["change_note"],
             "冻结于": v["created_at"].isoformat() if v["created_at"] else None, "冻结人": v["created_by"],
             "定义": {"nodes": v["nodes"] or [], "edges": v["edges"] or []}, "布局": v["layout"] or {},
+            # 这一版冻住的「要用户给什么 / 最后返回什么」(11-16:以前不回,测试只能读库;冻结时取的是开始 / 结束节点那份)
+            "入参结构": v["input_schema"] or {}, "出参结构": v["output_schema"] or {},
             "只读": True, "验证记录": 验证,
             "note": "冻结版本只读 —— 要改先「复制为草稿」,不会原地覆盖历史版本"}
 
@@ -2478,7 +2504,7 @@ def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, �
     # **编译在这里做,不留到 worker**:配置错了要当场知道,
     # 而不是排队等一会儿再看到一条「失败」。
     try:
-        计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id))
+        计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id, 本工作流=来源.get("id")))
     except CP.编译失败 as e:
         阻 = [p for p in e.问题们 if p["级别"] == V.阻断]
         raise _错(422, "VALIDATION", f"还有 {len(阻)} 处没配好,这次没有开始运行",
@@ -2495,7 +2521,12 @@ def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, �
     真的 = c.execute(text("""select count(*) from connection_versions where project_id=:p and id = any(:ids)
                                and coalesce(capabilities->>'execution_mode', '') <> 'mock'"""),
                      {"p": project_id, "ids": cvs}).scalar() if cvs else 0
-    模式 = "live" if (真的 and not __import__("runtime_cfg").模型是mock()) else "mock"
+    # 11-16(三期 3-1 之后):HTTP 请求步骤选了工具连接也算「选了真连接」—— 工具连接没有演示版,选了就是要真发。
+    # 原来只看模型连接,**只有 HTTP 步骤的流程永远算 mock、一个字节都发不出去**(http_node e2e 第一版就是这么「跑成」的)。
+    # 连接测试 / 评测跑法在 worker 的 _http 里照旧交替身,不受这里影响
+    有HTTP连接 = any(n.get("type") == "http_request" and (n.get("config") or {}).get("connection_id")
+                   for n in 定义.get("nodes") or [])
+    模式 = "live" if ((真的 or 有HTTP连接) and not __import__("runtime_cfg").模型是mock()) else "mock"
     _要的 = sorted(set(_用的依赖(定义.get("nodes"))) | set(_Agent步骤的连接(c, project_id, 定义.get("nodes"))))
     if _要的:
         # 依赖指纹(DF-01 欠债,11-05):这一跑用的连接设置 / 工具父行是哪一份。探测会原地改 capabilities、

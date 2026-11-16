@@ -1,5 +1,7 @@
 # 交接 · 澜绣云裳 AI 管理后台
 
+> 11-16 20:2x:现行交接在仓库根目录 `HANDOFF.md` 最上面「20:2x 压缩前,六项」那节。管理后台这边此刻:七笔已推(8e2c0c89);工具连接「鉴权方式」列 —— 迁移 5a9f567d29b4 写了**没 upgrade**、connections.检查鉴权 / 规范鉴权 纯函数 + secretref.凭据头 改中文编码、test_tools_flow 四条新断言未跑、app.js 连接选项带鉴权后缀;**读 auth 列的接口 / worker 代码还没写**(等锁落迁移后再写,否则 --reload 把 8801 打挂)。
+
 > 11-16 13:4x:现行交接在仓库根目录 `HANDOFF.md` 最上面「13:4x 压缩前」那节(六项都在那)。管理后台这边此刻:二期两件(定时四种频率 + 开始节点二选一)、W06 孤儿每轮扫、出网策略 + HTTP 节点执行核心 **代码都在工作区未提交**;迁移 2ae099e8e0f0 已落 aimc_dev、worker 已重启;一把锁里正在跑 整套 e2e-ci 第二遍 + 六份咬合重放(/tmp/chain5.log)。**禁区**:eureka-fc 拆 api.py 窗口中(不碰 backend/api.py 及读它源码的检查);三件运行日志不 add;推送由用户。**下一步**:看 chain5.log → 四笔 commit --only → pre_push --不推 → 请用户推。
 
 > 11-15 10:0x:现行交接仍在仓库根目录 `HANDOFF.md` 最上面那段。管理后台这边下一件事 = 工作流一期第一件:让节点的「超时 / 可重试错误 / 最大重试」在 `services/api/app/runtime/runner.py` 执行器里真被读(DSL 字段已有,今天 grep runner / worker 一处不读);规划在根目录 `澜绣云裳agent-工作流整体与详细规划-照Dify-20261115.md`。

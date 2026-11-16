@@ -42,6 +42,7 @@ import compiler as CP  # noqa: E402
 import 列表操作 as LO  # noqa: E402
 import 文档提取 as DE  # noqa: E402
 import 列表迭代 as FE  # noqa: E402
+import 并行 as PL  # noqa: E402
 
 待执行, 执行中, 成功, 失败, 跳过 = "pending", "running", "succeeded", "failed", "skipped"
 
@@ -284,7 +285,11 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
     def 循环回(i):
         """i 是循环体里的一步、而且它后面没有下一步 → 这一轮做完,回到循环本身判下一轮;否则 None(整条流程到头)。"""
         c = 节点[i].get("container") if i in 节点 else None
-        return c if c and 帧们 and 帧们[-1]["循环"] == c else None
+        if c and 帧们 and 帧们[-1]["循环"] == c:
+            if 帧们[-1].get("种类") == "parallel":
+                帧们[-1]["回自"] = i      # 并行:这条支路走到头的那一步,它的输出就是这条支路交出的结果
+            return c
+        return None
     if 恢复:
         if 恢复.get("逻辑哈希") and 恢复["逻辑哈希"] != 计划["逻辑哈希"]:
             # **检查点是对着哪一版图存的,就只能拿那一版接着跑** —— 换了图,
@@ -422,7 +427,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     "allowed_fields": cfg.get("allowed_fields") or [],
                     "expires_at_policy": cfg.get("expires_at_policy"), "材料": 载荷})
 
-            if t in ("llm", "retrieve", "tool", "agent", "http_request"):
+            if t in ("llm", "retrieve", "tool", "agent", "http_request", "subworkflow"):
                 # Agent 步骤恢复时**不能**把回执直接当这一步的输出(11-06):回执只是它中途一次工具调用的结果,
                 # 它拿到之后还要接着想 —— 交回 Agent 适配器(带着它自己的检查点)接着跑,见下面 t == "agent" 那一支
                 if 当前 in 注入 and t != "agent":
@@ -440,7 +445,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     记一步(当前, 失败, error_code="MAX_TURNS")
                     break
                 选填 = set(状态.get("选填输入") or ())
-                _绑 = cfg.get("input_mapping") if t == "agent" else cfg.get("bindings")
+                _绑 = cfg.get("input_mapping") if t in ("agent", "subworkflow") else cfg.get("bindings")
                 实参, 缺 = 解绑定(_绑, 状态, 允许缺失=[
                     字段 for 字段, 引 in (_绑 or {}).items()
                     if isinstance(引, dict) and 引.get("source") == "input"
@@ -472,6 +477,18 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     # Agent 这一段真用掉的(续跑时只算这一段,不重算挂起前那几回合)计入父流程(§6.1:子任务消耗计入父任务额度)
                     用量["模型调用"] += int((r.get("本段用量") or {}).get("模型回合") or 0)
                     用量["工具调用"] += int((r.get("本段用量") or {}).get("工具尝试") or 0)
+                elif t == "subworkflow":
+                    # 子工作流(11-16 三期 3-3 一期):交给适配器一包 —— 输入、父流程还剩多少额度(§13.2 预算随父,适配器取更严的)、
+                    # 现在第几层(动态深度上限)。适配器同步跑完子流程,交回「输出 + 这一段用掉的 + 步骤摘要」;
+                    # 子流程里要停下等人 / 等外部,适配器拦成这一步失败,不冒充成功
+                    _剩 = {}
+                    for 键, 名 in (("max_model_turns", "模型调用"), ("max_tool_calls", "工具调用")):
+                        if 上限.get(键) is not None:
+                            _剩[键] = max(0, int(上限[键]) - int(用量[名]))
+                    r = fn(cfg, {"输入": 实参, "父流程剩余": _剩, "深度": int((系统 or {}).get("子流程深度") or 0) + 1, "node_id": 当前})
+                    用量["模型调用"] += int((r.get("本段用量") or {}).get("模型调用") or 0)
+                    用量["工具调用"] += int((r.get("本段用量") or {}).get("工具调用") or 0)
+                    r = dict(r.get("输出") or {}, **{k: r[k] for k in ("子流程步骤", "子流程步数", "还有几步没列", "execution_mode") if k in r})
                 else:
                     r, 尝试 = _调外部(fn, cfg, 实参, 当前)
                     本步尝试 = 尝试
@@ -678,7 +695,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
 
             if t == "assigner":
                 # 变量赋值(10-27):直接改当前循环的状态(状态["scope"] 就是那一帧的状态,同一个 dict)—— 进检查点、恢复不丢
-                if not 帧们 or n.get("container") != 帧们[-1]["循环"] or 帧们[-1].get("种类") == "foreach":
+                if not 帧们 or n.get("container") != 帧们[-1]["循环"] or 帧们[-1].get("种类") in ("foreach", "parallel"):
                     # 迭代给的「当前项 / 下标」不是循环状态,不许改(校验器拦一道,这里是第二道)
                     raise 节点失败("ASSIGN_NOT_IN_LOOP", "这一步不在正在跑的循环里,没有可改的循环状态",
                                  "把它放进循环里(右侧「放在哪个循环里」);会话变量等对话流那一期")
@@ -934,6 +951,60 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 当前 = 下[0]
                 continue
 
+            if t == "parallel":
+                # 并行与汇总(11-16 一期;规则在 runtime/并行.py)。**串行实现、并发语义**:几条支路一条接一条跑,
+                # 每条支路从它自己的出口(支路端口 + 键)进去,走到头回到这里收它最后一步的输出(循环回 记下「回自」);
+                # 全部支路走完才汇总 —— 不得完成一个就宣告整组成功。帧进检查点:支路里停下等人核对,恢复后接着同一条支路
+                帧 = 帧们[-1] if 帧们 and 帧们[-1]["循环"] == 当前 else None
+                if 帧 is None:
+                    键们 = PL.支路键们(cfg)
+                    本步入 = {"支路": 键们}
+                    帧 = {"循环": 当前, "种类": "parallel", "第几轮": 0, "状态": {}, "支路": 键们, "结果": {}, "支路状态": {}, "失败支路": []}
+                    帧们.append(帧)
+                else:
+                    # 上一条支路走完回到这里:收结果(失败的那条按等待策略处理)
+                    键 = 帧["支路"][帧["第几轮"] - 1]
+                    坏 = 帧.pop("本路失败", None)
+                    尾 = 帧.pop("回自", None)
+                    if 坏 is None:
+                        帧["结果"][键] = 状态["节点"].get(尾) if 尾 else None
+                        帧["支路状态"][键] = "succeeded"
+                    else:
+                        帧["结果"][键] = None
+                        帧["支路状态"][键] = "failed"
+                        帧["失败支路"].append(坏)
+                        if PL.必需吗(cfg, 键) and (cfg.get("wait_policy") or "all_required") == "all_required":
+                            帧们.pop()
+                            状态["scope"] = 帧们[-1]["状态"] if 帧们 else {}
+                            本步入 = {"支路": 帧["支路"]}
+                            e = 节点失败("PARALLEL_BRANCH_FAILED", f"必需支路「{键}」失败:{坏['消息']}",
+                                       "在运行记录里看这条支路停在哪一步;要让一条支路失败不拖垮整步,把等待策略改成「允许部分结果」或把它改成非必需")
+                            e.出 = PL.汇总(帧)
+                            raise e
+                if 帧["第几轮"] >= len(帧["支路"]):
+                    # 全部支路结束 → 汇总(可选支路失败只记状态,不拦)
+                    帧们.pop()
+                    状态["scope"] = 帧们[-1]["状态"] if 帧们 else {}
+                    出 = PL.汇总(帧)
+                    状态["节点"][当前] = 出
+                    记一步(当前, 成功, 入={"支路": 帧["支路"]}, 出=出)
+                    下 = 后继[当前].get((DS.成功, None), [])
+                    当前 = 下[0] if 下 else 循环回(当前)
+                    continue
+                帧["第几轮"] += 1
+                键 = 帧["支路"][帧["第几轮"] - 1]
+                帧["状态"] = {"支路": 键}
+                状态["scope"] = 帧["状态"]
+                记事("parallel.branch", {"node_id": 当前, "支路": 键, "第几条": 帧["第几轮"]})
+                下 = 后继[当前].get((DS.支路, 键), [])
+                if not 下:
+                    帧们.pop()
+                    状态["scope"] = 帧们[-1]["状态"] if 帧们 else {}
+                    raise 节点失败("PARALLEL_BRANCH_NO_ENTRY", f"支路「{键}」没有连到里面的第一步",
+                                 f"从并行这一步「{键}」那个出口连一条线到这条支路的第一步")
+                当前 = 下[0]
+                continue
+
             if t == "end":
                 必需 = set((计划["输出Schema"].get("required") or []))
                 输出, 缺 = 解绑定(cfg.get("bindings"), 状态)
@@ -992,6 +1063,12 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 记事("node.default_used", {"node_id": 当前, "error_code": e.code})
                 下 = 后继[当前].get((DS.成功, None), [])
                 当前 = 下[0] if 下 else 循环回(当前)
+                continue
+            if 帧们 and 帧们[-1].get("种类") == "parallel" and n.get("container") == 帧们[-1]["循环"]:
+                # 并行里某条支路的某一步失败了(11-16),而这一步自己没接「失败时」:记下来回到并行,按等待策略处理
+                帧 = 帧们[-1]
+                帧["本路失败"] = {"支路": 帧["支路"][帧["第几轮"] - 1], "步骤": 当前, "code": e.code, "消息": e.消息}
+                当前 = 帧["循环"]
                 continue
             if 帧们 and 帧们[-1].get("种类") == "foreach" and n.get("container") == 帧们[-1]["循环"]:
                 # 列表迭代里某一项的某一步失败了(11-12),而这一步自己没接「失败时」:交给迭代按「某一项失败时」处理

@@ -234,6 +234,24 @@ def 日志落后():
         return None
 
 
+def 日志新鲜吗():
+    """项目日志头部的「最后更新」日期是不是 ≥ 昨天(执行手册 W29,拍板 19:日志改成每天 06:40 由 launchd 生成并发飞书,
+    这里只看它有没有按天在跑)。→ (日期文本 或 None, 新鲜吗)。读不到日期当不新鲜 —— 读不到不是通过。"""
+    import datetime as _dt
+    try:
+        头 = open(os.path.join(ROOT, 日志文件), encoding="utf-8").read(400)
+    except OSError:
+        return None, False
+    m = re.search(r"最后更新 (\d{4}-\d{2}-\d{2})", 头)
+    if not m:
+        return None, False
+    try:
+        d = _dt.date.fromisoformat(m.group(1))
+    except ValueError:
+        return m.group(1), False
+    return m.group(1), d >= (_dt.date.today() - _dt.timedelta(days=1))
+
+
 
 def 记一笔():
     """告诉交接门禁:这份交接**刚被真的刷过**。
@@ -291,13 +309,23 @@ if __name__ == "__main__":
         if not bad:
             print(f"  ✅ HANDOFF.md 四段必填齐全,自动区完好")
             print("     (只查「能不能用」,内容对不对只有人知道)")
+        日, 新 = 日志新鲜吗()
+        if not 新:
+            # W29(11-16):日志改成每天 06:40 由 launchd 生成(tools/launchd/com.lanxiu.daily-log.plist),这里只盯「昨天以来有没有生成过」。
+            # 只报不拦:拦了等于每天早上 06:40 之前门禁都红
+            print(f"  ℹ 项目日志最后更新 {日 or '(读不到日期)'},不是昨天以来生成的 —— 每日定时(com.lanxiu.daily-log)没装或没跑;"
+                  f"手动:python3 tools/make_log.py --publish。只报不拦")
         落 = 日志落后()
         if 落:
-            print(f"  ℹ 项目日志落后 {落} 次提交 —— 下一次刷新交接(不带 --check)会顺手重新生成并发飞书。只报不拦")
+            print(f"  ℹ 项目日志落后 {落} 次提交(每天 06:40 会补上)")
         sys.exit(1 if bad else 0)
     refresh()
     print(f"已刷新 {DOC}")
     记一笔()
     for b in check(): print(f"  ⚠ {b}")
-    if "--不发日志" not in sys.argv:
+    # W29(11-16,拍板 19):刷交接**不再**顺手生成 / 发项目日志 —— 日志改成每天 06:40 由 launchd 跑一次(近 300 次提交里 192 次碰交接,
+    # 一刷一发把飞书上的日志刷成流水)。要立刻出一份就加 --带日志;老参数 --不发日志 还收,等于默认
+    if "--带日志" in sys.argv:
         项目日志()
+    else:
+        print("  ℹ 项目日志不随交接生成(每天 06:40 定时生成并发飞书;要现在出一份加 --带日志)")

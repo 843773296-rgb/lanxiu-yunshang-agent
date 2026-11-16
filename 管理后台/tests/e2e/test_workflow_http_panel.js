@@ -58,7 +58,7 @@ const 跑 = (code) => vm.runInContext(code, ctx);
            { 名: "start", 端口: ["success"] }, { 名: "end", 端口: [] }],
   资源: { 模型: [], 处理要求: [], 工具: [], 角色: [],
           工具连接: [{ id: "cc1", 名: "库存接口", 适配器: "http", 允许的端点: ["https://api.a.test/v1", "https://api.a.test/v2"], 状态: "active" },
-                    { id: "cc2", 名: "物流接口", 适配器: "http", 允许的端点: ["https://api.b.test"], 状态: "active" }] },
+                    { id: "cc2", 名: "物流接口", 适配器: "http", 允许的端点: ["https://api.b.test"], 状态: "active", 鉴权方式: "自定义头" }] },
   报告: null, 版本们: [] };`);
 
 // 找面板 HTML 里某个按钮对应的回调:按钮文字 → data-k → 控件表;第几个(同名按钮有多个时)
@@ -105,6 +105,16 @@ h = 面板();
 选(h, "请选择工具连接")({ value: "cc2" });
 ck("换成「物流接口」→ 端点序号清掉(新连接未必有第二条)", 配("connection_id") === '"cc2"' && 配("endpoint_index") === undefined, 配());
 h = 面板();
+// 单步测试(「试这一步」):选了连接才给按钮;文案说清会真发一次只读请求、连接测试跑法交替身
+const 单测h = 跑(`单测表(节点("h"))`);
+ck("选了连接 → 「试这一步」有按钮,文案说真发只读请求 / 连接测试交替身(不是模型那套话)",
+   单测h.includes('id="st-go"') && 单测h.includes("只读请求") && 单测h.includes("连接测试") && !单测h.includes("演示模型"), 单测h.slice(0, 200));
+跑(`节点("h").config.connection_id = undefined`);
+const 单测h0 = 跑(`单测表(节点("h"))`);
+ck("没选连接 → 只给一句「先选工具连接」,没有按钮", 单测h0.includes("先在「基本」里选好工具连接") && !单测h0.includes('id="st-go"'), 单测h0.slice(0, 200));
+跑(`节点("h").config.connection_id = "cc2"`);
+ck("连接选项里带鉴权方式(物流接口「鉴权:自定义头」;库存接口没登记过就不显示)",
+   h.includes("物流接口 · 可用 · http · 鉴权:自定义头") && h.includes("库存接口 · 可用 · http<") && !h.includes("库存接口 · 可用 · http · 鉴权"), h.slice(0, 400));
 ck("只有一条白名单 → 不出地址下拉", !h.includes("用白名单里的哪一条地址"));
 const 方法段 = h.slice(h.indexOf("<label class=\"f\">方法</label>"), h.indexOf("<label class=\"f\">路径</label>"));
 ck("方法下拉只有 GET / HEAD(没有 POST / PUT / DELETE 可选)", /value="GET"/.test(方法段) && /value="HEAD"/.test(方法段) && !/value="(POST|PUT|DELETE|PATCH)"/.test(方法段), 方法段.slice(0, 300));

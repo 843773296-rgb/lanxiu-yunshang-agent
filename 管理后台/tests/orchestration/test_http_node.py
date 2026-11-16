@@ -36,7 +36,7 @@ def ck(名, 真, n, 补=""):
 
 os.environ["E2E_HTTP_KEY"] = "密钥值甲乙丙"          # ⚠️ 不用英文密钥形状,免得密钥扫描器认成真的
 连接 = {"id": "cc_1", "name": "供应商库存", "allowed_endpoints": ["https://api.supplier.com/v1"],
-      "secret_ref": "env://E2E_HTTP_KEY", "auth": {"方式": "header", "头名": "x-api-key"}}
+      "secret_ref": "env://E2E_HTTP_KEY", "auth": {"方式": "自定义头", "头名": "x-api-key"}}  # 编码中文(connections.鉴权方式们)
 假DNS = {"api.supplier.com": ["93.184.216.34"], "evil.nip.io": ["127.0.0.1"]}
 解析 = lambda h: 假DNS[h] if h in 假DNS else (_ for _ in ()).throw(OSError("no such host"))
 发过 = []

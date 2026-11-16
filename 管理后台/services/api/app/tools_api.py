@@ -635,7 +635,7 @@ def 工具连接列表(project_id: str, me: 身份 = Depends(要权限("查看�
     """**密钥不返回、不在前端回显**(§11.2)—— 只给形状。"""
     with 连接() as c:
         行 = [dict(r) for r in c.execute(text("""
-            select id, name, adapter, allowed_endpoints, secret_ref,
+            select id, name, adapter, allowed_endpoints, secret_ref, auth,
                    capability_snapshot, status, owner, last_health_at, health_detail,
                    revision
               from capability_connections
@@ -645,6 +645,7 @@ def 工具连接列表(project_id: str, me: 身份 = Depends(要权限("查看�
             "连接": [{"id": r["id"], "名字": r["name"], "适配器": r["adapter"],
                     "允许的端点": r["allowed_endpoints"],
                     "密钥": _引用形状(r["secret_ref"]),
+                    "鉴权": r["auth"] or {"方式": "无"},     # 11-16:老连接没登记过的按「无」
                     "发现到的能力": r["capability_snapshot"],
                     "状态": r["status"], "负责人": r["owner"],
                     "上次健康检查": r["last_health_at"], "revision": r["revision"]}
@@ -664,7 +665,10 @@ async def 建工具连接(project_id: str, request: Request,
     适配器 = (体.get("适配器") or 体.get("adapter") or "").strip()
     端点 = 体.get("允许的端点") or 体.get("allowed_endpoints") or []
     引用 = (体.get("secret_ref") or "").strip()
+    鉴 = 体.get("鉴权") if "鉴权" in 体 else 体.get("auth")      # 11-16:HTTP 请求节点按它把凭据装进请求头;只收方式 + 头名,密钥仍只走引用
     问 = []
+    坏鉴 = CN.检查鉴权(鉴)
+    if 坏鉴: 问.append(坏鉴)
     明文 = CN.像明文密钥吗(体)
     if 明文:
         问.append(f"请求体里有**名字像凭据、而且给了值**的字段:{明文} —— "
@@ -686,18 +690,19 @@ async def 建工具连接(project_id: str, request: Request,
                         {"p": project_id}).scalar()
         c.execute(text("""insert into capability_connections
             (id, organization_id, project_id, name, adapter, allowed_endpoints,
-             secret_ref, status, owner, created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,:n,:ad, cast(:ep as jsonb), :sr, 'active', :ow,
+             secret_ref, auth, status, owner, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:n,:ad, cast(:ep as jsonb), :sr, cast(:au as jsonb), 'active', :ow,
                     now(), :by, now(), 1)"""),
                   {"i": cid, "o": org, "p": project_id, "n": 名字, "ad": 适配器,
                    "ep": _json.dumps(端点, ensure_ascii=False), "sr": 引用,
+                   "au": _json.dumps(CN.规范鉴权(鉴), ensure_ascii=False),
                    "ow": me.user_id, "by": me.user_id})
         # ⚠️ 审计里只记**形状**,不记引用本身 —— 审计表是「事后查得到」的地方,
         # 也就是「事后读得到」的地方。
         _审计(c, me, "capability_connection.create",
               {"connection_id": cid, "name": 名字, "adapter": 适配器,
-               "allowed_endpoints": 端点, "密钥形状": _引用形状(引用)})
-    return {"id": cid, "名字": 名字, "密钥": _引用形状(引用),
+               "allowed_endpoints": 端点, "密钥形状": _引用形状(引用), "鉴权方式": CN.规范鉴权(鉴)["方式"]})
+    return {"id": cid, "名字": 名字, "密钥": _引用形状(引用), "鉴权": CN.规范鉴权(鉴),
             "允许的端点": 端点,
             "note": ("**密钥不回显**,这里给的是形状。"
                      "⚠️ 建完之后**连接发现的新工具不会自动给生产 Agent 权限** —— "

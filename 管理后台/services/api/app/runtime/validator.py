@@ -50,6 +50,8 @@ import 列表操作 as LO  # noqa: E402
 import 文档提取 as DE  # noqa: E402
 import 列表迭代 as FE  # noqa: E402
 import 定时 as SCH  # noqa: E402
+import 并行 as PL  # noqa: E402
+import 子工作流 as SW  # noqa: E402
 
 # 定时开头的流程,「开始」交给下一步的只有这两项(定时自己填)—— 别处也用这个名单(workflows_api 的 _定时统计字段 同一对)
 定时自填 = ("统计起", "统计止")
@@ -167,6 +169,7 @@ def _祖先域(容器id, 属于):
 # 结果字段固定的几类步骤,各字段的类型(11-12 列表迭代要判「选的是不是列表」)。认不出就是 None = 不知道,不猜
 _固定结果类型 = {"list_operator": {"结果": "array", "个数": "integer"},
                "foreach": {"结果": "array", "个数": "integer", "失败项": "array"},
+               "parallel": {"结果": "object", "状态": "object", "失败支路": "array"},
                "template": {"文本": "string"}, "answer": {"回复": "string"},
                "classifier": {"类别": "string", "理由": "string"}}
 
@@ -433,21 +436,23 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
         后继[a].append(b)
 
     # ③ 每个作用域:可达性 + 环 + 支配关系 ──────────────────────────
-    入口 = {None: (开始们[0] if 开始们 else None)}
+    # 入口是一张列表:循环 / 迭代一个(循环体端口),并行每条支路一个(支路端口 + 支路键;11-16)
+    入口 = {None: [开始们[0]] if 开始们 else []}
     for 容器, ns in 按域.items():
         if 容器 is None:
             continue
-        # 子图入口 = 容器节点经 循环体/支路 端口连到的那个
+        # 子图入口 = 容器节点经 循环体/支路 端口连到的那个(并行:每条支路一个)
         子入口 = [e.get("target") for e in 边们
                  if e.get("source") == 容器
                  and e.get("port") in (DS.循环体, DS.支路)
                  and 属于.get(e.get("target")) == 容器]
+        是并行 = (按id.get(容器) or {}).get("type") == "parallel"
         if not 子入口:
             出.append(问(阻断, "SCOPE_NO_ENTRY",
-                       "循环里面的步骤没有连上,跑到这里不知道先做哪一步",
-                       "从这一步连一条线到循环里的第一步",
+                       "并行里面的步骤没有连上,跑到这里不知道先做哪一步" if 是并行 else "循环里面的步骤没有连上,跑到这里不知道先做哪一步",
+                       "从每条支路的出口连一条线到那条支路的第一步" if 是并行 else "从这一步连一条线到循环里的第一步",
                        node_id=容器))
-        入口[容器] = 子入口[0] if 子入口 else None
+        入口[容器] = 子入口 if 是并行 else 子入口[:1]
 
     # 容器节点必须真的有子图。⚠️ 这条是「集合相等」抓到的**漏报**:
     # 上面那个循环只遍历「有节点的作用域」,于是一个**空的**循环容器
@@ -532,13 +537,28 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                 出.append(问(阻断, "FOREACH_REF_NOT_FOUND", "这一步取数的那一步已经被删掉了",
                            "在右侧重新选一个来源", node_id=i))
 
-    可达, dom = {}, {}
+    可达, dom, 支路成员 = {}, {}, {}
     for 容器, ns in 按域.items():
-        e0 = 入口.get(容器)
+        e0s = 入口.get(容器) or []
+        e0 = e0s[0] if e0s else None
         全 = {n["id"] for n in ns if n.get("id")}
-        r = _可达(e0, 后继) & 全 if e0 else set()
+        # 并行(11-16):每条支路从自己的入口起各算一遍可达和支配,合起来就是这个作用域的;
+        # 一个步骤同时从两条支路走得到 → 两条支路不独立(真并发时它跑几次、拿哪条的数都说不清),单独报
+        r, d, 成员 = set(), {}, {}
+        for h in e0s:
+            rh = _可达(h, 后继) & 全
+            成员[h] = rh
+            r |= rh
+            d.update(支配集(h, 后继, rh))
         可达[容器] = r
-        dom[容器] = 支配集(e0, 后继, r) if e0 else {}
+        dom[容器] = d
+        支路成员[容器] = 成员
+        if len(e0s) > 1:
+            共 = sorted(set.intersection(*成员.values())) if 成员 else []
+            for i in 共:
+                出.append(问(阻断, "PARALLEL_BRANCH_SHARED",
+                           f"{_称(按id[i])}同时连在两条支路后面 —— 支路之间要各走各的,一个步骤只能属于一条支路",
+                           "把它只连在一条支路后面;两条支路都要用的东西,放到并行外面先做好", node_id=i))
         # 不可达
         for i in sorted(全 - r):
             # 走不到的「结束」= 这条流程没有出口,所以它是阻断;别的步骤走不到只是白放着
@@ -549,12 +569,63 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                        node_id=i))
         # 环:顶层不许有(循环容器里的子图也不许有 —— 循环由容器表达,
         # 不由反向连线表达,否则「循环了几轮」和「图里有个环」混成一件事;反向连线没有次数上限 §5.2)
-        环 = _找环(e0, 后继, r) if e0 else None
+        环 = next((c for c in (_找环(h, 后继, 成员.get(h, r)) for h in e0s) if c), None)
         if 环:
             出.append(问(阻断, "GRAPH_CYCLE",
                        f"有连线往回连,流程会绕圈停不下来:{' → '.join(_称(按id.get(x)) for x in 环)}",
                        "删掉往回连的那条线。确实要重复做的,用「有界循环」或「列表迭代」步骤,它们带次数上限",
                        node_id=环[-2] if len(环) > 1 else None))
+
+    # ③½ 并行与汇总(11-16 一期;自己配置的形状查法在 runtime/并行.py,要看整张图的几条在这里)─────────
+    并行跨支路已报 = set()     # (取数的步骤, 被取的步骤):⑤ 的支配检查对同一对会再报一条 BIND_MAYBE_MISSING,同一件事只说一次
+    for n in 节点们:
+        if n.get("type") != "parallel":
+            continue
+        i, cfg = n.get("id"), (n.get("config") or {})
+        for code, 消息, 建议, fp in PL.配置问题(cfg):
+            出.append(问(阻断, code, 消息, 建议, node_id=i, field_path=fp))
+        if n.get("container"):
+            出.append(问(阻断, "PARALLEL_NESTED", "并行被放进了循环 / 迭代 / 另一个并行里面,现在还不支持套着用",
+                       "把它挪到外面;真要两层,拆成两条流程", node_id=i))
+        键们 = PL.支路键们(cfg)
+        出边 = [e for e in 边们 if e.get("source") == i and e.get("port") == DS.支路]
+        出边键 = {str(e.get("branch_key")) for e in 出边 if e.get("branch_key") not in (None, "")}
+        for k in 键们:
+            if k not in 出边键:
+                出.append(问(阻断, "PARALLEL_BRANCH_NO_EDGE", f"支路「{k}」没有连到它里面的第一步",
+                           "从并行这一步「{k}」那个出口连一条线到这条支路的第一步;用不上就在「基本」里删掉这条支路".replace("{k}", k),
+                           node_id=i, field_path=f"config.branches[{k}]"))
+        for k in sorted(出边键 - set(键们)):
+            出.append(问(阻断, "PARALLEL_EDGE_NO_BRANCH", f"有一条连线挂在支路「{k}」上,但「基本」里已经没有这条支路了",
+                       "删掉这条线;还要这条支路的话,先在「基本」里把它加回来再连", node_id=i))
+        for e in 出边:
+            if e.get("target") in 按id and 属于.get(e.get("target")) != i:
+                出.append(问(阻断, "PARALLEL_BRANCH_NOT_INSIDE",
+                           f"支路「{e.get('branch_key')}」连到的{_称(按id[e['target']])}不在这个并行里面",
+                           "在那一步的「高级」里把它放进这个并行,或者改连到并行里面的步骤", node_id=i,
+                           edge=f"{i} --{DS.支路}--> {e.get('target')}"))
+        # 支路之间互不引用:独立状态命名空间(规格 §6.3)。成员按从各支路入口走得到算
+        成员 = 支路成员.get(i) or {}
+        属哪条 = {}
+        for h, rs in 成员.items():
+            for x in rs:
+                属哪条.setdefault(x, h)
+        for m in 节点们:
+            if m.get("container") != i:
+                continue
+            if m.get("type") in ("loop", "foreach", "parallel"):
+                出.append(问(阻断, "PARALLEL_NESTED", f"{_称(m)}被放进了并行里面,现在还不支持并行里套循环 / 迭代 / 并行",
+                           "把它挪到并行外面;真要的话拆成两条流程", node_id=m.get("id")))
+            我 = 属哪条.get(m.get("id"))
+            for r in FE.所有引用(m.get("config") or {}):
+                x = r.get("node_id") if r.get("source") == "node" else None
+                if x and x in 按id and 属于.get(x) == i and 我 is not None and 属哪条.get(x) not in (None, 我):
+                    并行跨支路已报.add((m.get("id"), x))
+                    出.append(问(阻断, "PARALLEL_CROSS_BRANCH",
+                               f"{_称(m)}取了另一条支路里{_称(按id[x])}的结果 —— 支路之间各走各的,谁先做完不一定",
+                               "两条支路都要用的东西放到并行外面先做好;要用另一条支路的结果,等并行做完从它的「结果」里取",
+                               node_id=m.get("id")))
+                    break
 
     # ④ 条件分支必须有兜底 ─────────────────────────────────────────
     for n in 节点们:
@@ -781,6 +852,8 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                            f"「{字段}」取的是这一步自己的结果,可这一步还没跑完",
                            f"在右侧「用到的数据」里给「{字段}」改选前面某一步的结果",
                            node_id=i, field_path=fp))
+            elif (i, m) in 并行跨支路已报:
+                continue                      # 跨支路取数,③½ 已经按并行的话说过了
             elif m not in d[i]:
                 # 规格 §7.2:「只在某一分支有值的变量,不许被所有路径必填使用」—— 判据是支配关系,见文件头
                 同域 = [x for x in 节点们 if 属于.get(x.get("id")) == 域]
@@ -837,6 +910,49 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                                "在右侧「基本」里重新选一个。导入的流程常见这种情况,要在本项目里重新选一遍。"
                                "下拉里没有能用的,请联系平台管理员",
                                node_id=n.get("id"), field_path=f"config.{f}"))
+
+    # ⑥½ 子工作流(11-16 三期 3-3 一期;规则在 runtime/子工作流.py):只引冻结版、静态禁递归、深度上限、
+    #     子流程里不许有停下等人 / 等外部的步骤、交给它的输入要齐 ────────────────────────────
+    取版本 = getattr(依赖存在, "取版本", None)
+    工具读写 = getattr(依赖存在, "工具读写", None)
+    本工作流 = getattr(依赖存在, "本工作流", None)
+    for n in 节点们:
+        if n.get("type") != "subworkflow":
+            continue
+        i, cfg = n.get("id"), (n.get("config") or {})
+        for code, 消息, 建议, fp in SW.配置问题(cfg):
+            出.append(问(阻断, code, 消息, 建议, node_id=i, field_path=fp))
+        vid = cfg.get("workflow_version_id")
+        if not vid or not isinstance(vid, str):
+            continue
+        if 取版本 is None:
+            if "子流程引的那一版还在不在、有没有绕回来引自己(这次没给查询能力)—— 这不算通过,是没查" not in 跳过:
+                跳过.append("子流程引的那一版还在不在、有没有绕回来引自己(这次没给查询能力)—— 这不算通过,是没查")
+            continue
+        子 = 取版本(vid)
+        if not 子:
+            continue                       # 不存在由 ⑥ REF_NOT_FOUND 报
+        码, 深, 路 = SW.递归链(vid, 取版本, 本工作流=本工作流)
+        if 码 == "SUBWORKFLOW_RECURSION":
+            出.append(问(阻断, 码, "子流程绕回来引了这条流程自己(或链上同一条流程出现两次),跑起来没有尽头",
+                       "换一版不引回来的子流程;要重复做的用「有界循环」或「列表迭代」", node_id=i, field_path="config.workflow_version_id"))
+        elif 码 == "SUBWORKFLOW_TOO_DEEP":
+            出.append(问(阻断, 码, f"子流程套得太深(超过 {SW.深度上限} 层:这条 → 子 → 孙 …)",
+                       "把最里面那层拆出来直接放进这条流程,或者少套一层", node_id=i, field_path="config.workflow_version_id"))
+        for nid, 为 in SW.不能等的步骤(子, 工具读写):
+            出.append(问(阻断, "SUBWORKFLOW_WAIT_UNSUPPORTED",
+                       f"引的子流程里有会停下来等的步骤({为}「{nid}」)—— 一期子流程在这一步里同步跑完,没有自己的检查点,等不了",
+                       "把那一步挪到这条流程里来(等人的事由父流程停),或换一版没有它的子流程", node_id=i, field_path="config.workflow_version_id"))
+        入 = DS.入参结构(子)
+        映 = cfg.get("input_mapping") if isinstance(cfg.get("input_mapping"), dict) else {}
+        缺 = sorted(set(入.get("required") or []) - set(映))
+        if 缺:
+            出.append(问(阻断, "SUBWORKFLOW_INPUT_MISSING", f"子流程要的输入还没给:{'、'.join(缺)}",
+                       "在右侧「用到的数据」里给每一项选来源", node_id=i, field_path="config.input_mapping"))
+        多 = sorted(set(映) - set((入.get("properties") or {}).keys())) if 入.get("properties") is not None else []
+        if 多:
+            出.append(问(警告, "SUBWORKFLOW_INPUT_UNKNOWN", f"交给子流程的这几项它不收:{'、'.join(多)}(会被忽略)",
+                       "删掉用不上的那几项", node_id=i, field_path="config.input_mapping"))
 
     # ⑦ 子额度不许超过父额度(§13.2:嵌套不能重新拿一份完整预算)────────
     if 父额度:

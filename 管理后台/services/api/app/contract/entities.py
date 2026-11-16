@@ -1112,7 +1112,7 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "而不是把三个字段并排列出来(否则「后台显示的」和「模型收到的」会分家)"],
       依赖=["tool_definitions", "capability_connections"]),
     E("capability_connections", "工具连接", 项目级, 可改,
-      ["name", "adapter", "allowed_endpoints", "secret_ref", "capability_snapshot",
+      ["name", "adapter", "allowed_endpoints", "secret_ref", "auth", "capability_snapshot",
        "status", "owner", "last_health_at", "health_detail"],
       ["**密钥不返回、不在前端回显**(§11.2);凭证轮换记审计,"
        "但**密钥内容不混入版本哈希** —— 混进去哈希本身就变成一条侧信道",

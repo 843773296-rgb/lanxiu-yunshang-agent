@@ -489,17 +489,26 @@ def 定时化(定义):
         {"id": "e", "type": "end", "name": "结束", "config": {"output_schema": {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"], "additionalProperties": False},
             "bindings": {"summary": {"source": "node", "node_id": "t", "pointer": "/文本"}}}}]
     定义["edges"] = [{"source": "s", "target": "t", "port": "success"}, {"source": "t", "target": "e", "port": "success"}]
-    # 故意**不改定义顶层的 input_schema / output_schema**(留着模板抄的那份 call_id…):编辑器只改节点里的,顶层没人同步;
-    # 11-16 修成冻结版本以开始 / 结束节点里那份为准 —— 下面冻出来的版本要的入参必须是统计起 / 止,不是 call_id(原来就是这里把定时打不开)
+    # 故意**不改定义顶层的 input_schema / output_schema**(留着模板抄的那份 call_id…):编辑器只改节点里的,顶层原来没人同步;
+    # 11-16 修成:校验器 / 编译器 / 冻结三处都读开始 / 结束节点那份,**存草稿时再把顶层改写成节点那份的派生副本**(dsl.同步顶层结构)
 wid3, _ = 建图("e2e 定时开头", 改=定时化)
+_顶 = (((打("GET", P + f"/workflows/{wid3}")[1] or {}).get("草稿") or {}).get("定义") or {}).get("input_schema") or {}
+ck("存草稿后顶层入参结构已被改写成开始节点那份(派生副本:只要统计起 / 止,模板抄的 call_id 没了)",
+   sorted(_顶.get("required") or []) == ["统计止", "统计起"] and "call_id" not in (_顶.get("properties") or {}), _顶)
 c, 版3 = 打("POST", P + f"/workflows/{wid3}/versions", 体={"变更说明": "e2e 定时开头"})
 ck("定时开头的流程能冻结版本(开始只交统计起 / 止,模板拿它们拼一句)", c == 201, (c, 版3))
-with _事务() as cx:
-    from sqlalchemy import text as _text      # noqa: E402
-    _v3 = cx.execute(_text("select input_schema from workflow_versions where project_id=:p and id=:v"),
-                     {"p": 项目, "v": (版3 or {}).get("id")}).scalar() if (版3 or {}).get("id") else None
-ck("冻结版本记的入参以开始节点里那份为准(只要统计起 / 止;顶层没同步的 call_id 不再混进来)",
+_v3 = ((打("GET", P + f"/workflows/{wid3}/versions/{(版3 or {}).get('id')}")[1] or {}).get("入参结构") or {}) if (版3 or {}).get("id") else {}
+ck("版本详情接口回「入参结构」,记的是开始节点里那份(只要统计起 / 止;call_id 不再混进来)",
    sorted(((_v3 or {}).get("required") or [])) == ["统计止", "统计起"] and "call_id" not in ((_v3 or {}).get("properties") or {}), _v3)
+# 进程内再核那个同步函数(存草稿接口经 HTTP 打常驻服务,副本里改坏看不见;这条咬得到)
+sys.path[:0] = [os.path.join(根, "services", "api", "app", "contract")]
+import dsl as _DS      # noqa: E402
+_d = {"input_schema": {"type": "object", "properties": {"call_id": {"type": "string"}}, "required": ["call_id"]},
+      "nodes": [{"id": "s", "type": "start", "config": {"input_schema": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}},
+                {"id": "e", "type": "end", "config": {"output_schema": {"type": "object", "properties": {"b": {"type": "string"}}, "required": ["b"]}}}]}
+_DS.同步顶层结构(_d)
+ck("进程内:同步顶层结构 把顶层入参 / 出参改写成开始 / 结束节点那份(咬合打这里)",
+   _d["input_schema"].get("required") == ["a"] and _d.get("output_schema", {}).get("required") == ["b"], (_d.get("input_schema"), _d.get("output_schema")))
 c, b = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())}, 体={"workflow_id": wid3, "输入": {}})
 rid0 = (b or {}).get("resource_id")
 st0, _ = 等到(rid0, ("succeeded", "failed", "cancelled"))

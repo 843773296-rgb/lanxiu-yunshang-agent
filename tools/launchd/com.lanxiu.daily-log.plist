@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.lanxiu.daily-log</string>
+  <!-- 每天 06:40 从 git 重新生成项目日志并发飞书(执行手册 W29,拍板 19,2026-11-16 晚落地)。
+       原来是「每次刷交接顺手生成 + 发飞书」(10-15 拍)—— 近 300 次提交里 192 次碰交接文件,日志被流程性提交淹没;
+       改成一天一份:排在 05:00 备份 / 05:10 世界平移之后、08:40 夜间汇总之前,日志里能看到前一夜的全部提交。
+       装法(用户亲手):
+         cp tools/launchd/com.lanxiu.daily-log.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.lanxiu.daily-log.plist
+       手动试一次:launchctl start com.lanxiu.daily-log;日志在 .feynman/daily-log-launchd.log -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/eureka/Desktop/澜绣云裳agent &amp;&amp; /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 tools/make_log.py --publish</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/eureka/Desktop/澜绣云裳agent</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>6</integer>
+    <key>Minute</key><integer>40</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/eureka/Desktop/澜绣云裳agent/.feynman/daily-log-launchd.log</string>
+  <key>StandardErrorPath</key><string>/Users/eureka/Desktop/澜绣云裳agent/.feynman/daily-log-launchd.log</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+</dict>
+</plist>

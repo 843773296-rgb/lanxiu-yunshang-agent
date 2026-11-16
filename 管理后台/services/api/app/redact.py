@@ -132,6 +132,30 @@ _类别 = [
 }
 来源没验证代号 = "source-unverified"
 
+
+# ── 敏感字段清单(两套脱敏共用的那一份;用户 11-16 拍,台账第七十 / 七十九条)────────────────
+# 「哪些算敏感」只认 docs/口径/敏感字段清单.json。这里的检测器按**内容形状**抓(手机号 / 身份证 / 地址…),
+# 清单按**字段名**认 —— 导出训练的白名单、按字段打码都读清单;加字段只改清单,别在代码里另写一份。
+import os as _os  # noqa: E402
+_清单路径 = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))),
+                      "docs", "口径", "敏感字段清单.json")
+
+
+def 敏感字段清单():
+    """→ [{"名", "类型", "常见字段名", "给人看", "导出训练"}]。读不到就抛 —— 读不到清单不等于「没有敏感字段」。"""
+    import json as _json
+    with open(_清单路径, encoding="utf-8") as f:
+        return list(_json.load(f)["字段"])
+
+
+def 是敏感字段名(字段名):
+    """一个字段名在不在清单里(按常见字段名,不分大小写)→ 清单项 或 None。"""
+    k = str(字段名 or "").strip().lower()
+    for 项 in 敏感字段清单():
+        if k in {str(x).lower() for x in 项.get("常见字段名") or []}:
+            return 项
+    return None
+
 # ── 覆盖已验证的来源白名单 ────────────────────────────────────────
 # ⚠️ **只有在这张表里的来源,零命中才允许自动放行。**
 # 加一条进来 = 声称「检测器在这种数据上的覆盖率验证过了」,

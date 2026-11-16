@@ -72,7 +72,7 @@ function 画布SVG() {
     const a = 节点(e.source), b = 节点(e.target); if (!a || !b) return "";
     const p = 出口点(a, { port: e.port, branch_key: e.branch_key ?? null }), q = 入口点(b);
     const d = 线路径(p, q, (g.布局.$线 || {})[图逻辑.边键(e)]);
-    const 标 = e.port === "branch" ? (e.branch_key === "else" ? "都不满足" : e.branch_key) : (e.port === "error" ? "失败时" : "");
+    const 标 = e.port === "branch" ? (e.branch_key === "else" ? "都不满足" : e.branch_key) : e.port === "parallel" ? (e.branch_key || "") : (e.port === "error" ? "失败时" : "");
     return `<path d="${d}" fill="none" stroke="${e.port === "error" ? "#F04438" : "#98A2B3"}" stroke-width="1.5"/>`
       + (标 ? `<text x="${(p.x + q.x) / 2}" y="${(p.y + q.y) / 2 - 4}" font-size="11" fill="#667085" text-anchor="middle">${esc(标)}</text>` : "");
   }).join("");
@@ -193,7 +193,9 @@ const 菜单节点组 = [
         ["answer", "直接回复", "回", "橙"], ["agent", "Agent", "A", "靛"]]],
   ["问题理解", [["classifier", "问题分类器", "分", "绿"]]],
   ["逻辑", [["condition", "条件分支", "if", "青"], ["human", "人工介入", "人", "青"],
-           ["foreach", "迭代", "迭", "青"], ["loop", "循环", "环", "青"]]],
+           ["foreach", "迭代", "迭", "青"], ["loop", "循环", "环", "青"],
+           ["parallel", "并行与汇总", "并", "青"],   // 11-16 三期 3-2:一期串行实现、并发语义(几条支路一条接一条跑,按支路名收结果)
+           ["subworkflow", "子工作流", "子", "靛"]]],   // 11-16 三期 3-3:只引冻结版、禁递归、预算随父;一期在这一步里同步跑完
   ["转换", [[null, "代码执行", "码", "蓝", "还没做(放进隔离沙箱,只有管理员能加)"],
            ["template", "模板转换", "模", "蓝"],
            ["transform", "整理字段", "转", "蓝"], ["merge", "变量聚合器", "聚", "蓝"],   // 整理字段是我们自己的,Dify 没有对应节点
@@ -371,7 +373,7 @@ function 循环框() {
     ns.forEach((n) => { const p = 位(n.id); x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + 画布.W); y1 = Math.max(y1, p.y + 节点高(n)); });
     const x = x0 - 边, y = y0 - 边 - 头, w = x1 - x0 + 边 * 2, h = y1 - y0 + 边 * 2 + 头;
     return `<g class="loopbox" data-loopbox="${esc(cid)}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10"/>
-      <text x="${x + 10}" y="${y + 15}">${节点(cid).type === "foreach" ? "迭代" : "循环"} · ${esc(业务名(节点(cid)))}(${ns.length} 步)</text></g>`;
+      <text x="${x + 10}" y="${y + 15}">${({ foreach: "迭代", parallel: "并行" })[节点(cid).type] || "循环"} · ${esc(业务名(节点(cid)))}(${ns.length} 步)</text></g>`;
   }).join("");
 }
 
@@ -384,7 +386,7 @@ function 画_线(拖中 = null) {
     if (!a || !b) return "";
     const 键 = 图逻辑.边键(e), p = 出口点(a, { port: e.port, branch_key: e.branch_key ?? null }), q = 入口点(b);
     const 折 = 折们[键], d = 线路径(p, q, 折), 选 = s.线 === 键;
-    const 标 = e.port === "branch" ? (e.branch_key === "else" ? "都不满足" : e.branch_key) : (e.port === "error" ? "失败时" : "");
+    const 标 = e.port === "branch" ? (e.branch_key === "else" ? "都不满足" : e.branch_key) : e.port === "parallel" ? (e.branch_key || "") : (e.port === "error" ? "失败时" : "");
     const 中 = 折 && 折.length ? 折[Math.floor(折.length / 2)] : { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
     return `<g class="edge ${选 ? "sel" : ""} ${e.port === "error" ? "err" : ""}">
         <path class="hit" d="${d}" data-edge="${esc(键)}"/>
@@ -833,7 +835,7 @@ function 拖端点(ev, 哪头) {
       if (哪头 === "dst") 改 = { target: nd.dataset.id };
       else {
         const po = 下.closest("[data-out]"), n = 节点(nd.dataset.id), 口们 = 图逻辑.出口们(n, 元);
-        const 口 = po ? 口们[+po.dataset.oi] : 口们.find((o) => o.port === e.port && (e.port !== "branch" || o.branch_key === e.branch_key)) || 口们[0];
+        const 口 = po ? 口们[+po.dataset.oi] : 口们.find((o) => o.port === e.port && ((e.port !== "branch" && e.port !== "parallel") || o.branch_key === e.branch_key)) || 口们[0];
         if (!口) { 轻提示("那一步没有出口,未更改连接"); return; }
         改 = { source: nd.dataset.id, 口 };
       }

@@ -42,6 +42,10 @@
       return [{ port: "loop_body", branch_key: null, 名: "每一项做" }, { port: "loop_exit", branch_key: null, 名: "全部做完后" },
               { port: "error", branch_key: null, 名: "失败时" }];
     }
+    if (n.type === "parallel") {   // 11-16 并行与汇总:每条支路一个出口(支路名就是出口名)/ 全部做完后 / 失败时
+      return [...((n.config || {}).branches || []).filter((b) => b && b.key).map((b) => ({ port: "parallel", branch_key: b.key, 名: `支路 · ${b.key}` })),
+              { port: "success", branch_key: null, 名: "全部做完后" }, { port: "error", branch_key: null, 名: "失败时" }];
+    }
     const 口 = [{ port: "success", branch_key: null, 名: "完成后" }];
     if (((元(n.type) || {})["端口"] || []).includes("error")) 口.push({ port: "error", branch_key: null, 名: "失败时" });
     return 口;
@@ -51,6 +55,7 @@
   逻.分支名 = function (k) { return k === "else" ? "都不满足" : 分支中文[k] ? `${分支中文[k]}` : `满足「${k}」`; };
   逻.口名 = function (e) {
     if (e.port === "branch") return 逻.分支名(e.branch_key);
+    if (e.port === "parallel") return `支路 · ${e.branch_key || "(没起名)"}`;
     return { error: "失败时", loop_body: "进循环体", loop_exit: "循环结束后" }[e.port] || "完成后";
   };
 

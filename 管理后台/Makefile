@@ -144,6 +144,10 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tools/lanxiu_tool_sync_check.py
 	@echo ""
+	@echo "▸ 工具开关两边对账(W38,拍板 9「先对账不迁」):业务后台停用 / 管理后台停用 两边说的一样吗;限流只报不判(先自测再真跑,要库)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/switch_sync_check.py
+	@echo ""
 	@echo "▸ 契约和库是否一致(alembic check)"
 	@echo "  ⚠️ **这一行原来是 \'alembic check 2>&1 | tail -1\'** —— 管道吞退出码,"
 	@echo "     它红了这个目标也不红(整条命令的状态是 tail 的,永远 0)。"
@@ -436,7 +440,7 @@ E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_release_page_actions.js test_workflow_save_gate.js \
              test_workflow_graph_logic.js test_workflow_editor_actions.js \
              test_workflow_new_nodes_panel.js test_workflow_foreach_panel.js \
-             test_workflow_http_panel.js \
+             test_workflow_http_panel.js test_workflow_parallel_panel.js test_workflow_subworkflow_panel.js \
              test_log_policy_page_actions.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
@@ -533,6 +537,12 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo ""
 	@echo "▸ 编排页 · HTTP 请求的配置面板(只能选登记过的工具连接、方法只 GET/HEAD、路径 / 查询串 / 请求头写进定义的形状和后端校验器认的一致,不起服务)"
 	@node tests/e2e/test_workflow_http_panel.js
+	@echo ""
+	@echo "▸ 编排页 · 并行与汇总的配置面板(支路增删改名连线跟着改、等待策略两种、并发上限固定 1、每条支路一个出口;里面的步骤能放进并行;写出来的图后端校验器认,不起服务)"
+	@node tests/e2e/test_workflow_parallel_panel.js
+	@echo ""
+	@echo "▸ 编排页 · 子工作流的配置面板(只列别的流程的冻结版本、按那一版要的输入配映射、结果字段跟着那一版、上限两项;写出来的图后端校验器认,不起服务)"
+	@node tests/e2e/test_workflow_subworkflow_panel.js
 	@echo ""
 	@echo "▸ 设置页 · 日志采集策略卡(If-Match 是读到的 revision、体是页面填的数)"
 	@node tests/e2e/test_log_policy_page_actions.js
@@ -793,6 +803,14 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_workflow_http_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_workflow_http_panel.log; exit 1; }
 	@tail -1 /tmp/prog-test_workflow_http_panel.log
+	@node tests/e2e/test_workflow_parallel_panel.js > /tmp/prog-test_workflow_parallel_panel.log 2>&1 \
+	  || { echo "  ❌ test_workflow_parallel_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_parallel_panel.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_parallel_panel.log
+	@node tests/e2e/test_workflow_subworkflow_panel.js > /tmp/prog-test_workflow_subworkflow_panel.log 2>&1 \
+	  || { echo "  ❌ test_workflow_subworkflow_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_subworkflow_panel.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_subworkflow_panel.log
 	@node tests/e2e/test_log_policy_page_actions.js > /tmp/prog-test_log_policy_page_actions.log 2>&1 \
 	  || { echo "  ❌ test_log_policy_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_log_policy_page_actions.log; exit 1; }
@@ -1172,6 +1190,12 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 列表迭代:逐项串行跑、结果和输入同顺序;空列表 / 超上限 / 某项失败(整步失败或留空位)/ 等人恢复;套娃和取没给的变量 检查配置就拦"
 	@./.venv/bin/python tests/orchestration/test_foreach_node.py
+	@echo ""
+	@echo "▸ 并行与汇总(一期串行实现、并发语义):支路各走各的、按支路名收结果、全部必需支路结束才汇总;必需支路失败整步失败 / 允许部分结果;等人恢复;跨支路取数、套娃、支路没连线 检查配置就拦"
+	@./.venv/bin/python tests/orchestration/test_parallel_node.py
+	@echo ""
+	@echo "▸ 子工作流(一期同步跑完):只引冻结版、输出交回、用量计入父流程、预算随父取更严;子流程失败 / 等人 / 套太深 这一步失败不冒充成功;递归 / 深度 / 等人 / 输入 / 上限 检查配置就拦"
+	@./.venv/bin/python tests/orchestration/test_subworkflow_node.py
 	@echo ""
 	@echo "▸ 定时触发的时间口径:上一次该跑到这一次该跑之间(每天 / 每周几 / 每月几号含末 / 每小时;老三种和原来一样);同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py

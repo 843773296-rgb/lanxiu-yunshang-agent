@@ -80,6 +80,19 @@ ck("最多几个span 是写死的数,不是算出来的", 最多几个span == 20
 ck("而且不大于 500(一棵几千节点的树在界面上打不开,"
    "而「打不开」和「没有数据」长得一样)", 最多几个span <= 500)
 
+print("\n▸ 敏感字段清单(两套脱敏共用的那一份;用户 11-16 拍,台账第七十 / 七十九条)")
+import redact as _RD  # noqa: E402
+_清单 = _RD.敏感字段清单()
+ck("清单八项齐全:手机号 / 姓名 / 地址 / 身份证 / 生日 / 量体 / 外部账号 / 订单工单号",
+   sorted(x["类型"] for x in _清单) == sorted(["phone", "name", "address", "idcard", "birthday", "measurement", "external-account", "order-id"]))
+ck("每一项都写了「给人看」和「导出训练」两套各怎么处理(两套不合,但清单一份)",
+   all((x.get("给人看") or "").strip() and (x.get("导出训练") or "").strip() and x.get("常见字段名") for x in _清单))
+ck("按字段名能认出来(不分大小写),认不出的给 None:phone / 手机号 / Order_No 认得,备注 不认",
+   (_RD.是敏感字段名("phone") or {}).get("类型") == "phone" and (_RD.是敏感字段名("手机号") or {}).get("类型") == "phone"
+   and (_RD.是敏感字段名("Order_No") or {}).get("类型") == "order-id" and _RD.是敏感字段名("备注") is None)
+ck("内容形状检测器的几类(手机号 / 身份证 / 地址)在清单里都有对应类型 —— 两边不会一个认一个不认",
+   {"phone", "idcard", "address"} <= {x["类型"] for x in _清单})
+
 print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}")
 if 挂:
     for x in 挂:

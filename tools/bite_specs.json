@@ -20120,12 +20120,12 @@
  },
  {
   "script": "管理后台/tests/e2e/test_workflow_foreach_panel.js",
-  "改坏": "迭代自己也给「放进循环」的选项(套娃)(11-12 列表迭代)",
+  "改坏": "迭代自己也给「放进循环」的选项(套娃)(11-12 列表迭代)(11-16 并行也成了容器,排除名单多了 parallel,破坏点跟着改)",
   "file": [
    {
     "path": "管理后台/apps/web/app.js",
-    "old": "![\"start\", \"end\", \"loop\", \"foreach\"].includes(n.type)",
-    "new": "![\"start\", \"end\", \"loop\"].includes(n.type)"
+    "old": "![\"start\", \"end\", \"loop\", \"foreach\", \"parallel\"].includes(n.type)",
+    "new": "![\"start\", \"end\", \"loop\", \"parallel\"].includes(n.type)"
    }
   ],
   "预期红": "迭代自己不给「放进循环」的选项"
@@ -23132,5 +23132,101 @@
    }
   ],
   "预期红": "backend/api_*.py 都登记在门面的 子模块们 里(api_src 才读得到)"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_tools_flow.py",
+  "改坏": "工具连接的鉴权校验不再管「自定义头」那一整段(没给头名 / 头名不合法 都放行)—— 凭据不知道装进哪个请求头,运行到 HTTP 请求节点那一步才报。⚠️ 第一版只砍「没头名」那一条,下一条「头名不合法(0 个字符)」顺手把它兜住了,攻击等于没打(11-16 重放逮到:攻击点不可观测);改成整段跳过",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/connections.py",
+    "old": "    if 方式 == \"自定义头\":\n        if not 头名:",
+    "new": "    if False and 方式 == \"自定义头\":\n        if not 头名:"
+   }
+  ],
+  "预期红": "进程内:鉴权校验拦「自定义头没头名」、放「令牌」、拒认不出的方式(纯函数,咬合打这里)"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_audio_flow.py",
+  "改坏": "存草稿时不再把顶层 input/output_schema 改写成开始 / 结束节点那份(dsl.同步顶层结构 空转)—— 两份结构又分家,顶层回到「建模板抄一次没人同步」。攻击打纯函数:存草稿接口经 HTTP 打常驻服务,副本里改坏看不见",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/contract/dsl.py",
+    "old": "    if isinstance((定义 or {}).get(\"nodes\"), list):\n        定义[\"input_schema\"] = 入参结构(定义)",
+    "new": "    if False:\n        定义[\"input_schema\"] = 入参结构(定义)"
+   }
+  ],
+  "预期红": "进程内:同步顶层结构 把顶层入参 / 出参改写成开始 / 结束节点那份(咬合打这里)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_test.py",
+  "改坏": "单步测试又不认 HTTP 请求步骤(能单测的类型 把它删掉)—— 编排页「试这一步」对 HTTP 步骤只能回「暂时不能单独测」,要验一条地址只能从头跑整条流程",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/单步测试.py",
+    "old": "\"tool\": \"业务动作\", \"http_request\": \"HTTP 请求\"}",
+    "new": "\"tool\": \"业务动作\"}"
+   }
+  ],
+  "预期红": "选了工具连接的 HTTP 步骤拼得出小图:要填的只有绑到上游的 path,连接 / 方法 / 查询串原样保留(咬合打这里)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_parallel_node.py",
+  "改坏": "并行的「等全部必需支路」形同虚设:必需支路失败不再让这一步失败,照样汇总往下走 —— 完成一条就宣告整组成功的反面(规格 §6.1 明令不许)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "                        if PL.必需吗(cfg, 键) and (cfg.get(\"wait_policy\") or \"all_required\") == \"all_required\":",
+    "new": "                        if False and PL.必需吗(cfg, 键) and (cfg.get(\"wait_policy\") or \"all_required\") == \"all_required\":"
+   }
+  ],
+  "预期红": "整次失败、完成原因 PARALLEL_BRANCH_FAILED,模型只 1 次(第二条没做)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_parallel_node.py",
+  "改坏": "校验器不再拦「一条支路取另一条支路的结果」—— 独立状态命名空间这条规矩(规格 §6.3)只剩文档上一句话;一期串行时碰巧能跑,真并发那天结果取决于调度顺序",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "                if x and x in 按id and 属于.get(x) == i and 我 is not None and 属哪条.get(x) not in (None, 我):",
+    "new": "                if False:"
+   }
+  ],
+  "预期红": "十二种配坏法各自报出指定的阻断码"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_subworkflow_node.py",
+  "改坏": "子工作流的静态禁递归形同虚设:顺着「这一版引了谁」走的时候不再认「走回本流程 / 链上同一条流程出现两次」—— 冻出来的版本运行时会一层层往下引,直到深度上限才停,而深度上限是兜底不是正门",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/子工作流.py",
+    "old": "        if w and w in 见过工作流:\n            return \"SUBWORKFLOW_RECURSION\"",
+    "new": "        if False:\n            return \"SUBWORKFLOW_RECURSION\""
+   }
+  ],
+  "预期红": "九种配坏法各自报出指定的阻断码(递归 / 深度 / 等人 / 输入 / 上限)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_subworkflow_node.py",
+  "改坏": "子流程用掉的模型调用不再计入父流程(执行器收回「本段用量」那两行去掉)—— 嵌套一层就多拿一份预算,§13.2 明令不许",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "                    用量[\"模型调用\"] += int((r.get(\"本段用量\") or {}).get(\"模型调用\") or 0)\n                    用量[\"工具调用\"] += int((r.get(\"本段用量\") or {}).get(\"工具调用\") or 0)",
+    "new": "                    pass"
+   }
+  ],
+  "预期红": "子流程里那 1 次模型调用计入父流程用量"
+ },
+ {
+  "script": "管理后台/tools/switch_sync_check.py",
+  "改坏": "开关对账少了一个方向:管理后台停用了、业务后台还在放行 这一类不再抓(Agent 选不到它,可别处直接调还是能调)—— 「先对账不迁」就剩半边账",
+  "file": [
+   {
+    "path": "管理后台/tools/switch_sync_check.py",
+    "old": "        if 业启用 and not 后启用:\n            出[\"后台停了业务没停\"].append(名)",
+    "new": "        if False:\n            出[\"后台停了业务没停\"].append(名)"
+   }
+  ],
+  "预期红": "自测:三种不一致各抓到一个、限流只报、扫了 4 个"
  }
 ]

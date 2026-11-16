@@ -1019,7 +1019,7 @@ def _跑一张工作流(c, job, 打点):
         import HTTP请求 as _H
         import tool_gateway as _G
         cid = cfg.get("connection_id")
-        行 = c.execute(text("""select id, name, adapter, allowed_endpoints, secret_ref, status from capability_connections
+        行 = c.execute(text("""select id, name, adapter, allowed_endpoints, secret_ref, auth, status from capability_connections
                                where project_id=:p and id=:i and archived_at is null"""),
                        {"p": job["project_id"], "i": cid}).mappings().first()
         if not 行:
@@ -1027,7 +1027,7 @@ def _跑一张工作流(c, job, 打点):
                             "回「搭建」重新选一条工具连接;没有就先到「工具连接」里登记")
         连接 = dict(行)
         连接["allowed_endpoints"] = list(连接.get("allowed_endpoints") or [])
-        连接["auth"] = {}                      # 鉴权方式列(capability_connections.auth)下一批加;没有就按 凭据头 的默认
+        连接["auth"] = dict(连接.get("auth") or {})   # 鉴权方式(capability_connections.auth,11-16):无 / 令牌 / 自定义头;老连接为空 = 无
         合 = {k: cfg.get(k) for k in ("path", "query", "headers") if cfg.get(k) not in (None, "")}
         合.update({k: v for k, v in (实参 or {}).items() if v is not None})
         if r["execution_mode"] != "live" or 跑法 in ("连接测试", "评测"):
@@ -1044,7 +1044,50 @@ def _跑一张工作流(c, job, 打点):
         except _G.拒绝 as e:
             raise RN.节点失败(e.code, str(e), "参数被网关拒了:服务端绑定的键(方法 / 白名单 / 凭据)不许覆盖,没登记的键不收")
 
-    结果 =RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档, "http_request": _http},
+    def _subworkflow(cfg, 包):
+        """子工作流步骤(11-16 三期 3-3 一期):在这一步里**同步**跑完引的那一版子流程,用的是同一套适配器(模型 / 工具 / HTTP 照旧按
+        这次运行的 mock / live 和跑法走)。规则在 runtime/子工作流.py:只引冻结版、动态深度上限、额度取「这一步配的」和「父流程还剩的」更严的;
+        子流程要停下等人 / 等外部 → 这一步失败(一期没有子流程自己的检查点),**不冒充成功**;子流程里每一步折成摘要进这一步的输出。"""
+        import 子工作流 as _SW
+        深 = int(包.get("深度") or 1)
+        if 深 > _SW.深度上限:
+            raise RN.节点失败("SUBWORKFLOW_TOO_DEEP", f"子流程套到第 {深} 层了(上限 {_SW.深度上限})", "少套一层;静态检查没拦住说明有人改了子流程的新版本再被引,核对那几版")
+        vid = cfg.get("workflow_version_id")
+        v = c.execute(text("""select id, workflow_id, definition_schema_version, nodes, edges, input_schema, output_schema
+                              from workflow_versions where project_id=:p and id=:i"""), {"p": job["project_id"], "i": vid}).mappings().first()
+        if not v:
+            raise RN.节点失败("SUBWORKFLOW_VERSION_NOT_FOUND", "这一步引的子流程版本在这个项目里找不到", "回「搭建」重新选一版子流程")
+        子定义 = {"definition_schema_version": v["definition_schema_version"], "kind": "workflow", "nodes": v["nodes"] or [], "edges": v["edges"] or [],
+                 "input_schema": v["input_schema"] or {}, "output_schema": v["output_schema"] or {}}
+        try:
+            子计划 = CP.编译(子定义, 依赖存在=lambda 种类, i: True)
+        except CP.编译失败 as e:
+            raise RN.节点失败("SUBWORKFLOW_INVALID", f"引的子流程这一版配置有问题,编译不过:{str(e)[:160]}", "到那条子流程里「检查配置」,修好再冻一版")
+        子上限 = _SW.合上限(cfg.get("sub_limits"), 包.get("父流程剩余"))
+        子 = RN.跑一张图(子计划, 包.get("输入") or {}, 适配器=适配器们,
+                       记事=lambda k, x: 记事(k, dict(x or {}, 子流程=vid, 父步骤=包.get("node_id"))),
+                       run_id=f"{run_id}/{包.get('node_id')}", 上限=子上限,
+                       系统={"project_id": job["project_id"], "子流程深度": 深})
+        摘要 = _SW.步骤摘要(子.get("步骤") or [])
+        if 子.get("检查点"):
+            e = RN.节点失败("SUBWORKFLOW_WAIT_UNSUPPORTED", "子流程跑到一半要停下等人 / 等外部 —— 一期子流程在这一步里同步跑完,等不了",
+                          "把等人的那一步挪到这条流程里来,或换一版没有它的子流程(检查配置本该拦住;没拦说明子流程换了版本)")
+            e.出 = 摘要
+            raise e
+        if 子.get("执行状态") != "succeeded":
+            码 = str(子.get("完成原因") or "")
+            # 子流程里更深一层报的「套太深 / 绕回来 / 等不了」原码往上传 —— 不然四层嵌套的根因会被三层「子流程失败」包住看不见
+            if 码.startswith("SUBWORKFLOW_"):
+                e = RN.节点失败(码, f"子流程里更深一层报的:{码}", "看这一步输出里的「子流程步骤」摘要,顺着往里找")
+            else:
+                e = RN.节点失败("SUBWORKFLOW_FAILED", f"子流程没跑成(停在「{码 or 子.get('执行状态')}」)",
+                              "看这一步输出里的「子流程步骤」摘要,哪一步失败就去那条子流程里修")
+            e.出 = 摘要
+            raise e
+        return {"输出": 子.get("输出") or {}, "本段用量": 子.get("用量") or {}, "execution_mode": r["execution_mode"], **摘要}
+
+    适配器们 = {"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档, "http_request": _http, "subworkflow": _subworkflow}
+    结果 =RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器=适配器们,
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
                     系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例)
     打点("执行完", {"状态": 结果["执行状态"]})

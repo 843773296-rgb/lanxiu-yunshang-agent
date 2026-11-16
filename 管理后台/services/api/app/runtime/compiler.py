@@ -72,7 +72,7 @@ def 编译(定义, *, 依赖存在=None, 父额度=None):
     后继 = {i: {} for i in 按id}
     for e in 定义.get("edges", []):
         口 = e["port"]
-        键 = (口, e.get("branch_key")) if 口 == DS.分支 else (口, None)
+        键 = (口, e.get("branch_key")) if 口 in (DS.分支, DS.支路) else (口, None)   # 并行的支路出口也按键分(11-16)
         后继[e["source"]].setdefault(键, []).append(e["target"])
 
     # 转换操作白名单在编译期查

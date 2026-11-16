@@ -119,6 +119,27 @@ except ST1.不能单测:
     人工放了 = False
 ck("连接测试也不放人工核对(会派真待办,和写不写澜绣无关)", not 人工放了, 1)
 
+print("\n▸ HTTP 请求步骤(11-16 三期):选了工具连接就能单测(真发一次只读请求);没选连接拦住并指路")
+_h图 = {"definition_schema_version": "1", "kind": "workflow", "nodes": [
+    {"id": "s", "type": "start", "config": {"input_schema": {"type": "object", "properties": {"sku": {"type": "string"}}, "required": ["sku"]}}},
+    {"id": "h", "type": "http_request", "config": {"connection_id": "cc_1", "method": "GET", "query": {"sku": "A1"},
+                                                  "bindings": {"path": {"source": "input", "pointer": "/sku"}}}},
+    {"id": "h0", "type": "http_request", "config": {"method": "GET", "path": "/stock"}},
+    {"id": "e", "type": "end", "config": {"output_schema": {"type": "object", "properties": {}, "required": []}}}],
+    "edges": [{"source": "s", "target": "h", "port": "success"}, {"source": "h", "target": "e", "port": "success"}]}
+try:
+    小h, 要填h = ST1.拼小图(_h图, "h")
+    h过 = 要填h == ["path"] and 小h["nodes"][1]["config"]["connection_id"] == "cc_1" and 小h["nodes"][1]["config"]["method"] == "GET"
+except ST1.不能单测 as e:
+    h过, 要填h = False, e.消息
+try:
+    ST1.拼小图(_h图, "h0")
+    h0拦 = None
+except ST1.不能单测 as e:
+    h0拦 = e
+ck("选了工具连接的 HTTP 步骤拼得出小图:要填的只有绑到上游的 path,连接 / 方法 / 查询串原样保留(咬合打这里)", h过, 1, 要填h)
+ck("没选工具连接的 HTTP 步骤拦住,理由点到「工具连接」、建议指到「基本」里选", h0拦 is not None and "工具连接" in h0拦.消息 and "基本" in h0拦.建议, 1, h0拦 and h0拦.消息)
+
 print("\n▸ 连接测试替身:写入类动作不发给澜绣时这一步交出什么")
 import 执行模式 as EM  # noqa: E402
 替 = EM.连接测试替身("写跟进", {"内容": "宋制褙子"}, {"properties": {"跟进单号": {"type": "string"}, "件数": {"type": "integer"}}})

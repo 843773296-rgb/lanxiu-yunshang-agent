@@ -64,21 +64,23 @@ def 解析(secret_ref):
 
 def 凭据头(secret_ref, 方式=None, 头名=None):
     """定位符 + 连接上登记的鉴权方式 → (请求头字典, 来路)。给 HTTP 请求节点用(11-16,设计稿 H3:密钥挂连接、发送那一刻才加头)。
-      方式 = None / "无"      → 不加头(公开接口)
-      方式 = "bearer"         → authorization: Bearer <值>
-      方式 = "header"         → <头名>: <值>(头名必填,比如 x-api-key)
+      方式 = None / "无"       → 不加头(公开接口)
+      方式 = "令牌"            → 标准的持有者令牌头:authorization: Bearer <值>
+      方式 = "自定义头"         → <头名>: <值>(头名必填,比如 x-api-key)
+    编码用中文(connections.鉴权方式们 是同一份清单):这些值会出现在 422 提示和列表里,
+    而 `errors.泄密检查` 连值一起扫、见到凭据类英文词就把响应判成泄漏 —— 异常文案里同样不写那些词。
     ⚠️ 返回的头只许塞进请求;记录里要用 `遮头` 打码。"""
     if not 方式 or 方式 == "无":
         return {}, "(不带凭据)"
     值, 来路, _ = _取原值(secret_ref)
-    if 方式 == "bearer":
+    if 方式 == "令牌":
         return {"authorization": "Bearer " + 值}, 来路
-    if 方式 == "header":
+    if 方式 == "自定义头":
         名 = (头名 or "").strip().lower()
         if not 名 or not re.fullmatch(r"[a-z0-9][a-z0-9\-]{0,60}", 名):
-            raise 解析不了("自定义请求头的名字不合法(只许字母数字和连字符,比如 x-api-key)")
+            raise 解析不了("自定义请求头的名字不合法(只许小写字母数字和连字符,以字母数字开头)")
         return {名: 值}, 来路
-    raise 解析不了(f"鉴权方式「{方式}」认不出 —— 只有 无 / bearer / header 三种")
+    raise 解析不了(f"鉴权方式「{方式}」认不出 —— 只有 无 / 令牌 / 自定义头 三种")
 
 
 _敏感头 = ("authorization", "x-api-key", "api-key", "apikey", "x-auth-token", "cookie", "proxy-authorization")

@@ -2401,7 +2401,7 @@ const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本�
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
   // 11-15 文案对齐 Dify(规划一期第五件最后一项):「按条件分流」→「条件分支」、「人工核对」→「人工介入」(待办页里仍叫核对 —— 那边是处理人的动作)
   condition: "条件分支", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工介入", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值",
-  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代", http_request: "HTTP 请求" };
+  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代", http_request: "HTTP 请求", parallel: "并行", subworkflow: "子流程" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -2902,6 +2902,8 @@ function 业务名(n) { return n.name || 步类型名[n.type] || n.type; }
 function 工具资源(tv) { return (图态.资源.工具 || []).find((x) => x["版本id"] === tv); }
 // HTTP 请求节点选的「工具连接」(capability_connections,11-16):列表来自 workflow-resources,密钥只给形状
 function 工具连接(id) { return (图态.资源.工具连接 || []).find((x) => x.id === id); }
+// 子工作流节点引的冻结版本(11-16 三期 3-3):列表来自 workflow-resources,带它要什么输入 / 返回什么
+function 子流程版本(id) { return (图态.资源.工作流版本 || []).find((x) => x.id === id); }
 function 次级标签(n) {
   const 在 = n.container && 图态 && 图态.定义 && 节点(n.container) ? ` · 在「${业务名(节点(n.container))}」里` : "";
   if (n.type === "tool") {
@@ -2928,7 +2930,8 @@ const 字段中文 = { connection_version_id: "用哪个模型", prompt_version_
   output_field: "汇合后叫什么", agent_version_id: "用哪个 Agent", task_binding: "交给它的任务",
   sub_limits: "这一步的上限", bindings: "用到的数据", filter: "过滤", sort: "排序", limit: "只要前几个",
   item_output: "每一项交出什么", item_failure_policy: "某一项失败时", max_items: "最多做几项",
-  connection_id: "用哪条工具连接", method: "方法", path: "路径" };
+  connection_id: "用哪条工具连接", method: "方法", path: "路径",
+  max_concurrency: "并发上限", wait_policy: "等待策略", workflow_version_id: "用哪一版子流程", input_mapping: "交给子流程什么" };
 const 中文名 = (f) => 字段中文[f] || f;
 
 /* 执行顺序:从开始沿边走;条件的每一路缩进一层。没接进流程的放最后 */
@@ -3089,7 +3092,7 @@ function 出口们(n) {
     return [...(n.config.branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: 图逻辑.分支名(b.key) })),
             { port: "branch", branch_key: "else", 名: "都不满足" }];
   }
-  if (n.type === "loop" || n.type === "foreach" || n.type === "classifier") return 图逻辑.出口们(n, 元);   // 进循环体 / 循环结束后 / 失败时 —— 和画布同一份
+  if (n.type === "loop" || n.type === "foreach" || n.type === "classifier" || n.type === "parallel") return 图逻辑.出口们(n, 元);   // 进循环体 / 循环结束后 / 失败时;并行每条支路一个 —— 和画布同一份
   const 口 = [{ port: "success", branch_key: null, 名: "完成后" }];
   if ((元(n.type)["端口"] || []).includes("error")) 口.push({ port: "error", branch_key: null, 名: "失败时" });
   return 口;
@@ -3098,7 +3101,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "http_request", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor", "foreach"]
+  const 可加 = ["llm", "tool", "http_request", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor", "foreach", "parallel", "subworkflow"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -3135,6 +3138,10 @@ function 默认配置(类型) {
            list_operator: { bindings: {} },
            doc_extractor: { bindings: {} },
            foreach: { bindings: {}, item_failure_policy: "fail" },
+           // 并行与汇总(11-16 三期 3-2):一期并发上限固定 1(串行实现);支路不预填 —— 检查配置会报「还没加支路」
+           parallel: { branches: [], max_concurrency: 1, wait_policy: "all_required" },
+           // 子工作流(11-16 三期 3-3):版本不预填;上限留空 = 跟父流程一样
+           subworkflow: { input_mapping: {}, sub_limits: {} },
            extractor: { parameters: [{ name: "", type: "string", description: "", required: false }], bindings: {}, instruction: "" },
            classifier: { classes: [{ key: "类别一", 说明: "" }, { key: "类别二", 说明: "" }], bindings: {}, instruction: "" },
            transform: { operations: [], output_schema: { type: "object" } },
@@ -3490,7 +3497,8 @@ function 表_设置(n) {
     const 连 = g.资源.工具连接 || [], k = 工具连接(c.connection_id);
     体 += `<label class="f">用哪条工具连接</label>`
       + 资源选择器("工具连接", c.connection_id, 连.map((x) => ({ id: x.id, 名: x["名"], 说: (x["允许的端点"] || []).join("、"),
-          标: (x["状态"] === "active" ? "可用" : `状态:${x["状态"] || "未知"}`) + ` · ${x["适配器"] || ""}` })),
+          // 鉴权方式(11-16,workflow-resources 带回;老连接 / 老接口没有就不显示):选的时候就知道这条连接带不带凭据
+          标: (x["状态"] === "active" ? "可用" : `状态:${x["状态"] || "未知"}`) + ` · ${x["适配器"] || ""}` + (x["鉴权方式"] ? ` · 鉴权:${x["鉴权方式"]}` : "") })),
           (id) => { c.connection_id = id || undefined; delete c.endpoint_index; 重画(); },
           "这个项目还没有登记工具连接 —— 请平台管理员在「工具连接」里登记一条(填允许访问的地址和凭据引用)。")
       + `<div class="note">只许访问这条连接<b>登记过的地址</b>;解析到内网、跟着跳转去别处、超过 15 秒或 1 MB 都会被拦下 —— 一个字节都不会发到白名单外。</div>`;
@@ -3710,6 +3718,48 @@ function 表_设置(n) {
     体 += `<label class="f">最多做几项(1–100)</label>` + 数字框(c.max_items ?? "", (v) => { if (v === undefined) delete c.max_items; else c.max_items = v; }, { 整数: true, 最小: 1, 提示: "按这条流程一次该处理多少条填" })
       + `<div class="k">列表比这个长,<b>一项都不做</b>,这一步直接失败(不会只做前几项交出一份缺尾巴的结果)。100 是一步里能装下的运行记录的技术上限,不是业务建议。
         里面不能再放循环或迭代。</div>`;
+  } else if (n.type === "parallel") {
+    // 并行与汇总(11-16 三期 3-2):语义照规格 §6.3(独立支路、等全部必需支路、两种等待策略),一期串行实现 —— 规则和后端 runtime/并行.py 同一套
+    const 支路们 = Array.isArray(c.branches) ? c.branches : (c.branches = []);
+    体 += `<div class="note">几条支路<b>各走各的</b>,全部做完再往下走;结果按支路名收(「结果 → 支路名」)。支路之间<b>不能互相取结果</b>(真并发时谁先做完不一定,一期虽然一条接一条跑,规矩和并发时一样)。
+      每条支路从它自己的出口连到支路里的第一步;支路里的步骤在「高级」里选「放在哪个循环 / 迭代里 → 这个并行」。</div>`;
+    体 += `<label class="f">支路</label>` + (支路们.length ? 支路们.map((b, i) => `<div class="card" data-branch="${esc(b.key || "")}">
+        <div class="row"><label>支路名</label>${输入框(b.key || "", (el) => { const 旧 = b.key, 新 = String(el.value || "").trim();
+            if (新) b.key = 新; else delete b.key;
+            // 挂在这条支路出口上的连线跟着改名 —— 不然改个名就留一条挂在「不存在的支路」上的孤线(检查配置会报)
+            if (旧 && 新) (g.定义.edges || []).forEach((e) => { if (e.source === n.id && e.port === "parallel" && e.branch_key === 旧) e.branch_key = 新; });
+            重画(); }, "例如 查库存")}
+        <label>要不要等它</label>${下拉(b.required === false ? "false" : "true", [["true", "必需(它失败整步按等待策略处理)"], ["false", "可选(做完了带上,失败只记状态)"]],
+            (el) => { if (el.value === "false") b.required = false; else delete b.required; 重画(); })}
+        <button data-k="${挂控件(() => { 支路们.splice(i, 1); 重画(); })}" aria-label="删掉支路 ${esc(b.key || "")}">删</button></div></div>`).join("")
+      : `<div class="k">还没有支路 —— 点下面「加一条支路」,至少两条才有并行的意义。</div>`)
+      + `<button data-k="${挂控件(() => { let j = 支路们.length + 1; while (支路们.some((x) => x.key === `支路${j}`)) j++; 支路们.push({ key: `支路${j}` }); 重画(); })}">加一条支路</button>`;
+    体 += `<label class="f">等待策略</label>` + 下拉(c.wait_policy || "all_required",
+        [["all_required", "等全部必需支路结束;任一必需支路失败,这一步失败(走「失败时」)"], ["allow_partial", "允许部分结果:失败的支路留空、状态记 failed,其余照样汇总"]],
+        (el) => { c.wait_policy = el.value; 重画(); })
+      + `<div class="k">「全部做完」才算这一步做完 —— <b>不会完成一条就宣告整组成功</b>。</div>`;
+    体 += `<label class="f">并发上限</label><div class="k">一期固定 <b>1</b>(几条支路一条接一条跑);真并发下一期开,到时这里能填。</div>`;
+    if (c.max_concurrency !== 1) c.max_concurrency = 1;
+  } else if (n.type === "subworkflow") {
+    // 子工作流(11-16 三期 3-3):只引冻结版、不许引自己(递归另有服务端静态检查)、预算随父 —— 规则和后端 runtime/子工作流.py 同一套
+    const 版们 = (g.资源.工作流版本 || []).filter((x) => x["工作流id"] !== g.wid), v = 子流程版本(c.workflow_version_id);
+    体 += `<div class="note">把一条<b>已冻结</b>的流程当成这里的一步来跑:交给它输入,它跑完把「最后返回什么」交回来。只能选版本(草稿还会变);
+      不能选这条流程自己,也不能绕着圈引回来(检查配置会拦)。一期子流程在这一步里<b>一口气跑完</b> —— 里面不能有等人核对、Agent、写数据的动作。</div>`;
+    体 += `<label class="f">用哪一版子流程</label>`
+      + 资源选择器("子流程版本", c.workflow_version_id, 版们.map((x) => {
+          // 「要什么 / 返回什么」放进选项文字(标),选的时候就看得见;「说」只用于搜索
+          const 要 = Object.keys(((x["入参结构"] || {}).properties) || {}).join("、") || "(不要输入)";
+          const 回 = Object.keys(((x["出参结构"] || {}).properties) || {}).join("、") || "(没声明)";
+          return { id: x.id, 名: x["名"], 说: `${要} ${回}`, 标: `v${x["版本"]} · 要:${要} · 返回:${回}` };
+        }),
+          (id) => { c.workflow_version_id = id || undefined; c.input_mapping = {}; 重画(); },
+          "这个项目里还没有别的流程冻结过版本 —— 先把要复用的那条流程「生成版本」,再回来选。");
+    if (v) 体 += `<div class="k">它要的输入在下面「用到的数据」里逐项选来源;它返回什么见「结果」。</div>`;
+    const 限 = c.sub_limits = c.sub_limits || {};
+    体 += `<label class="f">这一步的上限(留空 = 跟父流程一样;填了不许超过父流程)</label>
+      <div class="fieldrow"><label>最多调模型几次</label>${数字框(限.max_model_turns ?? "", (x) => { if (x === undefined) delete 限.max_model_turns; else 限.max_model_turns = x; }, { 整数: true, 最小: 1, 提示: "留空 = 跟父流程" })}</div>
+      <div class="fieldrow"><label>最多调工具几次</label>${数字框(限.max_tool_calls ?? "", (x) => { if (x === undefined) delete 限.max_tool_calls; else 限.max_tool_calls = x; }, { 整数: true, 最小: 1, 提示: "留空 = 跟父流程" })}</div>
+      <div class="k">子流程用掉的额度<b>计入这条流程</b>(嵌套不能重新拿一份预算)。</div>`;
   } else if (n.type === "doc_extractor") {
     // 文档提取器(11-12,照 Dify):文件在下面「用到的数据」里选
     体 += `<div class="note">从前面给的<b>已上传文件</b>里取出文字,交给后面的步骤(比如交给 AI 处理去总结)。
@@ -3773,6 +3823,11 @@ function 结果字段名(n) {
   if (n.type === "list_operator") return ["结果", "个数", "第一个", "最后一个"];
   if (n.type === "doc_extractor") return ["文本", "文件名"];
   if (n.type === "foreach") return ["结果", "个数", "失败项"];
+  if (n.type === "parallel") return ["结果", "状态", "失败支路"];
+  if (n.type === "subworkflow") {   // 子流程返回什么 = 引的那一版「最后返回什么」里声明的字段
+    const v = 子流程版本((n.config || {}).workflow_version_id);
+    return Object.keys((((v || {})["出参结构"] || {}).properties) || {});
+  }
   if (n.type === "assigner") return [...new Set((c.assignments || []).map((a) => a.variable).filter(Boolean))];
   if (n.type === "extractor") return (c.parameters || []).map((p) => p.name).filter(Boolean);
   if (n.type === "classifier") return ["类别", "理由"];
@@ -3846,6 +3901,14 @@ function 表_输入(n) {
   if (n.type === "human") return `<div class="k">审核人会看到这些(左边原文、右边摘要)。「摘要」就是通过时默认的定稿。</div>`
     + 绑定编辑(n, "payload_binding");
   if (n.type === "condition") return `<div class="k">条件用到的值在上面「基本」里每一路单独选。</div>`;
+  if (n.type === "parallel") return `<div class="k">并行这一步自己不取数 —— 每条支路里的步骤各自在自己的「用到的数据」里选(只能选并行外面的步骤,不能选另一条支路的)。</div>`;
+  if (n.type === "subworkflow") {   // 交给子流程什么:按它那一版「要用户给什么」逐项选来源(契约行由它生成、名字只读,必填的不能删)
+    const v = 子流程版本((n.config || {}).workflow_version_id);
+    if (!v) return `<div class="k">先在「基本」里选一版子流程,这里再按它要的输入逐项选来源。</div>`;
+    const 入 = v["入参结构"] || {};
+    if (!Object.keys(入.properties || {}).length) return `<div class="k">这一版子流程不要任何输入。</div>`;
+    return `<div class="k">子流程「${esc(v["名"])}」要这些输入,各从哪来:</div>` + 绑定编辑(n, "input_mapping", { properties: 入.properties || {}, required: 入.required || [] });
+  }
   if (n.type === "list_operator" || n.type === "doc_extractor" || n.type === "foreach") {
     // 列表操作 / 文档提取器(11-12):只读固定的那一项(列表 / 文件),多出来的绑定不会被读 —— 检查配置会拦
     const 键 = n.type === "doc_extractor" ? "文件" : "列表", 绑 = n.config.bindings = n.config.bindings || {};
@@ -3939,6 +4002,11 @@ function 表_结果(n) {
   if (n.type === "assigner") return `<div class="k">返回改完之后的值(每一项一个)。循环里后面的步骤直接取「循环状态 · 名字」就是新值。</div>`;
   if (n.type === "list_operator") return `<div class="k">固定返回:<b>结果</b>(处理完的列表)、<b>个数</b>、<b>第一个</b>、<b>最后一个</b>。一个都不剩时结果是空列表,第一个 / 最后一个是空(null)—— 后面可以用条件分支判「个数 等于 0」。</div>`;
   if (n.type === "foreach") return `<div class="k">固定返回:<b>结果</b>(每一项交出的东西,顺序和给进来的列表一样)、<b>个数</b>、<b>失败项</b>(选了「留空位」时,哪一项、哪一步、为什么)。空列表时结果是空列表。</div>`;
+  if (n.type === "parallel") return `<div class="k">固定返回:<b>结果</b>(按支路名存,每条支路的值 = 它最后一步交出的东西;失败的支路是空)、<b>状态</b>(每条支路 succeeded / failed)、<b>失败支路</b>(哪条、哪一步、为什么)。后面的步骤取「结果 → 支路名 → 字段」。</div>`;
+  if (n.type === "subworkflow") {
+    const v = 子流程版本((n.config || {}).workflow_version_id), 项 = 结果字段名(n);
+    return `<div class="k">返回的就是引的那一版子流程「最后返回什么」:${v ? (项.length ? 项.map((f) => `<b>${esc(f)}</b>`).join("、") : "(那一版没声明返回什么)") : "先在「基本」里选一版子流程"}。另带「子流程步骤」摘要(里面每一步跑成什么样)。</div>`;
+  }
   if (n.type === "doc_extractor") return `<div class="k">固定返回:<b>文本</b>(取出来的文字)、<b>文件名</b>。给的是一组文件时,两个都是列表、顺序和给进来的一样。</div>`;
   if (n.type === "template") return `<div class="k">固定返回:<b>文本</b>(填好名字之后的那一段)。后面的步骤在「用到的数据」里选它。</div>`;
   if (n.type === "answer") return `<div class="k">固定返回:<b>回复</b>(填好名字之后的那一句)。后面的步骤也能取它。</div>`;
@@ -3958,11 +4026,12 @@ function 表_高级(n) {
   const c = n.config, g = 图态, p = g.布局[n.id] || { x: 0, y: 0 };
   let 体 = "";
   // 放在哪个循环 / 迭代里(10-27 循环,11-12 迭代):里面的步骤每一轮 / 每一项都跑;循环、迭代、开始、输出不能放进去(不支持套着用)
-  const 环们 = g.定义.nodes.filter((x) => (x.type === "loop" || x.type === "foreach") && x.id !== n.id);
-  if (环们.length && !["start", "end", "loop", "foreach"].includes(n.type)) {
-    体 += `<label class="f">放在哪个循环 / 迭代里</label>` + 下拉(n.container || "", 环们.map((x) => [x.id, 业务名(x)]), (el) => {
-      if (el.value) n.container = el.value; else delete n.container; 重画(); }, "不在循环 / 迭代里")
-      + `<div class="k">放进去之后:从循环的「进循环体」(迭代的「每一项做」)出口连到第一步;里面走到头 = 这一轮 / 这一项做完。</div>`;
+  // 11-16 并行也是容器:普通步骤能放进去;循环 / 迭代 / 并行自己不给(不许套娃)
+  const 环们 = g.定义.nodes.filter((x) => (x.type === "loop" || x.type === "foreach" || x.type === "parallel") && x.id !== n.id);
+  if (环们.length && !["start", "end", "loop", "foreach", "parallel"].includes(n.type)) {
+    体 += `<label class="f">放在哪个循环 / 迭代里</label>` + 下拉(n.container || "", 环们.map((x) => [x.id, `${业务名(x)}${x.type === "parallel" ? "(并行)" : ""}`]), (el) => {
+      if (el.value) n.container = el.value; else delete n.container; 重画(); }, "不在循环 / 迭代 / 并行里")
+      + `<div class="k">放进去之后:从循环的「进循环体」(迭代的「每一项做」、并行的某条「支路」)出口连到第一步;里面走到头 = 这一轮 / 这一项 / 这条支路做完。</div>`;
   }
   if ((元(n.type)["端口"] || []).includes("error")) {
     // 11-15 工作流一期第二件:第三种走法「按默认值继续」(照 Dify「异常处理 · 默认值」)。
@@ -5181,7 +5250,7 @@ function 跑法选择(前缀, 只能演练 = false) {
 }
 function 选的跑法(前缀) { const el = $(`#${前缀}-mode`); return el ? el.value : "正常"; }
 
-const 单测类型 = { llm: "模型", retrieve: "知识检索", tool: "业务动作" };
+const 单测类型 = { llm: "模型", retrieve: "知识检索", tool: "业务动作", http_request: "HTTP 请求" };  // 与 runtime/单步测试.能单测的类型 同一张
 function 单测字段(n) {
   return Object.entries((n.config || {}).bindings || {})
     .filter(([, r]) => !(r && (r.source === "constant" || r.source === "system"))).map(([k]) => k);
@@ -5213,6 +5282,9 @@ function 单测表(n) {
     // 写入类:正常跑法会跳过前面的人工核对写出真记录 —— 只许「连接测试」(不发给澜绣,只显示会写什么)
     只能演练 = t["读写"] !== "只读";
   }
+  if (n.type === "http_request" && !工具连接((n.config || {}).connection_id)) {
+    return `<div class="k">先在「基本」里选好工具连接,才能单独测(地址只能是它登记过的)。</div>`;
+  }
   const 跑 = 图态.运行态 && 图态.运行态[n.id], 上次入 = 跑 && 跑.原文 && 跑.输入 && typeof 跑.输入 === "object" ? 跑.输入 : {};
   // 先用「变量检查」里的值(改过的优先)按这一项的来源去取;取不到再用这一步上次收到的
   const 起点 = 图态.定义.nodes.find((x) => x.type === "start");
@@ -5227,7 +5299,7 @@ function 单测表(n) {
       <textarea rows="2" data-st="${esc(f)}">${esc(默)}</textarea>`;
   }).join("");
   return `<div class="stest"><div class="k">单独跑这一步,不从头跑整条流程。${Object.keys(上次入).length ? "下面已填上它上次收到的内容,可以改。" : ""}
-      用的是这一步选的模型:演示模型不花钱,真模型按一次调用计费。</div>
+      ${n.type === "http_request" ? "会真发一次只读请求(GET / HEAD)到这条连接登记的地址;跑法选「连接测试」则不发、交一份替身。" : "用的是这一步选的模型:演示模型不花钱,真模型按一次调用计费。"}</div>
     ${样例条("st")}
     ${跑法选择("st", 只能演练)}
     ${框 || '<div class="k">这一步不需要填任何内容。</div>'}

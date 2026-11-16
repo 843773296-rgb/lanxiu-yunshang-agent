@@ -12,6 +12,63 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### ⏱️ 12 小时长任务清单(11-16 20:40 → 11-17 08:40)
+
+> **22:2x:1–9½ 全部做完并验过(e2e-ci 57+1 过、咬合 1933–1942 共 14 条全重放绿),第八笔 = f3cdaa34(本地,在 be3753a8 之上);22:3x 起 pre_push(推模式,用户 21:4x 允许)**
+
+> 用户 20:3x 起的长任务;定时提醒 8925a3d6 每小时 :13 / :43 叫一次(session 内),08:40 后汇总发飞书、刷交接、CronDelete。**做完清单别停**:接着做执行手册里不用拍板、不动共享库结构的欠账(用户 11-11 定的:给的是时间不是清单)。
+
+**守则**
+- **锁空档**:eureka-fc 第 23 轮 20:05 起、约 21:30 推完并说「解禁 + 提交号」;之后锁空着。**每次占锁前发它一句、放锁发一句**(写共享库、跑门禁、重启 aimc、bite_run 都算占锁);它要锁就让,一件一件来
+- **21:3x 用户拍了三条(台账七十六至七十八)**:子工作流二期要能在子流程里等人(独立子运行、父流程停下等);并行真并发排下一期;HTTP 写操作(POST/PUT,幂等键 + 审批桥)排下一期。**今晚都不做**,一期照现状落地
+- **已拍板,不再问**:三期 11 条安全决定按设计稿(HTTP 一期只 GET/HEAD、凭据只从连接来、白名单、不跟重定向、15 秒 / 1 MB);定时三种频率、二选一;统计区间「上一次到这一次」;鉴权三档编码中文是实现细节、不是业务拍板;C6 代码执行节点**先盘点再定**(没有「非写代码不可」的步骤就不做)
+- **21:4x 用户又拍三条**:① **今晚(到 08:40)允许我自己 push**——条件:每批走完 `pre_push`(不带 --不推 就是它推)、扫过密钥、只推自己的提交、推完记进交接、早上汇总列清;② 敏感字段清单按拟的版(台账七十九:手机号 / 姓名 / 收货·家庭地址 / 身份证号 / 生日 / 量体数据 / 微信·外部账号 / 订单·工单号)→ 新增清单项 9½;③ W44 告警进群先不做(台账八十)
+- **不许做的**:不碰 backend/api.py 和读 api 源码的 46 条(窗口没解禁);共享库结构只经 alembic 迁移且在锁内、先告 eureka-fc;~~不 push~~(今晚允许,见上;08:40 后恢复由用户推;eureka-fc 夜里要推就请它自己走流程);不碰 eureka-fc 的文件(pre_push.sh / api.py 工具描述 / prompts.py TL / rounds / textmatch / nightly_eval / nightly/ / guards.py);放宽守卫交用户 `!` 执行;三件运行日志不 add;不买、不开浏览器;迁移文件在、库没升之前别跑 pre_push;每批提交走一次 `pre_push --不推`(锁内,约 45 分钟),绿了才算做完
+- **每项做完**:打 ✅,一句结果 + 提交号;红了写红在哪、怎么修的
+
+**清单(按顺序;要锁的项等不到锁就先做下一个不要锁的)**
+1. ✅ **工具连接鉴权列落地**(22:2x **e2e-ci 真实退出码 2 → 57 过、只红 test_orchestration_flow 一条老断言(不可用节点集合写死 {并行,子工作流},改成 {代码执行})→ 单跑 88 条全过**;咬合七组 22:2x 起锁内重放,日志 scratchpad/bite2.log)(22:1x 三份单跑:tools_flow ✅ 新四条过、audio ✅、http_node 首跑红在 RUN_MODE_MISMATCH —— 测试自己起的 worker 写死 MODEL_ADAPTER=mock 而运行现在记 live,改成跟服务同模式后 **14 条全过(含真发送支:白名单本机地址 → HTTP_TARGET_FORBIDDEN)**;又给 ④⑥ 加了「服务是 mock 模式就标没验」守卫以防 CI 红;e2e-ci 22:1x 起在锁内跑,日志 scratchpad/e2e_ci2.log;提交说明草稿在 docs/交接归档/夜间链-20261116-第八笔提交说明.md)(22:0x:eureka-fc 21:55 推完 be3753a8 并解禁 api.py;我 rebase --autostash 上去,HANDOFF / bite_specs 冲突两边都留、规格并集 1942;锁内 `alembic upgrade head` 2ae099e8e0f0 → 5a9f567d29b4 **已落共享库**;鉴权接线脚本真跑(登记 / 列表 / worker / 搭建资源 / e2e)编译过;aimc 已重启、工具连接列表 200。接着:三份 e2e 单跑 → e2e-ci → 咬合 → 提交 → pre_push → 推)原计划(要锁):收到解禁 → rebase --autostash → `alembic heads` 核头 → 锁内 `alembic upgrade head` → tools_api 建 / 列收回「鉴权」、worker 1022/1030 读 auth、workflows_api 搭建用的资源带「鉴权方式」→ 重启 aimc → test_tools_flow / test_http_node_flow / e2e-ci → bite --only test_tools_flow → make_handoff → 第八笔 → pre_push --不推
+2. ✅ **流程顶层结构改成派生副本**(20:4x 代码写完**未跑**:dsl.同步顶层结构 + 改图草稿调它;看冻结版本回「入参结构 / 出参结构」;audio 测试改读接口 + 顶层已同步 + 进程内 ck;咬合 1934 打 dsl 那个 if;PRD B-123 两条未解决划掉。等锁:audio e2e + bite --only test_audio_flow)原计划(不要锁写代码,验要锁):PATCH 草稿时把定义顶层 input/output_schema 同步成开始 / 结束节点里那份(两份不再分家);GET 版本详情返回入参 / 出参结构;audio 测试改读接口不读库;图校验 / 咬合各 +1;PRD B-123 未解决事项划掉前两条
+3. ✅ **HTTP 节点 live 路径端到端**(20:5x 代码写完**未跑**;顺带修了一个真问题:受理算 mock / live 只看模型连接 → **只有 HTTP 步骤的流程永远 mock、一个字节发不出去**,现在 http_request 选了工具连接也算真连接(`_受理运行` 有HTTP连接);e2e ④ 改成「连接测试」跑法拿替身、断言运行记 live 而步骤交 mock;新加 ⑥:白名单 `http://127.0.0.1:9/v1` 正常跑法 → 期望 run failed、h 步 HTTP_TARGET_FORBIDDEN、详情含「没发」、不含凭据定位符。**判断依据**:既有规则「选了真连接就真跑」,工具连接没有演示版;不跟重定向 / 凭据不进记录两道只能进程内验(已有 20 条)。等锁跑)原计划:本地假服务(127.0.0.1 随机口)当白名单地址 → 真走 worker live 一支(`execution_mode=live` 受理怎么给、看 test_exec_mode_flow)→ 验:结果里 url / status 对、**运行记录 / 步骤 / 日志里凭据值一次不出现**(遮头生效)、解析到内网的域名被拒(假 DNS 只在进程内能注,端到端用 `evil.nip.io`-类真解析到 127.0.0.1 的域名或 `localhost` 白名单项 → 预期 HTTP_TARGET_FORBIDDEN)、3xx 不跟。走不通 live 就写清楚卡在哪,别硬凑
+4. ✅ **HTTP 节点单步测试入口**(20:4x,未提交):runtime/单步测试.能单测的类型 + http_request(没选连接拦住指路「基本」);app.js 单测类型表同步、单测表对 HTTP 给专用文案(真发只读请求 / 连接测试交替身)、没选连接只给一句话;test_step_test +2(21 条过)、http_panel +2(37 条过);咬合 1935(删表项 → 预期红「选了工具连接的 HTTP 步骤拼得出小图」,**未重放**)。服务端单步测试 handler 不用改(它只认 能单测的类型 那张表)
+5. ✅ **C6 盘点**(20:4x):六条流程从共享库各抽最新草稿逐节点看(只读查库),只用 tool / llm / condition / transform(concat / default / to_string)/ human / merge,复杂判断全在业务侧动作里 → **代码执行节点继续置灰,C1–C5 不拍**;结论写进 执行手册 W39-0 和 PRD 2.4.5(doc_numbers rc=0)。原计划(文档):列 6 条业务流程每一步用的节点,找「非写代码不可」的步骤;结论写进 PRD 2.4.5 台账 + 执行手册 W39-0;有 → 只写方案不做
+6. ✅ **并行与汇总节点**(21:0x 代码写完、进程内全绿,**未提交、e2e-ci 未跑**):契约里本来就有 `N("parallel")` 预留(端口 支路/成功/失败,配置 branches/max_concurrency/wait_policy),改成已实现;新模块 runtime/并行.py(配置问题 / 支路键们 / 必需吗 / 汇总);validator:入口改成列表、并行每条支路各算可达与支配、新段 ③½(十二种阻断码:BRANCH_NO_KEY/DUP/NO_REQUIRED/CONCURRENCY_UNSUPPORTED/BAD_WAIT_POLICY/BRANCH_NO_EDGE/EDGE_NO_BRANCH/BRANCH_NOT_INSIDE/BRANCH_SHARED/CROSS_BRANCH/NESTED)、跨支路引用不再多报 BIND_MAYBE_MISSING;compiler 支路边按键分;runner 新帧种类 parallel(串行跑支路、循环回 记「回自」、按等待策略处理失败、PARALLEL_BRANCH_FAILED、检查点可恢复);前端 菜单 / 容器框标「并行」/ 出口每条支路一个 / 口名 / 面板(支路增删改名、改名连线跟着改、必需可选、等待策略两种、并发上限固定 1)/ 结果三项 / 放进并行;test_parallel_node 15 条、图校验夹具 +3(36;「未实现」例子换成子工作流)、test_workflow_parallel_panel.js **24 条过**(登记 Makefile 三处 + orchestration 目标,test_registry_check 73 份)、咬合 +2(规格 1937,未重放);规格 §6.1 并行行改写。**判断**:支路结果 = 该支路最后一步的输出(人工核对在末尾就是核对结论)。原计划(W39-2,设计稿已拍):先语义(独立状态命名空间、等全部必需支路、失败策略 全成功 / 任一成功 / 允许部分),`max_concurrency=1` 串行实现;dsl / validator(支路不许互引、汇总必填)/ runner / worker / 面板 / 夹具 / e2e / 咬合 / 规格 §6.1
+7. ✅ **子工作流节点**(21:4x 代码写完、进程内全绿,**未提交、e2e-ci 未跑**):契约 `N("subworkflow")` 改已实现 + 新登记 `N("code","代码执行")` 为未实现(「不得摆空按钮冒充可用」那条夹具的例子,C6 盘点后代码执行先不做);新模块 runtime/子工作流.py(配置问题 / 合上限 / 递归链 / 不能等的步骤 / 步骤摘要,深度上限 3);validator ⑥½(RECURSION / TOO_DEEP / WAIT_UNSUPPORTED / INPUT_MISSING / INPUT_UNKNOWN 警告 / 上限形状,没「取版本」能力时 CHECK_SKIPPED 明说没查);workflows_api `_依赖查询(c, project_id, 本工作流=wid)` 挂 取版本 / 本工作流(四处调用点都传了),搭建用的资源回「工作流版本」;runner 把 subworkflow 走适配器那支(input_mapping 解绑、父剩余额度、深度);worker `_subworkflow`(同步跑子图、合上限、拦等待、折摘要、更深一层的 SUBWORKFLOW_* 原码上传);前端 菜单 / 面板(只列别的流程的冻结版、要什么返回什么写在选项里、上限两框)/ 用到的数据按那一版入参出契约行 / 结果字段跟那一版;test_subworkflow_node 13 条、面板测试、夹具 +2(38)、咬合 +2(1939)、spec_coverage 首版集合 +2、Makefile 登记(registry 74)、规格 §6.1 子工作流行改写。**判断**:一期子流程里不许等人(人工 / Agent / 写动作)—— 用户 21:3x 拍二期要做;深度上限 3 是拍脑袋的技术数。原计划(W39-3):只引冻结版本、静态禁递归(引用图上找环)+ 动态深度上限、预算随父(SUB_LIMIT_EXCEEDS_PARENT 已有)、输入输出按被引版本的入参 / 出参结构绑;同上一整套
+8. ✅ **工具开关对账检查**(21:5x 写完、真跑绿,**未提交**):`管理后台/tools/switch_sync_check.py` —— 比对纯函数 + `--自测`;真跑读管理后台 tool_definitions(adapter lanxiu-shop / kb / task 共 105 个,**lanxiu_bridge 那 9 条桥能力不是 MCP 工具、业务后台没有它们的开关,不在账里** —— 首跑把它们误报成「业务没有」,查过后排除)× 业务后台 mcp_tool_cfg(`mcp_registry.配置()` 只读 sqlite);三种不一致判红、限流只报;Makefile 登记在 lanxiu_tool_sync_check 后面(自测 + 真跑两行);咬合 1940 打「后台停了业务没停」那支(脚本带 --自测 参数,bite_run 支持带参)。**没做**:工具目录页标「业务后台已停用 / 已限流」(8801 要读 8760 的开关得过登录或读 sqlite,另排)。原计划(W38,拍板 9):`管理后台/tools/switch_sync_check.py` 读 8760 mcp_registry 口比对工具目录停用 / 限流状态,不一致红;工具目录页标「业务后台已停用 / 已限流」;挂门禁 + 咬合 + selftest_registry
+9½. ✅ **敏感字段清单单源**(22:0x,**未提交**):清单落在 `管理后台/docs/口径/敏感字段清单.json`(八项,各带类型 / 常见字段名 / 给人看怎么打码 / 导出训练怎么处理 —— **「给人看」那列是我拟的默认**,早上汇总附表让用户看);`redact.敏感字段清单()` / `是敏感字段名()` 读它;test_redact +4。**查过两套脱敏的现状**:给人看的打码只有业务后台 server.py 两处手机号 `***`(字段写死),导出训练的脱敏器还没选型(training.py 明说);所以今晚只能立清单 + 读清单的函数,「两边都改成读清单」等脱敏器真做时接(业务后台页面打码要动 server.py + 重启 8760,另排)。PRD 第七十条状态待改。原计划:找两套脱敏(给人看打码 / 导出训练换假号)各自写死的字段表,抽成一份清单(放哪边先看两处各在什么包;**若在 backend/api.py 里就等解禁**),两处都读它;加测试「清单改一项两边都跟着变」+ 咬合;PRD 第七十条状态改「清单已定」
+9. ✅ **执行手册里其余不用拍板、不动共享库结构的**(22:0x):**W29 ✅ 代码侧**(`tools/launchd/com.lanxiu.daily-log.plist` 每天 06:40 `make_log.py --publish`;`make_handoff.py` 正式刷新默认不再生成 / 发日志、要加 `--带日志`,`--check` 改按头部「最后更新」日期判「≥ 昨天」只报不拦;CLAUDE.md 第 5 节那条约定同步改;plist 等用户装:`cp tools/launchd/com.lanxiu.daily-log.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.lanxiu.daily-log.plist`)。W34 / W35 没碰。原计划:W29 项目日志每日定时(launchd plist 写好给用户装)、W34 HANDOFF 分层 + 新鲜度(make_handoff --check 已守行数,看还差什么)、W35 拍板台账检查;W40-② 在 api.py 禁区**跳过**
+10. ⬜ **08:40**:`澜绣云裳agent-夜间汇总-20261117.md`(照 11-13 那份的形状:一句话 / 已提交待推 / 没做的和为什么 / 要你拍的卡)→ 发飞书 → make_handoff → 请用户推 → CronDelete 8925a3d6
+
+### 🟢 11-16 22:0x · 交接(压缩前,六项补充)—— 清单 1–9½ 代码全写完、进程内全绿、**一个都没提交**;等 eureka-fc 22:30 解禁后一批跑完推(Fable 5.1)
+
+- **未验证的预判**(全在等锁):① 整套 e2e-ci 没跑过今晚的任何改动(并行 / 子工作流 / 单步 / 顶层派生 / HTTP live 支 / 鉴权)—— 可能红的:audio(顶层派生改了存草稿)、http_node ⑥(live 支:期望 h 步 HTTP_TARGET_FORBIDDEN,若 aimc 的 MODEL_ADAPTER 判 mock 则运行会记 mock、断言红)、tools_flow 新四条(接口没升列前别跑);② worker.py 改了两处(_http 读 auth / 适配器们 + _subworkflow),**没重启、没跑过**;③ 迁移 5a9f567d29b4 未 upgrade;④ 咬合 1933–1940 八条都没重放;⑤ 规格 §6.1 两行改写后 spec_coverage 跑过 rc=0,但「表格行」解析只看名字列
+- **21:4x 栽了一下(已回退,无遗留)**:想「干跑」鉴权接线脚本,用 exec 盖掉它的替换函数数锚点 —— 脚本自己的 def 把占位盖回去、**真改了文件**;aimc 的 --reload 立刻加载,工具连接列表 500 了约一分钟(select 了还不存在的 auth 列),原路回退后 200。教训:**工作区就是线上,「试一下」的脚本也要先有真的 --干跑**;脚本已加 `--干跑`
+- **23:4x pre_push 第二遍:咬合 30 条全过、全量门禁只红 1 条** —— alembic check「模型里少了 capability_connections.auth」:迁移加了列,契约实体表(contract/entities.py E("capability_connections") 字段清单)和字段类型表(fieldtypes.显式类型,`auth` 套不上后缀)没登。已补,alembic_sync_check ✅、gen_contract_doc 重生成(契约.md 无 diff)、spec_coverage rc=0;amend 进第八笔。**第三遍不在夜跑期间跑**(0 点到夜跑结束不占锁,eureka-fc 提醒、我定的):每个定时提醒看 `.feynman/nightly-eval-ok` 的时间 —— 比 11-17 00:00 新 = 夜跑结束 → 接锁 pre_push(推模式,约 50 分钟);若拖到 04:55 强停则等 05:30 世界平移完再跑;推完发 eureka-fc 提交号 + 锁放了,它再跑 ops 全量
+- **22:5x pre_push 第一遍红在「按改动重放咬合」**:3/30 个脚本没过,根子一个 —— 迭代面板规格 [1685] 攻击 `!["start","end","loop","foreach"]` 那段,我给容器排除名单加了 parallel 后它找不到(破坏点过期);连带 bite_check(13/13)和 repo_consistency(2/2)的**对照**都红(它们就是查这件事的)。规格 old/new 已改成带 parallel 的版本,bite_check 0 红;repo_consistency 查的是 HEAD,要并进第八笔才绿 → amend 后重跑 pre_push
+- **22:2x 咬合重放:七组 5 过 2 没过,两条都是规格自己的问题,已改**:① tools_flow 那条砍「没头名」一刀被下一条「头名不合法(0 字符)」兜住 → 攻击不可观测(CLAUDE.md ②那条形状),改成整段 `if False and 方式 == "自定义头"`,草稿副本手工复现:攻击前过 54、攻击后红在指定那条;② switch_sync_check 规格脚本名带 `--自测` 参数,bite_run 对 管理后台/ 脚本按原样当文件名跑 → 对照恒红;改成检查**每次先自测再真跑**、规格去参数、Makefile 只留一行
+- **判据**:并行支路结果 = 支路最后一步输出(人工核对在末尾就是核对结论);子工作流深度上限 3(拍脑袋的技术数);子流程里更深一层的 SUBWORKFLOW_* 原码往上传;lanxiu_bridge 那 9 条不是 MCP 工具、不进开关对账;泄密检查只扫错误体
+- **作废**:「流程只有 HTTP 步骤也算 mock」(已改成算真连接);「刷交接顺手生成日志」(W29 改每天 06:40);清单第 1 项里「rebase origin/main」不再需要 autostash 以外的东西
+- **禁区**:同 20:2x 条;**今晚允许自己 push(用户 21:4x 拍,到 08:40)**,条件 pre_push 全绿、只推自己的、记进交接
+- **下一步第一个动作**:收到解禁 → 照 scratchpad/解禁后链.md(scratchpad 会清,要点:rebase --autostash → 告它要锁 → alembic heads 核头 → 锁内 upgrade head → `python3 scratchpad/apply_auth_api.py` 一次把鉴权接进 登记/列表/worker/搭建资源/e2e(锚点不唯一会停)→ 重启 aimc → 锁内 tools_flow / http_node / audio 单跑 → e2e-ci → 咬合 --only 八条 → make_handoff → 第八笔 commit --only → 日志挪开 → pre_push(不带 --不推)→ 日志放回 → 发 eureka-fc 提交号 + 锁放了)
+- **悬而未决**:工具目录页标「业务后台已停用」;给人看打码按清单补字段(要动 server.py + 重启 8760);两套脱敏读清单等脱敏器选型落地;子流程 / 并行 / HTTP 二期三条已拍待排期;鉴权列的 e2e 咬合只打纯函数
+
+### 🟢 11-16 20:2x · 交接(压缩前,六项)—— 七笔已推到 8e2c0c89;eureka-fc 第 23 轮 20:05 起(锁归它到约 21:30);鉴权列不碰库的部分做完、等解禁落迁移(Fable 5.1)
+
+- **未验证的预判**:① 迁移 5a9f567d29b4(capability_connections.auth JSONB)只写了文件、**没 upgrade**,down_revision 2ae099e8e0f0 是按当时 `alembic heads` 定的,eureka-fc 推完后头可能变 → upgrade 前再 `alembic heads`;② test_tools_flow 新加的「三½ 鉴权」四条**没跑**(接口还没收鉴权、列还没落);③ 咬合 1933(检查鉴权 没头名分支)**没重放**;④ 泄密检查只扫**错误**响应(contract/errors.py:52 一处调用)—— 这是我 grep 出来的结论,列表接口回「头名 x-shop-key」不会被扫,但若有人把 泄密检查 加到正常响应上,带 `api_key` 形状的头名就会 500;⑤ app.js 后缀「鉴权:…」靠 workflow-resources 回 `鉴权方式` 字段,**接口那边还没加**
+- **判据**:aimc 的 uvicorn --reload 跟着主检出工作区 → **读 auth 列的 SQL 不能在 upgrade 前写进工作区**(会把 8801 的工具连接列表打成 500);中文编码(无 / 令牌 / 自定义头)是为了躲 `errors.泄密检查`(connections.py 里为这个栽过两次,文案里连「x-api-key」这种例子都不能写);退出码只认 gate_lock 印的那行;e2e 经 HTTP 打常驻服务 → 咬合要打进程内的纯函数
+- **作废**:15:4x–17:2x 条里「等 eureka-fc 推完再 rebase」整条路线(已反过来、已推完);原设计鉴权编码 bearer / header(secretref.凭据头 和 test_http_node 夹具都已改中文)
+- **禁区**:锁在 eureka-fc 手里到它说「解禁 + 提交号」—— 不写库、不 upgrade、不跑门禁、不重启 aimc;api.py 拆分窗口**仍未解禁**(不碰 backend/api.py 和读 api 源码那 46 条);三件运行日志不 add;推送由用户执行;迁移文件在、库没升之前**别跑 pre_push**(alembic check 会红)
+- **下一步第一个动作**:收到 eureka-fc「解禁 + 提交号」→ `git fetch && git rebase origin/main --autostash`(我工作区有未提交改动;撞 backend/api.py 就停)→ 告它「我要锁落迁移」→ `cd 管理后台/services/api && ../../.venv/bin/alembic heads`(确认 5a9f567d29b4 的 down_revision 还是头,不是就改)→ 锁内 `alembic upgrade head` → 改 tools_api 建工具连接(收 体["鉴权"] → CN.检查鉴权 进 问[] / CN.规范鉴权 → insert 多列 `auth = cast(:au as jsonb)`、审计记方式、返回「鉴权」)和 工具连接列表(select auth → 「鉴权」:auth or {"方式":"无"})→ worker.py 1022 select 加 auth、1030 `连接["auth"] = dict(行.get("auth") or {})` → workflows_api 搭建用的资源 select auth、工具连接项加「鉴权方式」→ 重启 aimc → 锁内 test_tools_flow / test_http_node_flow(建连接带 {"方式":"无"})/ e2e-ci → `bite_run --only test_tools_flow` → make_handoff → 第八笔 commit --only → 日志挪开 → pre_push --不推 → 日志放回 → 请用户推 → 发 eureka-fc 提交号 + 锁放了
+- **悬而未决**(不用拍板):冻结 / 编译器两处读节点结构的接线没有咬合;定义顶层 input/output_schema 仍是摆设;版本详情接口不返回入参结构;HTTP 节点单步测试入口;live 路径三条真攻击 e2e;工具连接没有归档接口;HTTP 节点面板真页面没点过
+
+### 🟢 11-16 20:0x · 交接 —— **七笔已推(origin/main 713dfc49 → 8e2c0c89,用户 20:0x 点的)**;锁已放给 eureka-fc 跑第 23 轮;开始做工具连接鉴权列(Fable 5.1)
+
+- **已推**:pre_push 第二遍 19:20 绿(第一遍红在 trace_check 指纹命中 HTTP请求.py → 用户手工打了豁免补丁,第七笔 8e2c0c89)。eureka-fc 已收到提交号,它 rebase 跑第 23 轮(约 90 分钟)。api.py 拆分窗口**仍未解禁**
+- **正在做:工具连接鉴权方式列**,方案在 scratchpad/plan_工具连接鉴权列.md(scratchpad 会清,要点:迁移加 `capability_connections.auth` JSONB;登记接口收「鉴权」{方式 无|bearer|header,头名},校验做成纯函数 `connections.检查鉴权` 好配咬合;列表接口回鉴权;worker `_http` 1030 行 `连接["auth"] = 行["auth"] or {}`;test_tools_flow 加正负向 + 进程内调 CN.检查鉴权;http_node e2e 建连接带 {"方式":"无"})。**顺序铁律**:aimc 的 uvicorn --reload 跟着主检出工作区 → **读 auth 列的代码不能在迁移 upgrade 之前写进工作区**(会把 8801 打挂);先写不碰库的(纯函数 / 迁移文件 / 测试),等 eureka-fc 第 23 轮推完 → 要锁 → `alembic upgrade head`(先告它)→ 再改接口 / worker → 重启 aimc → e2e
+- **20:1x 进展(工作区未提交,不碰库)**:迁移文件 `migrations/versions/5a9f567d29b4_工具连接加鉴权方式列auth.py`(add_column auth JSONB,**未 upgrade**);`connections.检查鉴权 / 规范鉴权` 纯函数,**编码改成中文 无 / 令牌 / 自定义头**(原设计 bearer/header 的英文词会出现在 422 提示里,`errors.泄密检查` 连值一起扫、见凭据类英文词就把响应判成 500 —— 这个坑 connections.py 头部注释里写着栽过两次);`secretref.凭据头` 同步只认中文编码;进程内 8 个用例 + 泄密扫都过;tests/orchestration/test_http_node.py 夹具改中文编码,它和 test_outbound_policy 20 / 23 条过;test_tools_flow 加「三½ 鉴权方式」四条(没头名 422 不是 500 / 带鉴权 201 回方式+小写头名 / 列表带鉴权、老连接「无」/ 进程内调 CN.检查鉴权)**未跑**(要等接口改 + 列落);咬合 +1(规格 1933:检查鉴权 的「没头名」分支关掉 → 预期红那条进程内 ck,**未重放**)。规格 §11.2 补「鉴权方式三档」一段(doc_numbers rc=0);app.js 资源选择器的连接选项后缀「鉴权:自定义头」(字段 `鉴权方式`,老接口没有就不显示),面板测试 35 条过、new_nodes 24 / foreach 28 回归过。**不碰库的准备到此做完**,其余等解禁。eureka-fc 20:05 起第 23 轮(锁归它到约 21:30),我已回它。**解禁后的顺序**:要锁 → `cd 管理后台/services/api && ../../.venv/bin/alembic upgrade head`(先告它)→ 改 tools_api 建/列(收「鉴权」→ CN.检查鉴权 / 规范鉴权,insert auth,返回「鉴权」)、worker 1022/1030 读 auth、workflows_api 搭建用的资源带鉴权方式 → 重启 aimc → 锁内 test_tools_flow / test_http_node_flow / e2e-ci → bite --only test_tools_flow → 第八笔 → pre_push → 请用户推
+- **判据 / 禁区**:同下一条;另:迁移文件写了但没 upgrade 时,**自己的门禁会红在 alembic check**,别在 upgrade 前跑 pre_push;读 auth 列的接口 / worker 代码等 upgrade 之后再写进工作区
+
+### 🟡 11-16 17:2x · 交接 —— 锁在我手里;e2e-ci 57/58 只红 audio → 根子修了(校验器/编译器/冻结三处统一读节点里的结构),audio 重跑绿;剩咬合重放 + 第六笔 + pre_push(Fable 5.1)
 ### 🟢 11-16 17:2x · api.py 拆分等第 23 轮(本地 3 笔未推:a39ad98b / 63e85d10 / 5e9f7621)(Opus 5.5)
 
 - **第 22 轮红 2 条**(log:.wip-glossary/pre_push22.log):① 库指纹范围 —— api_src.py 没认领 → 已登记进 backend/db_build.py「不算」,单跑绿,提交 5e9f7621;② alembic「Can't locate revision 2ae099e8e0f0」—— **并行会话的迁移已跑进共享 PG,而提交(98632daf)还在它本地 main 没推**,不是我的错、我修不了。
@@ -3080,50 +3137,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-16 17:08。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-16 22:24。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 33ba92c8 · 2026-11-16 · 工作流三期 3-1:HTTP 请求节点接进校验器 / 执行器 / worker(接口层能用;编辑器面板和连接鉴权列下一笔) |
-| 代码量 | 1139 个 Python 文件 / 207257 行(不含 .venv) |
-| 验收 | `./check.sh` 共 430 项 —— **接手第一件事就是跑它** |
+| 最新提交 | be3753a8 · 2026-11-16 · 拆 api.py 补一处:api_src 登记进造数指纹「不算」 |
+| 代码量 | 1158 个 Python 文件 / 207748 行(不含 .venv) |
+| 验收 | `./check.sh` 共 431 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M .feynman/tool-eval.json
- M HANDOFF.md
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
- M tools/bite_specs.json
- M tools/doc_numbers_check.py
- M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
- M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\351\241\271\347\233\256\346\227\245\345\277\227.md"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/Makefile"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/app.js"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/wf_canvas.js"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/fixtures/orchestration/\345\233\276\346\240\241\351\252\214\345\244\271\345\205\267.json"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/dsl.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/compiler.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/validator.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/workflows_api.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_audio_flow.py"
-A  "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_http_node_flow.py"
-A  "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_workflow_http_panel.js"
-?? "--\350\207\252\346\265\213.log"
+M  .feynman/tool-eval.json
+M  CLAUDE.md
+MM HANDOFF.md
+M  agentsite/evals/funnel.jsonl
+M  agentsite/evals/skill_usage.jsonl
+A  "docs/\344\272\244\346\216\245\345\275\222\346\241\243/\345\244\234\351\227\264\351\223\276-20261116-\347\254\254\345\205\253\347\254\224\346\217\220\344\272\244\350\257\264\346\230\216.md"
+A  "docs/\344\272\244\346\216\245\345\275\222\346\241\243/\345\244\234\351\227\264\351\223\276-20261116-\350\247\243\347\246\201\345\220\216.md"
+MM tools/bite_specs.json
+A  tools/launchd/com.lanxiu.daily-log.plist
+M  tools/make_handoff.py
+M  "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
+M  "\346\276\234\347\273\243\344\272\221\350\243\263agent-\346\211\247\350\241\214\346\211\213\345\206\214-\344\275\223\346\243\200\344\274\230\345\214\226\344\270\216\346\226\260\345\212\237\350\203\275-20261112.md"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
+MM "\347\256\241\347\220\206\345\220\216\345\217\260/Makefile"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/app.js"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/wf_canvas.js"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/wf_graph.js"
+A  "\347\256\241\347\220\206\345\220\216\345\217\260/docs/\345\217\243\345\276\204/\346\225\217\346\204\237\345\255\227\346\256\265\346\270\205\345\215\225.json"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/docs/\350\247\204\346\240\274/Workflow\344\270\216Agent\345\220\216\345\217\260_\344\272\247\345\223\201\344\270\216\345\267\245\347\250\213\345\256\236\346\226\275\350\247\204\346\240\274_\347\273\231Claude.md"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/fixtures/orchestration/\345\233\276\346\240\241\351\252\214\345\244\271\345\205\267.json"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-33ba92c8 工作流三期 3-1:HTTP 请求节点接进校验器 / 执行器 / worker(接口层能用;编辑器面板和连接鉴权列下一笔)
-e7b6b763 文档:PRD 2.4.5 记 11-16 拍板与台账七十三至七十五、A-305 定时统计区间、A-306 出网目标判定;执行手册 W06 转 ✅;交接 + 项目日志
-5dc54cb7 工作流三期地基:出网策略(白名单 / 解析落内网就拒 / 不跟重定向 / 15 秒 1 MB)+ HTTP 请求节点执行核心(经 tool_gateway,不自己发)
-b726c5f8 还债 W06 后半:孤儿运行 worker 每 60 秒自己扫一轮 + 端到端造一条孤儿真验
-98632daf 工作流二期:定时加三种频率(每周几 / 每月几号含月末 / 每小时)+ 定时当「开始」的一种、和「用户输入」二选一
+be3753a8 拆 api.py 补一处:api_src 登记进造数指纹「不算」
+28c38294 待办清单随新检查(api_split_check)重新生成:检查脚本 400 → 401
+a675e126 拆 api.py:门面 + 11 个按业务分的子模块(8808 → 1700 行),工具名 / 参数 / schema 一个不变
+8e2c0c89 记录仪检查:HTTP 请求节点的发送口登进「明写不算调用点」豁免表(它不调模型)
+830e31e2 工作流三期 3-2:编排页 HTTP 请求节点面板 + 流程「入参 / 出参结构」只认节点里那份(校验器 / 编译器 / 冻结三处统一)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
