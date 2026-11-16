@@ -20987,18 +20987,6 @@
  },
  {
   "script": "agentsite/takeover_check.py",
-  "改坏": "把 `_兜底回()`(兜底两支共用)的 `记兜底(技能)` 删掉(返回值照旧说交还,但钩子那边看不见 → 死循环)",
-  "file": [
-   {
-    "path": "backend/takeover_client.py",
-    "old": "    记兜底(技能)\n    名 = ",
-    "new": "    名 = "
-   }
-  ],
-  "预期红": "兜底之后同一技能在窗口内当没接管"
- },
- {
-  "script": "agentsite/takeover_check.py",
   "改坏": "把 `接管中()` 里 `if 在兜底中(技能): return None` 删掉(兜底只剩返回值那一半)",
   "file": [
    {
@@ -22786,18 +22774,6 @@
   "预期红": "另一个取数口也过同三道 · truth"
  },
  {
-  "script": "backend/delivery_notice_check.py",
-  "改坏": "把第 3 条(纱罗)的排除词去掉 —— 香云纱 / 麻纱 / 真丝袜都会被当成纱罗,顾客收到一条和他的衣服无关的告知",
-  "file": [
-   {
-    "path": "knowledge/delivery_notice.py",
-    "old": "r\"纱罗|杭罗|素罗|花罗|绡|欧根纱|乔其纱|纱\", r\"香云纱|莨纱|麻纱|真丝袜\"",
-    "new": "r\"纱罗|杭罗|素罗|花罗|绡|欧根纱|乔其纱|纱\", None"
-   }
-  ],
-  "预期红": "顾问导出所选 → 403(EXPORT_ROLE),操作日志记一笔被拒"
- },
- {
   "script": "backend/cancel_fee_check.py",
   "改坏": "工具层拿错了「今天」(传成很早的日子):在制工序的工钱全成 0,而真库上在制单本来就都是 0,0 对 0 照样一致",
   "file": [
@@ -22841,6 +22817,30 @@
     "path": "agent/shift_eval.py",
     "old": "        if os.path.realpath(DBP) != 真:\n            c.execute(f\"DELETE FROM roster WHERE created_by='system'",
     "new": "        if False:\n            c.execute(f\"DELETE FROM roster WHERE created_by='system'"
+   }
+  ],
+  "预期红": "夹具挑得到(副本上那两周是空的)"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "把 `_兜底回()`(兜底两支共用)的 `记兜底(技能)` 删掉(返回值照旧说交还,但钩子那边看不见 → 死循环)",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "    记兜底(技能)\n    名 = ",
+    "new": "    名 = "
+   }
+  ],
+  "预期红": "兜底之后同一技能在窗口内当没接管"
+ },
+ {
+  "script": "backend/delivery_notice_check.py",
+  "改坏": "把第 3 条(纱罗)的排除词去掉 —— 香云纱 / 麻纱 / 真丝袜都会被当成纱罗,顾客收到一条和他的衣服无关的告知",
+  "file": [
+   {
+    "path": "knowledge/delivery_notice.py",
+    "old": "r\"纱罗|杭罗|素罗|花罗|绡|欧根纱|乔其纱|纱\", r\"香云纱|莨纱|麻纱|真丝袜\"",
+    "new": "r\"纱罗|杭罗|素罗|花罗|绡|欧根纱|乔其纱|纱\", None"
    }
   ],
   "预期红": "香云纱不算纱罗、麻纱和真丝袜不误认"
