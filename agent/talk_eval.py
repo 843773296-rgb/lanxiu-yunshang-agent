@@ -371,7 +371,9 @@ def 判官(text, pv=None):
     if not 句们:
         return False, None
     题 = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(句们))
-    r = v1.call(pv, dict(model=pv["model"], max_tokens=300, system=JUDGE_SYS,
+    # max_tokens 300 → 1024(11-17):要求「只回两行」,但 haiku 常先写一段铺垫,11-17 夜跑三处被 300 截断。
+    # 截断时判定若在铺垫之后,就读不到 →「没有」—— 漏报和「判官没说完」长得一样。两行本身很短,放宽只多花截断那几次的钱。
+    r = v1.call(pv, dict(model=pv["model"], max_tokens=1024, system=JUDGE_SYS,
                          messages=[{"role": "user", "content": 题}]),
                 purpose="销售话术判官")
     out = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
