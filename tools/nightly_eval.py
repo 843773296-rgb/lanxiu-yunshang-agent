@@ -320,6 +320,7 @@ def 评测环境():
     return env
 
 
+环境性失败行 = re.compile(r'"环境性失败"\s*:\s*true')
 认证失败 = re.compile(r"Failed to authenticate|API Error: 40[13]|Invalid API key|Please run /login")
 
 
@@ -367,6 +368,7 @@ def 挪走夜跑的(快, 名):
     """把这一套往基线文件里加的东西挪到 agent/nightly/,原文件恢复原样。返回挪了哪些。"""
     挪 = []
     挪走夜跑的.认证失败 = 0
+    挪走夜跑的.环境性失败 = 0
     夜 = os.path.join(ROOT, "agent", "nightly")
     for d in 基线目录:
         for f in os.listdir(os.path.join(ROOT, d)):
@@ -383,6 +385,9 @@ def 挪走夜跑的(快, 名):
             新增 = 现[len(旧):] if 旧 is not None and 现.startswith(旧) else 现
             # 评测把调用报错接住写进结果文件、屏幕上只打汇总 —— 认证失败只看输出是看不见的(10-17 那晚 17 套记成「过」)
             挪走夜跑的.认证失败 += len(认证失败.findall(新增.decode("utf-8", "replace")))
+            # 卡在 ToolSearch 上、一个业务工具都没调的题(rounds.环境性失败 标的,不计分 —— 用户 11-12 拍 ①)。
+            # 判据在 rounds 里早就有,而夜报从来不印这个数:**「这晚 0 题」和「这晚没数」在夜报上长得一样**(11-16 加)
+            挪走夜跑的.环境性失败 += len(环境性失败行.findall(新增.decode("utf-8", "replace")))
             with open(去, "ab") as h:
                 h.write(新增)
             if 旧 is None:
@@ -826,6 +831,8 @@ def _跑(现在, 套们, 试, 截止):
         if 挪走夜跑的.认证失败 and r["结果"] in ("过", "判红", "退步", "部分没验成(环境)"):
             r["结果"] = "没跑成(认证失败)"
             r["尾"] = (r.get("尾") or []) + [f"结果文件里有 {挪走夜跑的.认证失败} 处认证失败"]
+        if 挪走夜跑的.环境性失败:
+            r["尾"] = (r.get("尾") or []) + [f"环境性失败 {挪走夜跑的.环境性失败} 题(卡在加载工具、一个业务工具都没调 —— 不计分)"]
         结果.append(r)
         说(f"  {名}:{r['结果']}({r['分钟']} 分钟)")
     os.makedirs(报告目录, exist_ok=True)
