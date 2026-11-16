@@ -1267,6 +1267,56 @@ def 聊天取回复(project_id: str, rid: str, 澜绣工号: str = "",
 _定时统计字段 = ("统计起", "统计止")
 
 
+def _定时规则(s):
+    """库里一行 → runtime/定时.py 的规则。周几 / 几号(11-16 加的三种频率,台账第六十八条)存在 cadence_detail 里;
+    老行那一列是空的 → 校验规则 给默认(周一 / 1 号),算出来和 10-26 那版一样。"""
+    return {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"], **(s["cadence_detail"] or {})}
+
+
+def _定时细节(规则):
+    """规则里要落库的那部分(周几 / 几号);日 / 时没有 → {}。"""
+    return {k: 规则[k] for k in ("周几", "几号") if k in 规则}
+
+
+def _开始节点(定义):
+    return next((n for n in (定义 or {}).get("nodes") or [] if isinstance(n, dict) and n.get("type") == "start"), None)
+
+
+def _开始定时规则(定义):
+    """这份定义的「开始」是定时触发器 → 它的规则(已规范化);是「用户输入」开头 → None。
+    (11-16,台账第六十九条:一条流程要么人点、要么定时,**二选一**;频率定在开始节点上,定时表只存一份照它同步的副本)"""
+    import 定时 as T
+    起 = _开始节点(定义)
+    c = (起 or {}).get("config") or {}
+    if c.get("start_mode") != "定时":
+        return None
+    return T.校验规则(c.get("schedule_rule") or {})
+
+
+def _生产开始规则(c, project_id, 生产):
+    """生产那一版的开始节点规则;没发布 / 不是定时开头 → None。"""
+    if not 生产:
+        return None
+    v = c.execute(text("select nodes from workflow_versions where project_id=:p and id=:i"),
+                  {"p": project_id, "i": 生产["版本id"]}).mappings().first()
+    return _开始定时规则({"nodes": (v or {}).get("nodes") or []})
+
+
+def _定时自填(定义, 输入, 来源, 现在=None):
+    """定时开头的流程被人手动 / 试运行发起时,统计起 / 止没人填 → 用「现在」模拟一期(最近该跑的那期;一期都没到就下一期),
+    并在来源里记「模拟期」(规划 2-1 验收:试运行选定时触发器 → 不真等到点)。不是定时开头、或已经给了就原样返回。"""
+    import 定时 as T
+    from datetime import datetime, timezone
+    规则 = _开始定时规则(定义)
+    if not 规则 or all((输入 or {}).get(k) for k in _定时统计字段):
+        return 输入
+    现在 = 现在 or datetime.now(timezone.utc)
+    期 = T.最近该跑的(规则, 现在) or T.下次执行(规则, 现在)
+    _, 起, 止 = 期
+    来源["模拟期"] = {"统计起": 起.isoformat(), "统计止": 止.isoformat(), "说法": T.说法(规则)}
+    return {**(输入 or {}), "统计起": 起.isoformat(), "统计止": 止.isoformat()}
+
+
 def _版本定义(v):
     return {"definition_schema_version": v["definition_schema_version"], "kind": "workflow",
             "nodes": v["nodes"], "edges": v["edges"], "input_schema": v["input_schema"],
@@ -1287,11 +1337,12 @@ def _定时出(c, project_id, s, 现在=None):
     from datetime import datetime, timezone
     if not s:
         return None
-    规则 = {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"]}
+    规则 = T.校验规则(_定时规则(s))
     下次 = T.下次执行(规则, 现在 or datetime.now(timezone.utc)) if s["schedule_enabled"] else None
     # 接下来 5 次(11-15,照 Dify):关着也算 —— 让人看清「打开的话会在这几天跑、各统计哪一段」
     接下来 = T.接下来几次(规则, 现在 or datetime.now(timezone.utc), 5)
     return {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"], "开着": bool(s["schedule_enabled"]),
+            "周几": 规则.get("周几"), "几号": 规则.get("几号"), "说法": T.说法(规则),
             "以谁的身份": s["principal"], "固定输入": s["input_snapshot"] or {},
             "打开于": s["armed_at"].isoformat() if s["armed_at"] else None,
             "最近一期": s["last_period_start"].isoformat() if s["last_period_start"] else None,
@@ -1300,6 +1351,27 @@ def _定时出(c, project_id, s, 现在=None):
                     if 下次 else None,
             "接下来": [{"时刻": a.isoformat(), "统计起": b.isoformat(), "统计止": e.isoformat()} for a, b, e in 接下来],
             "revision": s["revision"]}
+
+
+@router.get(前缀 + "/schedule-preview")
+def 定时预览(project_id: str, 周期: str = "周", 时刻: str = "08:00", 周几: str = "", 几号: str = "",
+          me: 身份 = Depends(要权限("查看有权配置"))):
+    """编排页「开始 · 定时触发器」面板用:传频率,回人话说法 + 接下来 5 次各统计哪一段。不存不改。"""
+    import 定时 as T
+    from datetime import datetime, timezone
+    体 = {"周期": 周期, "时刻": 时刻}
+    if 周几.strip():
+        体["周几"] = [x.strip() for x in 周几.split(",") if x.strip()]
+    if 几号.strip():
+        体["几号"] = [x.strip() for x in 几号.split(",") if x.strip()]
+    try:
+        规则 = T.校验规则(体)
+    except T.规则不对 as e:
+        raise _错(422, "VALIDATION", str(e), "周期选 日 / 周 / 月 / 时;周几 0–6 逗号分开;几号 1–31 或「末」逗号分开;时刻写 08:00 这样")
+    现在 = datetime.now(timezone.utc)
+    return {"说法": T.说法(规则), "规则": 规则,
+            "接下来": [{"时刻": a.isoformat(), "统计起": b.isoformat(), "统计止": e.isoformat()}
+                    for a, b, e in T.接下来几次(规则, 现在, 5)]}
 
 
 @router.get(前缀 + "/workflows/{wid}/schedule")
@@ -1315,8 +1387,12 @@ def 看定时(project_id: str, wid: str, me: 身份 = Depends(要权限("查看�
             属性 = sch.get("properties") or {}
             要填 = [{"字段": f, "说明": (属性.get(f) or {}).get("title") or (属性.get(f) or {}).get("description") or ""}
                     for f in (sch.get("required") or []) if f not in _定时统计字段]
+        节点规则 = _生产开始规则(c, project_id, 生产)
+        import 定时 as T
         # 要填:生产版的必填项里,定时没法自己填的那几项 —— 页面按它出输入框(统计起 / 统计止定时自己填)
-        return {"定时": _定时出(c, project_id, s), "生产版本": 生产, "要填": 要填}
+        return {"定时": _定时出(c, project_id, s), "生产版本": 生产, "要填": 要填,
+                "生产开始方式": None if not 生产 else ("定时" if 节点规则 else "用户输入"),
+                "开始节点规则": T.说法(节点规则) if 节点规则 else None}
 
 
 @router.get(前缀 + "/schedules")
@@ -1339,9 +1415,11 @@ async def 设定时(project_id: str, wid: str, request: Request, me: 身份 = De
     import 定时 as T
     体 = await request.json()
     try:
-        规则 = T.校验规则(体)
+        # 11-16 起频率定在生产版的开始节点上(二选一),这里只管开 / 关;请求里带了频率就核一遍、而且必须和开始节点一致
+        体规则 = T.校验规则(体) if 体.get("周期") else None
     except T.规则不对 as e:
-        raise _错(422, "VALIDATION", str(e), "周期选 日 / 周 / 月;时刻写 08:00 这样;时区不填就是北京时间")
+        raise _错(422, "VALIDATION", str(e), "周期选 日 / 周 / 月 / 时;周要给「周几」(0 = 周一 … 6 = 周日,可多选),"
+                                             "月要给「几号」(1–31 或「末」,可多选);时刻写 08:00 这样;时区不填就是北京时间")
     开 = 体.get("开着", True)
     if not isinstance(开, bool):
         raise _错(422, "VALIDATION", "开着 要 true / false", "不给就是打开", field_errors={"开着": "要布尔值"})
@@ -1354,11 +1432,19 @@ async def 设定时(project_id: str, wid: str, request: Request, me: 身份 = De
             raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
         老 = c.execute(text("select * from workflow_schedules where project_id=:p and workflow_id=:w for update"),
                        {"p": project_id, "w": wid}).mappings().first()
+        生产 = _生产版本(c, project_id, wid)
+        节点规则 = _生产开始规则(c, project_id, 生产)
         if 开:
-            生产 = _生产版本(c, project_id, wid)
             if not 生产:
                 raise _错(422, "SCHEDULE_NO_VERSION", "这条工作流还没有发布到生产",
                           "定时只跑生产环境里的那一版 —— 先在「版本与发布」里审核后发布到生产")
+            if not 节点规则:
+                raise _错(422, "SCHEDULE_START_NOT_TRIGGER", "生产这一版是「用户输入」开头的,定时打不开",
+                          "一条流程要么人点、要么定时(二选一):在编排页把「开始」的开始方式改成「定时触发器」,"
+                          "发布到生产后再来打开;两种都要就复制一条流程")
+            if 体规则 and 体规则 != 节点规则:
+                raise _错(422, "SCHEDULE_RULE_ON_START", "定时的频率在「开始」节点上定,这里只管开 / 关",
+                          f"生产版的开始节点是「{T.说法(节点规则)}」;要改频率:改开始节点 → 发布到生产 → 再来打开")
             能, 为什么 = me.能("运行编排测试")
             if not 能:
                 raise _错(403, "FORBIDDEN", "你自己没有发起运行的权限,不能打开定时",
@@ -1370,10 +1456,14 @@ async def 设定时(project_id: str, wid: str, request: Request, me: 身份 = De
                 raise _错(422, "SCHEDULE_INPUT_MISSING", f"生产版要的这几项没有着落:{'、'.join(缺)}",
                           "定时运行没人在场填 —— 在「固定输入」里写上它们(每次都用同一个值),"
                           "统计起 / 统计止由定时自己填", field_errors={f"固定输入.{f}": "必填" for f in 缺})
+        规则 = 节点规则 or 体规则 or (T.校验规则(_定时规则(老)) if 老 else T.校验规则({"周期": "日"}))
         # 重新打开(原来关着 / 改了周期)才重置「打开于」—— 打开之前的期不算错过;一直开着只改时刻不重置
-        重开 = 开 and (not 老 or not 老["schedule_enabled"] or 老["cadence"] != 规则["周期"])
+        细 = _定时细节(规则)
+        重开 = 开 and (not 老 or not 老["schedule_enabled"] or 老["cadence"] != 规则["周期"]
+                     or _定时细节(T.校验规则(_定时规则(老))) != 细)
         if 老:
             c.execute(text("""update workflow_schedules set cadence=:c, fire_time=:t, timezone=:z, schedule_enabled=:on,
+                                     cadence_detail=cast(:cd as jsonb),
                                      principal=case when :on then :u else principal end,
                                      input_snapshot=cast(:in as jsonb),
                                      armed_at=case when :rk then now() else armed_at end,
@@ -1381,18 +1471,21 @@ async def 设定时(project_id: str, wid: str, request: Request, me: 身份 = De
                                      archived_at=null, updated_at=now(), revision=revision+1
                                where project_id=:p and workflow_id=:w"""),
                       {"p": project_id, "w": wid, "c": 规则["周期"], "t": 规则["时刻"], "z": 规则["时区"], "on": 开,
+                       "cd": json.dumps(细, ensure_ascii=False),
                        "u": me.user_id, "in": json.dumps(固定, ensure_ascii=False), "rk": 重开})
         else:
             c.execute(text("""insert into workflow_schedules (id, organization_id, project_id, workflow_id, cadence,
-                                  fire_time, timezone, schedule_enabled, armed_at, principal, input_snapshot,
+                                  cadence_detail, fire_time, timezone, schedule_enabled, armed_at, principal, input_snapshot,
                                   created_at, created_by, updated_at, revision)
-                              values (:i, :o, :p, :w, :c, :t, :z, :on, case when :on then now() end, :u,
+                              values (:i, :o, :p, :w, :c, cast(:cd as jsonb), :t, :z, :on, case when :on then now() end, :u,
                                       cast(:in as jsonb), now(), :u, now(), 1)"""),
                       {"i": _新id("sch"), "o": me.org_id, "p": project_id, "w": wid, "c": 规则["周期"], "t": 规则["时刻"],
+                       "cd": json.dumps(细, ensure_ascii=False),
                        "z": 规则["时区"], "on": 开, "u": me.user_id, "in": json.dumps(固定, ensure_ascii=False)})
         # 「之前」也记(10-28 开关监督):工作台要能说「从关到开」「从每天 9 点改成每周一」,只记改成什么说不出这句
         _审计(c, me, "workflow.schedule", {"workflow_id": wid, "规则": 规则, "开着": 开, "固定输入字段": sorted(固定),
                                            "之前": ({"开着": bool(老["schedule_enabled"]), "周期": 老["cadence"],
+                                                     **(老["cadence_detail"] or {}),
                                                      "时刻": str(老["fire_time"])} if 老 else None)},
               reason=("打开定时:以本人身份跑生产版" if 开 else "关掉定时"))
         s = c.execute(text("select * from workflow_schedules where project_id=:p and workflow_id=:w"),
@@ -1418,7 +1511,7 @@ def _定时发起一期(c, s, 起, 止):
     import 定时 as T
     v = c.execute(text("select * from workflow_versions where project_id=:p and id=:i"),
                   {"p": p, "i": 生产["版本id"]}).mappings().first()
-    规则 = {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"]}
+    规则 = _定时规则(s)
     来源 = {"kind": "workflow_version", "id": wid, "version_id": v["id"], "version_no": v["version_no"],
             "环境": "production", "清单id": 生产["清单id"], "发起": "定时", "周期": s["cadence"],
             "统计起": 起.isoformat(), "统计止": 止.isoformat()}
@@ -1447,7 +1540,17 @@ def 定时扫一遍(c, 现在, 只看=None):
                               and (cast(:only as text[]) is null or s.workflow_id = any(cast(:only as text[])))
                               for update of s skip locked"""), {"only": list(只看) if 只看 else None}).mappings().all()
     for s in rs:
-        规则 = T.校验规则({"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"]})
+        规则 = T.校验规则(_定时规则(s))
+        # 频率定在生产版的开始节点上(11-16):发了新版、频率变了 → 定时表跟着改,不用人再来点一次保存
+        节点规则 = _生产开始规则(c, s["project_id"], _生产版本(c, s["project_id"], s["workflow_id"]))
+        if 节点规则 and (节点规则["周期"], 节点规则["时刻"], _定时细节(节点规则)) != (规则["周期"], 规则["时刻"], _定时细节(规则)):
+            c.execute(text("""update workflow_schedules set cadence=:c, cadence_detail=cast(:cd as jsonb), fire_time=:t,
+                                     updated_at=now(), revision=revision+1 where project_id=:p and workflow_id=:w"""),
+                      {"p": s["project_id"], "w": s["workflow_id"], "c": 节点规则["周期"], "t": 节点规则["时刻"],
+                       "cd": json.dumps(_定时细节(节点规则), ensure_ascii=False)})
+            话.append(f"{s['workflow_id']}:生产版开始节点的频率变了 → 定时跟着改成「{T.说法(节点规则)}」")
+            s = {**s, "cadence": 节点规则["周期"], "fire_time": 节点规则["时刻"], "cadence_detail": _定时细节(节点规则)}
+            规则 = 节点规则
         判 = T.该发起吗(规则, 现在, 上次统计起=s["last_period_start"], 设定于=s["armed_at"])
         if not 判["发起"]:
             continue
@@ -2228,6 +2331,7 @@ async def 发起运行(project_id: str, request: Request,
                 来源["输入来自"] = {"样例": 体.get("样例id")} if 体.get("样例id") else {"运行": 体.get("沿用运行")}
         if 跑法 != "正常":
             来源["跑法"] = 跑法
+        输入 = _定时自填(定义, 输入, 来源)
         return _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, 体.get("上限"))
 
 

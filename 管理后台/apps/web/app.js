@@ -3549,7 +3549,37 @@ function 表_设置(n) {
       + `<div class="two"><div>${输入框("", (el) => { const k = el.value.trim(); if (!k || 状[k]) return false; 状[k] = { initial: null }; 重画(); }, "新的状态名,回车加上")}</div></div>`
       + `<div class="k">循环里的步骤在「用到的数据」里能选「循环状态 · 名字」。这一轮没走到「取自」的那一步 → 那一项保持不变。</div>`;
   } else if (n.type === "start") {
-    体 += `<label class="f">使用者要提供什么</label>` + 字段表编辑(c.input_schema = c.input_schema || { type: "object", properties: {}, required: [] }, true);
+    // 开始方式(11-16,台账第六十九条,照 Dify):用户输入 / 定时触发器,**二选一** —— 定时开头的流程没人在场填东西
+    const 方式 = c.start_mode || "用户输入";
+    体 += `<label class="f">开始方式</label>` + 下拉(方式, [["用户输入", "用户输入:有人在聊天里 / 后台里点,填好内容再跑(最常用)"],
+        ["定时", "定时触发器:到点自动跑生产那一版,不要人填"]], (el) => {
+      if (!el.value) return false;
+      c.start_mode = el.value;
+      if (el.value === "定时") { c.schedule_rule = c.schedule_rule || { 周期: "周", 周几: [0], 时刻: "08:00" }; c.input_schema = 定时输入表(); }
+      else if (只有统计字段(c.input_schema)) c.input_schema = { type: "object", properties: {}, required: [] };
+      重画();
+    }, "请选择") + `<div class="k">一条流程<b>要么人点、要么定时</b>(二选一,照 Dify);两种都要就复制一条流程。</div>`;
+    if (方式 === "定时") {
+      const r = c.schedule_rule = c.schedule_rule || { 周期: "周", 周几: [0], 时刻: "08:00" };
+      体 += `<label class="f">多久跑一次</label>` + 下拉(r.周期 || "周", Object.entries(周期说法), (el) => {
+        if (!el.value) return false;
+        r.周期 = el.value;
+        if (el.value === "周" && !(r.周几 || []).length) r.周几 = [0];
+        if (el.value === "月" && !(r.几号 || []).length) r.几号 = [1];
+        重画();
+      }, "请选择");
+      if (r.周期 === "周") 体 += `<div class="k">哪几天</div><div>` + 周几名.map((名, i) =>
+        `<label class="k"><input type="checkbox" data-k="${挂控件((el) => { const w = new Set(r.周几 || []); if (el.checked) w.add(i); else w.delete(i); r.周几 = [...w].sort(); 重画(); })}" data-lb="周几" ${(r.周几 || []).includes(i) ? "checked" : ""}> ${名}</label>`).join(" ") + `</div>`;
+      if (r.周期 === "月") 体 += `<label class="f">几号</label>` + 输入框((r.几号 || [1]).join(","), (el) => { r.几号 = 读几号(el.value); 重画(); }, "1,15,末")
+        + `<div class="k">逗号分开;最后一天写「末」;31 号碰上小月落到月末跑。</div>`;
+      体 += `<label class="f">${r.周期 === "时" ? "每小时的第几分(时:分里只用分)" : "几点跑(北京时间)"}</label>`
+        + 输入框(r.时刻 || "08:00", (el) => { r.时刻 = el.value.trim() || "08:00"; 重画(); }, "08:00");
+      体 += `<div class="note">${md("只跑**生产那一版**;同一期只跑一次;关机错过的只补最近一期;上一次没跑完就跳过(10-26 拍)。开始交给下一步两项:**统计起 / 统计止** = 上一次该跑到这一次该跑之间。打开 / 关掉在「版本与发布」页签里。")}</div>
+        <div id="sc-prev" class="k">接下来 5 次:读取中…</div>`;
+      setTimeout(() => 填定时预览(r), 0);
+    } else {
+      体 += `<label class="f">使用者要提供什么</label>` + 字段表编辑(c.input_schema = c.input_schema || { type: "object", properties: {}, required: [] }, true);
+    }
     // 术语(11-06 深夜补):整条流程选一版,挂在开始节点上 —— 模型步骤只带这一步提到的那几条
     体 += `<label class="f">这条流程用哪一版术语</label>`
       + 资源选择器("术语版本", c.glossary_version_id, (g.资源.术语 || []).map((v) => ({ id: v.id, 名: v["名称"], 版: v["版本"], 说: `${v["条数"]} 条`, 标: "已冻结" })),
@@ -3991,7 +4021,8 @@ function 画_测试(盒 = null) {
     <div data-trpane="输入"><div class="card">
       ${样例条("tr")}
       ${跑法选择("tr")}
-      ${框 || '<div class="k">这条流程不需要使用者提供任何东西。</div>'}
+      ${定时开头(g) ? '<div class="note">这条流程由<b>定时触发器</b>开头:试运行不等到点,用当前时间模拟一期,统计起 / 统计止由系统填。</div>'
+        : (框 || '<div class="k">这条流程不需要使用者提供任何东西。</div>')}
       <div class="note">测试用的是<b>草稿</b>,不是候选版本。模型连接是演示用的那条时不真调模型(结果带 [mock]);
         「由澜绣执行」的步骤会真的去澜绣取数;写跟进这类写入:<b>连接测试</b>只记会写什么、不发给澜绣,<b>正常</b>跑会真的写(写入之前一定先停在人工核对)。</div>
       <div id="tr-err"></div>
@@ -4011,7 +4042,7 @@ function 画_测试(盒 = null) {
     const 选 = 图态.样例选 && 图态.样例选.tr;
     if (选) return 做_试运行({}, 选.参数);       // 看不到原文的样例 / 历史输入:由服务端按 id 填
     const { 输入, 坏 } = 读试运行输入(sch);
-    const 缺 = (sch.required || []).filter((k) => !(k in 输入));
+    const 缺 = 定时开头(图态) ? [] : (sch.required || []).filter((k) => !(k in 输入));
     if (坏.length || 缺.length) {
       $("#tr-err").innerHTML = `<div class="err" style="padding:6px">${缺.length ? `还没填:${esc(缺.map((k) => (sch.properties[k] || {}).title || k).join("、"))}。` : ""}
         ${坏.length ? `不是数字:${esc(坏.join("、"))}。` : ""}<b>一个模型都没调。</b></div>`;
@@ -4350,8 +4381,35 @@ async function 做_删版本(vid) {
 }
 /* 定时(10-26,方案 §8.5):日 / 周 / 月,默认北京时间 8:00,**只跑生产那一版**,以打开它的人的身份跑。
  * 周报周一早上跑、统计上周一到上周日;关机错过的只补最近一期,更早的列在「最近几期」里,要补就手动发起。 */
-const 周期说法 = { 日: "每天", 周: "每周一", 月: "每月 1 号" };
-const 统计说法 = { 日: "前一天", 周: "上一个自然周(周一到周日)", 月: "上一个自然月" };
+/* 11-16 加三种频率(台账第六十八条,照 Dify):每周几(多选)/ 每月几号(多选,可写「末」)/ 每小时;
+ * 统计哪一段 = 上一次该跑到这一次该跑之间(第七十三条),服务端算好放在「下次」「接下来」里,这里不再写死「统计上一个自然周」。 */
+const 周期说法 = { 日: "每天", 周: "每周几", 月: "每月几号", 时: "每小时" };
+const 周几名 = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+/* 定时开头的流程,「开始」交给下一步的只有这两项(定时自己填)—— 和 runtime/validator.py 的 定时自填 同一对 */
+const 定时输入表 = () => ({ type: "object", properties: {
+  统计起: { type: "string", title: "统计起", description: "这一期从哪天(或哪一刻)起,定时自己填" },
+  统计止: { type: "string", title: "统计止", description: "这一期到哪天(或哪一刻)止,定时自己填" } }, required: ["统计起", "统计止"] });
+const 只有统计字段 = (sch) => { const ks = Object.keys((sch || {}).properties || {}); return ks.length > 0 && ks.every((k) => k === "统计起" || k === "统计止"); };
+const 定时开头 = (g) => { const 起 = g && g.定义 && g.定义.nodes.find((n) => n.type === "start"); return !!(起 && (起.config || {}).start_mode === "定时"); };
+async function 填定时预览(r) {
+  const el = $("#sc-prev"); if (!el) return;
+  try {
+    const q = new URLSearchParams({ 周期: r.周期 || "周", 时刻: r.时刻 || "08:00" });
+    if (r.周期 === "周") q.set("周几", (r.周几 || [0]).join(","));
+    if (r.周期 === "月") q.set("几号", (r.几号 || [1]).join(","));
+    const d = await 请求(`${P()}/schedule-preview?${q}`);
+    el.innerHTML = `<b>${esc(d["说法"])}</b> · 接下来 5 次(北京时间):${(d["接下来"] || []).map((x) =>
+      `${时间(x["时刻"])}(统计 ${esc(x["统计起"])}${x["统计起"] !== x["统计止"] ? ` ~ ${esc(x["统计止"])}` : ""})`).join(" · ")}`;
+    // 卡片上要说清「到点会不会真的跑」(规划 2-1 验收:生产没发布过 → 红字「还没发布,到点不跑」)
+    const sc = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/schedule`);
+    const 态 = !sc["生产版本"] ? `<span class="ferr">还没发布到生产 —— 到点不跑。</span>`
+      : sc["生产开始方式"] !== "定时" ? `<span class="ferr">生产那一版还是「用户输入」开头 —— 这一版发布到生产后才会按上面的频率跑。</span>`
+      : sc["定时"] && sc["定时"]["开着"] ? `<span class="pill ok">定时开着</span> 下次 ${sc["定时"]["下次"] ? 时间(sc["定时"]["下次"]["时刻"]) : "—"}`
+      : `<span class="pill">定时关着</span> 到「版本与发布」页签打开。`;
+    el.insertAdjacentHTML("beforeend", `<div>${态}</div>`);
+  } catch (e) { el.innerHTML = `<span class="ferr">${esc("这条规则算不出来:" + e.message)}</span>`; }
+}
+const 读几号 = (文) => 文.split(/[,，、\s]+/).map((x) => x.trim()).filter(Boolean).map((x) => (x === "末" || x === "最后一天") ? "末" : Number(x));
 const 期结果 = (x) => `${x["结果"] === "已发起" ? `<span class="pill ok">已发起</span>` : `<span class="pill warn">${esc(x["结果"])}</span>`}
   ${esc(x["起"])}${x["止"] !== x["起"] ? " ~ " + esc(x["止"]) : ""}
   ${x["运行"] ? ` · <a href="#/wfrun/${encodeURIComponent(x["运行"])}">看这次运行</a>` : ""}
@@ -4362,35 +4420,28 @@ async function 画_定时块(wid) {
   try { d = await 请求(`${P()}/workflows/${encodeURIComponent(wid)}/schedule`); }
   catch (e) { el.innerHTML = `<div class="note">${esc("定时没取到:" + e.message)}</div>`; return; }
   if (!图态 || 图态.wid !== wid || 图态.页签 !== "版本与发布") return;
-  const s = d["定时"], 要填 = d["要填"] || [], 固定 = (s && s["固定输入"]) || {};
-  const 记录 = ((s && s["记录"]) || []).slice(-5).reverse();
+  const s = d["定时"], 记录 = ((s && s["记录"]) || []).slice(-5).reverse();
+  const 是定时 = d["生产开始方式"] === "定时";
   el.innerHTML = `<h2>定时</h2>
-    <div class="sub">${md("到点自动跑**生产那一版**,以打开定时的人的身份跑。同一期只跑一次;关机错过的**只补最近一期**,更早的列在下面,要补就手动发起。")}</div>
-    ${!d["生产版本"] ? `<div class="note">${md("这条工作流**还没发布到生产**,定时打不开 —— 先在上面把一版审核后发到生产。")}</div>` : ""}
-    <div class="card"><div class="schedform">
-      <label>多久跑一次 <select id="sc-c">${["日", "周", "月"].map((p) =>
-        `<option value="${p}" ${(s ? s["周期"] : "周") === p ? "selected" : ""}>${周期说法[p]}(统计${统计说法[p]})</option>`).join("")}</select></label>
-      <label>几点跑 <input id="sc-t" value="${esc(s ? s["时刻"] : "08:00")}" size="6"> <span class="k">北京时间</span></label>
-      ${要填.map((f) => `<label>${esc(f["说明"] || f["字段"])} <input data-fx="${esc(f["字段"])}" value="${esc(固定[f["字段"]] ?? "")}"
-        placeholder="每次定时都用这个值"></label>`).join("")}
-    </div>
-    <div class="k">${s ? (s["开着"] ? `<span class="pill ok">开着</span> 以 ${esc(s["以谁的身份"])} 的身份跑`
-        + (s["下次"] ? ` · 下次 ${时间(s["下次"]["时刻"])},统计 ${esc(s["下次"]["统计起"])} ~ ${esc(s["下次"]["统计止"])}` : "")
-        : `<span class="pill">关着</span>`) : "还没设过定时。"}</div>
-    ${s && (s["接下来"] || []).length ? `<div class="k">${s["开着"] ? "接下来 5 次" : "打开的话,接下来 5 次"}(北京时间):${s["接下来"].map((x) =>
-        `${时间(x["时刻"])}(统计 ${esc(x["统计起"])}${x["统计起"] !== x["统计止"] ? ` ~ ${esc(x["统计止"])}` : ""})`).join(" · ")}</div>` : ""}
-    <button class="pri" id="sc-on" ${d["生产版本"] ? "" : "disabled"}>${s && s["开着"] ? "保存" : "打开定时"}</button>
-    ${s && s["开着"] ? `<button id="sc-off">关掉定时</button>` : ""}</div>
+    <div class="sub">${md("到点自动跑**生产那一版**,以打开定时的人的身份跑。同一期只跑一次;关机错过的**只补最近一期**,更早的列在下面,要补就手动发起。频率在「开始」节点上定(一条流程要么人点、要么定时),这里只管开 / 关。")}</div>
+    ${!d["生产版本"] ? `<div class="note">${md("这条工作流**还没发布到生产**,定时打不开 —— 先在上面把一版审核后发到生产。")}</div>`
+      : !是定时 ? `<div class="note">${md("生产这一版是**「用户输入」开头**的,定时打不开。要定时跑:在编排页把「开始」的开始方式改成「定时触发器」,发布到生产后再来打开;两种都要就复制一条流程。")}</div>` : ""}
+    <div class="card">
+      ${是定时 ? `<div><b>${esc(d["开始节点规则"] || "")}</b> <span class="k">北京时间 · 来自生产版的开始节点</span></div>` : ""}
+      <div class="k">${s ? (s["开着"] ? `<span class="pill ok">开着</span> 以 ${esc(s["以谁的身份"])} 的身份跑`
+          + (s["下次"] ? ` · 下次 ${时间(s["下次"]["时刻"])},统计 ${esc(s["下次"]["统计起"])} ~ ${esc(s["下次"]["统计止"])}` : "")
+          : `<span class="pill">关着</span>`) : "还没打开过定时。"}</div>
+      ${s && (s["接下来"] || []).length ? `<div class="k">${s["开着"] ? "接下来 5 次" : "打开的话,接下来 5 次"}(北京时间):${s["接下来"].map((x) =>
+          `${时间(x["时刻"])}(统计 ${esc(x["统计起"])}${x["统计起"] !== x["统计止"] ? ` ~ ${esc(x["统计止"])}` : ""})`).join(" · ")}</div>` : ""}
+      <button class="pri" id="sc-on" ${d["生产版本"] && 是定时 ? "" : "disabled"}>${s && s["开着"] ? "保存" : "打开定时"}</button>
+      ${s && s["开着"] ? `<button id="sc-off">关掉定时</button>` : ""}</div>
     ${记录.length ? `<h3>最近几期</h3><ul class="schedlog">${记录.map((x) => `<li>${期结果(x)}</li>`).join("")}</ul>` : ""}`;
   const 存 = async (开) => {
-    const 固定输入 = {};
-    el.querySelectorAll("[data-fx]").forEach((i) => { if (i.value.trim()) 固定输入[i.dataset.fx] = i.value.trim(); });
     if (开 && !(await 问一句(s && s["开着"] ? "保存定时?" : "打开定时?",
-        `${周期说法[$("#sc-c").value]} ${esc($("#sc-t").value)} 自动跑<b>生产那一版</b>,<b>以你的身份</b>发起 —— 每跑一次就按真实用量花一次钱。`,
+        `${esc(d["开始节点规则"] || "")} 自动跑<b>生产那一版</b>,<b>以你的身份</b>发起 —— 每跑一次就按真实用量花一次钱。`,
         { 确定: s && s["开着"] ? "保存" : "打开", 取消: "先不" }))) return;
     try {
-      await 请求(`${P()}/workflows/${encodeURIComponent(wid)}/schedule`, { method: "PUT",
-        body: JSON.stringify({ 周期: $("#sc-c").value, 时刻: $("#sc-t").value.trim(), 开着: 开, 固定输入 }) });
+      await 请求(`${P()}/workflows/${encodeURIComponent(wid)}/schedule`, { method: "PUT", body: JSON.stringify({ 开着: 开 }) });
       提示(开 ? "定时已保存" : "定时已关掉", 开 ? "到点会自动发起,结果出现在「最近几期」和运行记录里。" : "不会再自动发起。已经发起的运行不受影响。");
     } catch (e) { 报错(e); }
     await 画_定时块(wid);
@@ -4413,8 +4464,8 @@ async function 页_定时() {
   $("#main").innerHTML = 头 + `<table><thead><tr><th>工作流</th><th>规则</th><th>生产在跑</th><th>下次</th><th>最近一期</th></tr></thead><tbody>`
     + d.items.map((x) => { const 末 = (x["记录"] || []).slice(-1)[0];
       return `<tr><td><a href="#/workflow/${encodeURIComponent(x["工作流"])}/${encodeURIComponent("版本与发布")}">${esc(x["名称"])}</a></td>
-        <td>${x["开着"] ? `<span class="pill ok">开着</span>` : `<span class="pill">关着</span>`} ${周期说法[x["周期"]] || esc(x["周期"])} ${esc(x["时刻"])}
-          <div class="k">统计${统计说法[x["周期"]] || ""} · 以 ${esc(x["以谁的身份"])} 的身份</div></td>
+        <td>${x["开着"] ? `<span class="pill ok">开着</span>` : `<span class="pill">关着</span>`} ${esc(x["说法"] || `${周期说法[x["周期"]] || x["周期"]} ${x["时刻"]}`)}
+          <div class="k">${x["下次"] ? `下次统计 ${esc(x["下次"]["统计起"])} ~ ${esc(x["下次"]["统计止"])}` : "统计上一次到这一次那一段"} · 以 ${esc(x["以谁的身份"])} 的身份</div></td>
         <td>${x["生产版本"] ? "v" + esc(String(x["生产版本"]["版本号"])) : `<span class="pill warn">没发布到生产</span>`}</td>
         <td>${x["下次"] ? `${时间(x["下次"]["时刻"])}<div class="k">统计 ${esc(x["下次"]["统计起"])} ~ ${esc(x["下次"]["统计止"])}</div>` : "—"}</td>
         <td>${末 ? 期结果(末) : `<span class="k">还没到过点</span>`}</td></tr>`; }).join("")

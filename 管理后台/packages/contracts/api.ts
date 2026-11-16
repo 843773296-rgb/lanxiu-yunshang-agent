@@ -267,7 +267,8 @@ export const ENDPOINTS = [
   { method: "DELETE", path: "/workflows/{id}/test-samples/{sid}", summary: "删测试样例", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflows/{id}/recent-inputs", summary: "最近几次运行收到的输入", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflows/{id}/schedule", summary: "这条工作流的定时", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
-  { method: "PUT", path: "/workflows/{id}/schedule", summary: "设 / 改 / 关定时", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PUT", path: "/workflows/{id}/schedule", summary: "开 / 关定时", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/schedule-preview", summary: "定时规则预览(说法 + 接下来 5 次)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/chat-assistants", summary: "聊天助手列表(澜绣聊天站上的角色助手)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/chat-assistants/import", summary: "从代码导入基线版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/chat-assistants/by-role/{role}/production", summary: "按角色取生产那一版(给聊天站拉)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -357,4 +358,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 269 条接口 · 24 条异步 · 32 条要幂等键 · 40 条要 If-Match */
+/** 共 270 条接口 · 24 条异步 · 32 条要幂等键 · 40 条要 If-Match */

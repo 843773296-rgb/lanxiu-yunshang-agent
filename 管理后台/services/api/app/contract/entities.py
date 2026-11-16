@@ -646,10 +646,12 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "source 记来路:手填 / 来自运行(source_run_id 指那次运行)—— 「这条样例是不是从真实运行里抄的」要查得出"],
       依赖=["workflows"]),
     E("workflow_schedules", "工作流定时", 子对象, 可改,
-      ["workflow_id", "cadence", "fire_time", "timezone", "schedule_enabled", "armed_at", "principal",
+      ["workflow_id", "cadence", "cadence_detail", "fire_time", "timezone", "schedule_enabled", "armed_at", "principal",
        "input_snapshot", "last_period_start", "last_run_id", "missed_detail"],
       ["**一条工作流只有一份定时**(用户 2026-10-26 拍「照你的建议走」,方案 §8.5):日 / 周 / 月,默认北京时间 8:00;"
        "统计哪一段、什么时候跑由 runtime/定时.py 算,这里只存规则和跑到哪一期",
+       "11-16 加三种频率(台账第六十八条,照 Dify):每周几(多选)/ 每月几号(多选,「末」= 最后一天;31 号碰上小月落到月末跑)/ 每小时;"
+       "周几、几号存 cadence_detail;统计哪一段 = **上一次该跑到这一次该跑之间**(第七十三条),老三种算出来和原来一样",
        "**只跑生产环境指着的那一版** —— 还没发布到生产就不发起(跟聊天接管同一个口径),不跑最新候选版",
        "以 principal(打开定时的那个人)的身份发起;**每次发起前重新核一遍他还有没有发起运行的权限**,没有就停下记原因,"
        "不拿服务账号顶替",

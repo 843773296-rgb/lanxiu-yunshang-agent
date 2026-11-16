@@ -3210,6 +3210,361 @@
           }
         ]
       }
+    },
+    "合法_定时开头": {
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "name": "文章总结",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "统计起": {
+                    "type": "string",
+                    "title": "统计起"
+                  },
+                  "统计止": {
+                    "type": "string",
+                    "title": "统计止"
+                  }
+                },
+                "required": [
+                  "统计起",
+                  "统计止"
+                ]
+              },
+              "start_mode": "定时",
+              "schedule_rule": {
+                "周期": "周",
+                "周几": [
+                  2
+                ],
+                "时刻": "08:00"
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "article": {
+                  "source": "input",
+                  "pointer": "/统计起"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      },
+      "期望阻断": [],
+      "为什么": "11-16 台账第六十九条:开始方式选「定时」,使用者要提供的只剩定时自己填的统计起 / 统计止 —— 合法,这是二选一里「定时」那一边的正向对照"
+    },
+    "非法_定时开头还要人填": {
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "name": "文章总结",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "统计起": {
+                    "type": "string",
+                    "title": "统计起"
+                  },
+                  "统计止": {
+                    "type": "string",
+                    "title": "统计止"
+                  },
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "统计起",
+                  "统计止",
+                  "article"
+                ]
+              },
+              "start_mode": "定时",
+              "schedule_rule": {
+                "周期": "周",
+                "周几": [
+                  2
+                ],
+                "时刻": "08:00"
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "article": {
+                  "source": "input",
+                  "pointer": "/统计起"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      },
+      "期望阻断": [
+        "START_TRIGGER_EXCLUSIVE"
+      ],
+      "为什么": "定时开头却还要使用者填 article:到点自动跑时没人在场填它 —— 一条流程要么人点、要么定时(二选一,照 Dify)"
+    },
+    "非法_定时规则不对": {
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "name": "文章总结",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "统计起": {
+                    "type": "string",
+                    "title": "统计起"
+                  },
+                  "统计止": {
+                    "type": "string",
+                    "title": "统计止"
+                  }
+                },
+                "required": [
+                  "统计起",
+                  "统计止"
+                ]
+              },
+              "start_mode": "定时",
+              "schedule_rule": {
+                "周期": "年"
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "article": {
+                  "source": "input",
+                  "pointer": "/统计起"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      },
+      "期望阻断": [
+        "START_TRIGGER_RULE"
+      ],
+      "为什么": "开始方式是定时、规则却写了「年」:算不出哪天跑、统计哪一段,运行时才发现就晚了 —— 检查配置时就拦"
     }
   }
 }

@@ -282,9 +282,11 @@
     # 这两个是**带类型的引用**({kind, id, version_id}),和 candidate_ref /
     # baseline_ref / target_ref 一样钉成 JSONB。
     "definition_ref": "JSONB", "release_ref": "JSONB",
-    # 工作流定时(2026-10-26):周期是枚举(日/周/月)、时刻是「08:00」这样的字符串、
-    # 统计起始日是**日期不是时间点** —— 周报统计的是「上周一」这一天,不是哪一刻
-    "cadence": "TEXT", "fire_time": "TEXT", "last_period_start": "DATE",
+    # 工作流定时(2026-10-26):周期是枚举(日/周/月/时)、时刻是「08:00」这样的字符串。
+    # 11-16 加了每周几 / 每月几号 / 每小时(台账第六十八条):周几、几号存 cadence_detail(JSONB);
+    # 最近一期的统计起始原来是 DATE(「上周一」这一天),加了每小时就得记到**哪一刻** —— 改成带时区的时刻,
+    # 日 / 周 / 月的老值当那天 0 点(runtime/定时.py `_同类` 负责换回日期再比)
+    "cadence": "TEXT", "cadence_detail": "JSONB", "fire_time": "TEXT", "last_period_start": "TIMESTAMPTZ",
     # 运行与人工介入
     "principal": "TEXT",        # 执行身份:**不由用户输入字段指定**(§6.1)
     "decision": "TEXT", "outcome": "TEXT", "attempt": "INTEGER",

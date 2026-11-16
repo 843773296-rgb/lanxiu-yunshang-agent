@@ -15,10 +15,12 @@
   ⑧ 重复回执同一张单 → 409,不排第二次恢复
 """
 import json
+import datetime as dt
 import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -461,21 +463,57 @@ c, b = 打("PATCH", P + f"/workflows/{wid2}", 体={"名称": d2["名称"], "聊�
 ck("**同一个技能第二条也想接管 → 409 TAKEOVER_TAKEN**(聊天站不能不知道该发起哪条)",
    c == 409 and (b or {}).get("code") == "TAKEOVER_TAKEN", (c, b))
 
-print("\n▸ ⑫¼ 定时(10-26,方案 §8.5):只跑生产那一版、以打开的人的身份、同一期只一次、上一期没跑完跳过、关机只补最近一期")
+print("\n▸ ⑫¼ 定时(10-26,方案 §8.5;11-16 二选一):频率在开始节点上、只跑生产那一版、以打开的人的身份、同一期只一次、上一期没跑完跳过、关机只补最近一期")
 # 「到点」用一个假的「现在」在进程内扫(只扫这一条)—— 等真到早上 8 点不现实;发起走的仍是接口层同一个受理口,运行落在真库里
 sys.path[:0] = [os.path.join(根, "services", "api", "app"), os.path.join(根, "services", "api", "app", "runtime")]
 import workflows_api as WA                     # noqa: E402
 from db import 事务 as _事务                    # noqa: E402
 from datetime import datetime as _dt, timedelta as _td, date as _d
 
+# 用户输入开头的流程(wid2)**不许**开定时 —— 一条流程要么人点、要么定时(台账第六十九条)
+c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "年"})
+ck("周期写错 → 422,说人话", c == 422 and "日 / 周 / 月" in (b or {}).get("message", ""), (c, b))
+c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"开着": True})
+ck("**用户输入开头的流程开定时 → 422 SCHEDULE_START_NOT_TRIGGER**(二选一,建议说清去改开始节点)",
+   c == 422 and (b or {}).get("code") == "SCHEDULE_START_NOT_TRIGGER" and "开始方式" in (b or {}).get("advice", "") + (b or {}).get("message", ""), (c, b))
+ck("查看定时说清生产版是「用户输入」开头", 打("GET", P + f"/workflows/{wid2}/schedule")[1].get("生产开始方式") == "用户输入")
+
+# 定时开头的流程:开始(定时触发器,每天 08:00)→ 模板转换(把统计起拼成一句)→ 结束
+def 定时化(定义):
+    定义["nodes"] = [
+        {"id": "s", "type": "start", "name": "开始", "config": {"start_mode": "定时", "schedule_rule": {"周期": "日", "时刻": "08:00"},
+            "input_schema": {"type": "object", "properties": {"统计起": {"type": "string", "title": "统计起"}, "统计止": {"type": "string", "title": "统计止"}},
+                             "required": ["统计起", "统计止"]}}},
+        {"id": "t", "type": "template", "name": "拼一句", "config": {"template": "这一期从 {{起}} 到 {{止}}",
+            "bindings": {"起": {"source": "input", "pointer": "/统计起"}, "止": {"source": "input", "pointer": "/统计止"}}}},
+        {"id": "e", "type": "end", "name": "结束", "config": {"output_schema": {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"], "additionalProperties": False},
+            "bindings": {"summary": {"source": "node", "node_id": "t", "pointer": "/文本"}}}}]
+    定义["edges"] = [{"source": "s", "target": "t", "port": "success"}, {"source": "t", "target": "e", "port": "success"}]
+    # ⚠️ 冻结版本的入参取的是定义**顶层** input_schema(不是开始节点里那份);两处不同步,生产版就会要原来那几项(call_id…),定时打不开
+    定义["input_schema"] = 定义["nodes"][0]["config"]["input_schema"]
+    定义["output_schema"] = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"], "additionalProperties": False}
+wid3, _ = 建图("e2e 定时开头", 改=定时化)
+c, 版3 = 打("POST", P + f"/workflows/{wid3}/versions", 体={"变更说明": "e2e 定时开头"})
+ck("定时开头的流程能冻结版本(开始只交统计起 / 止,模板拿它们拼一句)", c == 201, (c, 版3))
+c, b = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())}, 体={"workflow_id": wid3, "输入": {}})
+rid0 = (b or {}).get("resource_id")
+st0, _ = 等到(rid0, ("succeeded", "failed", "cancelled"))
+with _事务() as cx:
+    from sqlalchemy import text as _text      # noqa: E402
+    r0 = cx.execute(_text("select definition_ref, input_snapshot from execution_runs where id=:r"), {"r": rid0}).mappings().first()
+ck("**试运行不等到点:统计起 / 止由系统按当前时间模拟一期填上**,来源记着「模拟期」,跑成",
+   st0 == "succeeded" and (r0["input_snapshot"] or {}).get("统计起") and (r0["definition_ref"] or {}).get("模拟期", {}).get("说法") == "每天 08:00", (st0, dict(r0 or {})))
+c, b = 发到生产(wid3, 版3["id"])
+assert c in (200, 201, 202), (c, b)       # 发布接口 10-26 起就是 202(异步受理)
+
 
 def 扫(现在):
     with _事务() as cx:
-        return WA.定时扫一遍(cx, 现在, 只看=[wid2])
+        return WA.定时扫一遍(cx, 现在, 只看=[wid3])
 
 
 def 定时():
-    return 打("GET", P + f"/workflows/{wid2}/schedule")[1]
+    return 打("GET", P + f"/workflows/{wid3}/schedule")[1]
 
 
 def 收掉(rid_, 名):
@@ -485,20 +523,16 @@ def 收掉(rid_, 名):
     c_, b_ = 打("POST", P + f"/execution-runs/{rid_}/cancel", "U002", 体={"reason": f"e2e {名}收尾"},
                头={"Idempotency-Key": str(uuid.uuid4()), "If-Match": str(d_["revision"])})
     st_, _ = 等到(rid_, ("cancelled", "failed", "succeeded"))
-    ck(f"({名}收尾)取消那次运行,真的停了", c_ in (200, 202) and st_ == "cancelled", (c_, b_, st_))
+    ck(f"({名}收尾)那次运行已经收掉(定时开头的流程一两秒就跑完,收尾时多半已经成功)", c_ in (200, 202, 409) and st_ in ("cancelled", "succeeded"), (c_, b_, st_))
 
-
-c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "年"})
-ck("周期写错 → 422,说人话", c == 422 and "日 / 周 / 月" in (b or {}).get("message", ""), (c, b))
-c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "日"})
-ck("**生产版要的必填项没着落 → 422 SCHEDULE_INPUT_MISSING**(不留到早上 8 点才失败)",
-   c == 422 and (b or {}).get("code") == "SCHEDULE_INPUT_MISSING", (c, b))
-ck("查看定时会列出要固定填的那几项(统计起止不算,定时自己填)",
-   sorted(x["字段"] for x in 定时().get("要填", [])) == ["call_id", "customer_id"], 定时().get("要填"))
-c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "日", "固定输入": {"call_id": "TS-001", "customer_id": "C10001"}})
+ck("查看定时说清生产版是「定时触发器」开头,规则「每天 08:00」来自开始节点",
+   定时().get("生产开始方式") == "定时" and 定时().get("开始节点规则") == "每天 08:00", 定时())
+c, b = 打("PUT", P + f"/workflows/{wid3}/schedule", 体={"周期": "周", "周几": [2], "开着": True})
+ck("**这里带了和开始节点不一样的频率 → 422 SCHEDULE_RULE_ON_START**(频率在开始节点上改)", c == 422 and (b or {}).get("code") == "SCHEDULE_RULE_ON_START", (c, b))
+c, b = 打("PUT", P + f"/workflows/{wid3}/schedule", 体={"开着": True})
 s0 = (b or {}).get("定时") or {}
-ck("填上之后打开 → 200,以打开的人(U002)的身份,给出下次时刻和统计哪一天",
-   c == 200 and s0.get("开着") and s0.get("以谁的身份") == "U002" and (s0.get("下次") or {}).get("统计起"), (c, b))
+ck("只传「开着」就能打开 → 200,频率照开始节点(每天 08:00),以打开的人(U002)的身份,给出下次时刻和统计哪一天",
+   c == 200 and s0.get("开着") and s0.get("周期") == "日" and s0.get("说法") == "每天 08:00" and s0.get("以谁的身份") == "U002" and (s0.get("下次") or {}).get("统计起"), (c, b))
 到点 = _dt.fromisoformat(s0["下次"]["时刻"]) + _td(minutes=1)
 话 = 扫(到点 - _td(minutes=2))
 ck("没到点 → 不发起", 话 == [], 话)
@@ -512,24 +546,30 @@ from sqlalchemy import text as _text      # noqa: E402
 with _事务() as cx:
     r = cx.execute(_text("select principal, definition_ref, input_snapshot from execution_runs where id=:r"), {"r": r1}).mappings().first()
 ck("这次运行跑的是**生产那一版**、发起人是 U002、来源记着「定时」、输入带上了统计起止",
-   r and r["principal"] == "U002" and r["definition_ref"].get("version_id") == 版2["id"]
+   r and r["principal"] == "U002" and r["definition_ref"].get("version_id") == 版3["id"]
    and r["definition_ref"].get("发起") == "定时" and r["input_snapshot"].get("统计起") == 末.get("起"), dict(r or {}))
 ck("**同一期再扫一遍 → 不再发起**(重启、两个 worker 同时扫都只跑一次)", 扫(到点 + _td(minutes=5)) == [], s1.get("最近一期"))
-话 = 扫(到点 + _td(days=1))
-末 = 定时()["定时"]["记录"][-1]
-ck("**下一期到点时上一期还没跑完 → 这期跳过,写清为什么**", 末.get("结果") == "跳过" and "还没结束" in 末.get("为什么", ""), 末)
-收掉(r1, "定时第一期")
+等到(r1, ("succeeded", "failed", "cancelled"))
 话 = 扫(到点 + _td(days=5))
 记 = 定时()["定时"]["记录"]
 末 = 记[-1]
 错 = [x for x in 记 if x.get("结果") == "错过"]
-ck("**关机错过了三期 → 只发起最近一期,另外三期记成「错过」不补**",
-   末.get("结果") == "已发起" and len(错) == 3 and 末.get("起") == (到点.date() + _td(days=4)).isoformat(), (话, 记[-5:]))
-收掉(末.get("运行"), "定时补的那一期")
-c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "日", "开着": False, "固定输入": {"call_id": "TS-001", "customer_id": "C10001"}})
+ck("**关机错过了四期 → 只发起最近一期,另外四期记成「错过」不补**",
+   末.get("结果") == "已发起" and len(错) == 4 and 末.get("起") == (到点.date() + _td(days=4)).isoformat(), (话, 记[-6:]))
+等到(末.get("运行"), ("succeeded", "failed", "cancelled"))
+# 11-16 三种新频率(台账第六十八条):预览接口给人话说法和接下来 5 次;范围写错 422
+c, b = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "周", "周几": "2,4", "时刻": "08:00"}))
+ck("预览:每周三、周五 08:00,接下来 5 次都是周三 / 周五、各统计到前一天",
+   c == 200 and (b or {}).get("说法") == "每周三、周五 08:00" and len(b.get("接下来") or []) == 5
+   and all(dt.date.fromisoformat(x["时刻"][:10]).weekday() in (2, 4) for x in b["接下来"]), (c, b))
+c, b = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "月", "几号": "31,末"}))
+ck("预览:每月 31 号、最后一天", c == 200 and (b or {}).get("说法") == "每月 31 号、最后一天 08:00", (c, b))
+c, b = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "周", "周几": "7"}))
+ck("周几写 7 → 422,说清 0 到 6", c == 422 and "0 到 6" in (b or {}).get("message", ""), (c, b))
+c, b = 打("PUT", P + f"/workflows/{wid3}/schedule", 体={"开着": False})
 ck("关掉之后再到点 → 不发起", c == 200 and 扫(到点 + _td(days=9)) == [], (c, b))
 c, b = 打("GET", P + "/schedules")
-ck("「定时」页的列表里有它,标着关着", any(x["工作流"] == wid2 and x["开着"] is False for x in (b or {}).get("items", [])), b)
+ck("「定时」页的列表里有它,标着关着、说法「每天 08:00」", any(x["工作流"] == wid3 and x["开着"] is False and x.get("说法") == "每天 08:00" for x in (b or {}).get("items", [])), b)
 
 print("\n▸ ⑫ 账号绑定 + 聊天站发起被接管的工作流(用户 10-24 拍「一对一绑定」「打开时聊天站改走工作流」)")
 工号 = "E2E" + uuid.uuid4().hex[:6]

@@ -502,9 +502,9 @@ _额外检查 = {
         ("ck_trace_incidents_kind", "kind in ('环境故障', '撞花费上限')"),
         ("ck_trace_incidents_status", "status in ('待处理', '已处理')"),
     ],
-    # 定时(2026-10-26):周期只有三种,口径在 runtime/定时.py —— 库里多一种它就算不出该跑哪一期
+    # 定时(2026-10-26):周期只有这几种,口径在 runtime/定时.py —— 库里多一种它就算不出该跑哪一期(11-16 加「时」)
     "workflow_schedules": [
-        ("ck_workflow_schedules_cadence", "cadence in ('日', '周', '月')"),
+        ("ck_workflow_schedules_cadence", "cadence in ('日', '周', '月', '时')"),
     ],
     # 测试样例(2026-10-26):来路只有两种 —— 另起一种说法(「导入」之类)要先在这里登记,不许悄悄写进去
     "workflow_test_samples": [

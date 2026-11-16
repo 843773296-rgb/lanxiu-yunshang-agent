@@ -49,6 +49,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import 列表操作 as LO  # noqa: E402
 import 文档提取 as DE  # noqa: E402
 import 列表迭代 as FE  # noqa: E402
+import 定时 as SCH  # noqa: E402
+
+# 定时开头的流程,「开始」交给下一步的只有这两项(定时自己填)—— 别处也用这个名单(workflows_api 的 _定时统计字段 同一对)
+定时自填 = ("统计起", "统计止")
 
 阻断 = "blocking"     # 不修不许冻结版本
 警告 = "warning"      # 可以冻结,但要显示
@@ -369,6 +373,31 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
     if not 结束们:
         出.append(问(阻断, "GRAPH_NO_END", "流程没有「结束」",
                    "加一个「结束」,在它的「结果」里写最后要返回哪些内容"))
+
+    # 开始方式(11-16,台账第六十九条,照 Dify):「用户输入」或「定时」,**二选一** ——
+    # 定时开头的流程没人在场填东西,「使用者要提供什么」里除了定时自己填的统计起 / 止,不许再有别的
+    for n in 节点们:
+        if n.get("type") != "start" or not n.get("id"):
+            continue
+        c = n.get("config") or {}
+        方式 = c.get("start_mode") or "用户输入"
+        if 方式 not in ("用户输入", "定时"):
+            出.append(问(阻断, "START_MODE_UNKNOWN", f"「开始」的开始方式「{方式}」认不出",
+                       "在「开始」的「基本」里选「用户输入」或「定时触发器」", node_id=n["id"], field_path="config.start_mode"))
+            continue
+        if 方式 != "定时":
+            continue
+        try:
+            SCH.校验规则(c.get("schedule_rule") or {})
+        except SCH.规则不对 as e:
+            出.append(问(阻断, "START_TRIGGER_RULE", f"「开始」的定时规则不对:{e}",
+                       "在「开始」的「基本」里把多久跑一次、哪几天 / 几号、几点跑填对", node_id=n["id"], field_path="config.schedule_rule"))
+        多 = sorted(set(((c.get("input_schema") or {}).get("properties") or {})) - set(定时自填))
+        if 多:
+            出.append(问(阻断, "START_TRIGGER_EXCLUSIVE",
+                       f"定时开头的流程不能再要使用者填东西({'、'.join(多)})—— 一条流程要么人点、要么定时跑(二选一)",
+                       "把「使用者要提供什么」清空(定时只交给下一步「统计起」「统计止」两项),或把开始方式改回「用户输入」;两种都要就复制一条流程",
+                       node_id=n["id"], field_path="config.input_schema"))
 
     # ② 连线 ────────────────────────────────────────────────────────
     按域, 属于 = _作用域(节点们)
@@ -770,6 +799,8 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
               # 11-06:整条工作流选一版术语,挂在**开始节点**的配置上(冻结版本只存节点 / 连线 / 输入输出,
               # 顶层字段冻结时会丢;开始节点跟着节点一起冻、一起进逻辑哈希 —— 换术语版本 = 改了流程,发生产要重新跑通)
               "glossary_version_id": "术语版本"}
+    # ⚠️ 这张表是「引用别的资源的字段」—— 开始节点的 start_mode / schedule_rule 不是引用,别往里加
+    #    (11-16 加过一次,结果 REF_NOT_FOUND 把「开始方式」当成被删的资源报了一条)
     if 依赖存在 is None:
         跳过.append("选的模型、处理要求、业务动作这些还在不在(这次没给查询能力)—— 这不算通过,是没查")
     else:
