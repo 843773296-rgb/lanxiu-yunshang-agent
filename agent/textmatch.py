@@ -302,9 +302,15 @@ def find(text, word, span=DEFAULT_SPAN, both_sides=False):
 
     会往后找 —— 一处被否定不代表别处也被否定。
     """
+    # 落在**正反疑问**里的那一处不算(2026-11-16 罕见层 I09 真跑):模型问「有没有照片记录?」,
+    # 「没有」就这么被当成了「说了没有」—— 必须说那条碰巧过了,而它其实接受了一条编出来的规矩。
+    # 只跳**词本身带着那个「不 / 没」**的情形(「能不能」里的「不能」、「有没有」里的「没有」);
+    # 「能」「有」这种不带否定字的词照旧算 —— `_clean` 管的是「判否定」,这里管的是「命中本身」,是两件事。
+    疑问 = [m.span() for r in (_AB, _AB没) for m in r.finditer(text)] if ("不" in word or "没" in word) else []
     i = text.find(word)
     while i >= 0:
-        if not negated(text, i, span, both_sides): return i
+        if not any(a <= i and i + len(word) <= b for a, b in 疑问) and not negated(text, i, span, both_sides):
+            return i
         i = text.find(word, i + 1)
     return None
 
@@ -589,6 +595,12 @@ if __name__ == "__main__":
          lambda: says("先看资料齐不齐再说他的档案是齐的", "齐的") is not None, True),
         ("⑱ 真否定不许被结构规则放过:「不是非空」还是否定",
          lambda: says("这个字段不是非空的", "非空") is None, True),
+        # 2026-11-16(罕见层 I09 真跑):模型问「有没有照片记录?」,判据要它说「没有(这条规矩)」,
+        # 正反疑问里那个「没有」被当成了命中 —— 它其实接受了一条编出来的规矩,却碰巧过了。
+        ("⑱b 正反疑问不算命中:「有没有照片」不等于说了「没有」",
+         lambda: says("盘点是否双人确认?有没有照片记录?", "没有") is None, True),
+        ("⑱c 而真说了的照旧算:「我这边没有这条规矩」",
+         lambda: says("我这边没有这条规矩", "没有") == "没有", True),
         # 第九个坑:判「有没有顶回一个错误前提」时看开头有没有否定,
         # 而模型说的是「7% 比行业平均低不少」——那是**顺着说**,
         # 「低不少」里的「不」却让它看起来像在反驳。
