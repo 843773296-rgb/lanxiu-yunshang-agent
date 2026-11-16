@@ -14157,8 +14157,8 @@
   "file": [
    {
     "path": "backend/api.py",
-    "old": "    with closing(sqlite3.connect(DB)) as c, c:\n        return c.execute(sql, a).fetchall()",
-    "new": "    with sqlite3.connect(DB) as c:\n        return c.execute(sql, a).fetchall()"
+    "old": "    with closing(sqlite3.connect(DB)) as c, c:\n        c.execute(\"UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?\",",
+    "new": "    with sqlite3.connect(DB) as c:\n        c.execute(\"UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?\","
    }
   ],
   "预期红": "with 里的连库都被"
