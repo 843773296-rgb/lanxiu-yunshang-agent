@@ -67,7 +67,7 @@ def 有数据没工具():
             for r in c.execute("SELECT name FROM sqlite_master WHERE type='table' "
                                "AND name NOT LIKE 'sqlite_%'")}
     c.close()
-    src = open(os.path.join(ROOT, "backend", "api.py"), encoding="utf-8").read()
+    import api_src; src = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
     out = []
     for t, n in sorted(tabs.items(), key=lambda x: -x[1]):
         if n == 0: continue

@@ -86,7 +86,7 @@ def tool_to_tables():
     """
     sys.path[:0] = [os.path.join(ROOT, "backend"), ROOT]
     import api
-    src = io.open(os.path.join(ROOT, "backend", "api.py"), encoding="utf-8").read()
+    import api_src; src = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
     bodies = {}
     for n in ast.walk(ast.parse(src)):
         if isinstance(n, ast.FunctionDef):

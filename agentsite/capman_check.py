@@ -112,7 +112,7 @@ def main():
     #    这两种在输出上长得一模一样,所以每个都造一次缺陷试试。
     n3 = 0; bad3 = []
     # ③-1 有数据没工具:造一张没人碰的表名,看它认不认得出
-    src = open(os.path.join(ROOT, "backend", "api.py"), encoding="utf-8").read()
+    import api_src; src = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
     碰过 = [t for t in ("customer", "ordr", "schedule")
             if re.search(r"\bFROM\s+" + t + r"\b", src, re.I)]
     n3 += len(碰过)

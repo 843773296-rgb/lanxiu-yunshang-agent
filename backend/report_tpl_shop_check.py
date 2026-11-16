@@ -195,7 +195,7 @@ if 副本:
            f"{g5} —— 这一条是**反向**断言:它绿表示那条路确实走不通。"
            f"要是哪天它红了(老串也命中了),说明有人给归一加了猜的逻辑,得去看那是不是真对")
         # 调用方真的在用码:**这一条和数据无关**,盯的是「有人把它改回 me['shop'] 了」
-        _api源 = open(os.path.join(ROOT, "backend", "api.py"), encoding="utf-8").read()
+        import api_src; _api源 = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
         ck("`store_report` 取模板时拿的是 staff.shop_code,不是显示串",
            "SELECT shop_code FROM staff WHERE no=?" in _api源 and "_rt.冻结用(_本店" in _api源,
            "它又在拿 `me['shop']` 当门店标识了 —— 改名之后那是个算不出码的老串,"

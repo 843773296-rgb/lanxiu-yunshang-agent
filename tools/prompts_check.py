@@ -340,6 +340,11 @@ rule("P4", "稳定编号唯一", dup, "编号撞了,外部文档引用的就不�
 _方式 = [x for x in RT方式.处理方式 if len(x) >= 3]
 _对模型说的 = [os.path.join(ROOT, "backend", "api.py"),
               os.path.join(ROOT, "prompts.py")]
+# 拆 api.py 后(11-16)子模块也是同一份门面代码:清单从门面登记的 `子模块们` 现取,不手抄
+import sys as _sys_api, os as _os_api
+_sys_api.path.insert(0, _os_api.path.join(_os_api.path.dirname(_os_api.path.dirname(_os_api.path.abspath(__file__))), "backend"))
+import api_src as _api_src
+_对模型说的 += [os.path.join(ROOT, "backend", m + ".py") for m in _api_src.子模块名()]
 for _d, _dn, _fn in os.walk(os.path.join(ROOT, "mcp")):
     _dn[:] = [x for x in _dn if x not in ("__pycache__", ".venv")]
     _对模型说的 += [os.path.join(_d, f) for f in _fn if f.endswith(".py")]

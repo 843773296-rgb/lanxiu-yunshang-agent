@@ -42,6 +42,11 @@ for node in ast.walk(tree):
 WATCH = ["agentsite/guards.py", "agentsite/sdk.py", "backend/api.py",
          "backend/ops.py", "agent/textmatch.py", "agent/eval.py",
          "knowledge/liability.py", "knowledge/growth.py"]
+# 拆 api.py 后(11-16)子模块也是同一份门面代码:清单从门面登记的 `子模块们` 现取,不手抄
+import sys as _sys_api, os as _os_api
+_sys_api.path.insert(0, _os_api.path.join(_os_api.path.dirname(_os_api.path.dirname(_os_api.path.abspath(__file__))), "backend"))
+import api_src as _api_src
+WATCH += ["backend/" + m + ".py" for m in _api_src.子模块名()]
 dupes = 0
 for rel in WATCH:
     f = os.path.join(ROOT, rel)

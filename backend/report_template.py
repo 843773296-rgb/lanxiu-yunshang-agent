@@ -105,11 +105,11 @@ _缓存 = {}
 def _解析():
     """→ (指标们 [(名, 段)], 必选 (名…), 报告期取不到 {期间: (名…)})。按 api.py 的修改时间缓存;
     解析不出来就抛 —— 清单空了不许当成「没有限制」。"""
-    st = os.stat(_API)
-    键 = (st.st_mtime_ns, st.st_size)
+    import api_src            # 拆 api.py 后 store_report 在子模块里:门面 + 子模块一起读,任何一份改了缓存都失效
+    键 = api_src.指纹()
     if _缓存.get("键") == 键:
         return _缓存["值"]
-    树 = ast.parse(open(_API, encoding="utf-8").read())
+    树 = ast.parse(api_src.全部源码())
     fn = next((n for n in 树.body if isinstance(n, ast.FunctionDef) and n.name == "store_report"), None)
     if fn is None:
         raise RuntimeError("api.py 里找不到 store_report —— 已登记指标算不出来")

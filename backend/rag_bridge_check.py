@@ -32,10 +32,14 @@ def ck(名, 真, 补=""):
     (过 if 真 else 挂).append(名)
 
 
-api源 = io.open(os.path.join(根, "backend", "api.py"), encoding="utf-8").read()
-# 只取 kb_rag 那一段(整文件太大,别处有别的东西)
-起 = api源.index("def kb_rag(")
-那一段 = api源[起:api源.index("\nTOOLS.update(", 起)]
+import api_src; api源 = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
+# 只取 kb_rag 那一段(整文件太大,别处有别的东西)。
+# 拆 api.py 后(11-16)按语法树取这个函数 —— 原来「从 def kb_rag( 截到下一个 TOOLS.update(」,
+# 而 kb_rag 搬进了 api_kb,拼起来的源码里它后面不再有 TOOLS.update(
+import ast as _ast
+_树 = _ast.parse(api源)
+_fn = next(n for n in _树.body if isinstance(n, _ast.FunctionDef) and n.name == "kb_rag")
+那一段 = _ast.get_source_segment(api源, _fn)
 提示源 = io.open(os.path.join(根, "prompts.py"), encoding="utf-8").read()
 
 print("\n\033[1m▸ chat 接管理后台 RAG 这条桥(零 IO)\033[0m")

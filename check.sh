@@ -329,6 +329,7 @@ run "形制与量体模板 · 模板必须覆盖形制的关键尺寸(漏一项�
 run "待定版型分档 · 47 条对照用例(真值手标)" python3 backend/pattern_grade_check.py
 run "商品图 · 每张都渲染得出来,且看得出是不同的衣服" python3 backend/img_check.py
 run "工具入参 · 人怎么称呼它,工具就得认得出来" python3 backend/tool_input_check.py
+run "api 拆分约定 · 子模块里指向门面的名字都走 api.(检查替换 api.DB / api.whoami 才打得到)、新子模块都登记(api_src 才读得到)" python3 backend/api_split_check.py
 run "工具签名 vs MCP schema · 93 个工具每个都是两份,漂了模型就拿不到那个能力(函数加了参数而 schema 没加 → 模型看不到,而不报错)" python3 backend/tool_schema_check.py
 run "按 id 找人工任务 · 不许绑在某个状态上(绑了就是「列表里明明有,点下去说任务不存在」)" python3 backend/task_status_check.py
 

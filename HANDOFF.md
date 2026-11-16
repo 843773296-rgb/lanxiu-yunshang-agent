@@ -22,6 +22,52 @@
 - **17:5x pre_push --不推 红 1 条(被包的命令退出码 1)**:`agent/trace_check.py` 用「文件里同时有 "curl" 和 secretref」当指纹抓「带凭据打模型端点却没接记录仪」,**HTTP请求.py 命中**(它用 curl + 连接凭据往白名单业务接口发 GET/HEAD,不是调模型,花费记在 run_steps)。修法 = 在它的「明写不算调用点」豁免表加一条带理由的 —— **放宽守卫我改不了(自动权限拒了),补丁在 scratchpad/trace_check_豁免HTTP请求.patch,等用户 `!` 执行**。另一条路(改 HTTP请求.py 绕开指纹)是躲检查,否决。三件运行日志已自动放回
 - **下一步第一个动作**:用户打了补丁 → `python3 agent/trace_check.py` 看绿 → 第七笔 `commit --only agent/trace_check.py HANDOFF.md`(说明为什么豁免)→ 日志挪开 → `./tools/pre_push.sh --不推` 再跑一遍(锁内,约 45 分钟)→ 日志放回 → 绿则请用户 `! cd ~/Desktop/澜绣云裳agent && git push origin main` → 发 eureka-fc 提交号 + 「锁放了」。~~旧:看 prepush.log 里 gate_lock 印的「被包的命令退出码」→ 0 则请用户~~ `! cd ~/Desktop/澜绣云裳agent && git push origin main` → 推完发 eureka-fc 提交号 + 「锁放了」→ 它跑第 23 轮;红了按红的那条修、再提第七笔(别 amend,eureka-fc 可能已看到提交号)。~~旧:`python3 tools/make_handoff.py`(刷自动区 + 项目日志)→ 第六笔~~ `git commit --only`(HANDOFF / 项目日志 / tools/bite_specs.json / tools/doc_numbers_check.py / PRD / 管理后台 Makefile、apps/web/app.js、apps/web/wf_canvas.js、services/api/app/workflows_api.py、services/api/app/contract/dsl.py、services/api/app/runtime/validator.py、services/api/app/runtime/compiler.py、fixtures/orchestration/图校验夹具.json、tests/e2e/test_audio_flow.py + 已暂存的两个新测试)→ 三件运行日志挪 scratchpad/aside、`git checkout --` → `./tools/pre_push.sh --不推` → 日志放回 → 请用户 `! cd ~/Desktop/澜绣云裳agent && git push origin main` → 发 eureka-fc 提交号 + 「锁放了」
 - **禁区 / 判据 / 悬而未决**:同下一条(16:5x),外加:PRD B-123 要补一句「校验器和编译器也读顶层,17:0x 一起修了」(状态可改「已解决」—— 顶层那份仍是摆设但三处读法已统一)
+- 夜跑 11-16 结果(.feynman/nightly-eval/2026-11-16.md)：过 18、判红 5、退步 4。
+  - 商机那套 0/24，全挂在「末尾没有商机 JSON」。拆开是两处兜底漏洞，已修(76adcbf8)：①没配管理后台地址那支不兜底(8 题)；②兜底回话没叫模型重新调技能，技能正文没装进来就拿不到输出格式(15 题)。
+  - 排产那套崩在漏写的 `+` 上，已修，并新加门禁 syntax_warning_check(f6eb886e)。
+  - 经营报告那套这晚**没崩**(1/3，退步)：「连续崩」那条已知说明要改，崩溃日志这次没出。
+- 在本工作区真跑的 4 题拿不到接管清单缓存，没走到接管那一支。兜底路径要看今晚夜跑；过了就删夜跑里商机那条已知失败。
+- **还没验的推断**：兜底修好后商机那套能回到正常分数，这只是推断，还没在真正走接管那一支的环境里跑过。经营报告那套「这晚没崩 = 根因消失」也没验过，可能只是那晚碰巧没撞上。
+- **禁区**：链在跑时别改代码、别动共享库。agentsite/evals 两个滚动日志不 add。工作区里不放接管清单缓存（.takeover_last.json）：放了，本地评测就会走接管那一支，跑完必须删。
+- **05:3x 新情况**：第 18 轮第三步，扣工钱那条检查的对照组是红的（30 张单工钱全是 0）。原因不在代码：共享库的数据日期跑到了世界日期前面，在制工单开工日全在 11-20 之后，已完成的最晚到 2027-01；world_meta 里 build_at=11-16T11:57，比现在还晚。已问并行会话是谁重建的。等它回话前别重建库，也别为了让检查变绿去改这条检查。
+- **05:4x 查清（并行会话回话）**：库不是被重建了。05:10 每天的世界平移把世界日期挪到了 11-16，build_at 是「建库时刻」那一列被跟着平移了，属于旧现象。扣工钱检查红的根子在检查自己：「工钱不为 0 的至少 1 张」取决于库里碰巧有什么，而现在在制工单的开工日全在今天之后（CLAUDE.md 第 8 节「红不红取决于数据 → 自造样本」）。
+  - **修法（下一步第一个动作）**：backend/cancel_fee_check.py 里，在库副本上（check_copy.用副本）自造一张开工日 = 今天−3 的在制工单，验它的工钱 > 0 且等于独立 SQL；真库那组只验一致、不再要求非零（改成只报数）。先 import api 再切副本（记忆：检查切库前先 import 写口）。改完给这条加咬合，第 18 轮红在第三步就把攒到的红一起修，再重跑整条推送前检查。
+- **06:05 第 18 轮收工 rc=1（第三步）**：没推。对照组红的有 5 个脚本，各自单跑查出的原因：
+  1. cancel_fee_check：修法见上一条。
+  2. shop_key_check：roster 有 280 行 shop_code 漏填（例：roster 6700，SH001 静安旗舰店）。像是 05:10 世界平移重算排班时新写的行没填店铺码。修法：查重算排班的那个脚本，让它写行时填 shop_code（代码修），库上补齐要拿锁并告诉并行会话。
+  3. 和 4. bite_check / repo_consistency_check：同一个原因。规格 [1195]（tools/db_close_check.py 的攻击点）在 backend/api.py 里找不到，是 rebase 后 api.py 变了导致攻击点过期。修法：照 api.py 现在的样子改那条规格的 old/new。
+  5. nightly_check：✅ 已修（经营报告那条已删）。商机那条等今晚夜跑过了再删。
+  全修完再跑一次 `./tools/pre_push.sh`，日志写 pre_push19.log。
+- **06:4x**：让并行会话先拿锁跑它那批并推送，它 09:40 要交夜间汇总。它推完会发提交号给我，我再 rebase。已提醒它 shop_key 和扣工钱这两条红是数据引起的，谁先修谁说一声，另一边别重复修。
+- **06:5x 分工定了**：排班 280 行漏填店铺码、扣工钱全是 0 这两条由**并行会话修**，我这边别碰 cancel_fee_check 和重排排班的代码。我只剩一条：重写过期的咬合规格 [1195]（tools/db_close_check.py 指向 backend/api.py 的攻击点）。等它推完发来提交号，我 rebase 再跑 pre_push。
+- **07:0x 要紧（归我这条线）**：夜跑自动提交 b3a41fb5 是在主检出上提交并推送的，父提交是并行会话本地的 addb5bb6。结果它那 33 笔没过推送前检查的提交被一起推上了主干，事后补跑的密钥扫描是干净的。并行会话正在拿锁修绿主干。**我要做的**：把 tools/nightly_eval.py 的自动提交改成只推它自己的结果文件，例如在临时 worktree 里，基于 origin/main 只提交结果文件再推，或者推之前先查 HEAD 的父提交是否等于 origin/main。改之前先摆方案；这是收紧，不用用户执行。
+  - **07:3x 已做（本地提交，等并行会话推完再推）**：选了「推之前数待推几笔」那条，比临时 worktree 窄：`@{u}..HEAD` 必须恰好 1 笔才 `git push`，多了就只提交不推，并说清楚。eval_env_check 里新加的两条判据真调 `提交夜跑结果`，在临时的远程仓库加克隆上跑；反向用例也在，防止它退化成永远不推。咬合规格登记了，手动拆掉守卫验过一次是红的。同一笔还修了 [1195] 那条过期规格：db_close_check 的攻击点改到 api.py 里还在的那处审批 UPDATE，手动验过是红的。用户问「到 80% 能不能写完交接就自动压缩」，所以全局交接门禁不再催用户 /compact，已改，自测 50 条通过。
+  - **07:4x 未验证的预判**：经营报告那套之前每晚崩，根因像是「连接不关，撞上 256 描述符上限」。依据是 `_c()` 换成用完就关 11-14 才进主干：11-13 那晚还崩，之后第一次排到它的 11-16 就没崩。只有 1 晚，等后面几晚，再崩就看夜报目录里的「崩.log」。
+  - **08:3x 窗口约定（拆 api.py）**：并行会话同意了。从我们俩都推完开始算，它不碰 backend/api.py，也不碰读 api 源码的那 46 个检查。**我推完拆分那笔要喊它一声，它才解禁**。必须在今晚 0:00 夜跑前推完，推不完就整笔放弃，不推半成品。方案在 .wip-glossary/api_split_plan.md。
+  - **13:4x api.py 拆分已落地（本地，待门禁）**：门面 8808 → 1700 行，另有 11 个按业务分的子模块。只搬函数，变量、工具表、说明全留门面；在第一处 TOOLS.update 之前 `from api_x import *`，私有名全部显式导回。工具：.wip-glossary/api_split.py，分组表 api_split_map.py，对着新的 api.py 可以重跑。
+    - **验过的**：260 个顶层定义拆前拆后源码一字不差，只多 api. 前缀；导入后 TOOLS 119、三张 SCHEMAS、WRITE_TOOLS、api 上的名字和拆前完全一样，只多 子模块们；副本上 6 个会换库、真调工具的检查全绿；按文本读 api 源码的 10 处改走 backend/api_src.py，其中 report_template.py 和 capman.py 是**线上代码**；3 张文件清单加了子模块；116 条咬合规格改指，18 条用「原来在哪个函数」定位。
+    - **拆分查出来的静默失效**：activity_check 的切片「从 def activity_roi( 到 def _rows2(」拆后是**空串**，空串上判据恒真，已改成按语法树取并断言非空。同类的「不在」断言全查过，只有一处，是中文字面量，不受影响。
+    - **新检查** backend/api_split_check.py，已挂 check.sh，2 条咬合手动验过会红。
+    - **没验的**：全量门禁、咬合重放、管理后台 e2e（我只碰了一个检查的一行，这次不用跑）。锁在并行会话手上，13:34 拿的；放了就跑 pre_push 第 21 轮。**0:00 前推不完整笔放弃，推完喊它解禁。**
+  - **13:20 已推 713dfc49**：两批一起，推送前链第 20 轮 rc=0，ls-remote 核过；已告诉用户和并行会话。滚动 jsonl 已还原。工2 和 w75-dn 已删（用户批准）：删之前逐项核过，3 笔改动全在主干，用的是 git cherry、反向 apply，加上规格、夜跑那两处逐条对；工2 的 bump_doc_numbers.py 已拷进 .wip-glossary。
+    - **api.py 窗口 13:2x 开**：并行会话不碰 backend/api.py 和读 api 源码的检查。**0:00 夜跑前推完，推不完整笔放弃**，推完喊它解禁。改写脚本 .wip-glossary/api_split_rewrite.py，排班段试过：140 处改成 api.X，能编译。
+    - **罕见层 I 盘点差异 16 道草稿**：.wip-glossary/rare_I_draft.py，好坏答案逐道验过。**还没进 ops_eval**：要先在 knowledge/17 登记 I 前缀，选 5 道进 ops_sealed，再跑 vocab_check / ops_eval_judgetest。⚠️ 盘点调整流水 112 条是有的，只是工具读不到，判据不收「库里没有」。
+  - **11:3x 第 19 轮 rc=1，103/105 过**：红在两处对照上，都已修。① agent/shift_eval_judgetest.py:38 连库没包 closing（它的文件，我顺手修了，已告诉它）；② PRD 台账我那条和它 2.4.5 的「六十八」撞号，我的改成**七十二**并去掉数字；它那行「11 条安全决定」加进了 doc_numbers 豁免。**第 20 轮**日志 .wip-glossary/pre_push20.log。
+  - **09:55 推送前链第 19 轮在跑**：日志 .wip-glossary/pre_push19.log，只认「收工 rc=」那行和 ls-remote。已经 rebase 到它的 1ea5f1cd，领先 origin 23 笔。bite_specs 是重建的：它的版本全留，补上我的 11 条，去掉我改过的 2 条旧版；merge_specs.py 会把规格安错脚本，**以后别用**。推完：告诉用户和它提交号 → 还原 .wip-glossary/*.bak2 → 删工2 和 w75-dn → 开 api.py 窗口。
+  - **10:2x 它同意了**：它还剩一笔，正在锁里跑咬合重放，约 10 分钟。提交后会发 main 最新号，之后不再往 main 加提交。**锁在它手上，收到号之前别起链。** 两个滚动 jsonl 已经备份到 .wip-glossary/*.bak2 并还原，推完要还原回来。
+  - **10:1x 推送顺序改了**：并行会话叫我先推，但主干上 ①②⑤ 只有它那 5 笔能修绿（roster_write_check / shift_eval 夹具 / cancel_fee / 全角 / 门禁脚本），我单推一定红。我提议 **rebase 到它本地 main 上，一条链两批一起推**，正在等它同意，并等它报 main 的最新提交号。同意后：rebase --autostash main → 合 HANDOFF / bite_specs → 跑 pre_push19 → 推完把提交号告诉用户和它。它查到 shift_eval 写真库 op_log 的根因在 roster_write.发布，那段 db=None 的写法它已改。
+  - **10:xx 等待期间做的（用户 10:xx：「等待时间都是几个小时，影响进度和效率」→ 等的时候必须先做手上不需要锁的活，已记进记忆 wait-time-do-own-work）**：本地又多 1 笔 823ef01f，待推共 15 笔：夜报印出环境性失败题数，判据在 rounds 里 11-14 就有了，这次补上夜报。
+    - **等待期间的活排队（按顺序，都不需要锁、不碰 api.py）**：① 罕见层没底座的面写负向题（intent/rare-tier-six-faces-feasibility.md；用户 11-11 拍、11-16 再确认；题面数据现读；写前在 knowledge/17-评测集频率分层.md 登记前缀；不碰 tool_eval / select_eval）② 拆 api.py 的预备：在 .wip-glossary 写 AST 自由名改写脚本，以及 `api_src.全部源码()` 草稿（**只写在 .wip，不进仓库，等窗口开**）③ ~~成长方案评测那 1 处预期红欠债~~ **不算等待期活**：规格 [450] 的「预期红」写的是「夹具的前提不成立」，脚本里找不到。要改成实测红的那一条，就得跑 bite_run，而那要拿锁，所以留到锁空的时候。
+  - **09:xx 现状（压缩前刷）**：本地待推 14 笔，到 a42fb502，origin/main 仍是 b3a41fb5。
+    - **下一步第一个动作**：等并行会话发提交号，它推送前检查 rc=1，5 条红里 ③ 是我的，已修；④ TL97 **是我的**（prompts.py:899 NOTICE_RULE，在未推的 5ed886a4 里；我先前说「不是我的」是因为 grep 的写法在 zsh 下报错、没扫到，已经更正告诉对方），推完就绿；①②⑤ 它在查归属。拿到提交号后依次：`git fetch` → `git rebase --autostash origin/main`，冲突只会在 HANDOFF 和 bite_specs，用 scratchpad/rebuild_handoff.py 和 .wip-glossary/merge_specs.py 合，两边规格都留，[1195] 它也搬了同样的一处 → 备份两个滚动 jsonl 并 checkout → 后台跑 `./tools/pre_push.sh > .wip-glossary/pre_push19.log 2>&1` → 只认「收工 rc=」那行和 ls-remote → 告诉用户和并行会话提交号 → 还原 jsonl → 删工2 和 w75-dn（用户已批准）→ 开拆 api.py 窗口。
+    - **用户 09:xx 拍了**：日志清理再等等，记进台账六十八，11-28 前再现算再问。夜跑假失败和罕见场景两件是**重拍**，11-12 和 11-11 早就拍过，选的一样，那两件早已是进行中，只是标题没改。所以加了 intent_check「标题等用户拍 ↔ 状态」这条。**教训**：报「要拍的」之前先看状态和台账，别只看标题。
+    - **还没做（我的线，拍过的）**：夜跑把「卡在 ToolSearch、业务工具一个都没调」单列成环境性失败，不计分，intent/nightly-toolsearch-churn.md；罕见层剩下的面只写负向题，intent/rare-tier-six-faces-feasibility.md。
+    - 交接门禁：全局 hook 已改成不催 /compact，并行会话把同一份提交进了仓库 tools/hooks（58251dbe），我核过逐字一致。
+- **判据（为什么这么判）**：没配地址算「没配好」，所以要兜底；只有 403 没权限算「有人定了不让做」，照旧拦（用户 11-14 拍）。让模型重新调技能，是因为技能被钩子拦下的那次，技能正文根本没装进来。
+- **作废的结果**：本工作区第一轮真跑的 4 题（3/4）没走接管那一支，证明不了兜底修好了。
+- **悬而未决**：经营报告那套连崩 6 晚的根因还是没查到。商机那套摘录原话不准（TS-002 / TS-010 抖动），是模型那一侧的问题，还没处理。
+- **下一步第一个动作**：链的通知来了以后，先读 pre_push18.log 末尾「收工 rc=」那一行，再用 `git ls-remote origin refs/heads/main` 对一下是不是等于 HEAD。
+- 推送前链日志在 .wip-glossary/pre_push18.log，只认「收工 rc=」那一行。绿了：告诉并行会话「已推 + 提交号」(它本地有 33 笔等着 rebase)；用 .wip-glossary/*.bak2 还原 agentsite/evals 两个滚动日志；删除工2 工作目录和分支 w75-dn(用户已批准)。
 
 ### 🟡 11-16 16:5x · 交接 —— **顺序换了:我先推**;锁在我手里,HTTP 节点 e2e 10 条全过,e2e-ci 在锁内跑(Fable 5.1)
 

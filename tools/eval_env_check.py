@@ -219,7 +219,8 @@ ck("忽略列表:原样的运行日志副本(单份 24 MB 还在长)被忽略,�
 ck("忽略列表:扣下的答案原文(withheld)原样、压缩包都被忽略 —— 进不了公开仓库",
    _忽略("agent/nightly/agentsite__evals__withheld.jsonl") and _忽略("agent/nightly/agentsite__evals__withheld.jsonl.gz"))
 shutil.rmtree(_忽仓, ignore_errors=True)
-api = open(os.path.join(ROOT, "backend", "api.py"), encoding="utf-8").read()
+sys.path.insert(0, os.path.join(ROOT, "backend")); import api_src
+api = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
 ck("kb_rag 那头用的也是 AIMC_BASE(两边地址不许各写一份)", '_后台基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")' in api)
 
 print()

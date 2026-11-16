@@ -466,6 +466,11 @@ _去SQL注释 = lambda t: _re2.sub(r"/\*.*?\*/", " ",
 生产文件 = ["backend/server.py", "backend/api.py", "backend/report_doc.py",
           "backend/booking.py", "backend/factory_inbox.py", "backend/report_template.py",
           "backend/tasks.py", "backend/roster.py"]
+# 拆 api.py 后(11-16)子模块也是同一份门面代码:清单从门面登记的 `子模块们` 现取,不手抄
+import sys as _sys_api, os as _os_api
+_sys_api.path.insert(0, _os_api.path.join(_os_api.path.dirname(_os_api.path.dirname(_os_api.path.abspath(__file__))), "backend"))
+import api_src as _api_src
+生产文件 += ["backend/" + m + ".py" for m in _api_src.子模块名()]
 # 片段 → 为什么这一处**本来就该按串**。片段是能在那个文件的字符串常量里找到的一小段。
 豁免 = {
     ("backend/server.py", "GROUP BY shop, shop_code"):

@@ -156,7 +156,7 @@ def main():
     # ── ⑤ 那个拦不住事的布尔字段 ─────────────────────────────────
     c = sqlite3.connect(主库)
     用到 = 0
-    src = open(os.path.join(HERE, "api.py"), encoding="utf-8").read()
+    import api_src; src = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
     # 只数**做判断**的地方:出现在 if / and / not 附近才算,单纯读出来展示不算
     for 行 in src.split("\n"):
         if "marketing_consent" in 行 and any(k in 行 for k in ("if ", " and ", "not ", "where ", "WHERE ")):

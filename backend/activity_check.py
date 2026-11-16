@@ -103,8 +103,17 @@ def main():
     # ⑥ 那两列随机数**一次都不许被读到**。
     #    判法不是看代码里有没有写,是看**返回值里有没有出现那两列的数**。
     #    看代码是查「我写没写」,看返回值是查「它有没有漏出来」。
-    src = open(os.path.join(HERE, "api.py"), encoding="utf-8").read()
-    seg = src[src.index("def activity_roi("): src.index("def _rows2(")]
+    import api_src; src = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
+    # ⚠️ 拆 api.py 后(11-16)原来那句「从 def activity_roi( 截到 def _rows2(」截出来是**空串**
+    #    (_rows2 留在门面、排在前面)—— 而空串上「两列一次都没被读」恒成立,这条就静默绿了。
+    #    改成按语法树取活动那几个函数,并且**取不到就红**。
+    import ast as _ast
+    _树 = _ast.parse(src)
+    _要 = ("activity_roi", "_活动渠道共线", "_by_agent")
+    seg = "\n".join(_ast.get_source_segment(src, n) for n in _树.body
+                     if isinstance(n, _ast.FunctionDef) and n.name in _要)
+    ck("取到了活动投入产出那几个函数的源码(不是空串)", "def activity_roi(" in seg and len(seg) > 2000, 1,
+       f"只取到 {len(seg)} 个字")
     读了 = [k for k in av.不可用的列 if f'"{k}"' in seg or f"['{k}']" in seg]
     ck("随机数那两列一次都没被读", not 读了, len(av.不可用的列),
        f"读了 {读了}" if 读了 else "signup / orders 都没进 SELECT")

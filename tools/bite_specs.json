@@ -568,9 +568,9 @@
   "改坏": "让版型查询只认全名不认编码(顾问问「PT04」就查不到)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "        直 = _rows(\"SELECT * FROM pattern WHERE code=? OR name=?\", xz, xz)",
-    "new": "        直 = _rows(\"SELECT * FROM pattern WHERE name=?\", xz)"
+    "path": "backend/api_kb.py",
+    "old": "        直 = api._rows(\"SELECT * FROM pattern WHERE code=? OR name=?\", xz, xz)",
+    "new": "        直 = api._rows(\"SELECT * FROM pattern WHERE name=?\", xz)"
    }
   ],
   "预期红": "kb_pattern 认得出人对版型的每一种称呼"
@@ -1345,7 +1345,7 @@
   "改坏": "把 _consent_ok 的 scope 参数忽略掉(任一档同意就全放行)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_wearer.py",
     "old": "SELECT 1 FROM consent WHERE wearer_id=? AND scope=? AND revoked_at IS NULL",
     "new": "SELECT 1 FROM consent WHERE wearer_id=? AND ?<>'' AND revoked_at IS NULL"
    }
@@ -1357,7 +1357,7 @@
   "改坏": "把 _consent_ok 里的 `revoked_at IS NULL` 删掉(撤回不再生效)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_wearer.py",
     "old": "AND scope=? AND revoked_at IS NULL",
     "new": "AND scope=? AND 1=1"
    }
@@ -2598,7 +2598,7 @@
   "改坏": "把看板上「开裁这道闸」那段说明删掉",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "    out[\"开裁这道闸\"] = (",
     "new": "    out[\"开裁这道闸_删\"] = ("
    }
@@ -3515,7 +3515,7 @@
   "改坏": "把「前端残月剔掉」的条件改成恒真(窗口切出来的残月又进了趋势)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "f\"{k}-01\" >= 起 and _月末(k) <= 今",
     "new": "True and _月末(k) <= 今"
    }
@@ -3527,7 +3527,7 @@
   "改坏": "把「当月不参与趋势」的条件改成恒真(没走完的月当了趋势终点)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "f\"{k}-01\" >= 起 and _月末(k) <= 今",
     "new": "f\"{k}-01\" >= 起 and True"
    }
@@ -3539,8 +3539,8 @@
   "改坏": "去掉 rating_overview 的身份闸(顾问也看得到评价概况)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    if me.get(\"role\") not in tuple(dict.fromkeys(MANAGER_ROLES + _rw2.能关差评的角色)):",
+    "path": "backend/api_aftersale.py",
+    "old": "    if me.get(\"role\") not in tuple(dict.fromkeys(api.MANAGER_ROLES + _rw2.能关差评的角色)):",
     "new": "    if False:"
    }
   ],
@@ -3551,7 +3551,7 @@
   "改坏": "只有一个自然月时也返回按月字典(报一个内容为空的「趋势」)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "    if len(月们) >= 2:\n        out[\"按月\"] = 按月",
     "new": "    if len(月们) >= 1:\n        out[\"按月\"] = 按月"
    }
@@ -3915,7 +3915,7 @@
   "改坏": "把 api.get_wearer 的 today 改回 date(2026, 8, 31)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_wearer.py",
     "old": "    today = _wc.今天()  # 世界的今天(world_meta),不写死 —— 2026-10-01 写死的 08-31 让量体过期判反了\n    if wearer_id:",
     "new": "    today = date(2026, 8, 31)\n    if wearer_id:"
    }
@@ -3927,7 +3927,7 @@
   "改坏": "把 api.get_workorder 的剩余天数改回拿机器的今天减",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "d[\"剩余天数\"] = ((_dt.date.fromisoformat(d[\"due_date\"]) - _wc.今天()).days",
     "new": "d[\"剩余天数\"] = ((_dt.date.fromisoformat(d[\"due_date\"]) - _dt.date.today()).days"
    }
@@ -4027,7 +4027,7 @@
   "改坏": "让 kb_read 对话术那篇也给通用 demo 口径(「对客户:不能」)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_kb.py",
     "old": "if fn.startswith(\"13-\") and 低 == \"demo\":",
     "new": "if False:"
    }
@@ -5857,7 +5857,7 @@
   "改坏": "get_member 的 hit 退回 len(rows)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_member.py",
     "old": "    return {\"hit\": 总, \"列出\": len(out),",
     "new": "    return {\"hit\": len(out), \"列出\": len(out),"
    }
@@ -5869,7 +5869,7 @@
   "改坏": "orders_by_date 不认 month",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "    月份 = 月份 if 月份 is not None else month\n",
     "new": "\n"
    }
@@ -5893,7 +5893,7 @@
   "改坏": "factory_chase 的回传条数退回 len(明细)(被 LIMIT 50 截住)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "            \"要人看的回传\": {\"条数\": 看总, \"列出\": len(看), \"明细\": 看,",
     "new": "            \"要人看的回传\": {\"条数\": len(看), \"列出\": len(看), \"明细\": 看,"
    }
@@ -5905,7 +5905,7 @@
   "改坏": "销量不过滤状态(取消 / 退款的行也算进去)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "if not 算:\n            k = (r[\"status\"] + \" · 已退款\") if (r[\"refund_status\"] or \"\") == \"已退款\" else r[\"status\"]",
     "new": "if False:\n            k = (r[\"status\"] + \" · 已退款\") if (r[\"refund_status\"] or \"\") == \"已退款\" else r[\"status\"]"
    }
@@ -5917,8 +5917,8 @@
   "改坏": "店长不再限本店(_订单范围 那一层没接)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    where, args, 范围话, _ = _订单范围(me)\n    sql = (f\"SELECT {键} k",
+    "path": "backend/api_report.py",
+    "old": "    where, args, 范围话, _ = api._订单范围(me)\n    sql = (f\"SELECT {键} k",
     "new": "    where, args, 范围话, _ = \"\", [], \"全部\", None\n    sql = (f\"SELECT {键} k"
    }
   ],
@@ -5929,7 +5929,7 @@
   "改坏": "排序丢了次序键(同件数时顺序不确定)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "排 = sorted(汇.items(), key=lambda kv: (-kv[1][metric], -kv[1][次[0]], -kv[1][次[1]], str(kv[0])))",
     "new": "排 = sorted(汇.items(), key=lambda kv: -kv[1][metric])"
    }
@@ -5953,7 +5953,7 @@
   "改坏": "「各排法的第一」从件数榜里挑金额最大的(10-09 真跑时模型的错法)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "for k, v in [min(汇.items(), key=lambda kv: (-kv[1][m], str(kv[0])))]}",
     "new": "for k, v in [min(((x[\"编码\"], x) for x in 榜), key=lambda kv: (-kv[1][m], str(kv[0])))]}"
    }
@@ -6025,7 +6025,7 @@
   "改坏": "工具层不拦「把自己的名字当客户」(10-09 R02 真跑的错法)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_member.py",
     "old": "    if customer and str(customer).strip() in {me.get(\"name\"), me.get(\"no\")} - {None, \"\"}:",
     "new": "    if False:"
    }
@@ -6049,7 +6049,7 @@
   "改坏": "实收按下单日归周(而不是付款日)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "\"SELECT substr(o.paid_at,1,10) d, o.received FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id \"\n        \"WHERE o.paid_at IS NOT NULL AND o.paid_at >= ? AND o.paid_at <= ?\" + where, 起, 止, *args)]",
     "new": "\"SELECT substr(o.created,1,10) d, o.received FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id \"\n        \"WHERE o.paid_at IS NOT NULL AND o.created >= ? AND o.created <= ?\" + where, 起, 止, *args)]"
    }
@@ -6073,8 +6073,8 @@
   "改坏": "店长不再限本店",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    where, args, 范围话, _ = _订单范围(me)\n    起, 止 = 一.isoformat(), 日.isoformat() + \" 23:59:59\"",
+    "path": "backend/api_report.py",
+    "old": "    where, args, 范围话, _ = api._订单范围(me)\n    起, 止 = 一.isoformat(), 日.isoformat() + \" 23:59:59\"",
     "new": "    where, args, 范围话, _ = \"\", [], \"全部\", None\n    起, 止 = 一.isoformat(), 日.isoformat() + \" 23:59:59\""
    }
   ],
@@ -6097,7 +6097,7 @@
   "改坏": "评价按周时只卡了起点、没卡终点(和「最近 N 天」一样往后漏)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "WHERE substr(r.rated_at,1,10)>=? AND substr(r.rated_at,1,10)<=?\"\"\", 起, 止)",
     "new": "WHERE substr(r.rated_at,1,10)>=? AND ?<>''\"\"\", 起, 止)"
    }
@@ -6109,7 +6109,7 @@
   "改坏": "任务按周时还是按月筛",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "f\"WHERE {where} AND substr(s.{rv.归月字段},1,10) BETWEEN ? AND ?\", *(args + [区起, 区止]))",
     "new": "f\"WHERE {where} AND substr(s.{rv.归月字段},1,7)=substr(?,1,7) AND ?<>''\", *(args + [区起, 区止]))"
    }
@@ -6121,7 +6121,7 @@
   "改坏": "滚动窗口少算了一周(21 天而不是 28 天)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_member.py",
     "old": "        起 = (_一 - _dt.timedelta(days=21)).isoformat()\n        止 = min(_日, _dt.date.fromisoformat(_seed.TODAY)).isoformat()",
     "new": "        起 = (_一 - _dt.timedelta(days=14)).isoformat()\n        止 = min(_日, _dt.date.fromisoformat(_seed.TODAY)).isoformat()"
    }
@@ -6157,7 +6157,7 @@
   "改坏": "存量混进期内(两栏不分)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "\"期内\": 期内, **({\"环比\": 环比} if 环比 else {}), \"存量(截至今天)\": 存,",
     "new": "\"期内\": {**期内, **存}, **({\"环比\": 环比} if 环比 else {}), \"存量(截至今天)\": 存,"
    }
@@ -6169,9 +6169,9 @@
   "改坏": "进入休眠不按门店筛(门店报告报了全公司的数)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "r = lifecycle_entered(档, start=a, end=b, shop=None if me.get(\"role\") == \"总部运营\" else me.get(\"shop\"))",
-    "new": "r = lifecycle_entered(档, start=a, end=b, shop=None)"
+    "path": "backend/api_report.py",
+    "old": "r = api.lifecycle_entered(档, start=a, end=b, shop=None if me.get(\"role\") == \"总部运营\" else me.get(\"shop\"))",
+    "new": "r = api.lifecycle_entered(档, start=a, end=b, shop=None)"
    }
   ],
   "预期红": "进入休眠只算本店"
@@ -6181,7 +6181,7 @@
   "改坏": "周报环比的上一期错位(拿了上上周)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "上起, 上止 = ((起 - _dt.timedelta(days=7), 止 - _dt.timedelta(days=7)) if kind == \"周\"",
     "new": "上起, 上止 = ((起 - _dt.timedelta(days=14), 止 - _dt.timedelta(days=14)) if kind == \"周\""
    }
@@ -6193,7 +6193,7 @@
   "改坏": "本期没过完也照样比",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "        if 止 > 今:\n            环比 = {\"说明\": \"本期还没过完,不和完整的上一期比(会出假的下跌)\"}\n        else:",
     "new": "        if False:\n            环比 = {\"说明\": \"本期还没过完,不和完整的上一期比(会出假的下跌)\"}\n        else:"
    }
@@ -6205,7 +6205,7 @@
   "改坏": "没有预约的那一天把到店算成「取不到」(10-09 CI 红法)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "    if 到 is None and \"error\" not in r and \"漏斗\" not in r:\n        到 = 0",
     "new": "    if False:\n        到 = 0"
    }
@@ -6474,7 +6474,7 @@
   "改坏": "存报告不记是哪一轮对话",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "                    trace=os.environ.get(\"LANXIU_TRACE\") or None)",
     "new": "                    trace=None)"
    }
@@ -6702,8 +6702,8 @@
   "改坏": "到店客户数没去重(直接拿人次)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "            row[\"客户数\"] = len(_按人(cids))     # 按人数:同一个人两条档案只算一次(10-14 拍)",
+    "path": "backend/api_report.py",
+    "old": "            row[\"客户数\"] = len(api._按人(cids))     # 按人数:同一个人两条档案只算一次(10-14 拍)",
     "new": "            row[\"客户数\"] = len(到店)"
    }
   ],
@@ -6714,7 +6714,7 @@
   "改坏": "售后结案按建单日算",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "f\"WHERE a.status IN ('已完成','已关闭','已拒绝') AND substr(a.updated,1,10) BETWEEN ? AND ?{_w} \"",
     "new": "f\"WHERE a.status IN ('已完成','已关闭','已拒绝') AND substr(a.created,1,10) BETWEEN ? AND ?{_w} \""
    }
@@ -6858,7 +6858,7 @@
   "改坏": "扣工钱不限本店(别店也能看)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "        return {\"error\": f\"这张单在「{o['shop']}」,只能看本店的\"}",
     "new": "        pass"
    }
@@ -6978,7 +6978,7 @@
   "改坏": "把 api._挡住不该给的 改成原样返回(不再按键名拦刻意排除的字段)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "    import rating as _R\n    if isinstance(出, dict):",
     "new": "    import rating as _R\n    return 出\n    if isinstance(出, dict):"
    }
@@ -6990,7 +6990,7 @@
   "改坏": "让 service_records 两个参数都不给时随便挑一张单(替用户挑)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "        return dict(error=\"要给 pkg(包裹号)或 order_id(订单号)—— **不替你挑一张**\")",
     "new": "        oid = \"随便挑一张\""
    }
@@ -7014,7 +7014,7 @@
   "改坏": "给 bad_ratings 的 SELECT 加一列 `r.handled_by 处理人`(清单没跟着加)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "                     r.handled_at 处理于, r.handle_note 处理记录,",
     "new": "                     r.handled_at 处理于, r.handle_note 处理记录, r.handled_by 处理人,"
    }
@@ -7062,7 +7062,7 @@
   "改坏": "取数包不再带成交率窗口那句",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "    if \"成交率\" in 期内 and 期内[\"成交率\"].get(\"值\") is not None and kind == \"周\":",
     "new": "    if False:"
    }
@@ -7653,9 +7653,9 @@
   "改坏": "AI 工具查订单只查主档(不连关联档)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "        ph, ids = _在(人[\"关联\"])\n        # 软合并(10-14):关联档的订单一起列",
-    "new": "        ph, ids = _在(人[\"关联\"][:1])\n        # 软合并(10-14):关联档的订单一起列"
+    "path": "backend/api_order.py",
+    "old": "        ph, ids = api._在(人[\"关联\"])\n        # 软合并(10-14):关联档的订单一起列",
+    "new": "        ph, ids = api._在(人[\"关联\"][:1])\n        # 软合并(10-14):关联档的订单一起列"
    }
   ],
   "预期红": "AI 工具:查副档的订单 → 两条档案的单一起列、每单标着原档案"
@@ -7833,7 +7833,7 @@
   "改坏": "把 kb_fit 的「判不了」分支停掉(回到默默退到账户本人并照常出码)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_wearer.py",
     "old": "        if len(_量过) > 1:",
     "new": "        if False and len(_量过) > 1:"
    }
@@ -7845,8 +7845,8 @@
   "改坏": "把「量过体」的口径放宽成「名下在用的都算」(于是只有本人量过体的客户也被判不了)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "        _量过 = [x for x in _候选 if (_以哪次为准(x[\"id\"])[0])]",
+    "path": "backend/api_wearer.py",
+    "old": "        _量过 = [x for x in _候选 if (api._以哪次为准(x[\"id\"])[0])]",
     "new": "        _量过 = list(_候选)"
    }
   ],
@@ -8795,8 +8795,8 @@
   "改坏": "预取的「配件」一条都不给(批量取数那条路取错了,判定照样算出个正常结论)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    for r in _rows(\"SELECT item_id,kind,material,part FROM item_part_choice \"\n                   \"ORDER BY item_id, id\"):",
+    "path": "backend/api_order.py",
+    "old": "    for r in api._rows(\"SELECT item_id,kind,material,part FROM item_part_choice \"\n                   \"ORDER BY item_id, id\"):",
     "new": "    for r in []:"
    }
   ],
@@ -8807,8 +8807,8 @@
   "改坏": "预取的「试衣记录」一条都不给",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    for r in _rows(\"SELECT * FROM fitting ORDER BY item_id, round\"):",
+    "path": "backend/api_order.py",
+    "old": "    for r in api._rows(\"SELECT * FROM fitting ORDER BY item_id, round\"):",
     "new": "    for r in []:"
    }
   ],
@@ -8819,8 +8819,8 @@
   "改坏": "预取的「场合标签」一条都不给",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    for r in _rows(\"SELECT spu,scene FROM product_scene ORDER BY spu\"):",
+    "path": "backend/api_order.py",
+    "old": "    for r in api._rows(\"SELECT spu,scene FROM product_scene ORDER BY spu\"):",
     "new": "    for r in []:"
    }
   ],
@@ -8831,8 +8831,8 @@
   "改坏": "预取的「订单」一条都不给(下单日和开裁时刻都取不到)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    单 = {r[\"id\"]: r for r in _rows(\"SELECT id,created,cut_at FROM ordr\")}",
+    "path": "backend/api_order.py",
+    "old": "    单 = {r[\"id\"]: r for r in api._rows(\"SELECT id,created,cut_at FROM ordr\")}",
     "new": "    单 = {}"
    }
   ],
@@ -10150,7 +10150,7 @@
   "改坏": "把 set_piece_ratio 里的角色判定改成永不命中(谁都能核裁片用料 —— **这个数是排料的依据**,核错了整批面料会不够裁)。⚠️ **锚带一句 set_piece_ratio 独有的文案是故意的**:光写 `if me.get(\"role\") != \"版师\":` 在 api.py 里有两处(另一处是 set_grade_diff 的),而施加破坏只换第一处 —— 2026-10-26 全量重放就是这么报出「改坏了却没红」的,**破坏打在了另一个函数的闸上**。规格自检只把「出现多次」提示出来、不判红,最终裁判是重放",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "    if me.get(\"role\") != \"版师\":\n        return {\"error\": f\"核裁片用料要由版师来做",
     "new": "    if False:\n        return {\"error\": f\"核裁片用料要由版师来做"
    }
@@ -10162,7 +10162,7 @@
   "改坏": "把写库时的 ratio_by 传成 None(改过的数查不到是谁改的)。⚠️ 不能把 SQL 里那个 `?` 直接换成 `NULL` —— 绑定数就对不上、语句直接 ProgrammingError,**而崩了和被逮到不是一回事**",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "                   (ratio, who, now, why.strip(), code, piece))",
     "new": "                   (ratio, None, now, why.strip(), code, piece))"
    }
@@ -10186,7 +10186,7 @@
   "改坏": "让 kb_fit(版师唯一的客户相关工具)在推荐尺码的返回里**多带一个会员等级字段** —— **给多余的字段,它就会去用**,这个项目在 allowed_tools 上栽过。\n⚠️ **这条规格的攻击点 2026-10-26 一天换了两次,而两次都是被「安全加固」打空的**:\n  · 原来挂 get_customer 给版师 → 10-25 加了「客户档案只看本店」,版师没挂门店,返回只剩一句「你看不了客户档案」,**里面一个字的个人信息都没有**;\n  · 改成挂 get_member → 当天并行会话按用户拍板把 get_member / customer_history 收到同一个范围闸上(顾问看名下、店长看本店、总部全部),版师又只拿到一句「不在你名下」。\n> **同一个形状两次:一道新加的、更严的安全闸,把一条安全判据的咬合攻击变成了空操作。**\n> 而它报出来是「改坏了却没红 —— 检查看不见这处破坏」,**和「判据真的漏了」一模一样**。\n**所以第三次换的不是工具,是攻击的层次。** 「挂一个会泄露的外部工具」这种攻击点天生不稳 ——这个项目的方向就是把每个客户类工具逐步收紧,**每收紧一次它就失效一次**,而下一个载荷(按档列名单那条口)并行会话已经说了也要问用户收。\n改成攻击**白名单里本来就干净的那个工具**:kb_fit 是版师真有的、判据每轮都真跑的,破坏落在它的返回组装上 —— 安全加固越严,这条路越是唯一攻得到这条断言的地方。⚠️ 攻击只加一个**键名**(值是假的),因为这条判据查的就是返回里有没有这类字段:**真要去查一次库会多出「崩了」这第三种结果,而崩了和被逮到不是一回事。**\n⚠️⚠️ **2026-10-26 这条还栽了第三次,而这次不是攻击点的错 ——「判据只跑到了早退分支」**:判据原来调的是 `api.kb_fit(\"C10001\",\"PT04\")`,**不传 wearer**,而 kb_fit 的规矩是「不知道给谁做就不猜」—— 这个账户名下 2 人量过体,它当场早退,返回一句「没指定给谁做就不推码」。**那条路上到不了组装返回的那一行**,于是攻击施加成功、判据够不着,照旧报「改坏了却没红」。> **一条「这个工具被真跑过一遍」和一条「它的早退分支被跑过一遍」,> 在那条判据的输出上长得一模一样。**修的是判据这一头(让它传 wearer、走到推出码的正路,wearer 从返回里现取不写死),并加了一条断言「这一跑走到了正路,不是判不了早退分支」——**它的咬合另立一条**,守的就是「别再悄悄退回只扫早退分支」。",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_wearer.py",
     "old": "    out.update(客户=cu[\"name\"],版型=p[\"name\"])",
     "new": "    out.update(客户=cu[\"name\"],版型=p[\"name\"],会员等级=\"金卡\")"
    }
@@ -10309,7 +10309,7 @@
   "改坏": "下期报告不回看上期行动(找的是本期的报告)。⚠️ 2026-10-24 这条规格的锚跟着挪过一次:**规格自己一个字没变,是它周围的代码变了** —— `_上期行动` 那条 SQL 改成走 `shop_key.门店条件()`,参数行从 `(kind, 上起, shop, shop)` 变成 `(kind, 上起, *_参)`,`old` 就对不上了。按文件界定完备集(而不是按「规格自己变没变」)就是为了这种情形:**锚找不到的规格跑起来会报「改坏了却没红」,而那不是判据的错**",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "                       (kind, 上起.isoformat(), *_参)).fetchall()",
     "new": "                       (kind, 起.isoformat(), *_参)).fetchall()"
    }
@@ -10321,7 +10321,7 @@
   "改坏": "把「这个月一条订单行都没有」那条早退去掉(空月份照样算一张空榜)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "行, 维, _ = _受欢迎取数(月)\n    if not 行:",
     "new": "行, 维, _ = _受欢迎取数(月)\n    if False:"
    }
@@ -10333,7 +10333,7 @@
   "改坏": "把「这个月有销量的商品一共」那个总数抹掉(只给前 20 条)—— 看的人就分不出这是全部还是冰山一角",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "\"这个月有销量的商品一共\": 总数,",
     "new": "\"这个月有销量的商品一共\": None,"
    }
@@ -10345,7 +10345,7 @@
   "改坏": "让「撞在种下的规律上」那条提醒不再响(planted 的消费者又变回 0)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "    return _pl.提醒(维度词)",
     "new": "    return []"
    }
@@ -10578,7 +10578,7 @@
   "改坏": "把停用的 SKU 也算进预警",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "        if r[\"status\"] == \"停用\":\n            停用 += 1",
     "new": "        if False:\n            停用 += 1"
    }
@@ -10602,7 +10602,7 @@
   "改坏": "数销量时不看订单状态(取消单、待付款单也算卖出)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "        算, 为啥 = _sa.卖掉了(r[\"status\"], r[\"refund_status\"])\n        if not 算:",
     "new": "        算, 为啥 = True, None\n        if not 算:"
    }
@@ -10662,7 +10662,7 @@
   "改坏": "把「这个 0 是什么意思」那一栏去掉",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "            \"这个 0 是什么意思\": (",
     "new": "            \"这个 0 是什么意思_\": ("
    }
@@ -10674,7 +10674,7 @@
   "改坏": "把明细改回按可用件数排序",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "        return (0, d) if isinstance(d, (int, float)) else (1, x.get(\"可用\") or 0)",
     "new": "        return (0, x.get(\"可用\") or 0)"
    }
@@ -11111,7 +11111,7 @@
   "改坏": "让 kb_fit 忽略传进来的 wearer(传了也当没传)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_wearer.py",
     "old": "    if not wearer:\n        _候选 = _名下着装人(",
     "new": "    if True:\n        _候选 = _名下着装人("
    }
@@ -11171,9 +11171,9 @@
   "改坏": "kb_fit 不核着装人是不是这位客户名下的",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    if wearer and not _rows(\"\"\"SELECT 1 FROM wearer w",
-    "new": "    if False and not _rows(\"\"\"SELECT 1 FROM wearer w"
+    "path": "backend/api_wearer.py",
+    "old": "    if wearer and not api._rows(\"\"\"SELECT 1 FROM wearer w",
+    "new": "    if False and not api._rows(\"\"\"SELECT 1 FROM wearer w"
    }
   ],
   "预期红": "传一个别家客户的着装人:不推码"
@@ -11207,7 +11207,7 @@
   "改坏": "零命中那一支又把试跑id 丢了",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_kb.py",
     "old": "        return {\"hit\": 0, \"问的是\": q, \"试跑id\": d.get(\"试跑id\"), \"知识库\": d.get(\"知识库\"),",
     "new": "        return {\"hit\": 0, \"问的是\": q, \"知识库\": d.get(\"知识库\"),"
    }
@@ -11591,7 +11591,7 @@
   "改坏": "翻页参数不进 SQL(永远回第 1 页)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_wearer.py",
     "old": "*参, q, q, 每页, (页 - 1) * 每页)",
     "new": "*参, q, q, 每页, 0)"
    }
@@ -11627,7 +11627,7 @@
   "改坏": "登记时不写「核的时候那个值」(只记核过了)—— md 改过之后那条核过就会**漂到一个没人核过的新值上**,而它和一条真的核过的长得一模一样",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "(键, verdict, float(现值), 提案, why.strip(), who, now))",
     "new": "(键, verdict, None, 提案, why.strip(), who, now))"
    }
@@ -11639,7 +11639,7 @@
   "改坏": "把「只有版师能核档差」那道判断去掉(谁都能核,而改一条档差对全部尺码生效)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "    if me.get(\"role\") != \"版师\":\n        return {\"error\": f\"核档差要由版师来做",
     "new": "    if False:\n        return {\"error\": f\"核档差要由版师来做"
    }
@@ -11651,7 +11651,7 @@
   "改坏": "把「说不对必须给建议值」那道判断去掉 —— 一条「这条档差不对」而没有建议值的记录,下一个人读到了也动不了手,**而它看起来像一条有用的记录**",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "        if propose is None:\n            return {\"error\": f\"说「不对」就得给 propose",
     "new": "        if False:\n            return {\"error\": f\"说「不对」就得给 propose"
    }
@@ -11663,7 +11663,7 @@
   "改坏": "把 grading_audit 返回里「这 12 条核过没有」那一栏去掉 —— 版师看到的就是一张12 行的档差表,而**核过的和没人核过的在那张表上长得一模一样**",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "            \"这 12 条核过没有\": 核况[\"逐条\"],",
     "new": ""
    }
@@ -11951,7 +11951,7 @@
   "改坏": "store_report 不再拿掉被隐藏的指标",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "    _藏 = [k for k in _模板.get(\"隐藏的\") or [] if k not in 必选]",
     "new": "    _藏 = []"
    }
@@ -11963,7 +11963,7 @@
   "改坏": "store_report 不再拿掉被模板隐藏的指标(_藏 恒为空)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "    _藏 = [k for k in _模板.get(\"隐藏的\") or [] if k not in 必选]",
     "new": "    _藏 = []"
    }
@@ -11975,7 +11975,7 @@
   "改坏": "隐藏了销量,环比里销量那一行照旧留着",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "                环比.pop(键, None)",
     "new": "                pass"
    }
@@ -11987,7 +11987,7 @@
   "改坏": "包里不列「被隐藏的」(隐藏和这期没数又混成一种)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "            \"被隐藏的\": list(_藏),\n",
     "new": ""
    }
@@ -12585,7 +12585,7 @@
   "改坏": "把 factory_chase 里算好的门店条件**算了不用** —— `_片` 照旧算出来,只是不拼进 SQL。守的是棘轮的一个盲区:棘轮查的是「有没有按门店串筛」,而这个改动让 SQL 里**一个门店条件都没有** —— **棘轮绿、语法绿、接口照样返回数据,只是不分门店了**,一个店长看到的是全公司。⚠️ 攻击点特意选在**调用方**(api.py)而不是 `门店条件()` 里:后者已经有别的规格攻过,而「算出来却没用上」只在调用方这一侧看得见。⚠️ 同时把 `参 = tuple(_参)` 改成 `参 = ()` —— 不然占位符和参数数对不上会先抛 `ProgrammingError`,那就变成「崩了」而不是「漏了」,红的理由就不是这一条",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "             + (f\" AND {_片}\" if _片 else \"\"))\n        参 = tuple(_参)",
     "new": "             + \"\")\n        参 = ()"
    }
@@ -13339,7 +13339,7 @@
   "改坏": "不传档位时照旧四档各给 30 条",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "    列 = 30 if scope in 摊 else 5",
     "new": "    列 = 30"
    }
@@ -13351,8 +13351,8 @@
   "改坏": "会员详情不给归属顾问",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "                \"归属顾问\": ({\"工号\": _顾, \"是谁\": _员工称呼(_顾) or \"(工号在员工表里查不到)\"} if _顾 else \"没有归属顾问\"),\n",
+    "path": "backend/api_member.py",
+    "old": "                \"归属顾问\": ({\"工号\": _顾, \"是谁\": api._员工称呼(_顾) or \"(工号在员工表里查不到)\"} if _顾 else \"没有归属顾问\"),\n",
     "new": ""
    }
   ],
@@ -13527,7 +13527,7 @@
   "改坏": "智能体那条路批了不改档案(批准和执行又分开了)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_approval.py",
     "old": "            改了 = 审批生效(c, a)",
     "new": "            改了 = \"\""
    }
@@ -13539,7 +13539,7 @@
   "改坏": "建单不核客户在不在本店",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_approval.py",
     "old": "            if 别店:\n                return dict(ok=False, code=\"NOT_MY_SHOP\"",
     "new": "            if False:\n                return dict(ok=False, code=\"NOT_MY_SHOP\""
    }
@@ -13551,7 +13551,7 @@
   "改坏": "能不能批不看是不是他那家店",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_approval.py",
     "old": "    if 我店 != 核.get(\"店码\"):",
     "new": "    if False:"
    }
@@ -13815,7 +13815,7 @@
   "改坏": "写口不再校验用户原话 —— 于是模型自己猜一个纹样就能核进去,而核进去的东西永不重算",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "    if not any(x and x in said for x in 候选):",
     "new": "    if False:"
    }
@@ -13839,7 +13839,7 @@
   "改坏": "写口不再查角色 —— 任何登录身份都能改全店共享的商品纹样",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "    if me.get(\"role\") != \"总部运营\":\n        return {\"error\": f\"核商品纹样要由总部运营来做",
     "new": "    if False:\n        return {\"error\": f\"核商品纹样要由总部运营来做"
    }
@@ -14156,9 +14156,9 @@
   "改坏": "把 backend/api.py 里某一处 closing(...) 去掉(回到那个只提交、不关连接的写法)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    with closing(sqlite3.connect(DB)) as c, c:\n        c.execute(\"UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?\",",
-    "new": "    with sqlite3.connect(DB) as c:\n        c.execute(\"UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?\","
+    "path": "backend/api_approval.py",
+    "old": "    with closing(sqlite3.connect(api.DB)) as c, c:\n        c.execute(\"UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?\",",
+    "new": "    with sqlite3.connect(api.DB) as c:\n        c.execute(\"UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?\","
    }
   ],
   "预期红": "with 里的连库都被"
@@ -18121,7 +18121,7 @@
   "改坏": "把「总数」改成 len(卡片)(只给前 20 张却报成 20 单)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "\"范围\": 范围话, \"总数\": 总数, \"卡片数\": len(rs)",
     "new": "\"范围\": 范围话, \"总数\": len(rs), \"卡片数\": len(rs)"
    }
@@ -18133,9 +18133,9 @@
   "改坏": "认不出的说法也按「一月」那种读法往下走(猜一个月份,不再报格式错)",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "mo = _中文月.get(原) or (int(原) if 原.isdigit() and 1 <= int(原) <= 12 else None)",
-    "new": "mo = _中文月.get(原) or (int(原) if 原.isdigit() and 1 <= int(原) <= 12 else 1)"
+    "path": "backend/api_order.py",
+    "old": "mo = api._中文月.get(原) or (int(原) if 原.isdigit() and 1 <= int(原) <= 12 else None)",
+    "new": "mo = api._中文月.get(原) or (int(原) if 原.isdigit() and 1 <= int(原) <= 12 else 1)"
    }
   ],
   "预期红": "认不出的说法 → 报格式错,**不是「判不了」**"
@@ -18145,7 +18145,7 @@
   "改坏": "相对天数那条歧义也一并猜掉(不给方向就默认往前)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "    if not 绝对 and direction not in (\"往后\", \"往前\", \"future\", \"past\"):",
     "new": "    if False:"
    }
@@ -18157,7 +18157,7 @@
   "改坏": "把绝对区间和相对天数同时给时静默挑一个",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "    if 绝对 and direction is not None:",
     "new": "    if False:"
    }
@@ -18791,7 +18791,7 @@
   "改坏": "给某个工具的 Python 函数加一个参数而 schema 里不加(close_bad_rating 那个形状)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "def close_bad_rating(pkg, note, way, approved_by=None, amount=None):",
     "new": "def close_bad_rating(pkg, note, way, approved_by=None, amount=None, 漏进schema的参数=None):"
    }
@@ -18839,7 +18839,7 @@
   "改坏": "让 kb_read 的目录里也带上正文",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_kb.py",
     "old": "            \"小节\": [{\"标题\": x[\"标题\"], \"行数\": len(x[\"行\"]),\n",
     "new": "            \"小节\": [{\"标题\": x[\"标题\"], \"行数\": len(x[\"行\"]), \"正文\": \"\\n\".join(x[\"行\"]),\n"
    }
@@ -18851,7 +18851,7 @@
   "改坏": "把「这张表不能用来比渠道」那一栏从工具出口去掉",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "        \"⚠️ 这张表不能用来比渠道\": _ch.不能比_为什么,\n",
     "new": ""
    }
@@ -18863,7 +18863,7 @@
   "改坏": "把共线改成背一句话(写死「是」,不现算)—— 写死 True 过不了:判据只验它是现算出来的布尔值",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "        \"是不是一一对应\": 一对一,",
     "new": "        \"是不是一一对应\": \"是\","
    }
@@ -18875,7 +18875,7 @@
   "改坏": "把「客服代下单」从「不是渠道」里拿掉,并进四个渠道",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "        if 能: 渠道[名] = d\n",
     "new": "        if True: 渠道[名] = d\n"
    }
@@ -18899,7 +18899,7 @@
   "改坏": "让 activity_roi 在不共线时也报警告(11-11 这批数据已经不共线,所以咬得到)",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_report.py",
     "old": "    if not 一对一: return None\n",
     "new": "    pass\n"
    }
@@ -21571,7 +21571,7 @@
   "改坏": "让 get_order 的金额自检不算定制加价",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "    if abs(g+cu_+f-a)>0.01:\n",
     "new": "    if abs(g+f-a)>0.01:\n"
    }
@@ -21691,7 +21691,7 @@
   "改坏": "查订单只给回传记录,不给算好的进度",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "    return {\"进度\": 进度, \"记录\": 记}\n",
     "new": "    return {\"记录\": 记}\n"
    }
@@ -21703,7 +21703,7 @@
   "改坏": "把 pattern_queue「建议先核」里的「影响」那一栏拿掉",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_pattern.py",
     "old": "                          影响=f\"挂 {r['商品数']} 个商品、{r['订单行']} 条订单行已按这个数备料\")",
     "new": "                          )"
    }
@@ -22264,7 +22264,7 @@
   "改坏": "去掉「加价合计 vs 定制部件金额」那一项对账 —— 收了钱而收的是什么钱对不上,没人看得见",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "        if 选 and 额 is not None and abs((额 or 0) - 合计) > 0.005:",
     "new": "        if False:"
    }
@@ -22276,7 +22276,7 @@
   "改坏": "去掉「选的料在不在可选范围里」那一项对账",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_order.py",
     "old": "            if 可 and (r[\"part\"], r[\"kind\"], r[\"material\"]) not in 可:",
     "new": "            if False:"
    }
@@ -22288,9 +22288,9 @@
   "改坏": "order_parts 不再按身份限范围(where 片段丢掉)—— 顾问能看任何人的单",
   "file": [
    {
-    "path": "backend/api.py",
-    "old": "    单 = _rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\" + where,\n              order_id, *args)",
-    "new": "    单 = _rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\",\n              order_id)"
+    "path": "backend/api_order.py",
+    "old": "    单 = api._rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\" + where,\n              order_id, *args)",
+    "new": "    单 = api._rows(\"SELECT o.id, o.kind, o.status FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?\",\n              order_id)"
    }
   ],
   "预期红": "顾问看不到不归他的单"
@@ -22778,7 +22778,7 @@
   "改坏": "工具层拿错了「今天」(传成很早的日子):在制工序的工钱全成 0,而真库上在制单本来就都是 0,0 对 0 照样一致",
   "file": [
    {
-    "path": "backend/api.py",
+    "path": "backend/api_aftersale.py",
     "old": "        r = _cf.从库(c, oid, _wc.今天(), 料费=料)",
     "new": "        r = _cf.从库(c, oid, \"2000-01-01\", 料费=料)"
    }
@@ -23108,5 +23108,29 @@
    }
   ],
   "预期红": "每张图报出来的阻断码和手写的期望**集合相等**(多报也算错)"
+ },
+ {
+  "script": "backend/api_split_check.py",
+  "改坏": "把子模块里一处 `api.whoami()` 改回 `whoami()`",
+  "file": [
+   {
+    "path": "backend/api_shift.py",
+    "old": "    me = api.whoami()",
+    "new": "    me = whoami()                     # ← 改坏:直接用门面的名字"
+   }
+  ],
+  "预期红": "子模块里指向门面的名字都走 api.(检查替换 api.X 才打得到)"
+ },
+ {
+  "script": "backend/api_split_check.py",
+  "改坏": "从门面的 `子模块们` 里删掉一个",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "'api_shift', ",
+    "new": ""
+   }
+  ],
+  "预期红": "backend/api_*.py 都登记在门面的 子模块们 里(api_src 才读得到)"
  }
 ]

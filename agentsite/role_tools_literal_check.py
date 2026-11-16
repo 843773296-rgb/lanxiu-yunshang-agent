@@ -163,8 +163,10 @@ ck(f"没有人用 .append / .extend 这类调用改名单", not 改掉,
    f"{改掉} —— 和 `+=` 同一件事:运行时名单变了,而源码里那个字面量没变")
 
 # ── 写工具清单同样不许是算出来的 ───────────────────────────────────────
+sys.path.insert(0, os.path.join(ROOT, "backend"))
+import api_src
 API = os.path.join(ROOT, "backend", "api.py")
-api树 = ast.parse(open(API, encoding="utf-8").read())
+api树 = ast.parse(api_src.全部源码())  # 拆 api.py 后:门面 + 子模块一起读(api_src)
 w = next((nd.value for nd in ast.walk(api树)
           if isinstance(nd, ast.Assign)
           and any(isinstance(t, ast.Name) and t.id == "WRITE_TOOLS" for t in nd.targets)), None)

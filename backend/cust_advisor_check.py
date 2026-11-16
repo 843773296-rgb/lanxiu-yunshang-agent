@@ -176,7 +176,7 @@ def 层二():
 # ── ③ 源码:查询读的是哪一列、流水线挂着没 ───────────────────────
 def 层三():
     print("\n── ③ 源码 · 读对了列、挂进了流水线 ──")
-    api = open(os.path.join(HERE, "api.py"), encoding="utf-8").read()
+    import api_src; api = api_src.全部源码()  # 拆 api.py 后:门面 + 子模块一起读(api_src)
     对 = "AND (o.advisor_no=? OR o.cust_advisor_no=?)" in api
     跨表 = "AND (o.advisor_no=? OR cu.advisor_no=?)" in api
     ck("顾问那条范围条件读的是订单上那一列", 对 and not 跨表, 1,
