@@ -422,7 +422,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     "allowed_fields": cfg.get("allowed_fields") or [],
                     "expires_at_policy": cfg.get("expires_at_policy"), "材料": 载荷})
 
-            if t in ("llm", "retrieve", "tool", "agent"):
+            if t in ("llm", "retrieve", "tool", "agent", "http_request"):
                 # Agent 步骤恢复时**不能**把回执直接当这一步的输出(11-06):回执只是它中途一次工具调用的结果,
                 # 它拿到之后还要接着想 —— 交回 Agent 适配器(带着它自己的检查点)接着跑,见下面 t == "agent" 那一支
                 if 当前 in 注入 and t != "agent":
@@ -491,7 +491,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                             "为什么没执行":
                                 "普通 LLM 节点不自动执行工具请求(§6.1)—— "
                                 "要让模型真的用工具,换成 Agent 节点或显式的工具节点"})
-                if t == "tool":
+                if t in ("tool", "http_request"):
                     用量["工具调用"] += 1
                 状态["节点"][当前] = r
                 记一步(当前, 成功, execution_mode=r.get("execution_mode"), 入=实参, 出=r, attempt=本步尝试)

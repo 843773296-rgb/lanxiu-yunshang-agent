@@ -23060,5 +23060,17 @@
    }
   ],
   "预期红": "🔑 结果里任何地方都不出现凭据原值、请求头已打码、来路只说 env://"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_graph_validation.py",
+  "改坏": "HTTP 请求节点的方法闸没了:POST / DELETE 在检查配置时放行(安全决定 H6 一期只开读;运行时 出网策略 还有一道,但检查配置这道没了,用户要到真跑那一步才看见)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "        if 方法 not in (\"GET\", \"HEAD\"):\n            出.append(问(阻断, \"HTTP_METHOD_NOT_ALLOWED\",",
+    "new": "        if False:\n            出.append(问(阻断, \"HTTP_METHOD_NOT_ALLOWED\","
+   }
+  ],
+  "预期红": "每张图报出来的阻断码和手写的期望**集合相等**(多报也算错)"
  }
 ]

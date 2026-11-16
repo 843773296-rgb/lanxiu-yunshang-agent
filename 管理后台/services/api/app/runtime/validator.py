@@ -96,6 +96,8 @@ _缺项说法 = {
     "prompt_version_id": ("还没有选这一步要完成什么(处理要求)",
                           "在右侧「基本」里选一份处理要求。还没有的话,先去「Prompt 管理」写一份并保存版本"),
     "output_schema": ("还没写这一步的结果包含哪些内容", "在右侧「结果」里至少加一项结果"),
+    "connection_id": ("还没有选用哪条工具连接去请求",
+                      "在右侧「基本」里选一条已登记的工具连接 —— 地址白名单和凭据都挂在连接上;没有的话先到「工具连接」里登记"),
     "tool_version_id": ("还没有选执行哪个业务动作",
                         "在右侧「基本」里选一个业务动作。下拉里没有你要的,请联系平台管理员登记"),
     "branches": ("还没有设置分支条件", "在右侧「基本」里点「加一路」,写上满足什么条件走这一路"),
@@ -789,6 +791,26 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                            "在分支之后加一个「分支汇合」,把几条分支的结果并成一项,再从汇合那一步取"
                            + (f"(流程里已经有:{'、'.join(_称(x) for x in 汇合们)})" if 汇合们 else ""),
                            node_id=i, field_path=fp))
+
+    # ⑤¾ HTTP 请求节点(三期 3-1):方法只开读、路径得有、连接得在 —— 判据本体在 runtime/出网策略.py,这里只核配置
+    for i, n in enumerate(节点们):
+        if n.get("type") != "http_request":
+            continue
+        cfg = n.get("config") or {}
+        方法 = str(cfg.get("method") or "GET").upper()
+        if 方法 not in ("GET", "HEAD"):
+            出.append(问(阻断, "HTTP_METHOD_NOT_ALLOWED",
+                       f"这一步想用 {方法} —— HTTP 请求一期只开「读」(GET / HEAD),写入(POST / PUT / PATCH / DELETE)要等二期",
+                       "把方法改成 GET 或 HEAD;要往外写数据,先用业务动作步骤", node_id=i, field_path="config.method"))
+        有路径 = isinstance(cfg.get("path"), str) and cfg.get("path").strip() != "" or "path" in (cfg.get("bindings") or {})
+        if not 有路径:
+            出.append(问(阻断, "HTTP_PATH_MISSING", "还没写请求哪个路径",
+                       "在右侧「基本」里填路径(相对连接白名单的,如 /stock),或在「用到的数据」里把 path 绑到前面某一步的结果",
+                       node_id=i, field_path="config.path"))
+        cid = cfg.get("connection_id")
+        if cid and 依赖存在 is not None and not 依赖存在("connection_id", cid):
+            出.append(问(阻断, "REF_NOT_FOUND", "选的工具连接已经用不了:被删了、归档了,或者不在这个项目里",
+                       "在右侧「基本」里重新选一条工具连接", node_id=i, field_path="config.connection_id"))
 
     # ⑥ 依赖引用:存在、同项目、有权限 —— 由调用方提供查询能力 ────────
     引用字段 = {"connection_version_id": "连接版本", "prompt_version_id": "Prompt 版本",

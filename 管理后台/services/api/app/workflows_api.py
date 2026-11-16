@@ -57,6 +57,7 @@ _引用表 = {
     "index_build_id": ("index_builds", "索引构建"),
     "retrieval_config_version_id": ("retrieval_config_versions", "检索配置版本"),
     "workflow_version_id": ("workflow_versions", "工作流版本"),
+    "connection_id": ("capability_connections", "工具连接"),      # HTTP 请求节点选的连接(三期 3-1)
 }
 
 

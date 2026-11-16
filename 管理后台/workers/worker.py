@@ -1012,7 +1012,39 @@ def _跑一张工作流(c, job, 打点):
     def _文档(上传id):
         return 读上传(c, job["project_id"], 上传id)
 
-    结果 =RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档},
+    def _http(cfg, 实参):
+        """HTTP 请求步骤(三期 3-1)。**不自己发**:拿连接合成只读契约经 tool_gateway.执行(六道闸、记事照旧),
+        真发送在 runtime/HTTP请求.py。mock 运行 / 连接测试 / 评测:一个字节都不出去,交一份替身(execution_mode=mock)。
+        节点配置里的 path / query / headers 是底,绑定来的同名值盖上去;凭据只从连接来,节点带的凭据头在 HTTP请求.发送 里丢掉。"""
+        import HTTP请求 as _H
+        import tool_gateway as _G
+        cid = cfg.get("connection_id")
+        行 = c.execute(text("""select id, name, adapter, allowed_endpoints, secret_ref, status from capability_connections
+                               where project_id=:p and id=:i and archived_at is null"""),
+                       {"p": job["project_id"], "i": cid}).mappings().first()
+        if not 行:
+            raise RN.节点失败("HTTP_CONNECTION_NOT_FOUND", "这一步选的工具连接在这个项目里找不到(被删、归档或不属于本项目)",
+                            "回「搭建」重新选一条工具连接;没有就先到「工具连接」里登记")
+        连接 = dict(行)
+        连接["allowed_endpoints"] = list(连接.get("allowed_endpoints") or [])
+        连接["auth"] = {}                      # 鉴权方式列(capability_connections.auth)下一批加;没有就按 凭据头 的默认
+        合 = {k: cfg.get(k) for k in ("path", "query", "headers") if cfg.get(k) not in (None, "")}
+        合.update({k: v for k, v in (实参 or {}).items() if v is not None})
+        if r["execution_mode"] != "live" or 跑法 in ("连接测试", "评测"):
+            try:
+                url = _H.拼地址(连接["allowed_endpoints"], 合.get("path"), 合.get("query"), cfg.get("endpoint_index") or 0)
+            except _H.请求被拒 as e:
+                raise RN.节点失败(e.code, e.为什么, "先到「工具连接」里把允许的端点登记好")
+            return {"status_code": 200, "headers": {}, "body": "", "json": {}, "url": url,
+                    "请求头": {}, "凭据来路": None, "execution_mode": "mock"}
+        try:
+            return _H.跑节点(cfg, 合, 连接=连接, 执行=_G.执行, 记事=记事)
+        except (_H.请求被拒, _H.请求失败) as e:
+            raise RN.节点失败(e.code, e.为什么, "核对连接的白名单 / 凭据和这一步的路径;「被拒」那一类一个字节都没发出去")
+        except _G.拒绝 as e:
+            raise RN.节点失败(e.code, str(e), "参数被网关拒了:服务端绑定的键(方法 / 白名单 / 凭据)不许覆盖,没登记的键不收")
+
+    结果 =RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档, "http_request": _http},
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
                     系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例)
     打点("执行完", {"状态": 结果["执行状态"]})
