@@ -65,6 +65,7 @@ DB = os.path.join(HERE, "lanxiu.db")
     "backend/skill_registry.py": "技能登记,不进库",
     "knowledge/motif.py": "纹样口径:读的时候现算、不落库(并行会话 10-27 核过)",
     "backend/ownership_transfer.py": "跨店成交判归属转移(11-11):运行时在付款之后调,造数不走它",
+    "backend/api_src.py": "api 源码读取口(11-16 拆 api.py 时加):只按文本读门面 + 子模块的源码,report_template 拿它当缓存键,不建表、不造数",
 }
 # 造数脚本 import 到、**会影响重建结果**的本地模块(2026-10-27 首次登记:当时走到的除「不算」外全部)。
 # 新加的模块默认不在任何一张表里 → --范围检查 红,逼着认领

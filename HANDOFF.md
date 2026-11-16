@@ -12,6 +12,18 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟢 11-16 17:2x · api.py 拆分等第 23 轮(本地 3 笔未推:a39ad98b / 63e85d10 / 5e9f7621)(Opus 5.5)
+
+- **第 22 轮红 2 条**(log:.wip-glossary/pre_push22.log):① 库指纹范围 —— api_src.py 没认领 → 已登记进 backend/db_build.py「不算」,单跑绿,提交 5e9f7621;② alembic「Can't locate revision 2ae099e8e0f0」—— **并行会话的迁移已跑进共享 PG,而提交(98632daf)还在它本地 main 没推**,不是我的错、我修不了。
+- **换了顺序(并行会话同意)**:它先推它的 6 笔(最新 830e31e2,17:10 起锁内 pre_push --不推,预计 17:5x 出结果,**推要用户点**),推完发我提交号 + 「锁放了」→ 我 `git pull --rebase --autostash` 到它之上 → 跑第 23 轮 `./tools/pre_push.sh > .wip-glossary/pre_push23.log 2>&1; rc=$?; echo "收工 rc=$rc $(date +%T)" >> …`。**拆分窗口仍开着**:它不碰 api.py 和读 api 源码的检查,我推完才喊「解禁」。期间别起门禁、别写库。
+- **推上去之后依次**:① 恢复 .wip-glossary/*.bak3 滚动日志 ② 缩工具说明第 13 批:`python3 .wip-glossary/shrink_apply.py`(副本演练 prompts_check / tool_schema_check 绿),之后**要用户批**发管理后台生产版(店长助手 v19→v20,TL98–TL107),不批则「规矩等于后台版」那条检查红 ③ 罕见层 I 盘点差异 16 题:`python3 .wip-glossary/rare_apply.py`(写 ops_eval 11 日常 + ops_sealed 5 封存 + judgetest 32 条对照 + vocab 下限 130/122 + knowledge/17 一行;副本里 vocab / judgetest / sealed / doc_numbers / rare_freshness 全绿),然后**真跑 11 道日常题**(`LANXIU_PROVIDER=claude ANTHROPIC_MODEL=claude-haiku-4-5`)让 eval_tier_check 绿,结果文件进提交。
+- 脚本都在 .wip-glossary/(不提交);scratchpad 那份会被清。
+- **17:4x 更新**:并行会话 pre_push 红在 trace_check 豁免(放宽守卫,等用户打补丁,由它问用户),它推送延到 ~19:00。我已把罕见层 I **落进工作区**(rare_apply.py 跑过,ops_eval / ops_sealed / judgetest / vocab_check / knowledge/17 已改,未提交;离线五项全绿),**向它借了锁**要真跑 11 道:`LANXIU_PROVIDER=claude ANTHROPIC_MODEL=claude-haiku-4-5 ./agentsite/.venv/bin/python agent/ops_eval.py I01,I02,I04,I05,I06,I08,I09,I10,I12,I14,I15`(跑完还锁、告诉它);结果 + 落地一起提交(滚动 jsonl 别 add),跟拆分一起进第 23 轮。
+- **17:5x**:锁是并行会话**让给我**的(它在等用户打 trace_check 补丁),11 道真跑已在 gate_lock 里起跑(后台,日志 .wip-glossary/ops_I.log,只认末行「收工 rc=」)。**跑完第一件事:SendMessage 给 uds:/tmp/cc-socks/35954.sock 说「锁放了」**(它要重起 pre_push)。然后看成绩:挂的题先按 CLAUDE.md 第 7 节第 4 条排查(测量→数据→判据→没告诉标准→才是模型),判据错就修判据并把真实说法钉回 judgetest;再单跑 eval_tier_check 确认绿;提交 ops_eval / ops_sealed / judgetest / vocab_check / knowledge/17 + ops 结果文件(**agentsite/evals/*.jsonl 不 add**)。
+- **18:3x 结果**:11 道真跑两轮 8/11 · 7/11,锁已还(并行会话 18:28 起 pre_push,预计 19:1x)。I04 / I05 模型真错(原文已钉对照);I09 / I10 各一处判据欠账(见提交说明)。**eval_tier_check 只认全量结果文件**(部分跑只写 .partial),要 ops 全量 132 题两轮(~2 小时、要锁)才绿 → 落地那笔 **8c65d1db 挂在本地分支 rare-i,w75 已 reset --keep 回 5e9f7621**,第 23 轮只推拆分。rare-i 等锁空 + 非夜跑窗口时:rebase 到新 main → `gate_lock` 包 ops 全量 → 提交结果 → 推。
+- 未验证:sealed_tier_check 在工作区跑了 >2 分钟(副本里秒出),最后 rc=0,原因没查(疑读共享库慢)。
+
+### 🟡 11-16 05:xx · 夜跑完 → rebase 到 b3a41fb5 → 推送前链第 18 轮在跑(Opus 5.5)
 ### 🟡 11-16 17:2x · 交接(最新)—— 锁在我手里;e2e-ci 57/58 只红 audio → 根子修了(校验器/编译器/冻结三处统一读节点里的结构),audio 重跑绿;剩咬合重放 + 第六笔 + pre_push(Fable 5.1)
 
 - **17:0x e2e-ci 真实退出码 2**(后台通知报 0,照旧骗人):57 份过,只红 test_audio_flow 三条,全由一处来 —— **校验器 ⑧「结束节点必需字段要有来源」读的是定义顶层 output_schema**,下午我只修了冻结,没修它;**编译器交给运行器核最终输出的 输出Schema 也读顶层**。修法:取法只写一份在 `contract/dsl.py`(`DS.入参结构 / DS.出参结构`:节点里那份为准、顶层只兜底),validator ⑧ / compiler / workflows_api 冻结版本三处都改成调它。重启 aimc 后 audio 单跑 **rc=0**。图校验夹具 +2(顶层过期要「结果」而结束节点要 summary 已绑 → 放行;顶层为空而结束节点要 summary 没绑 → 拦),test_graph_validation 20 条过(夹具 33)。⚠️ 夹具 json 原格式 indent=1、ensure_ascii=False,用 json.dump 回写时照这个,否则 diff 七千行
