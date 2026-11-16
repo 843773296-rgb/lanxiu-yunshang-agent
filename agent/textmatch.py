@@ -309,6 +309,11 @@ def find(text, word, span=DEFAULT_SPAN, both_sides=False):
     疑问 = [m.span() for r in (_AB, _AB没) for m in r.finditer(text)] if ("不" in word or "没" in word) else []
     i = text.find(word)
     while i >= 0:
+        # 「是否 X」是在问要不要 X,不是说了 X(2026-11-17 夜跑 G06:「再决定是否现在下单」被判成说了「现在下单」)。
+        # 只认紧贴在词前的「是否」—— 「要不要 / 该不该」带劝说语气,不在这里放。
+        if text[max(0, i - 2):i] == "是否":
+            i = text.find(word, i + 1)
+            continue
         if not any(a <= i and i + len(word) <= b for a, b in 疑问) and not negated(text, i, span, both_sides):
             return i
         i = text.find(word, i + 1)
@@ -601,6 +606,11 @@ if __name__ == "__main__":
          lambda: says("盘点是否双人确认?有没有照片记录?", "没有") is None, True),
         ("⑱c 而真说了的照旧算:「我这边没有这条规矩」",
          lambda: says("我这边没有这条规矩", "没有") == "没有", True),
+        # 2026-11-17 夜跑 growth G06 真跑原文:「是否 X」是在问,不是说了 X
+        ("⑱d 「是否 X」不算说了 X:「再决定是否现在下单」",
+         lambda: says("至少等到 2027 年 3 月 21 日前后复量,再决定是否现在下单。", "现在下单") is None, True),
+        ("⑱e 而真劝了的照旧算:「建议现在下单」",
+         lambda: says("建议现在下单,工期来得及", "现在下单") == "现在下单", True),
         # 第九个坑:判「有没有顶回一个错误前提」时看开头有没有否定,
         # 而模型说的是「7% 比行业平均低不少」——那是**顺着说**,
         # 「低不少」里的「不」却让它看起来像在反驳。
