@@ -50,10 +50,48 @@ def 遮(值):
 
 
 def 解析(secret_ref):
-    """定位符 → (请求头字典, 这凭据从哪来的一句人话)。
+    """定位符 → (请求头字典, 这凭据从哪来的一句人话)—— **Anthropic 那套头**(模型连接探测 / 真调用)。
 
     ⚠️ **返回的头字典是要直接塞进请求的,不许往任何地方记。**
+    通用 HTTP 请求(三期节点)要按连接上登记的方式装头,用下面的 `凭据头`;两个口共用 `_取原值`,原值仍只在这个模块里活。
     """
+    值, 来路, 种 = _取原值(secret_ref)
+    if 种 == "env":
+        return {"x-api-key": 值, "anthropic-version": "2023-06-01"}, 来路
+    return ({"authorization": "Bearer " + 值, "anthropic-version": "2023-06-01",
+             "anthropic-beta": "oauth-2025-04-20"}, 来路)
+
+
+def 凭据头(secret_ref, 方式=None, 头名=None):
+    """定位符 + 连接上登记的鉴权方式 → (请求头字典, 来路)。给 HTTP 请求节点用(11-16,设计稿 H3:密钥挂连接、发送那一刻才加头)。
+      方式 = None / "无"      → 不加头(公开接口)
+      方式 = "bearer"         → authorization: Bearer <值>
+      方式 = "header"         → <头名>: <值>(头名必填,比如 x-api-key)
+    ⚠️ 返回的头只许塞进请求;记录里要用 `遮头` 打码。"""
+    if not 方式 or 方式 == "无":
+        return {}, "(不带凭据)"
+    值, 来路, _ = _取原值(secret_ref)
+    if 方式 == "bearer":
+        return {"authorization": "Bearer " + 值}, 来路
+    if 方式 == "header":
+        名 = (头名 or "").strip().lower()
+        if not 名 or not re.fullmatch(r"[a-z0-9][a-z0-9\-]{0,60}", 名):
+            raise 解析不了("自定义请求头的名字不合法(只许字母数字和连字符,比如 x-api-key)")
+        return {名: 值}, 来路
+    raise 解析不了(f"鉴权方式「{方式}」认不出 —— 只有 无 / bearer / header 三种")
+
+
+_敏感头 = ("authorization", "x-api-key", "api-key", "apikey", "x-auth-token", "cookie", "proxy-authorization")
+
+
+def 遮头(头):
+    """请求头字典 → 可以落记录的版本:凭据类头只留「(有值,已遮)」。"""
+    return {k: (遮(v) if str(k).lower() in _敏感头 or "secret" in str(k).lower() or "token" in str(k).lower() else v)
+            for k, v in (头 or {}).items()}
+
+
+def _取原值(secret_ref):
+    """定位符 → (原值, 来路人话, 种类)。**只给本模块的两个装头函数用**,别从外面调。"""
     s = (secret_ref or "").strip()
     m = _定位符.match(s)
     if not m:
@@ -67,7 +105,7 @@ def 解析(secret_ref):
         if not v:
             raise 解析不了(f"环境变量 `{体}` 在服务进程里是空的 —— "
                        f"⚠️ **起服务的那个 shell 设了不算**,要起服务时就在环境里")
-        return {"x-api-key": v, "anthropic-version": "2023-06-01"}, f"env://{体}"
+        return v, f"env://{体}", "env"
     # keychain://服务/账号 —— 照 `agent/v1.py::provider()` 那条路读,
     # 它已经在这台机器上用了几个月。**这里只调它、不复制它的解析**。
     if "/" not in 体:
@@ -100,10 +138,7 @@ def 解析(secret_ref):
             raise 解析不了("钥匙串那一条是 JSON,但里面没有预期的字段") from None
     if not tok:
         raise 解析不了("钥匙串那一条里没有可用的令牌")
-    return ({"authorization": "Bearer " + tok,
-             "anthropic-version": "2023-06-01",
-             "anthropic-beta": "oauth-2025-04-20"},
-            f"keychain://{服务}/…")
+    return tok, f"keychain://{服务}/…", "keychain"
 
 
 # ── 一道结构性的闸:**凭据不许进任何要落库或返回的东西** ──────────────

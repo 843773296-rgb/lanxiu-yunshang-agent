@@ -22952,5 +22952,113 @@
    }
   ],
   "预期红": "夜跑:结果文件里盖了「环境性失败」的题数得出来(2 题),而且写进夜报那一行"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_schedule.py",
+  "改坏": "「每月 31 号」碰上小月不落到月末跑,直接跳过(cron 的惯例;用户 11-16 拍的是落到月末,台账第七十三条)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/定时.py",
+    "old": "    return 某天.day == 月天数 and (月末 in 几号 or any(isinstance(n, int) and n > 月天数 for n in 几号))",
+    "new": "    return 某天.day == 月天数 and 月末 in 几号"
+   }
+  ],
+  "预期红": "是执行日:月 31 号在 4-30 / 2-28 跑、4-29 不跑;末只在月末"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_schedule.py",
+  "改坏": "「每小时」一天只排一次(退化成每天,面板上照样显示「每小时」)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/定时.py",
+    "old": "        return [datetime.combine(某天, time(hh, m), tzinfo=tz) for hh in range(24)]",
+    "new": "        return [datetime.combine(某天, time(hh, m), tzinfo=tz) for hh in range(1)]"
+   }
+  ],
+  "预期红": "每小时 :05 → 10:00 的下一次是 10:05,统计 09:05 到 10:04(到分)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_graph_validation.py",
+  "改坏": "定时开头的流程还要使用者填东西也放行(二选一那道闸没了,到点自动跑时没人在场填)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "        多 = sorted(set(((c.get(\"input_schema\") or {}).get(\"properties\") or {})) - set(定时自填))\n        if 多:",
+    "new": "        多 = sorted(set(((c.get(\"input_schema\") or {}).get(\"properties\") or {})) - set(定时自填))\n        if False:"
+   }
+  ],
+  "预期红": "每张图报出来的阻断码和手写的期望**集合相等**(多报也算错)"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_audio_flow.py",
+  "改坏": "定时到点发起那一期时,「统计起」不按这一期算、写死成 1970-01-01 —— 运行照样成功、面板照样显示「每天 08:00」,统计的却永远不是该统计的那段。⚠️ 两条坑:① 攻击点必须在测试**进程内**调到的那条路(WA.定时扫一遍 → _定时发起一期);接口层(PUT schedule)经 HTTP 打的是常驻服务,副本里改坏它看不见 ② 别拿「统计起 ← 统计止」当攻击:每日频率下两者本来就是同一天,改了等于没改(11-16 两次都栽过)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/workflows_api.py",
+    "old": "    输入 = {**(s[\"input_snapshot\"] or {}), \"统计起\": 起.isoformat(), \"统计止\": 止.isoformat()}",
+    "new": "    输入 = {**(s[\"input_snapshot\"] or {}), \"统计起\": \"1970-01-01\", \"统计止\": 止.isoformat()}"
+   }
+  ],
+  "预期红": "输入带上了统计起止"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_orphan_sweep.py",
+  "改坏": "worker 那条路只找孤儿不推终态(监测页「在跑」照旧挂着假数,而扫的日志看着像在干活)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/orphan_sweep.py",
+    "old": "            改了 = [x[0] for x in 要改 if 推孤儿(c, x, 我是谁)]",
+    "new": "            改了 = []"
+   }
+  ],
+  "预期红": "甲(任务 2 小时前全结束)→ incomplete,completion_reason=orphaned,ended_at 填上"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_outbound_policy.py",
+  "改坏": "解析出来落内网也放行(白名单只看写法,evil.nip.io 这种写法合法、解析出来是回环 —— SSRF 的正门)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/出网策略.py",
+    "old": "    坏 = [ip for ip in ips if 地址落禁区吗(ip)]\n    if 坏:",
+    "new": "    坏 = [ip for ip in ips if 地址落禁区吗(ip)]\n    if False:"
+   }
+  ],
+  "预期红": "域名解析到回环(evil.nip.io → 127.0.0.1)→ 拒,理由点名内网 / 本机"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_outbound_policy.py",
+  "改坏": "白名单只比主机、不比路径前缀(登记了 /v1 就能打 /admin)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/出网策略.py",
+    "old": "        if path == path2 or path.startswith(path2.rstrip(\"/\") + \"/\") or path2 == \"/\":",
+    "new": "        if True:"
+   }
+  ],
+  "预期红": "十种越界写法全拒"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_http_node.py",
+  "改坏": "节点自带的请求头不过滤(节点里偷写一个 Authorization 就能带出去 —— H3「节点里没地方写密钥」破了)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/HTTP请求.py",
+    "old": "    自带 = {str(k): str(v) for k, v in (实参.get(\"headers\") or {}).items()\n            if str(k).lower() not in SR._敏感头 and \"token\" not in str(k).lower() and \"secret\" not in str(k).lower()}",
+    "new": "    自带 = {str(k): str(v) for k, v in (实参.get(\"headers\") or {}).items()}"
+   }
+  ],
+  "预期红": "连接的 x-api-key 装上了、节点自带的 Authorization 被丢掉、Accept 保留"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_http_node.py",
+  "改坏": "结果里的请求头不打码(凭据原值进运行记录)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/HTTP请求.py",
+    "old": "            \"请求头\": SR.遮头(全头), \"凭据来路\": 来路, \"execution_mode\": \"live\"}",
+    "new": "            \"请求头\": dict(全头), \"凭据来路\": 来路, \"execution_mode\": \"live\"}"
+   }
+  ],
+  "预期红": "🔑 结果里任何地方都不出现凭据原值、请求头已打码、来路只说 env://"
  }
 ]
