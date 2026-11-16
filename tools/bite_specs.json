@@ -22808,5 +22808,41 @@
    }
   ],
   "预期红": "自造一张三天前开工的在制单:工钱不为 0 且和独立 SQL 一致"
+ },
+ {
+  "script": "backend/roster_write_check.py",
+  "改坏": "发布排班的日志不传手里的 db(库切到副本时写回真库)",
+  "file": [
+   {
+    "path": "backend/roster_write.py",
+    "old": "               {\"受影响\": [x[\"任务号\"] for x in 预[\"受影响\"]]}, db=db)",
+    "new": "               {\"受影响\": [x[\"任务号\"] for x in 预[\"受影响\"]]}, db=None)"
+   }
+  ],
+  "预期红": "⑥ 真库一行没动"
+ },
+ {
+  "script": "backend/roster_write_check.py",
+  "改坏": "④ 数日志数总数,不数这次新增的(真库里早有的也算进来)",
+  "file": [
+   {
+    "path": "backend/roster_write_check.py",
+    "old": "日志 is not None and 日志 - 日志基线 == 2",
+    "new": "日志 is not None and 日志 == 2"
+   }
+  ],
+  "预期红": "④ 操作日志记在副本上(两次发布)"
+ },
+ {
+  "script": "agent/shift_eval_judgetest.py",
+  "改坏": "夹具不清副本上系统铺的草稿(每日平移铺到那两周就永远「不空不跑」)",
+  "file": [
+   {
+    "path": "agent/shift_eval.py",
+    "old": "        if os.path.realpath(DBP) != 真:\n            c.execute(f\"DELETE FROM roster WHERE created_by='system'",
+    "new": "        if False:\n            c.execute(f\"DELETE FROM roster WHERE created_by='system'"
+   }
+  ],
+  "预期红": "夹具挑得到(副本上那两周是空的)"
  }
 ]

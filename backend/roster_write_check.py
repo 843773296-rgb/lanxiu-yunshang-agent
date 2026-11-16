@@ -86,6 +86,15 @@ def _跑(db):
     周 = ["2026-11-30", "2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04", "2026-12-05", "2026-12-06"]
     with closing(sqlite3.connect(db)) as c, c:
         c.execute("DELETE FROM roster WHERE d >= '2026-11-30'")      # 副本上清场,别被以后铺的数据干扰
+        # 真库里本来就可能有 ROSTER_PUBLISH(11-16 凌晨夜跑 shift_eval 在真库留了 2 笔),副本拷自真库 ——
+        # 下面 ④ 数日志只许数**这次跑新增的**,不许数总数(总数取决于库里碰巧有什么,不是代码)
+        if c.execute("SELECT 1 FROM sqlite_master WHERE name='op_log'").fetchone():
+            # 先放一笔别人的,保证「数总数」和「数新增」在这个副本上**一定**分得开(不靠真库碰巧有)
+            c.execute("INSERT INTO op_log(ts, actor, target, frm, too, allowed, code, reason) "
+                      "VALUES('2026-01-01 00:00:00','夹具','夹具','草稿','已发布',1,'ROSTER_PUBLISH','夹具:别人早先发布过')")
+            日志基线 = c.execute("SELECT COUNT(*) FROM op_log WHERE code='ROSTER_PUBLISH'").fetchone()[0]
+        else:
+            日志基线 = 0
         人们 = [r[0] for r in c.execute(
             "SELECT no FROM staff WHERE role='顾问' AND status='启用' AND shop LIKE 'SH001%' ORDER BY no")]
     ck("夹具:SH001 有在职顾问可排", len(人们) >= 3, 人们)
@@ -146,7 +155,7 @@ def _跑(db):
             if c.execute("SELECT 1 FROM sqlite_master WHERE name='op_log'").fetchone() else None
     ck("④   待改派派给店长、说明里有原单号", bool(t) and t[0] == "待改派" and t[1] == 店长 and "SCRWX1" in t[2], t)
     ck("④ 发布后是晚班", "晚班" in roster.在班吗(林, 周[2], db)[2], roster.在班吗(林, 周[2], db))
-    ck("④ 操作日志记在副本上(两次发布)", 日志 == 2, 日志)
+    ck("④ 操作日志记在副本上(两次发布)", 日志 is not None and 日志 - 日志基线 == 2, (日志, 日志基线))
 
     # ⑤ 合规拦发布
     下 = ["2026-12-07", "2026-12-08", "2026-12-09", "2026-12-10", "2026-12-11", "2026-12-12", "2026-12-13"]

@@ -305,7 +305,11 @@ def 发布(操作人工号, 周一, 今天, 确认受影响=False, db=None):
         from oplog import log_op
         log_op(我["name"], "roster", f"{我['shop']} {日们[0]}", "草稿", "已发布", True, "ROSTER_PUBLISH",
                f"{我['name']} 发布了 {日们[0]} 那一周的排班({len(草稿们)} 格);待改派 {len(改派)} 条",
-               {"受影响": [x["任务号"] for x in 预["受影响"]]}, db=(None if db == DB else db))
+               {"受影响": [x["任务号"] for x in 预["受影响"]]}, db=db)
+        # ⚠️ 原来写的是 db=(None if db == DB else db):库被切到副本时(评测 / 检查)本模块的 DB 也指着副本,
+        # db == DB 成立 → 传 None → oplog 用**它自己的** DB 默认值 —— 而那一个没被切,日志写回真库。
+        # 11-16 凌晨夜跑 shift_eval(跑在副本上)就这样在真库 op_log 留了 2 笔 ROSTER_PUBLISH。
+        # 「排班写进了副本」和「日志写进了真库」在评测的全绿上长得一模一样 —— 一律把手里这条 db 传下去。
     except Exception:       # noqa: BLE001  —— 日志写不进不回滚已发布的排班,但要让人看见
         出["日志"] = "操作日志没写进去"
     return 出

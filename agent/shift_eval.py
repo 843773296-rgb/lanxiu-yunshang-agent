@@ -190,6 +190,14 @@ def 挑():
                          "AND shop LIKE 'SH001%' LIMIT 1").fetchone()
         人 = [dict(r) for r in c.execute("SELECT no,name,role,shop FROM staff WHERE role='顾问' AND status='启用' "
                                          "AND shop LIKE 'SH001%' ORDER BY no").fetchall()]
+        # 每日平移会把「系统铺的草稿」一天天往后铺(11-16 铺到了 12-06,正好压上甲那一周)——
+        # 那是数据在往前走,不是有人排了班。**只在副本上**把这两周系统铺的草稿清掉再数;
+        # 真库上不清(谁拿真库跑到这,就该被「不空就不跑」拦住)。拍 / 还原在 挑 之后,清掉的不会被还回去。
+        真 = os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
+        if os.path.realpath(DBP) != 真:
+            c.execute(f"DELETE FROM roster WHERE created_by='system' AND status='草稿' AND d IN ({','.join('?'*14)})",
+                      (*甲, *乙))
+            c.commit()
         占 = c.execute(f"SELECT COUNT(*) FROM roster WHERE d IN ({','.join('?'*14)})", (*甲, *乙)).fetchone()[0]
     finally:
         c.close()

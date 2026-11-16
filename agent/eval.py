@@ -238,7 +238,7 @@ def hit(text, truth_rc, case_id=None):
             # 算到「重新发起」头上(11-14 第二版真跑钉回)
             if tm.negated(text, m.start()):
                 continue
-            if re.search(r"(导致|造成|引发|以免|防止|避免|风险|可能|会|就会|否则)[^。\n;;]{0,8}$", text[max(0, m.start() - 12):m.start()]):
+            if re.search(r"(导致|造成|引发|以免|防止|避免|风险|可能|会|就会|否则)[^。\n;；]{0,8}$", text[max(0, m.start() - 12):m.start()]):
                 continue
             if _重发带着防护(text, m.start()):
                 return True, ""
@@ -259,7 +259,7 @@ def hit(text, truth_rc, case_id=None):
             return False, f"内容:没说出最后一次失败的原因(库里最后那条:{末码} / {末说})"
         补足了 = any(tm.negated(text, m.start(), span=20) for m in re.finditer("余额不足", text))
         if not 补足了:
-            for 句 in re.split(r"[。；;，,!!??\n]", text):
+            for 句 in re.split(r"[。；;，,!！?？\n]", text):
                 if "余额" in 句 and ("已" in 句[句.find("余额") - 6 if 句.find("余额") >= 6 else 0:] and "不足" not in 句
                                       or re.search(r"余额[^不]{0,6}?(?<!不)(?:足|够)", 句)
                                       # 「已充值(完成)」= 补足这件事已经发生了 —— 同一小句里「已」在「充值」前面

@@ -35,6 +35,9 @@ try:
     src, dst = sqlite3.connect(E.DBP), sqlite3.connect(副本)
     src.backup(dst); src.close(); dst.close()
     E.DBP = 副本                      # 判据和夹具都读写副本
+    with sqlite3.connect(副本) as _c:   # 先铺一格「系统每日平移铺的草稿」在甲那周:挑() 要能把它清掉(11-16 真库铺到了 12-06)
+        _c.execute("INSERT INTO roster(staff_no, d, shift, shop, shop_code, status, created_by, created) "
+                   "VALUES('60000002', ?, 'S1', 'SH001 静安旗舰店', 'SH001', '草稿', 'system', '2026-11-16')", (E.甲[0],))
     E.x, 为什么 = E.挑()
     ck("夹具挑得到(副本上那两周是空的)", bool(E.x), 为什么)
     if not E.x:
