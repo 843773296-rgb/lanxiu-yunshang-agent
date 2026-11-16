@@ -129,32 +129,15 @@ def main():
                            为, r["project_id"]))
 
         # 孤儿运行(W06,11-15 夜):running 而背后的后台任务全结束、没待办、没待回执的澜绣桥请求。
-        # 判据在 runtime/卡住判定.判孤儿;不等 72 小时(只留 30 分钟收尾宽限)。已经被上面 72 小时那档收进来的不重复算
+        # 判据在 runtime/卡住判定.判孤儿;取数在 orphan_sweep.找孤儿(11-16 起 worker 每分钟也扫,**同一份 SQL**,不抄第二遍)。
+        # 不等 72 小时(只留 30 分钟收尾宽限)。已经被上面 72 小时那档收进来的不重复算
+        import orphan_sweep as OS_
         已在 = {x[2] for x in 要改}
-        孤看了 = 0
-        for r in c.execute(text(
-                f"select r.id, r.status, r.project_id, "
-                f"       array_remove(array_agg(j.status), null) 任务状态们, "
-                f"       max(coalesce(j.updated_at, j.created_at)) 最后任务结束, "
-                f"       exists(select 1 from human_requests h where h.project_id=r.project_id "
-                f"              and h.execution_run_id=r.id and h.status='pending') 有待人工, "
-                f"       exists(select 1 from bridge_calls b where b.project_id=r.project_id "
-                f"              and b.execution_run_id=r.id and b.status='待执行') 有待桥 "
-                f"  from execution_runs r "
-                f"  left join jobs j on j.project_id=r.project_id and j.target_ref->>'run_id'=r.id "
-                f" where r.status='running'{项目条件.replace('project_id', 'r.project_id')} "
-                f" group by r.id, r.status, r.project_id"), 参).mappings():
-            孤看了 += 1
-            if r["id"] in 已在:
-                continue
-            try:
-                档, 为 = SJ.判孤儿(状态=r["status"], 任务状态们=r["任务状态们"], 最后任务结束=r["最后任务结束"],
-                                 有待人工=r["有待人工"], 有待桥=r["有待桥"], 现在=现在)
-            except SJ.判不了 as e:
-                判不了的.append(("execution_runs", r["id"], str(e)))
-                continue
-            if 档 == SJ.可标incomplete:
-                要改.append(("execution_runs", "运行", r["id"], r["status"], 档, 为, r["project_id"]))
+        孤看了, 孤要改, 孤判不了 = OS_.找孤儿(c, 现在, 项目=a.项目)
+        判不了的 += [("execution_runs", rid, 说) for rid, 说 in 孤判不了]
+        for rid, proj, _org, 为 in 孤要改:
+            if rid not in 已在:
+                要改.append(("execution_runs", "运行", rid, "running", SJ.可标incomplete, 为, proj))
 
     print(f"  孤儿运行那一档看了 {孤看了} 条 running(0 条 = 现在没有在跑的运行,不是没扫)")
 

@@ -2066,6 +2066,12 @@ def main():
             for x in 扫定时():
                 print("  定时:" + x)
             try:
+                import orphan_sweep as _ORPH   # 孤儿运行(W06,11-16):任务全结束、没待办没待回执的 running → incomplete;出错只打日志,不拖垮 worker
+                for x in _ORPH.扫孤儿(我是谁=我是谁):
+                    print("  孤儿运行:" + x)
+            except Exception as e:
+                print(f"  ⚠️ 扫孤儿运行出错({type(e).__name__}: {e})—— 下一轮再扫")
+            try:
                 import alerts_api as _ALR   # 告警(11-04):每 60 秒扫一次,规则自己 5 分钟评一次;出错只打日志,不拖垮 worker
                 for x in _ALR.扫告警():
                     print("  告警:" + x)

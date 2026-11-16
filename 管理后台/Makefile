@@ -427,7 +427,8 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_access_api_flow.py test_opinions_flow.py test_issues_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
           test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py test_log_policy_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
-          test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py
+          test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py \
+          test_orphan_sweep.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -578,6 +579,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_intent_flow.py
 	@./.venv/bin/python tests/e2e/test_chat_handoff_flow.py
 	@./.venv/bin/python tests/e2e/test_fingerprint_ratchet.py
+	@./.venv/bin/python tests/e2e/test_orphan_sweep.py
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py
 	@echo ""
 	@echo "▸ 库存补货(12 条:不用派直接结束 / 填齐了才派 / 没填不派 / 退回不派 / 密钥扫描只放过声明过的数值配置 —— 六条第六条)"
@@ -902,6 +904,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_fingerprint_ratchet 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_fingerprint_ratchet.log; exit 1; }
 	@tail -2 /tmp/prog-test_fingerprint_ratchet.log
+	@./.venv/bin/python tests/e2e/test_orphan_sweep.py > /tmp/prog-test_orphan_sweep.log 2>&1 \
+	  || { echo "  ❌ test_orphan_sweep 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_orphan_sweep.log; exit 1; }
+	@tail -2 /tmp/prog-test_orphan_sweep.log
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py > /tmp/prog-test_access_api_chat_live.log 2>&1 \
 	  || { echo "  ❌ test_access_api_chat_live 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_access_api_chat_live.log; exit 1; }
@@ -1154,8 +1160,14 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 列表迭代:逐项串行跑、结果和输入同顺序;空列表 / 超上限 / 某项失败(整步失败或留空位)/ 等人恢复;套娃和取没给的变量 检查配置就拦"
 	@./.venv/bin/python tests/orchestration/test_foreach_node.py
 	@echo ""
-	@echo "▸ 定时触发的时间口径:日报前一天 / 周报上一个自然周 / 月报上一个自然月;同一期只发起一次;关机只补最近一期"
+	@echo "▸ 定时触发的时间口径:上一次该跑到这一次该跑之间(每天 / 每周几 / 每月几号含末 / 每小时;老三种和原来一样);同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py
+	@echo ""
+	@echo "▸ 出网策略(三期 HTTP 请求的地基):只读方法、连接白名单、解析落内网 / 云元数据就拒、不跟重定向、15 秒 1 MB;**假 DNS 注入,不靠本机网络**"
+	@./.venv/bin/python tests/orchestration/test_outbound_policy.py
+	@echo ""
+	@echo "▸ HTTP 请求节点执行核心:合成契约经真网关、凭据只从连接来且结果里不出现原值、发送前四种拦截一个字节不出去、3xx 不跟;假发送 + 假 DNS"
+	@./.venv/bin/python tests/orchestration/test_http_node.py
 	@echo ""
 	@echo "▸ 真模型的出网环境:常驻服务(launchd)也带上代理,只搬代理那几项(10-24 正式项目首跑 403 撞出来的)"
 	@./.venv/bin/python tests/orchestration/test_proxy_env.py
