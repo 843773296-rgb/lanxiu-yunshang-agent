@@ -904,6 +904,11 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                                    and tv.tool_definition_id=td.id
                                  where td.project_id=:p and td.archived_at is null and td.status='active'
                                  order by td.id, tv.version_no desc"""), {"p": project_id}).mappings().all()
+        # HTTP 请求节点选的工具连接(11-16 三期 3-1):**密钥一个字都不给**(连形状也不用,面板只要选哪一条);端点白名单给出来,面板按序号选
+        连 = c.execute(text("""select id, name, adapter, allowed_endpoints, status
+                                 from capability_connections
+                                where project_id=:p and archived_at is null
+                                order by name, created_at"""), {"p": project_id}).mappings().all()
         import glossaries_api as _GA
         术语们 = _GA.可选术语版本(c, project_id)
     读写 = {"read_only": "只读", "write": "写入", "irreversible": "写入 · 不可撤"}
@@ -922,6 +927,8 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                   # 所以入参和版本号也给 —— 没有入参,页面只能悄悄把旧参数原样送进新工具
                   "入参": r["input_schema"] or {}, "版本": r["version_no"]}
                  for r in sorted(工, key=lambda x: (x["adapter"] != "lanxiu_bridge", x["name"]))],
+        "工具连接": [{"id": r["id"], "名": r["name"], "适配器": r["adapter"],
+                    "允许的端点": list(r["allowed_endpoints"] or []), "状态": r["status"]} for r in 连],
         "角色": [{"码": r, "中文": PM.角色中文.get(r, r), "能审批": r in 能批} for r in PM.角色们],
         # 开始节点「这条流程用哪一版术语」的下拉框(11-06 深夜补:接口早就收 glossary_version_id,页面上却选不了)
         "术语": 术语们,
@@ -1795,6 +1802,11 @@ async def 冻结版本(project_id: str, wid: str, request: Request,
                       field_errors={"logical_hash": 哈希[:26] + "…"})
         版本号 = (上一版["version_no"] + 1) if 上一版 else 1
         vid = _新id("wfv")
+        # 版本上的入参 / 出参结构**以开始 / 结束节点里那份为准**(11-16 查实的口子):编辑器和运行时读的都是节点里的,
+        # 定义顶层那份只在建模板时抄了一遍、之后没人同步 —— 原来这里抄顶层,于是开始节点改了字段、冻出来的版本还是老入参,
+        # 定时那条「必填入参要么固定要么统计字段」就会按老的报 SCHEDULE_INPUT_MISSING。顶层只当节点里没有时的兜底
+        入参结构 = DS.入参结构(定义)   # 取法在 dsl 只写一份:校验器 ⑧ / 编译器 / 这里三处同一个
+        出参结构 = DS.出参结构(定义)
         依赖 = sorted({f"{f}:{(n.get('config') or {}).get(f)}"
                       for n in 定义["nodes"] for f in _引用表
                       if (n.get("config") or {}).get(f)})
@@ -1813,8 +1825,8 @@ async def 冻结版本(project_id: str, wid: str, request: Request,
                # 坐标存在版本上(否则看历史版本只能看到一团重叠的节点),
                # 但它**不进 logical_hash** —— 两件事分开。
                "ly": json.dumps(d["layout"] or {}, ensure_ascii=False),
-               "isc": json.dumps(定义.get("input_schema") or {}, ensure_ascii=False),
-               "osc": json.dumps(定义.get("output_schema") or {}, ensure_ascii=False),
+               "isc": json.dumps(入参结构, ensure_ascii=False),
+               "osc": json.dumps(出参结构, ensure_ascii=False),
                "cn": 说明, "u": me.user_id})
         c.execute(text("""update workflows set validation_status='通过', updated_at=now()
                           where project_id=:p and id=:i"""),

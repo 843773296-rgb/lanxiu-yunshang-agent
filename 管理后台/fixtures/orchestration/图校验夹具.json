@@ -3771,6 +3771,202 @@
     "HTTP_METHOD_NOT_ALLOWED"
    ],
    "为什么": "安全决定 H6(用户 11-12 拍):一期只开读;POST 在检查配置时就拦,别等运行到那一步才发现"
+  },
+  "合法_顶层出参过期_以结束节点为准": {
+   "为什么": "11-16 查实:定义顶层 output_schema 是建模板时抄的一份、之后没人同步,编辑器只改结束节点里那份。校验器 ⑧ 若读顶层,结束节点改了字段之后会按老字段要来源(音频 e2e 的定时流程就是这么被 END_MISSING_OUTPUT 拦住的)。**节点里那份为准,顶层只兜底**",
+   "期望阻断": [],
+   "图": {
+    "definition_schema_version": "1",
+    "kind": "workflow",
+    "name": "顶层出参过期",
+    "output_schema": {
+     "type": "object",
+     "properties": {
+      "结果": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "结果"
+     ],
+     "additionalProperties": false
+    },
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "config": {
+       "input_schema": {
+        "type": "object",
+        "properties": {
+         "article": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "article"
+        ]
+       }
+      }
+     },
+     {
+      "id": "sum",
+      "type": "llm",
+      "config": {
+       "connection_version_id": "cv1",
+       "prompt_version_id": "p1",
+       "output_schema": {
+        "type": "object",
+        "properties": {
+         "text": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "text"
+        ],
+        "additionalProperties": false
+       },
+       "bindings": {
+        "article": {
+         "source": "input",
+         "pointer": "/article"
+        }
+       }
+      }
+     },
+     {
+      "id": "end",
+      "type": "end",
+      "config": {
+       "output_schema": {
+        "type": "object",
+        "properties": {
+         "summary": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "summary"
+        ],
+        "additionalProperties": false
+       },
+       "bindings": {
+        "summary": {
+         "source": "node",
+         "node_id": "sum",
+         "pointer": "/text"
+        }
+       }
+      }
+     }
+    ],
+    "edges": [
+     {
+      "source": "start",
+      "target": "sum",
+      "port": "success"
+     },
+     {
+      "source": "sum",
+      "target": "end",
+      "port": "success"
+     }
+    ]
+   }
+  },
+  "非法_顶层出参为空但结束节点要的字段没来源": {
+   "为什么": "上一条的反面:只读顶层会把这张图放过去(顶层什么都不要),而结束节点自己声明要 summary 却没选来源 —— 运行到最后才发现返回不出来。两条合起来才钉死『读的是节点里那份』",
+   "期望阻断": [
+    "END_MISSING_OUTPUT"
+   ],
+   "图": {
+    "definition_schema_version": "1",
+    "kind": "workflow",
+    "name": "顶层出参为空",
+    "output_schema": {
+     "type": "object",
+     "properties": {},
+     "required": [],
+     "additionalProperties": true
+    },
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "config": {
+       "input_schema": {
+        "type": "object",
+        "properties": {
+         "article": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "article"
+        ]
+       }
+      }
+     },
+     {
+      "id": "sum",
+      "type": "llm",
+      "config": {
+       "connection_version_id": "cv1",
+       "prompt_version_id": "p1",
+       "output_schema": {
+        "type": "object",
+        "properties": {
+         "text": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "text"
+        ],
+        "additionalProperties": false
+       },
+       "bindings": {
+        "article": {
+         "source": "input",
+         "pointer": "/article"
+        }
+       }
+      }
+     },
+     {
+      "id": "end",
+      "type": "end",
+      "config": {
+       "output_schema": {
+        "type": "object",
+        "properties": {
+         "summary": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "summary"
+        ],
+        "additionalProperties": false
+       },
+       "bindings": {}
+      }
+     }
+    ],
+    "edges": [
+     {
+      "source": "start",
+      "target": "sum",
+      "port": "success"
+     },
+     {
+      "source": "sum",
+      "target": "end",
+      "port": "success"
+     }
+    ]
+   }
   }
  }
 }

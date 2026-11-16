@@ -23072,5 +23072,41 @@
    }
   ],
   "预期红": "每张图报出来的阻断码和手写的期望**集合相等**(多报也算错)"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_http_node_flow.py",
+  "改坏": "HTTP 请求节点没写路径也放行(检查配置那道闸没了;运行到那一步才报拼不出地址)。⚠️ 这份 e2e 的运行段有常驻 worker 一起抢活、副本里改坏 worker / runner 打不准,所以攻击打在测试进程内调的 validator 上",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "        if not 有路径:\n            出.append(问(阻断, \"HTTP_PATH_MISSING\",",
+    "new": "        if False:\n            出.append(问(阻断, \"HTTP_PATH_MISSING\","
+   }
+  ],
+  "预期红": "没写路径 → 检查配置拦 HTTP_PATH_MISSING"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_workflow_http_panel.js",
+  "改坏": "HTTP 请求节点的方法下拉多出 POST(一期拍板 H6 只开 GET/HEAD;校验器的 HTTP_METHOD_NOT_ALLOWED 是兜底,入口不该先放人进去)",
+  "file": [
+   {
+    "path": "管理后台/apps/web/app.js",
+    "old": "[[\"GET\", \"GET(读)\"], [\"HEAD\", \"HEAD(只看头)\"]]",
+    "new": "[[\"GET\", \"GET(读)\"], [\"HEAD\", \"HEAD(只看头)\"], [\"POST\", \"POST\"]]"
+   }
+  ],
+  "预期红": "方法下拉只有 GET / HEAD(没有 POST / PUT / DELETE 可选)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_graph_validation.py",
+  "改坏": "校验器 ⑧(结束节点必需字段要有来源)又去读定义顶层的 output_schema,不读结束节点里那份 —— 11-16 音频 e2e 定时流程被 END_MISSING_OUTPUT 拦住的根子倒回去。⚠️ 原来这条打的是 workflows_api 冻结版本那行,而 e2e 经 HTTP 打常驻服务、副本里改坏它看不见,所以换到进程内的 validator;冻结版本那处(DS.入参结构 / 出参结构)由 test_audio_flow 对着真服务验,咬不到",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "    输出 = DS.出参结构(定义)",
+    "new": "    输出 = 定义.get(\"output_schema\") or {}"
+   }
+  ],
+  "预期红": "每张图报出来的阻断码和手写的期望**集合相等**(多报也算错)"
  }
 ]

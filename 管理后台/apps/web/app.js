@@ -2401,7 +2401,7 @@ const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本�
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
   // 11-15 文案对齐 Dify(规划一期第五件最后一项):「按条件分流」→「条件分支」、「人工核对」→「人工介入」(待办页里仍叫核对 —— 那边是处理人的动作)
   condition: "条件分支", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工介入", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值",
-  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代" };
+  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代", http_request: "HTTP 请求" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -2900,11 +2900,17 @@ const 节点 = (id) => 图态.定义.nodes.find((n) => n.id === id);
 const 元 = (t) => 图态.节点库.find((x) => x["名"] === t) || {};
 function 业务名(n) { return n.name || 步类型名[n.type] || n.type; }
 function 工具资源(tv) { return (图态.资源.工具 || []).find((x) => x["版本id"] === tv); }
+// HTTP 请求节点选的「工具连接」(capability_connections,11-16):列表来自 workflow-resources,密钥只给形状
+function 工具连接(id) { return (图态.资源.工具连接 || []).find((x) => x.id === id); }
 function 次级标签(n) {
   const 在 = n.container && 图态 && 图态.定义 && 节点(n.container) ? ` · 在「${业务名(节点(n.container))}」里` : "";
   if (n.type === "tool") {
     const t = 工具资源((n.config || {}).tool_version_id);
     return (t ? `业务动作 · ${t["读写"]}` : "业务动作") + 在;
+  }
+  if (n.type === "http_request") {
+    const k = 工具连接((n.config || {}).connection_id);
+    return `HTTP 请求 · 只读${k ? ` · ${k["名"]}` : ""}` + 在;
   }
   return (步类型名[n.type] || n.type) + 在;
 }
@@ -2921,7 +2927,8 @@ const 字段中文 = { connection_version_id: "用哪个模型", prompt_version_
   knowledge_base_id: "查哪个资料库", retrieval_config_version_id: "怎么查", candidates: "汇合哪几路",
   output_field: "汇合后叫什么", agent_version_id: "用哪个 Agent", task_binding: "交给它的任务",
   sub_limits: "这一步的上限", bindings: "用到的数据", filter: "过滤", sort: "排序", limit: "只要前几个",
-  item_output: "每一项交出什么", item_failure_policy: "某一项失败时", max_items: "最多做几项" };
+  item_output: "每一项交出什么", item_failure_policy: "某一项失败时", max_items: "最多做几项",
+  connection_id: "用哪条工具连接", method: "方法", path: "路径" };
 const 中文名 = (f) => 字段中文[f] || f;
 
 /* 执行顺序:从开始沿边走;条件的每一路缩进一层。没接进流程的放最后 */
@@ -2954,10 +2961,13 @@ async function 画_概览() {
     `<li><b>${esc(v.title || k)}</b> <span class="k">${esc(k)} · ${esc((结果类型们.find((x) => x[0] === v.type) || [0, v.type])[1])}
       ${((sch.required || []).includes(k)) ? " · 必填" : ""}</span>${v.description ? ` —— ${esc(v.description)}` : ""}</li>`).join("")
     || '<li class="k">还没定义</li>';
-  const 依赖 = g.定义.nodes.filter((n) => ["llm", "tool", "human"].includes(n.type)).map((n) => {
+  const 依赖 = g.定义.nodes.filter((n) => ["llm", "tool", "http_request", "human"].includes(n.type)).map((n) => {
     const 缺 = 缺项(n);
     let 用的 = "";
-    if (n.type === "llm") {
+    if (n.type === "http_request") {
+      const k = 工具连接(n.config.connection_id);
+      用的 = k ? `工具连接:${esc(k["名"])}(${esc((k["允许的端点"] || [])[n.config.endpoint_index || 0] || "")})` : "工具连接:未选";
+    } else if (n.type === "llm") {
       const m = (g.资源.模型 || []).find((x) => x["版本id"] === n.config.connection_version_id);
       const p = (g.资源.处理要求 || []).find((x) => x["版本id"] === n.config.prompt_version_id);
       用的 = `模型:${m ? esc(m["名"]) : "未选"} · 处理要求:${p ? esc(p["名"]) : "未选"}`;
@@ -3088,7 +3098,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor", "foreach"]
+  const 可加 = ["llm", "tool", "http_request", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor", "foreach"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -3117,6 +3127,8 @@ function 默认配置(类型) {
            llm: { bindings: {}, output_schema: { type: "object", properties: { text: { type: "string" } },
                   required: ["text"], additionalProperties: false } },
            tool: { bindings: {} },
+           // HTTP 请求(11-16 三期 3-1):方法默认 GET(一期只开 GET/HEAD);连接 / 路径不预填 —— 检查配置会报「还没选」「没写路径」,不是手写的
+           http_request: { method: "GET", query: {}, headers: {}, bindings: {} },
            answer: { template: "", bindings: {} },
            template: { template: "", bindings: {} },
            assigner: { assignments: [] },
@@ -3265,6 +3277,17 @@ function 画_面板() {
 // 改完要重画的控件(比如加了一行字段):先改数据,再重画面板和步骤
 const 重画 = () => 重画全部();
 
+/* 键 → 值 的小表(HTTP 请求的查询串 / 请求头,11-16):改名字 = 删旧键放新键(顺序可能变,不影响语义);
+ * 名字清空就是删这一项;值原样存文字 —— 查询串和请求头本来就是文字,不猜数字 */
+function 键值表(n, 键名, 标题, 键提示, 值提示) {
+  const o = n.config[键名] = (n.config[键名] && typeof n.config[键名] === "object") ? n.config[键名] : {};
+  const 行 = Object.keys(o).map((k) => `<div class="fieldrow">
+      ${输入框(k, (el) => { const 新 = el.value.trim(); const v = o[k]; delete o[k]; if (新) o[新] = v; 重画(); }, 键提示)}
+      ${输入框(o[k] ?? "", (el) => { o[k] = el.value; }, 值提示)}
+      <button data-k="${挂控件(() => { delete o[k]; 重画(); })}" aria-label="删掉 ${esc(k)}">删</button></div>`).join("");
+  return `<label class="f">${esc(标题)}</label>${行 || `<div class="k">还没有。</div>`}
+    <button data-k="${挂控件(() => { let i = 1, k = "名字"; while (Object.prototype.hasOwnProperty.call(o, k)) k = `名字${++i}`; o[k] = ""; 重画(); })}">加一项</button>`;
+}
 function 下拉(值, 选项, fn, 空 = "请选择") {
   const k = 挂控件(fn);
   return `<select data-k="${k}"><option value="">${esc(空)}</option>${选项.map(([v, t]) =>
@@ -3461,6 +3484,31 @@ function 表_设置(n) {
     const t = 工具资源(c.tool_version_id);
     if (t && t["接入方式"] === "lanxiu_bridge") 体 += `<div class="note">这一步<b>由澜绣执行</b>:管理后台只记一张单、流程停下等;澜绣的同步程序拉回去用它自己的函数做完、回执,流程再接着走。
             ${t["读写"] !== "只读" ? "<b>写入类的动作之前必须有人工核对通过</b>,否则这次运行会直接失败。" : ""}</div>`;
+  } else if (n.type === "http_request") {
+    // HTTP 请求(11-16 三期 3-1):只能选已登记的工具连接,地址 = 连接白名单里的一条 + 这里的路径;一期只开 GET/HEAD(拍板 H6);
+    // 凭据只从连接来 —— 这里填的鉴权头在发送前会被丢掉(拍板 H3)。查询串 / 请求头是「底」,「用到的数据」里绑定的同名值盖上去
+    const 连 = g.资源.工具连接 || [], k = 工具连接(c.connection_id);
+    体 += `<label class="f">用哪条工具连接</label>`
+      + 资源选择器("工具连接", c.connection_id, 连.map((x) => ({ id: x.id, 名: x["名"], 说: (x["允许的端点"] || []).join("、"),
+          标: (x["状态"] === "active" ? "可用" : `状态:${x["状态"] || "未知"}`) + ` · ${x["适配器"] || ""}` })),
+          (id) => { c.connection_id = id || undefined; delete c.endpoint_index; 重画(); },
+          "这个项目还没有登记工具连接 —— 请平台管理员在「工具连接」里登记一条(填允许访问的地址和凭据引用)。")
+      + `<div class="note">只许访问这条连接<b>登记过的地址</b>;解析到内网、跟着跳转去别处、超过 15 秒或 1 MB 都会被拦下 —— 一个字节都不会发到白名单外。</div>`;
+    if (k && (k["允许的端点"] || []).length > 1) {
+      体 += `<label class="f">用白名单里的哪一条地址</label>`
+        + 下拉(String(c.endpoint_index || 0), (k["允许的端点"] || []).map((u, i) => [String(i), u]),
+            (el) => { c.endpoint_index = +el.value || 0; 重画(); }, "第一条");
+    }
+    体 += `<div class="two"><div><label class="f">方法</label>${下拉(c.method || "GET", [["GET", "GET(读)"], ["HEAD", "HEAD(只看头)"]],
+          (el) => { c.method = el.value || "GET"; 重画(); }, "GET")}
+        <div class="k">一期只开读;POST / PUT / DELETE 这类会改对方数据的,检查配置会拦下。</div></div>
+      <div><label class="f">路径</label>${输入框(c.path || "", (el) => { const v = el.value.trim(); if (v) c.path = v; else delete c.path; }, "例如 /stock 或 /orders/123", { 可清空: true })}
+        <div class="k">接在上面地址后面;要按上游的值拼路径,在「用到的数据」里绑 path。</div></div></div>`
+      + 键值表(n, "query", "查询串(?后面那部分)", "例如 sku", "例如 A1")
+      + 键值表(n, "headers", "请求头", "例如 Accept", "例如 application/json")
+      + `<div class="k">鉴权头(Authorization 这类)不用填 —— 凭据只从连接来,这里写的会在发送前被丢掉。</div>`
+      + `<label class="f">最多读多少字节(选填)</label>` + 数字框(c.max_bytes, (v) => { if (v === undefined) delete c.max_bytes; else c.max_bytes = v; }, { 整数: true, 最小: 1, 提示: "留空 = 1 MB" })
+      + `<div class="ferr"></div>`;
   } else if (n.type === "human") {
     const 角 = g.资源.角色 || [];
     体 += `<label class="f">谁来处理</label>` + 角.map((r) => {
@@ -3728,6 +3776,8 @@ function 结果字段名(n) {
   if (n.type === "assigner") return [...new Set((c.assignments || []).map((a) => a.variable).filter(Boolean))];
   if (n.type === "extractor") return (c.parameters || []).map((p) => p.name).filter(Boolean);
   if (n.type === "classifier") return ["类别", "理由"];
+  // HTTP 请求固定返回(runtime/HTTP请求.py 的结果形状;mock 跑法同形):状态码 / 响应头 / 正文 / 解出的 JSON / 实际地址 / 执行模式
+  if (n.type === "http_request") return ["status_code", "headers", "body", "json", "url", "execution_mode"];
   if (n.type === "condition") return ["branch"];
   if (n.type === "merge") return [c.output_field || "out"];
   if (n.type === "tool") {
@@ -3810,6 +3860,14 @@ function 表_输入(n) {
     + (n.config.candidates || []).map((r, i) => `<div class="fieldrow"><label>第 ${i + 1} 路</label>${下拉(引用值(r), 上游字段(n.id),
         (el) => { n.config.candidates[i] = 解引用(el.value); })}</div>`).join("")
     + `<button data-k="${挂控件(() => { (n.config.candidates = n.config.candidates || []).push(null); 重画(); })}">加一路</button>`;
+  if (n.type === "http_request") {
+    // 绑定只认这三项(worker 把它们盖在「基本」里写死的底上);别的键不会被读 —— 契约外的 绑定编辑 会标出来
+    const 契约 = { type: "object", properties: {
+      path: { type: "string", description: "路径(盖掉「基本」里写的那条)" },
+      query: { type: "object", description: "查询串(整个对象;和「基本」里的合并,同名以这里为准)" },
+      headers: { type: "object", description: "请求头(整个对象;鉴权头会被丢掉)" } }, required: [] };
+    return `<div class="k">「基本」里写死的是底;要按上游的值拼地址,在这里把 path / query / headers 绑到某一步的结果。都不绑也行。</div>` + 绑定编辑(n, "bindings", 契约);
+  }
   if (n.type === "tool") {
     const t = 工具资源(n.config.tool_version_id);
     if (!t) return `<div class="k">先在上面「基本」里选一个业务动作 —— 参数由它决定。</div>`;
@@ -3874,6 +3932,7 @@ function 表_结果(n) {
       <ul>${ps.map(([k, v]) => `<li><b>${esc(k)}</b> <span class="k">${esc(v.type || "")}</span></li>`).join("")}</ul>`
       : `<div class="k">先在上面「基本」里选一个业务动作。</div>`;
   }
+  if (n.type === "http_request") return `<div class="k">固定返回:<b>status_code</b>(状态码)、<b>headers</b>(响应头)、<b>body</b>(正文文字)、<b>json</b>(正文能解成 JSON 时的对象,解不出就是空)、<b>url</b>(实际请求的完整地址)、<b>execution_mode</b>(live 真发了 / mock 一个字节没出去)。下游要取正文里某一项,绑 json 再在那一步里挑字段。</div>`;
   if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>。</div>`;
   if (n.type === "classifier") return `<div class="k">固定返回:<b>类别</b>(模型挑的那一个名字)、<b>理由</b>(它为什么这么分)。走哪条线由类别定。</div>`;
   if (n.type === "extractor") return `<div class="k">返回上面「基本」里列的每一项参数;<b>原文没提到的那一项是空</b>,必填的没抽到这一步就失败。</div>`;

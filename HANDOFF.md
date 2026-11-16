@@ -12,14 +12,44 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
-### 🟡 11-16 13:4x · 交接(压缩前,最新)—— 收尾链跑到第五步,工作区未提交(Fable 5.1)
+### 🟡 11-16 17:2x · 交接(最新)—— 锁在我手里;e2e-ci 57/58 只红 audio → 根子修了(校验器/编译器/冻结三处统一读节点里的结构),audio 重跑绿;剩咬合重放 + 第六笔 + pre_push(Fable 5.1)
 
+- **17:0x e2e-ci 真实退出码 2**(后台通知报 0,照旧骗人):57 份过,只红 test_audio_flow 三条,全由一处来 —— **校验器 ⑧「结束节点必需字段要有来源」读的是定义顶层 output_schema**,下午我只修了冻结,没修它;**编译器交给运行器核最终输出的 输出Schema 也读顶层**。修法:取法只写一份在 `contract/dsl.py`(`DS.入参结构 / DS.出参结构`:节点里那份为准、顶层只兜底),validator ⑧ / compiler / workflows_api 冻结版本三处都改成调它。重启 aimc 后 audio 单跑 **rc=0**。图校验夹具 +2(顶层过期要「结果」而结束节点要 summary 已绑 → 放行;顶层为空而结束节点要 summary 没绑 → 拦),test_graph_validation 20 条过(夹具 33)。⚠️ 夹具 json 原格式 indent=1、ensure_ascii=False,用 json.dump 回写时照这个,否则 diff 七千行
+- **咬合规格改了一条**:原「audio 入参改回抄顶层」那条的攻击点(workflows_api 那行)已不存在,且 e2e 经 HTTP 打常驻服务、副本改坏看不见 → 换成打进程内 validator ⑧(`输出 = DS.出参结构(定义)` → 读顶层),脚本 test_graph_validation,预期红「每张图报出来的阻断码和手写的期望**集合相等**」。**冻结版本和编译器那两处的接线没有咬合**(只能靠 audio e2e 对真服务验),记欠账
+- **17:2x 咬合重放全过**:`bite_run --only test_graph_validation`(3 条含新 ⑧)/ `test_http_node_flow`(1)/ `test_workflow_http_panel`(1),每条都「对照绿 → 改坏 → 红的是那一条」。PRD B-123 改「已解决」并补第三条教训(同一份数据被几处读,修一处不算修好);汇总难点 --严格 rc=0、doc_numbers rc=0 无人认领 0
+- **未验证的预判**:app.js 面板真页面没点;pre_push --不推 没跑(第六笔提完就跑)
+- **下一步第一个动作**:`python3 tools/make_handoff.py`(刷自动区 + 项目日志)→ 第六笔 `git commit --only`(HANDOFF / 项目日志 / tools/bite_specs.json / tools/doc_numbers_check.py / PRD / 管理后台 Makefile、apps/web/app.js、apps/web/wf_canvas.js、services/api/app/workflows_api.py、services/api/app/contract/dsl.py、services/api/app/runtime/validator.py、services/api/app/runtime/compiler.py、fixtures/orchestration/图校验夹具.json、tests/e2e/test_audio_flow.py + 已暂存的两个新测试)→ 三件运行日志挪 scratchpad/aside、`git checkout --` → `./tools/pre_push.sh --不推` → 日志放回 → 请用户 `! cd ~/Desktop/澜绣云裳agent && git push origin main` → 发 eureka-fc 提交号 + 「锁放了」
+- **禁区 / 判据 / 悬而未决**:同下一条(16:5x),外加:PRD B-123 要补一句「校验器和编译器也读顶层,17:0x 一起修了」(状态可改「已解决」—— 顶层那份仍是摆设但三处读法已统一)
+
+### 🟡 11-16 16:5x · 交接 —— **顺序换了:我先推**;锁在我手里,HTTP 节点 e2e 10 条全过,e2e-ci 在锁内跑(Fable 5.1)
+
+- **16:4x eureka-fc 来信,顺序换成「我先推」**:它第 22 轮红在**我的迁移**上 —— 共享 PG 已经跑了 2ae099e8e0f0(我 98632daf 那笔),而那笔还在我本地没推,它的树不认识这个 revision → alembic check「Can't locate revision」。它提议我先推五笔,推完发它提交号,它 rebase 上去跑第 23 轮。**已答应并开始**(16:4x):五笔核过一个都没碰 backend/api.py 和禁区文件;api.py 拆分窗口照旧(我继续不碰 api.py 和读 api 源码那 46 条)。**锁现在在我手里**(/tmp/lanxiu-gate.lock),它不起门禁、不写库
+- **已做(16:4x–16:5x)**:aimc 已重启(新 worker 起来、8801 首页 200);`test_http_node_flow.py` 首跑挂 8 → 真因 1 个 + 两处猜错,**三处全是测试自身**:① 建连接要「配置密钥与预算」权限,U002 是 403,改用管理员 U001 建;② 登记接口回的键是 `id` 不是 `connection_id`;③ execution_runs.output_ref 存的是 **JSON 文本**(worker 自己也 json.loads),不是 dict。修后 **10 条全过**(rc 以 gate_lock 印的「被包的命令退出码 0」为准)。产品代码一行没动。⚠️ 根目录 `.venv` 不存在,管理后台的测试要 `cd 管理后台 && ./.venv/bin/python tests/e2e/…`
+- **未验证的预判**:① `make test-e2e-ci` 正在锁内跑(含 audio 新断言「版本表 input_schema 只有统计起 / 止」、两份会打 workflow-resources 新「工具连接」键的 e2e)—— 日志 scratchpad/e2e_ci.log,看「被包的命令退出码」;② 三条新咬合(http_panel 方法下拉 / http_node 路径闸 / audio 入参改回抄顶层)**没重放**,三条 old 片段已核在源码里各恰好 1 处;③ app.js 面板只过 node 测,真页面没点
+- **判据**:后台任务通知的退出码不可信,只认 `gate_lock.sh` 印的「被包的命令退出码 N」;`bite_run` 自己 execv 挂到 gate_lock 底下,别和 e2e-ci 并发;「测试绿了」≠「产品好了」;doc_numbers_check 的 ❌ 要看 rc 不看管道尾;e2e 挂一串先找最上游那条
+- **作废**:15:4x 条「等 eureka-fc 推完再 rebase」—— 顺序反了,改成我先推;「下一步」里的 `git fetch && git rebase origin/main` 不再需要(origin/main 还是 713dfc49,我直接在上面)
+- **禁区**:不碰 backend/api.py 和读 api 源码的 46 条检查(窗口没解禁);不碰共享库结构(auth 列迁移等这批推完);三件运行日志不 add;推送由用户执行;stash 栈里 autostash 是别人的;**不要在 e2e-ci 跑完前起第二个占锁的东西**
+- **下一步第一个动作**:看 scratchpad/e2e_ci.log 的「被包的命令退出码」→ 绿则锁内 `python3 tools/bite_run.py --only` 三条新咬合(http_panel / http_node / audio 入参)→ `git add 管理后台/tests/e2e/test_http_node_flow.py 管理后台/tests/e2e/test_workflow_http_panel.js` → 第六笔 `commit --only`(HANDOFF / 项目日志 / bite_specs / PRD / doc_numbers_check / 管理后台 Makefile、app.js、wf_canvas.js、workflows_api.py、test_audio_flow.py + 两个新测试)→ 三件运行日志挪 scratchpad/aside、`git checkout --` → `./tools/pre_push.sh --不推` → 日志放回 → 请用户 `! cd ~/Desktop/澜绣云裳agent && git push origin main` → 发 eureka-fc 提交号、说「锁放了」
+- **悬而未决**(不用拍板):定义顶层 input_schema 是摆设,存草稿要不要同步 / 要不要删;版本详情接口不返回 input_schema;HTTP 节点单步测试入口没加;工具连接 auth 列(迁移,推完再做);live 路径三条真攻击 e2e;工具连接没有归档接口(e2e 收尾走库兜底)
+
+### 🟡 11-16 15:4x · 交接(压缩前)—— 本地五笔未推,工作区九个文件未提交,等 eureka-fc 第 22 轮链(约 16:30)(Fable 5.1)
+
+- **未验证的预判**(全部要等锁到手才能验):① HTTP 节点 e2e `test_http_node_flow.py` 一次没跑过(猜了两处键名:问题级别键「级别」、output_ref 是结束节点输出 dict);② 冻结版本改取开始 / 结束节点那份 → audio 新断言「版本表 input_schema 只有统计起 / 止」没在服务上跑过;③ workflow-resources 新加「工具连接」键只 py_compile;④ 三条新咬合(http_panel 方法下拉 / http_node 路径闸 / audio 入参改回抄顶层)都没重放;⑤ app.js 面板只过 node 测 34 条 + node --check,真页面没点
+- **判据**:后台任务通知的退出码不可信,只认 `gate_lock.sh` 印的「被包的命令退出码 N」;`bite_run` 自己会 execv 挂到 gate_lock 底下 —— 锁不在手就别跑它;「测试绿了」≠「产品好了」(上午 audio 那次修的是测试,产品原样,下午才改产品);doc_numbers_check 的 ❌ 要看 rc 不看管道尾
+- **作废**:上午 test_audio_flow 里「手工同步定义顶层 input_schema」那两行已删(产品修了);HANDOFF 13:4x 条里「HTTP 节点接线等这批推完再做」—— 已做完并提交(33ba92c8)
+- **禁区**:eureka-fc 拆 api.py 窗口进行中 → 不碰 backend/api.py、不碰读 api 源码的 46 条检查(rebase 撞 backend/api.py 就停下告诉它);不碰共享库结构(auth 列迁移等推完);三件运行日志不 add;推送由用户执行;stash 栈里 autostash 是别人的;锁在 eureka-fc 手里,不跑门禁、不写 aimc_dev、不重启 com.lanxiu.aimc
+- **下一步第一个动作**(已被 16:5x 条替代):收到 eureka-fc「已推 + 提交号」→ rebase → 重启 aimc → 锁内 e2e + 咬合 → 第六笔 → pre_push → 请用户推
+- **悬而未决**(不用拍板):定义顶层 input_schema 现在是摆设,存草稿要不要同步 / 要不要删;版本详情接口不返回 input_schema;HTTP 节点单步测试入口(单测类型表)没加;工具连接 auth 列;live 路径三条真攻击 e2e
+- **15:2x(15:17 对表)eureka-fc 来信**:第 21 轮 rc=1,55 个脚本过 54,只红在「待办清单没重新生成」(它新加一个检查,清单上 400 → 401 没跟上),已补成 63e85d10;**第 22 轮 15:18 起跑,预计 16:30 前后推完**,窗口照旧、推完喊我。我这边照 14:1x 条的计划等它;等链期间做**编排页 HTTP 请求节点面板**(全在 管理后台/apps/web + workflows_api 的 workflow-resources,不占锁、不写库、不跑门禁):wf_canvas 菜单那条「还没做」占位换成真节点;app.js 加 步类型名 / 默认配置 / 表_设置(选工具连接 · 方法只 GET/HEAD · 路径 · 查询串键值 · 请求头键值 · 端点序号 · 上限字节)/ 表_输入(path/query/headers 三项契约绑定)/ 表_结果(固定返回 status_code/headers/body/json/url/execution_mode)/ 依赖表;workflow-resources 返回里加「工具连接」列表;前端 node 测试 `tests/e2e/test_workflow_http_panel.js`(照 new_nodes_panel 的 vm 跑法,不起服务)+ Makefile 三处登记。做完**不另开 commit**,并进第六笔。**15:4x 做完了**:`node tests/e2e/test_workflow_http_panel.js` 34 条过;三份老面板测试回归过(new_nodes 24 / foreach 28 / editor 71);test_registry_check 72 份过;咬合 +1(规格 1931 条:方法下拉塞进 POST → 预期红「方法下拉只有 GET / HEAD」,**未重放** —— bite_run 自己会挂到 gate_lock 底下,锁在 eureka-fc 手里;锁到手后 `--only` 连同 http_node / graph_validation 一起重放)。**未验证**:面板在真页面没点过(只 node 测 + node --check);workflow-resources 新加的「工具连接」键没对着真服务请求过(只 py_compile;audio / glossary 两份 e2e 会打这个接口,锁窗口里 e2e-ci 会带到)
+- **15:3x 顺手还了上午那条欠账(工作区未提交、未跑)**:冻结版本(workflows_api `冻结版本`)原来把**定义顶层**的 input_schema / output_schema 抄进 workflow_versions,而编辑器和运行时只改 / 只读**开始 / 结束节点里那份**、顶层只在建模板时抄过一遍没人同步 → 开始节点改了字段、冻出来的版本还是老入参(定时那条「必填入参要么固定要么统计字段」按老的报 SCHEDULE_INPUT_MISSING,上午 audio 红的根子就是它)。改成**以开始 / 结束节点里那份为准、顶层只兜底**。test_audio_flow 去掉了上午加的绕坑两行(不再手工同步顶层),冻结后多一条断言直接读 workflow_versions.input_schema 只要统计起 / 止、没有 call_id;咬合 +1(规格 1932 条:入参结构改回抄顶层 → 预期红那条新断言)。**没跑**(要服务 + aimc_dev,锁窗口里 e2e-ci 会跑 audio);**没动**:GET 版本详情不返回 input_schema(所以断言读库),PATCH 草稿也没顺手同步顶层 —— 顶层那份现在只是摆设,以后要么同步要么删。PRD 附录 B-123 已记这条难点(协作 · 部分解决)
+- **15:3x 提前揪出一条会让 pre_push 红的**:`tools/doc_numbers_check.py` 对 e7b6b763 里 PRD 2.4.5 那句「三期的 11 条安全决定 11-12 已经拍过」报「无人认领」(带计数、没规格没豁免)—— 已把原来那条「那 11 条安全决定条数多」的豁免正则扩到这一句(同一个条目数),重跑 rc=0、无人认领 0。**这说明 e7b6b763 单独是红的**,第六笔必须和它一起推
 - **13:5x 结果**:整套 e2e-ci 第二遍只红 audio;audio 单跑又揪出三处**全是测试自身的错**:① `assert c in (200, 201)` 而发布接口 10-26 起就是 202 ② 「定时化」只换了开始节点、没同步**定义顶层 input_schema**(冻结版本的入参取顶层那份)→ 生产版还要 call_id → SCHEDULE_INPUT_MISSING ③ 预览接口的中文查询串没 urlencode(标准库直接 UnicodeEncodeError)。修后 audio 133 条全过。**产品口子(没改,记欠账)**:顶层 input_schema 与开始节点那份可以不一致、校验器不核 —— 该在 validator 加一条或冻结时以开始节点为准。**咬合两次没红的坑**:原攻击点在 PUT schedule(经 HTTP 打常驻服务,副本改坏它看不见)→ 换到进程内 `_定时发起一期`;再改「统计起 ← 统计止」仍没红,因为每日频率两者同一天 → 改写死 1970-01-01 才红在指定那条。六份咬合全过;锁 14:1x 放给 eureka-fc 起第 21 轮链。
 - **未验证的预判**:① ~~整套 e2e-ci 第二遍~~(已绿,见上)(第一遍只红 test_audio_flow 一条、已改测试读 `advice`);② 六份咬合重放(test_schedule ×2 / graph_validation / outbound_policy ×2 / http_node ×2 / audio / orphan)一条都没重放过 —— 都在 /tmp/chain5.log 这把锁里跑;③ pre_push --不推 没跑;④ app.js 定时 / 开始节点面板在真页面没点过(只 node --check)
 - **判据**:后台任务通知的退出码不可信(第一遍 e2e 它报 0,锁脚本印「被包的命令退出码 2」才是真的)—— 只认日志里那一行;test_audio_flow 红是测试键名错(`hint` → 契约 §19.1 的 `advice`),服务端那句话本来就对,没改服务端
 - **作废**:rebase 前跑的一切绿(含 11-16 早 pre_push)—— 现在树是 713dfc49 + 工作区;HANDOFF 自动区已按新树重生成
 - **禁区**:eureka-fc **拆 api.py 窗口进行中(13:1x 起,00:00 前推不完它整笔放弃)**→ 不碰 backend/api.py、不碰读 api 源码的那 46 条检查;三件运行日志(.feynman/tool-eval.json、agentsite/evals 两个 jsonl)不 add;推送由用户执行;stash 栈里 3 个 autostash 是别人的,别 pop
 - **13:4x 和 eureka-fc 定了顺序 B**:它 api.py 拆完(本地 a39ad98b,门面 8808 → 1700 行 + 11 个子模块,工具名参数 schema 不变,链约 90 分钟)。**我 chain5 跑完立刻发「锁放了」→ 它起链 → 它推完喊我 → 我 rebase(撞 backend/api.py 就停下告诉它,不自己合)→ pre_push --不推 → 请用户推**。它链期间我:本地四笔 commit --only 照做(本地提交不碍它),然后做 HTTP 节点接线(不占锁、不写共享库、不跑门禁)
+- **14:1x(14:15 对表)接线已提成第五笔 33ba92c8;HTTP 节点 e2e 写好未跑(工作区未提交)**:`管理后台/tests/e2e/test_http_node_flow.py`(建连接 → 空白模板建图 开始→http_request→结束 → 检查配置无阻断 → 进程内 V.校验 三条负向 → 受理 mock 跑成:地址 = 白名单 + /stock?sku=A1、模式 mock、步骤 h succeeded → 归档收尾);Makefile 三处已登记(test_registry_check 71 份过);咬合 +1(攻击打进程内 validator 的 HTTP_PATH_MISSING —— 运行段有常驻 worker 抢活,副本改坏 worker / runner 打不准)。**跑它要锁 + 写 aimc_dev,等 eureka-fc 推完**;而且 **worker.py 改了,跑前先重启 com.lanxiu.aimc**(常驻 worker 还是旧代码,它抢到活会按旧适配器表报 ADAPTER_MISSING)。跑完绿了 → 第六笔 commit --only(test_http_node_flow / Makefile / bite_specs / HANDOFF)。**判据猜了两处,红了先看这两处**:V.校验 返回的问题字典里级别键是不是「级别」;execution_runs.output_ref 是不是直接是结束节点的输出 dict(照 test_agent_step_flow:273 的用法)
 - **14:1x HTTP 节点接线(等链期间做;⚠️ 下面几条时刻又是估的、偏晚约 20 分钟,14:10 对表后改回)**:dsl `N("http_request","HTTP 请求")`(配置 connection_id / method / path / query / headers / endpoint_index / max_bytes,必填 connection_id,调用外部 → 通用超时重试生效);validator 新段 ⑤¾(HTTP_METHOD_NOT_ALLOWED 只 GET/HEAD、HTTP_PATH_MISSING 路径或绑定 path、连接不在 → REF_NOT_FOUND,**只对 http_request 查,没把 connection_id 加进通用引用字段表** —— 加了会连带 tool 节点);workflows_api `_引用表` 加 connection_id → capability_connections;runner 把 http_request 加进「llm/retrieve/tool/agent」那支(绑定解出 → 适配器 → _调外部 重试)并计工具调用;worker `_http`(查 capability_connections 行 → 非 live 或 连接测试/评测 跑法 → 替身不发;live → HTTP请求.跑节点 经 tool_gateway;请求被拒/失败/网关拒 → 节点失败 带码);规格 §6.1 加「HTTP 请求」行;spec_coverage 已实现清单加它;夹具 +2(合法只读 / 非法 POST),test_graph_validation 20 条过、make contract rc=0;咬合 +1(方法闸,**未重放**,pre_push 的 touched 重放会跑)。**未验证**:worker `_http` 只过了编译,没跑过(要 e2e:建一条 capability_connection 带 allowed_endpoints → 图里一个 http_request → mock worker 跑成、输出有 url、execution_mode=mock;live 路径三条真攻击 127.0.0.1 域名 / 3xx / 凭据不出现);**worker 改了,e2e 前要重启 com.lanxiu.aimc**。**没做**:编辑器面板(app.js 没有 http_request 的节点面板和画布项 —— 接口层能用,页面上还选不出来)、capability_connections 加 `auth` 列(方式 / 头名;worker 里先给空 dict,凭据头 走默认)、capability_connections 登记 / 列表接口收 auth。
 - **14:0x 本地四笔已提(main 本地领先 origin 4 笔,未推)**:98632daf 二期两件 / b726c5f8 W06 孤儿 / 5dc54cb7 出网策略 + HTTP 核心 / e7b6b763 文档。工作区只剩三件运行日志(不 add)。eureka-fc 14:1x 起第 21 轮链(约 90 分钟,拆 api.py 那笔 a39ad98b)
 - **下一步第一个动作**:等 eureka-fc「已推 + 提交号」→ `git fetch && git rebase origin/main`(我 4 笔在上面;撞 backend/api.py 就停下告诉它)→ 三件运行日志挪 scratchpad/aside 后 `git checkout --` → `./tools/pre_push.sh --不推` → 日志放回 → 请用户 `! cd ~/Desktop/澜绣云裳agent && git push origin main` → 发它提交号。**等链期间做 HTTP 节点接线**(全在 管理后台/,不占锁):规格 §6.1 表加「HTTP 请求」行 → dsl N("http_request") → validator(连接存在 / 方法 / 路径)→ runner 分支 + worker 适配器调 HTTP请求.跑节点 → capability_connections 加 auth 列(迁移,**先别 upgrade**,等推完)→ 编辑器面板 → e2e 三条真攻击
@@ -2990,50 +3020,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-16 13:22。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-16 17:08。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 713dfc49 · 2026-11-16 · 推送前链第 19 轮两处对照红:排班判分测试连库没关;台账撞号 + 两行数字无人认领 |
-| 代码量 | 1131 个 Python 文件 / 207255 行(不含 .venv) |
+| 最新提交 | 33ba92c8 · 2026-11-16 · 工作流三期 3-1:HTTP 请求节点接进校验器 / 执行器 / worker(接口层能用;编辑器面板和连接鉴权列下一笔) |
+| 代码量 | 1139 个 Python 文件 / 207257 行(不含 .venv) |
 | 验收 | `./check.sh` 共 430 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M  .feynman/tool-eval.json
+M .feynman/tool-eval.json
  M HANDOFF.md
-M  agentsite/evals/funnel.jsonl
-M  agentsite/evals/skill_usage.jsonl
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
  M tools/bite_specs.json
-M  "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
-M  "\346\276\234\347\273\243\344\272\221\350\243\263agent-\346\211\247\350\241\214\346\211\213\345\206\214-\344\275\223\346\243\200\344\274\230\345\214\226\344\270\216\346\226\260\345\212\237\350\203\275-20261112.md"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/Makefile"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/app.js"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/docs/\345\245\221\347\272\246.md"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/fixtures/orchestration/\345\233\276\346\240\241\351\252\214\345\244\271\345\205\267.json"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/api.ts"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/openapi.json"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/dsl.py"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/endpoints.py"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/entities.py"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/fieldtypes.py"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/models.py"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/validator.py"
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/\345\256\232\346\227\266.py"
+ M tools/doc_numbers_check.py
+ M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
+ M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\351\241\271\347\233\256\346\227\245\345\277\227.md"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/Makefile"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/app.js"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/wf_canvas.js"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/fixtures/orchestration/\345\233\276\346\240\241\351\252\214\345\244\271\345\205\267.json"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/dsl.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/compiler.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/validator.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/workflows_api.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_audio_flow.py"
+A  "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_http_node_flow.py"
+A  "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_workflow_http_panel.js"
+?? "--\350\207\252\346\265\213.log"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-713dfc49 推送前链第 19 轮两处对照红:排班判分测试连库没关;台账撞号 + 两行数字无人认领
-80e7f832 rebase 后重建咬合规格:以并行会话版本为底补上我这边的 11 条,去掉我改过的 2 条旧版
-cf2cc25c 交接:两批一起推,rebase 到并行会话 main 1ea5f1cd
-236ea547 夜报印出环境性失败的题数:判据 11-14 就有,而夜报从来不印
-59a7ed4d 用户拍日志清理再等等(台账六十八);已拍过的三张卡标题去掉「等用户拍」,并加检查拦这种漂移
+33ba92c8 工作流三期 3-1:HTTP 请求节点接进校验器 / 执行器 / worker(接口层能用;编辑器面板和连接鉴权列下一笔)
+e7b6b763 文档:PRD 2.4.5 记 11-16 拍板与台账七十三至七十五、A-305 定时统计区间、A-306 出网目标判定;执行手册 W06 转 ✅;交接 + 项目日志
+5dc54cb7 工作流三期地基:出网策略(白名单 / 解析落内网就拒 / 不跟重定向 / 15 秒 1 MB)+ HTTP 请求节点执行核心(经 tool_gateway,不自己发)
+b726c5f8 还债 W06 后半:孤儿运行 worker 每 60 秒自己扫一轮 + 端到端造一条孤儿真验
+98632daf 工作流二期:定时加三种频率(每周几 / 每月几号含月末 / 每小时)+ 定时当「开始」的一种、和「用户输入」二选一
 ```
 <!--/AUTO-->
 ## 一句话在做什么

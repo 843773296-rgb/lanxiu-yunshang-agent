@@ -1,6 +1,6 @@
 # 澜绣云裳智能体 · 项目日志
 
-> 自动生成自 git 历史(共 2422 次提交),最后更新 2026-11-16 13:22
+> 自动生成自 git 历史(共 2427 次提交),最后更新 2026-11-16 17:08
 > 生成方式:`python3 tools/make_log.py`
 
 **这份日志能自动生成,是因为提交信息里写了「为什么这么改」和「踩了什么坑」,不是「fix bug」那种。** 反过来说也是个约束:提交信息写得敷衍,日志就是敷衍的。
@@ -19,7 +19,7 @@
 | 推档尺码 | 1237 |
 | 物料 | 135 |
 | 师傅 | 21 |
-| Python 文件 | 4326 |
+| Python 文件 | 4342 |
 | check.sh 检查项 | 430 |
 
 ---
@@ -60752,7 +60752,7 @@ anchor 3 条 / delivered_images 4 条其实都是「跑错了那一行」:bite_r
 
 ---
 
-### 2026-11-16  ·  20 次提交
+### 2026-11-16  ·  25 次提交
 
 #### 取裸元组那个取数口(_rows2)也过答案表 / 密码列 / 只读三道检查(还债:智能体侧小债第二件)
 `07966b8` · 00:41
@@ -60913,5 +60913,60 @@ rounds 里早就盖了标记,但夜报不印这个数 ——「这晚 0 题」�
 shift_eval_judgetest 新铺草稿那段 sqlite3.connect 没包 closing(db_close_check 红);
 我记的日志清理那条和并行会话 2.4.5 的第六十八条撞号,改成七十二并去掉快照数字;
 「那 11 条安全决定」是条目数不是系统规模,进 doc_numbers 豁免。
+
+#### 工作流二期:定时加三种频率(每周几 / 每月几号含月末 / 每小时)+ 定时当「开始」的一种、和「用户输入」二选一
+`98632da` · 14:03
+
+用户 11-16 早拍板(PRD 2.4.5 台账第六十八、六十九、七十三至七十五条):统计区间 = 上一次该跑到这一次该跑;
+31 号碰短月落到月末跑;每小时先不限营业时间;照 Dify 一条流程要么人点、要么定时。
+
+- runtime/定时.py 重写:周期 日/周/月/时,周几 / 几号 / 末,执行时刻们,统计区间按「上一次到这一次」,
+  老三种区间逐字不变(test_schedule 26 条含 10 条新)
+- 开始节点 config.start_mode / schedule_rule(键用英文:中文键会被「不露字段名」那条当内部名);
+  validator 加 START_MODE_UNKNOWN / START_TRIGGER_RULE / START_TRIGGER_EXCLUSIVE(定时开头的只许 统计起/止);
+  别把这两个键加进 validator 的引用表,加了 REF_NOT_FOUND 会把开始方式当被删的资源
+- PUT schedule 只管开关:用户输入开头 → 422 SCHEDULE_START_NOT_TRIGGER;带了和节点不同的频率 → 422 SCHEDULE_RULE_ON_START;
+  新 GET /schedule-preview;试运行按当前时间模拟一期填 统计起/止(来源记「模拟期」)
+- 迁移 2ae099e8e0f0:cadence_detail JSONB、last_period_start DATE → TIMESTAMPTZ、cadence 约束加「时」(已落 aimc_dev)
+- e2e test_audio_flow 定时段重写。三处红全是测试自己的错:发布接口 10-26 起就是 202;「定时化」要同步定义顶层 input_schema
+  (冻结版本取的是顶层那份,不是开始节点里的 —— 两处可以不一致、校验器不核,记了欠账);中文查询串要 urlencode
+
+#### 还债 W06 后半:孤儿运行 worker 每 60 秒自己扫一轮 + 端到端造一条孤儿真验
+`b726c5f` · 14:03
+
+11-15 夜只补了判据和清扫工具那一档,worker 不扫、真数据路径没走过(当晚库里 0 条 running)。
+- orphan_sweep.py:找孤儿 / 推孤儿 / 扫孤儿,取数 SQL 只此一份;stale_sweep 的孤儿档改调它
+- workers/worker.py 60 秒一轮里加 扫孤儿(出错只打日志,不拖垮别的轮次);改了 worker 要重启 com.lanxiu.aimc
+- e2e test_orphan_sweep:借三条成功运行造甲乙丙 —— 该标的标 incomplete/orphaned、活着的不碰、宽限内不碰、幂等、跑完还原
+  (要求库里 ≥3 条成功带任务的运行,CI 里排在 audio 之后);已进 Makefile E2E_CI / test-e2e / progress
+
+#### 工作流三期地基:出网策略(白名单 / 解析落内网就拒 / 不跟重定向 / 15 秒 1 MB)+ HTTP 请求节点执行核心(经 tool_gateway,不自己发)
+`5dc54cb` · 14:03
+
+安全决定 H1–H6 用户 11-12 已拍「按设计稿推荐」(台账第五到十一条;11-15 规划里写「待拍」是漏核)。
+- runtime/出网策略.py:方法只开 GET/HEAD;白名单比协议 + 主机 + 端口 + 路径前缀(折平、拒用户名夹主机、拒子域名假冒);
+  解析出来的地址落回环 / 内网 / 链路本地 / 云元数据 / ULA / v4-mapped / CGNAT 就拒,一个域名解析出两个地址有一个落内网整个拒;
+  不在白名单的连 DNS 都不问。坑:Python ipaddress 把 203.0.113.x 文档段算私有,夹具要用真公网 IP
+- runtime/HTTP请求.py:合成一份只读契约交给 tool_gateway.执行(六道闸、记事照旧),方法 / 白名单 / 凭据 / 超时全在 server_bound_arguments
+  (模型或前端传同名键被闸②拒);节点自带的凭据类请求头一律丢掉,凭据只从连接的 secret_ref 来;结果里请求头经 遮头,凭据原值不落任何记录;
+  真发送走 curl(这台机器 Python 的 TLS 会被拦),不带 -L,--max-filesize 在传输层掐大小。坑:网关 Schema 默认不收额外字段,query / headers 要 additionalProperties
+- secretref.py:解析 拆出 _取原值(输出不变),新 凭据头(ref, 方式 无|bearer|header, 头名)和 遮头
+- 自测 23 + 20 条(假发送 + 假 DNS,一个真请求都不发);咬合规格:本批共 9 条,全经 bite_run 重放
+  (audio 那条两次没红:攻击点经 HTTP 打的是常驻服务、副本改坏看不见;每日频率「统计起 ← 统计止」等于没改 —— 改写死错日期才红在指定那条)
+接线(dsl / validator / runner / worker / 编辑器 / capability_connections 加 auth 列)下一批做。
+
+#### 文档:PRD 2.4.5 记 11-16 拍板与台账七十三至七十五、A-305 定时统计区间、A-306 出网目标判定;执行手册 W06 转 ✅;交接 + 项目日志
+`e7b6b76` · 14:03
+
+#### 工作流三期 3-1:HTTP 请求节点接进校验器 / 执行器 / worker(接口层能用;编辑器面板和连接鉴权列下一笔)
+`33ba92c` · 14:11
+
+- dsl N("http_request","HTTP 请求"):只能选已登记的工具连接,地址白名单和凭据都挂连接上,节点里没地方写密钥(H1–H6 用户 11-12 拍)
+- validator:方法只开 GET/HEAD(HTTP_METHOD_NOT_ALLOWED)、路径或绑定 path 得有(HTTP_PATH_MISSING)、连接不在 → REF_NOT_FOUND
+  —— 只对 http_request 查,没把 connection_id 加进通用引用字段表(加了会连带 tool 节点的 connection_id 一起查)
+- runner 把它归到「调外部」那支:绑定解出 → 适配器 → 通用超时 / 重试;计工具调用
+- worker _http:查 capability_connections 那一行;mock 运行 / 连接测试 / 评测一个字节不出去交替身;live 走 HTTP请求.跑节点 经 tool_gateway
+  被拒 / 失败 / 网关拒都带码变节点失败。⚠️ 这一支只过了编译,e2e 下一笔补(mock worker 跑成 + live 三条真攻击)
+- 规格 §6.1 加「HTTP 请求」行;spec_coverage 已实现清单加它;图校验夹具 +2(合法只读 / 非法 POST);咬合 +1(方法闸,等 touched 重放)
 
 ---

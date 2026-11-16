@@ -910,3 +910,18 @@ def 逻辑哈希(定义):
     s = json.dumps(规范化(定义), sort_keys=True, ensure_ascii=False,
                    separators=(",", ":"))
     return "sha256:" + hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+# ── 一条流程「要用户给什么 / 最后返回什么」只认一个地方 ─────────────────────────
+# 定义里这两份结构各存了两处:顶层 input_schema / output_schema(建模板时抄的一份,之后没人同步)
+# 和开始 / 结束节点 config 里那份(编辑器改的、运行器读的)。11-16 查实:校验器查「结束节点必需字段有没有来源」、
+# 编译器交给运行器核最终输出、冻结版本抄进版本表 —— 三处各自读顶层,开始节点改了字段之后全按老的算。
+# 所以取法只写这一份:**节点里那份为准,顶层只兜底**(老定义没有节点结构时才用得上)。
+def 入参结构(定义):
+    起 = next((n for n in (定义 or {}).get("nodes") or [] if isinstance(n, dict) and n.get("type") == "start"), None)
+    return ((起 or {}).get("config") or {}).get("input_schema") or (定义 or {}).get("input_schema") or {}
+
+
+def 出参结构(定义):
+    终 = next((n for n in (定义 or {}).get("nodes") or [] if isinstance(n, dict) and n.get("type") == "end"), None)
+    return ((终 or {}).get("config") or {}).get("output_schema") or (定义 or {}).get("output_schema") or {}

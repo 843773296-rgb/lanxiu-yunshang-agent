@@ -428,7 +428,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py test_log_policy_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
           test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py \
-          test_orphan_sweep.py
+          test_orphan_sweep.py test_http_node_flow.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -436,6 +436,7 @@ E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_release_page_actions.js test_workflow_save_gate.js \
              test_workflow_graph_logic.js test_workflow_editor_actions.js \
              test_workflow_new_nodes_panel.js test_workflow_foreach_panel.js \
+             test_workflow_http_panel.js \
              test_log_policy_page_actions.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
@@ -530,6 +531,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 编排页 · 列表迭代的配置面板(列表 / 每一项交出什么 / 某一项失败时 / 最多做几项;里面的步骤能选当前项、下标;不许套娃)"
 	@node tests/e2e/test_workflow_foreach_panel.js
 	@echo ""
+	@echo "▸ 编排页 · HTTP 请求的配置面板(只能选登记过的工具连接、方法只 GET/HEAD、路径 / 查询串 / 请求头写进定义的形状和后端校验器认的一致,不起服务)"
+	@node tests/e2e/test_workflow_http_panel.js
+	@echo ""
 	@echo "▸ 设置页 · 日志采集策略卡(If-Match 是读到的 revision、体是页面填的数)"
 	@node tests/e2e/test_log_policy_page_actions.js
 	@echo ""
@@ -580,6 +584,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_chat_handoff_flow.py
 	@./.venv/bin/python tests/e2e/test_fingerprint_ratchet.py
 	@./.venv/bin/python tests/e2e/test_orphan_sweep.py
+	@./.venv/bin/python tests/e2e/test_http_node_flow.py
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py
 	@echo ""
 	@echo "▸ 库存补货(12 条:不用派直接结束 / 填齐了才派 / 没填不派 / 退回不派 / 密钥扫描只放过声明过的数值配置 —— 六条第六条)"
@@ -784,6 +789,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_workflow_foreach_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_workflow_foreach_panel.log; exit 1; }
 	@tail -1 /tmp/prog-test_workflow_foreach_panel.log
+	@node tests/e2e/test_workflow_http_panel.js > /tmp/prog-test_workflow_http_panel.log 2>&1 \
+	  || { echo "  ❌ test_workflow_http_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_http_panel.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_http_panel.log
 	@node tests/e2e/test_log_policy_page_actions.js > /tmp/prog-test_log_policy_page_actions.log 2>&1 \
 	  || { echo "  ❌ test_log_policy_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_log_policy_page_actions.log; exit 1; }
@@ -908,6 +917,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_orphan_sweep 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_orphan_sweep.log; exit 1; }
 	@tail -2 /tmp/prog-test_orphan_sweep.log
+	@./.venv/bin/python tests/e2e/test_http_node_flow.py > /tmp/prog-test_http_node_flow.log 2>&1 \
+	  || { echo "  ❌ test_http_node_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_http_node_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_http_node_flow.log
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py > /tmp/prog-test_access_api_chat_live.log 2>&1 \
 	  || { echo "  ❌ test_access_api_chat_live 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_access_api_chat_live.log; exit 1; }

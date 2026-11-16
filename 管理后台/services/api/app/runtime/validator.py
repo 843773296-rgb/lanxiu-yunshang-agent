@@ -855,7 +855,8 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                            node_id=n.get("id"), field_path=f"config.sub_limits.{k}"))
 
     # ⑧ 结束节点:必需输出字段要有合法来源 ─────────────────────────
-    输出 = 定义.get("output_schema") or {}
+    # 读结束节点里那份,不读顶层(11-16:顶层是建模板时抄的、没人同步 —— 编辑器改了结束节点的字段,这里还按老字段要来源)
+    输出 = DS.出参结构(定义)
     必需 = set(输出.get("required") or [])
     for i in 结束们:
         绑 = ((按id[i].get("config") or {}).get("bindings") or {})

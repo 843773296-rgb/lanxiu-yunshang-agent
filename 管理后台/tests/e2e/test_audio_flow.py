@@ -489,12 +489,17 @@ def 定时化(定义):
         {"id": "e", "type": "end", "name": "结束", "config": {"output_schema": {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"], "additionalProperties": False},
             "bindings": {"summary": {"source": "node", "node_id": "t", "pointer": "/文本"}}}}]
     定义["edges"] = [{"source": "s", "target": "t", "port": "success"}, {"source": "t", "target": "e", "port": "success"}]
-    # ⚠️ 冻结版本的入参取的是定义**顶层** input_schema(不是开始节点里那份);两处不同步,生产版就会要原来那几项(call_id…),定时打不开
-    定义["input_schema"] = 定义["nodes"][0]["config"]["input_schema"]
-    定义["output_schema"] = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"], "additionalProperties": False}
+    # 故意**不改定义顶层的 input_schema / output_schema**(留着模板抄的那份 call_id…):编辑器只改节点里的,顶层没人同步;
+    # 11-16 修成冻结版本以开始 / 结束节点里那份为准 —— 下面冻出来的版本要的入参必须是统计起 / 止,不是 call_id(原来就是这里把定时打不开)
 wid3, _ = 建图("e2e 定时开头", 改=定时化)
 c, 版3 = 打("POST", P + f"/workflows/{wid3}/versions", 体={"变更说明": "e2e 定时开头"})
 ck("定时开头的流程能冻结版本(开始只交统计起 / 止,模板拿它们拼一句)", c == 201, (c, 版3))
+with _事务() as cx:
+    from sqlalchemy import text as _text      # noqa: E402
+    _v3 = cx.execute(_text("select input_schema from workflow_versions where project_id=:p and id=:v"),
+                     {"p": 项目, "v": (版3 or {}).get("id")}).scalar() if (版3 or {}).get("id") else None
+ck("冻结版本记的入参以开始节点里那份为准(只要统计起 / 止;顶层没同步的 call_id 不再混进来)",
+   sorted(((_v3 or {}).get("required") or [])) == ["统计止", "统计起"] and "call_id" not in ((_v3 or {}).get("properties") or {}), _v3)
 c, b = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())}, 体={"workflow_id": wid3, "输入": {}})
 rid0 = (b or {}).get("resource_id")
 st0, _ = 等到(rid0, ("succeeded", "failed", "cancelled"))

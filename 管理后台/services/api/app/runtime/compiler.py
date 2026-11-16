@@ -95,6 +95,6 @@ def 编译(定义, *, 依赖存在=None, 父额度=None):
         入口=入口,
         节点=按id,
         后继=后继,
-        输出Schema=定义.get("output_schema") or {},
+        输出Schema=DS.出参结构(定义),  # 结束节点那份为准,顶层只兜底(11-16;取法在 dsl 只写一份)
         编译警告=[p for p in 问题们 if p["级别"] == V.警告],
     )
