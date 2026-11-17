@@ -114,7 +114,8 @@ def 清单(强制=False):
     if cfg:
         码, 体 = _curl("GET", "/chat-takeovers", cfg)
         if 码 == "200" and isinstance(体, dict):
-            items = {x["技能"]: {"workflow_id": x["workflow_id"], "名称": x.get("名称"), "版本": x.get("版本")}
+            items = {x["技能"]: {"workflow_id": x["workflow_id"], "名称": x.get("名称"), "版本": x.get("版本"),
+                                 "必填": x.get("必填") or []}
                      for x in 体.get("items") or [] if x.get("技能")}
             try:
                 with open(_落盘, "w", encoding="utf-8") as f:
@@ -171,6 +172,12 @@ def 发起(技能, 澜绣工号, 输入, 幂等键):
     if 码文 == "TAKEOVER_OFF":
         _内存["items"] = None            # 清单旧了:下一次重拉
         return False, dict(error=f"{话}。这件事已经交还给你自己做了 —— 照常用技能", 交还=True)
+    # 缺必填项**不兜底、也不交还**(11-18 夜跑:40 条接管 32 条缺 customer_id)—— 不是没配好,是这一次没查清;
+    # 管理后台没建运行,查清了换上齐全的参数再发一次就行。兜底的话技能会绕过工作流把事做了,人工核对那道就没了。
+    if 码文 == "TAKEOVER_INPUT_MISSING":
+        return False, dict(error=f"工作流没发起:{话}", 交还=False, 缺必填=True,
+                           说明="**这一轮别改用技能自己做**。先用查询工具把缺的那几项查清"
+                               "(比如通话号 → 客户号),再调一次 start_workflow,inputs 带齐;这次没有建运行,不用跟用户说「已发起」")
     # 明确拒绝**不兜底**(用户 2026-11-14 拍「只在没配好时兜底,明确拒绝的照旧拦」):
     # 403 FORBIDDEN = 绑定的账号没有发起这个工作流的权限 —— 那是有人**定了**不让这么做,
     # 技能绕过去做等于把权限判断悄悄作废。没发布 / 没绑定 / 连不上 / 5xx 是「没配好」,照旧兜。

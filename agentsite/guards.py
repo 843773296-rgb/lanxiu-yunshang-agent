@@ -1825,8 +1825,14 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
         # 清单怎么拉、拉不到怎么办见 backend/takeover_client.py;查询口可替换,这里仍然离线可测。
         _管 = 接管查询(_sk)
         if _管:
+            # 必填项点名(11-18 夜跑:原来只写 inputs={…},模型猜 {"call": …} / 只给 call_id,40 条里 32 条缺项失败)
+            _填 = [x for x in (_管.get("必填") or []) if isinstance(x, dict) and x.get("名")]
+            _要 = ("inputs 必须带齐:" + "、".join(
+                      f"{x['名']}({x.get('叫') or x['名']}{', ' + x['说明'] if x.get('说明') else ''})" for x in _填)
+                   + " —— 手上没有的先用查询工具查清再发起。") if _填 else ""
             return (f"「{_sk}」这件事现在由工作流「{_管.get('名称') or _管.get('workflow_id')}」接管,"
                     f"不要用技能自己做。改调 start_workflow(skill=\"{_sk}\", inputs={{…}}) 发起它,"
+                    + _要 +
                     "把返回的运行号和核对入口告诉用户;要等人工核对通过才会写进系统。")
         try:
             _reg = _skill_registry()

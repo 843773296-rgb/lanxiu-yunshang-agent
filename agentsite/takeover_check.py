@@ -61,6 +61,12 @@ def main():
         ck("带斜杠的写法(/call-notes)照样拦", bool(v2) and "start_workflow" in v2, v2)
         ck("没被接管的自有技能照旧放行(接管不误伤)", guards.pre_tool_verdict("Skill", {"skill": "quote"}) is None,
            guards.pre_tool_verdict("Skill", {"skill": "quote"}))
+        # 11-18 夜跑:拦截语只写 inputs={…},40 条接管 32 条缺 customer_id 失败 —— 必填项要点名
+        guards.接管查询 = lambda sk: {"workflow_id": "wf_x", "名称": "录音跟进", "必填": [
+            {"名": "call_id", "叫": "通话号", "说明": "如 TS-001"}, {"名": "customer_id", "叫": "客户号", "说明": ""}]}
+        v3 = guards.pre_tool_verdict("Skill", {"skill": "call-notes"})
+        ck("拦截语点名工作流要的每一项必填(名字 + 中文叫法)",
+           bool(v3) and "call_id(通话号" in v3 and "customer_id(客户号)" in v3, v3)
         guards.接管查询 = lambda sk: None
         ck("全关时 call-notes 照旧放行(默认交给 harness)",
            guards.pre_tool_verdict("Skill", {"skill": "call-notes"}) is None,
@@ -122,6 +128,13 @@ def main():
             tc._curl = lambda *a, **k: ("409", {"code": "NOT_BOUND", "message": "没绑定账号"})
             ok, 回 = tc.发起("quote", "60000005", {}, "k4")
             ck("没配好(409 没绑定)照旧兜底 —— 收窄只收 403 那一种", 回.get("兜底") is True and tc.在兜底中("quote"), 回)
+            tc._兜底文件 = os.path.join(d, "fallback4.json")
+            tc._curl = lambda *a, **k: ("422", {"code": "TAKEOVER_INPUT_MISSING",
+                                                "message": "工作流「录音跟进」要的这几项没给:customer_id(客户号)"})
+            ok, 回4 = tc.发起("call-notes", "60000005", {"call_id": "TS-001"}, "k5")
+            ck("缺必填(422)不兜底也不交还:叫模型查清再发,且原话里点名缺哪项",
+               not ok and 回4.get("兜底") is not True and 回4.get("交还") is False
+               and tc.在兜底中("call-notes") is False and "customer_id" in 回4.get("error", ""), 回4)
         finally:
             tc._curl = 原curl
         # 兜底之后要**重新调技能**(11-16 夜跑:技能被拦时正文没装进来,不重调就拿不到它的输出格式)

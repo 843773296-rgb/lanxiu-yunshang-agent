@@ -23468,5 +23468,29 @@
    }
   ],
   "预期红": "自己拼库路径的行比登记的欠债多"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "拦截语里拼必填项那段去掉(回到只写 inputs={…})—— 11-18 夜跑 40 条接管 32 条缺 customer_id 的原样。必须红在「拦截语点名工作流要的每一项必填」",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "                    + _要 +\n",
+    "new": "                    +\n"
+   }
+  ],
+  "预期红": "拦截语点名工作流要的每一项必填"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "发起() 里缺必填(422 TAKEOVER_INPUT_MISSING)那支删掉,让它落进「其余一律兜底」—— 那样技能会绕过工作流把事做了、人工核对没了。必须红在「缺必填(422)不兜底也不交还」",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "    if 码文 == \"TAKEOVER_INPUT_MISSING\":\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "缺必填(422)不兜底也不交还"
  }
 ]

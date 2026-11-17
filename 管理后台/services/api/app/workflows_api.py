@@ -1134,9 +1134,15 @@ def 聊天接管清单(project_id: str, me: 身份 = Depends(要权限("查看�
              where w.project_id=:p and coalesce(w.chat_takeover_enabled, false) and w.archived_at is null"""),
                        {"p": project_id}).mappings().all()
         生产 = {r["id"]: _生产版本(c, project_id, r["id"]) for r in rs}
+        必填 = {}
+        for wid, g in 生产.items():
+            if g:
+                v = c.execute(text("select * from workflow_versions where project_id=:p and id=:i"),
+                              {"p": project_id, "i": g["版本id"]}).mappings().first()
+                必填[wid] = _开始必填(_版本定义(v)) if v else []
     return {"items": [{"技能": r["takeover_skill_name"], "技能中文": 可接管技能.get(r["takeover_skill_name"]),
                        "workflow_id": r["id"], "名称": r["name"], "版本id": 生产[r["id"]]["版本id"],
-                       "版本": f"v{生产[r['id']]['版本号']}"}
+                       "版本": f"v{生产[r['id']]['版本号']}", "必填": 必填.get(r["id"], [])}
                       for r in rs if 生产[r["id"]]],
             "note": "不在清单里的技能 = 交给 harness(聊天站照常用技能做)。默认一条都没有"}
 
@@ -1250,6 +1256,14 @@ async def 聊天发起接管(project_id: str, skill: str, request: Request,
         v = c.execute(text("select * from workflow_versions where project_id=:p and id=:i"),
                       {"p": project_id, "i": w["vid"]}).mappings().first()
         定义 = _版本定义(v)
+        # 必填项在这里先判,**不建运行**(11-18 夜跑:缺项的运行建出来、跑到开始节点才失败,
+        # 一晚留下 32 条失败运行;聊天站只看到「已发起」,用户以为在办)。
+        缺 = [x for x in _开始必填(定义) if not str((输入 or {}).get(x["名"]) or "").strip()]
+        if 缺:
+            raise _错(422, "TAKEOVER_INPUT_MISSING",
+                      f"工作流「{w['name']}」要的这几项没给:"
+                      + "、".join(f"{x['名']}({x['叫']}{', ' + x['说明'] if x['说明'] else ''})" for x in 缺),
+                      "先查清这几项再发起(比如先用工具认出客户号);这次没有建运行")
         来源 = {"kind": "workflow_version", "id": w["id"], "version_id": w["vid"],
                 "version_no": v["version_no"], "环境": "production", "清单id": w["清单id"], "发起": "聊天接管", "技能": skill,
                 "澜绣工号": 工号, "代发": me.user_id}
@@ -1345,6 +1359,21 @@ def _定时自填(定义, 输入, 来源, 现在=None):
     _, 起, 止 = 期
     来源["模拟期"] = {"统计起": 起.isoformat(), "统计止": 止.isoformat(), "说法": T.说法(规则)}
     return {**(输入 or {}), "统计起": 起.isoformat(), "统计止": 止.isoformat()}
+
+
+def _开始必填(定义):
+    """工作流开始节点要的必填项 [{名, 叫, 说明}] —— 和 runtime/runner.py 开始节点判 INPUT_MISSING 用的是同一份
+    (节点里的 input_schema 优先,顶层只当兜底)。聊天接管清单和发起口都读它(11-18:夜跑 40 条接管里 32 条
+    跑到开始节点才报 INPUT_MISSING —— 聊天站从头到尾不知道要填哪几项,每次猜错都留下一条失败运行)。"""
+    s = None
+    for n in 定义.get("nodes") or []:
+        if n.get("type") == "start":
+            s = (n.get("config") or {}).get("input_schema")
+            break
+    s = s or 定义.get("input_schema") or {}
+    props = s.get("properties") or {}
+    return [{"名": k, "叫": (props.get(k) or {}).get("title") or k,
+             "说明": (props.get(k) or {}).get("description") or ""} for k in s.get("required") or []]
 
 
 def _版本定义(v):
