@@ -141,6 +141,12 @@ export const ENDPOINTS = [
   { method: "GET", path: "/retrieval-runs", summary: "检索试跑列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/retrieval-runs/{id}", summary: "检索试跑详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/retrieval-runs/{id}/rating", summary: "给检索试跑打分(5 档)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "GET", path: "/knowledge-revisions/files", summary: "knowledge/ 下的文件和段标题(提申请时选)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/knowledge-revisions", summary: "提知识修订申请(文件 / 段 / 原来写的 要真找得到)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/knowledge-revisions", summary: "修订申请清单(待审排前)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/knowledge-revisions/{rid}", summary: "修订申请详情(含能做的动作)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/knowledge-revisions/{rid}/review", summary: "审修订(采纳 / 驳回)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/knowledge-revisions/{rid}/merged", summary: "标已合并(开发改完 md 后)", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/knowledge-queries", summary: "chat 问一次知识库", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/datasets", summary: "数据集列表", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/datasets", summary: "建数据集", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -176,6 +182,7 @@ export const ENDPOINTS = [
   { method: "GET", path: "/applications/{id}", summary: "应用详情(各环境指针**带 revision**)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/applications/{id}/releases", summary: "发布清单历史", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/releases/{id}", summary: "发布清单详情(含审核结论)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/applications/{id}/archive", summary: "归档应用(软删,e2e 夹具收尾用)", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/applications", summary: "建应用", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/applications/{id}/draft", summary: "改应用候选配置", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/applications/{id}/releases", summary: "出发布候选(冻结依赖)", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -358,4 +365,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 270 条接口 · 24 条异步 · 32 条要幂等键 · 40 条要 If-Match */
+/** 共 277 条接口 · 24 条异步 · 32 条要幂等键 · 40 条要 If-Match */

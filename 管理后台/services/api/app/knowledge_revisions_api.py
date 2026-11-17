@@ -173,15 +173,18 @@ async def 提修订(project_id: str, request: Request, me: 身份 = Depends(要�
 
 @router.get(前缀 + "/knowledge-revisions")
 def 修订清单(project_id: str, me: 身份 = Depends(要权限("查看有权配置")), status: str = Query(None),
-         limit: int = Query(50, ge=1, le=200)):
+         limit: int = Query(50, ge=1, le=200), cursor: int = Query(0, ge=0)):
+    """契约登记为 列表=True,统一信封 items / next_cursor / total(§19.1):游标就是偏移量,翻到底给 null。"""
     if status and status not in 状态们:
         raise _错(422, "VALIDATION", f"状态只认 {' / '.join(状态们)}", "按这几个筛", field_errors={"status": "不认识"})
     with 连接() as c:
         rs = c.execute(text("""select count(*) over () 全量, * from knowledge_revisions
                                where project_id=:p and archived_at is null """ + ("and status=:s " if status else "") +
-                            """order by (status='待审') desc, created_at desc limit :n"""),
-                       {"p": project_id, "n": limit, **({"s": status} if status else {})}).mappings().all()
-    return {"items": [_给人看(r) for r in rs], "total": int(rs[0]["全量"]) if rs else 0, "状态们": list(状态们),
+                            """order by (status='待审') desc, created_at desc limit :n offset :o"""),
+                       {"p": project_id, "n": limit, "o": cursor, **({"s": status} if status else {})}).mappings().all()
+    total = int(rs[0]["全量"]) if rs else 0
+    return {"items": [_给人看(r) for r in rs], "total": total, "状态们": list(状态们),
+            "next_cursor": str(cursor + len(rs)) if cursor + len(rs) < total else None,
             "note": "待审的排前面。**只总部运营审**;审过的改动文本由开发改进 md,改完回来标「已合并」"}
 
 

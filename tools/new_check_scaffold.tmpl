@@ -1,0 +1,64 @@
+!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""{标题}
+
+## 为什么要有这个
+(写逼出这条检查的那次翻车:哪天、什么症状、为什么现有检查没抓到。没有翻车史的检查往往是没人会回来看的检查)
+
+## 查什么
+(判据落结构不枚举词;期望值从哪来 —— 别从被测系统本身算,同源谬误)
+"""
+import os, sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+G, R, D = "\\033[32m", "\\033[31m", "\\033[0m"
+
+
+def 查(样本):
+    """纯函数:输入从外面喂,自测好喂假的。回 (bad 列表, 验了几个)。"""
+    bad = []
+    for x in 样本:
+        pass  # TODO 判据
+    return bad, len(样本)
+
+
+def 自测():
+    """人造夹具:一个全对的不该红;逐个弄坏,红的必须是指定那条(咬合三关里的第三关)。"""
+    bad = []
+    b, n = 查([])
+    if n != 0: bad.append("自测:空样本该报 0 个")
+    # TODO: 好样本 → []; 坏样本 → 红且消息含指定字样
+    return bad
+
+
+def 取样本():
+    """TODO: 从仓库 / 库里现读要验的东西。"""
+    return []
+
+
+# ── 咬合记录(规格在 tools/bite_specs.json,bite_run 能重放)────────────────
+咬合 = [
+    ("TODO 改坏了什么(最窄的那一刀,砍在判据够得着的地方)", "TODO 预期红的字面量(要在本文件里原样找得到)"),
+]
+
+
+def main():
+    print("{标题}\\n" + "=" * 72)
+    bad = 自测()
+    if bad:
+        for b in bad: print(f"  {{R}}❌ {{b}}{{D}}")
+        print(f"{{R}}❌ 自测没过,真跑不算数{{D}}"); return 1
+    样本 = 取样本()
+    bad, n = 查(样本)
+    print(f"  验了 {{n}} 个;自测过")
+    if n == 0:
+        print(f"{{R}}❌ 一个都没验到 —— 不是「都对」,是没东西可验{{D}}"); return 1
+    for b in bad: print(f"  {{R}}❌ {{b}}{{D}}")
+    if bad:
+        print(f"{{R}}❌ {{len(bad)}} 处不符合预期{{D}}"); return 1
+    print(f"{{G}}✅ TODO 一句话说清验住了什么{{D}}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
