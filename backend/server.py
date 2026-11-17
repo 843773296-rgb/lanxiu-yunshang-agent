@@ -4824,7 +4824,7 @@ class H(BaseHTTPRequestHandler):
                                    "reason": "请先登录 —— 写操作要记下是谁做的,不替任何人署名"}, 401)
             # 首登改密(W19,2026-11-17):带着「必须改密」标记的会话,写口只放改密和退出 —— 临时口令是总部运营发的、
             # 可能经过聊天 / 纸条,拿它干的任何事都不该算在这个人头上
-            if 登录人.get("must_change_pwd") and p not in ("/api/change-password", "/api/logout"):
+            if 登录人 and 登录人.get("must_change_pwd") and p not in ("/api/change-password", "/api/logout"):
                 return self._send({"error": "先改密再用 —— 这是用临时口令登录的", "code": "MUST_CHANGE_PWD",
                                    "reason": "总部运营给你重置了口令,先改成自己的再操作"}, 403)
         if p == "/api/export-selected":

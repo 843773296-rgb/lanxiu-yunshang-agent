@@ -225,6 +225,9 @@ def 迁移():
                   (json.dumps(旧, ensure_ascii=False),))
     未迁 = RT.生效(None, db=p)
     with closing(sqlite3.connect(p)) as c, c:
+        # 2026-11-17(W16 第二类):老表补列归 backend/migrations/m0005,确保表 只建表 —— 老库先走一遍迁移补齐,再确保表
+        import migrate as _mg
+        _mg.补齐(c, 说=lambda *a, **k: None)
         RT.确保表(c); c.commit()
         r = c.execute("SELECT status, payload FROM report_template_ver").fetchone()
     已迁 = RT.生效(None, db=p)

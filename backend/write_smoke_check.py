@@ -486,6 +486,8 @@ def 用例表():
         顾 = 取("SELECT no FROM staff WHERE role='顾问' AND status='启用' LIMIT 1")
         if 顾:
             出.append(("save_staff_perm", lambda s, _m=_部, _n=顾["no"]: s.save_staff_perm({"no": _n}, _m), "edit_log"))
+            # 11-17 W19:总部运营给员工重置口令(临时口令只回一次、置首登改密标记)—— 在副本上真重置一位顾问的
+            出.append(("reset_staff_pwd", lambda s, _m=_部, _n=顾["no"]: s.reset_staff_pwd(_n, _m), "edit_log"))
 
     return [x for x in 出 if 有表(x[2])]
 
