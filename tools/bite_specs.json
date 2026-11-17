@@ -20895,8 +20895,8 @@
   "file": [
    {
     "path": "agent/ops_eval.py",
-    "old": "]\n\n\ndef main():",
-    "new": "dict(id=\"ZZ99\", role=\"task\", kind=\"负向\",\n     me=dict(no=\"60000001\", name=\"张静静\", role=\"店长\", shop=\"SH001 静安旗舰店\"),\n     q=\"咬合用的假题(加了题不配对照)\",\n     grade=must_say(\"咬合\", \"假题\", why=\"咬合攻击点:加了一道题却不配对照\")),\n]\n\n\ndef main():"
+    "old": "]\n\n# ── 跨店写请求:被范围挡住",
+    "new": "dict(id=\"ZZ99\", role=\"task\", kind=\"负向\",\n     me=dict(no=\"60000001\", name=\"张静静\", role=\"店长\", shop=\"SH001 静安旗舰店\"),\n     q=\"咬合用的假题(加了题不配对照)\",\n     grade=must_say(\"咬合\", \"假题\", why=\"咬合攻击点:加了一道题却不配对照\")),\n]\n\n# ── 跨店写请求:被范围挡住"
    }
   ],
   "预期红": "棘轮:零对照的题变多了"
@@ -23379,8 +23379,8 @@
   "file": [
    {
     "path": "tools/case_identity_scope_check.py",
-    "old": "    (\"ops_eval.py\", \"G04\"), (\"ops_eval.py\", \"G07\"),\n",
-    "new": "    (\"ops_eval.py\", \"G04\"), (\"ops_eval.py\", \"G07\"), (\"ops_eval.py\", \"L01\"),\n"
+    "old": "    (\"ops_sealed.py\", \"G09\"),\n",
+    "new": "    (\"ops_sealed.py\", \"G09\"), (\"ops_eval.py\", \"L01\"),\n"
    }
   ],
   "预期红": "已经看得见的,从身份欠债表里删掉了"
@@ -23391,8 +23391,8 @@
   "file": [
    {
     "path": "tools/case_identity_scope_check.py",
-    "old": "故意越权 = {}\n",
-    "new": "故意越权 = {(\"ops_eval.py\", \"L01\"): \"(咬合用)\"}\n"
+    "old": "故意越权 = {(\"ops_eval.py\", \"G04\"): _拍,",
+    "new": "故意越权 = {(\"ops_eval.py\", \"L01\"): _拍, (\"ops_eval.py\", \"G04\"): _拍,"
    }
   ],
   "预期红": "「故意越权」名单里的题,身份真的看不见"
