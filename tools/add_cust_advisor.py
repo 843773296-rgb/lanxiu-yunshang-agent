@@ -147,8 +147,8 @@ def main():
         if 有列(c):
             print(f"  {Y}列 `{列}` 已经在了 —— 不重复加(幂等){D}")
         else:
-            c.execute(f"ALTER TABLE ordr ADD COLUMN {列} TEXT")
-            print(f"  {G}✅ 加上了列 `{列}`{D}")
+            print(f"  {Y}❌ 列 `{列}` 还不在 —— 先跑 python3 backend/migrate.py(2026-11-17 起列由第 6 条迁移管,这里不再 ALTER){D}")   # 2026-11-17 起加列归 m0006,这里只建触发器 / 回填
+            return 1
         有 = 已有的触发器(c)
         for 名, ddl in 触发器.items():
             if 名 in 有:

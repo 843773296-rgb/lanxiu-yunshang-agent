@@ -118,7 +118,8 @@ def link(conn, verbose=True):
         if 名列 not in cols:
             continue
         if 号列 not in cols:
-            c.execute(f"ALTER TABLE {t} ADD COLUMN {号列} TEXT")
+            # 2026-11-17 起加列归 backend/migrations/m0006(按本文件的 映射 加);这里缺了就明说,不偷偷补
+            raise RuntimeError(f"{t} 还没有 {号列} 列 —— 先跑 python3 backend/migrate.py(2026-11-17 起列由第 6 条迁移管,这里不再 ALTER)")
         for r in c.execute(f"SELECT rowid AS rid,{名列} AS tag FROM {t} "
                            f"WHERE {名列} IS NOT NULL").fetchall():
             no, why = 解析(r["tag"], 花名册, 全员)

@@ -21167,24 +21167,24 @@
  },
  {
   "script": "tools/migration_check.py",
-  "改坏": "把 backend/fix_advisor_ref.py 的欠债登记从 2 改成 1 —— 等于 fix_advisor_ref.py 里**新多出了一处**迁移目录外的 ALTER TABLE。棘轮必须红,而且红的是「多出了」那一条",
+  "改坏": "把 backend/seed.py 的欠债登记从 1 改成 0 —— 等于 seed.py 里**新多出了一处**迁移目录外的 ALTER TABLE。棘轮必须红,而且红的是「多出了」那一条",
   "file": [
    {
     "path": "tools/migration_check.py",
-    "old": "    \"backend/fix_advisor_ref.py\": 2,",
-    "new": "    \"backend/fix_advisor_ref.py\": 1,"
+    "old": "    \"backend/seed.py\": 1,",
+    "new": "    \"backend/seed.py\": 0,"
    }
   ],
   "预期红": "迁移目录外面多出了 ALTER TABLE"
  },
  {
   "script": "tools/migration_check.py",
-  "改坏": "把 backend/fix_advisor_ref.py 的欠债登记从 2 改成 3 —— 囤着的豁免(实际 2 处、登记 3 处)和真欠着的在绿勾上长得一样,反向检查必须红",
+  "改坏": "把 backend/seed.py 的欠债登记从 1 改成 2 —— 囤着的豁免(实际 1 处、登记 2 处)和真欠着的在绿勾上长得一样,反向检查必须红",
   "file": [
    {
     "path": "tools/migration_check.py",
-    "old": "    \"backend/fix_advisor_ref.py\": 2,",
-    "new": "    \"backend/fix_advisor_ref.py\": 3,"
+    "old": "    \"backend/seed.py\": 1,",
+    "new": "    \"backend/seed.py\": 2,"
    }
   ],
   "预期红": "有欠债已经还了却没改登记"

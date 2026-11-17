@@ -115,17 +115,10 @@ def main(db=None):
     # **缺列就补**:CREATE TABLE IF NOT EXISTS 对**已经存在**的表一个字都不改 ——
     # 新加的列只有从零建库才有,已有的库跑起来会在写入时才报「no such column」,
     # 而那时候已经是业务动作中途了(2026-09-24 加金额授权两列时当场撞上)。
-    有 = {r[1] for r in c.execute("PRAGMA table_info(maintain_decision)")}
-    for 列 in ("approved_by", "approve_note"):
-        if 列 not in 有:
-            c.execute(f"ALTER TABLE maintain_decision ADD COLUMN {列} TEXT")
-            print(f"  maintain_decision 补上缺的列:{列}")
+    # 2026-11-17 起老表补列归 backend/migrations/m0006(approved_by / approve_note / 尺寸差),这里只建表;新库的建表语句自带
     # 实测成衣和量体差多少 —— 这是**报修单自己的事实**(顾问量出来的),挂在 maintain 上;
     # 判责记录只记「谁判的、判成什么」。存 JSON:{"腰围": 4};**不填就是没量过**,
     # 判定会往下走,不会拿「没量」当「在公差内」(业务 2026-09-24 的公差判定要它)。
-    if "尺寸差" not in {r[1] for r in c.execute("PRAGMA table_info(maintain)")}:
-        c.execute("ALTER TABLE maintain ADD COLUMN 尺寸差 TEXT")
-        print("  maintain 补上缺的列:尺寸差")
     _造公差用例(c)
     c.commit()
     n = c.execute("SELECT COUNT(*) FROM maintain_decision").fetchone()[0]

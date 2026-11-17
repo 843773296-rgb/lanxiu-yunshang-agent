@@ -79,9 +79,9 @@ def main():
         if not go:
             print(f"  共 {len(要加)} 列要加;只加列不回填(老行保持 NULL = 加列之前建的,当时没问)")
             return 0
-        with c:
-            for 表, 列, 定义, _ in 要加:
-                c.execute(f"ALTER TABLE {表} ADD COLUMN {列} {定义}")
+        # 2026-11-17 起加列归 backend/migrations/m0006(列定义在那边;这里的 列们 只用来核对)
+        print(f"  ❌ 还缺 {len(要加)} 列 —— 先跑 python3 backend/migrate.py(2026-11-17 起列由第 6 条迁移管,这里不再 ALTER)")
+        return 1
         # 加完核一遍:列真的在了
         后 = plan(c)
         缺 = [f"{t}.{k}" for t, k, _, 有 in 后 if not 有]

@@ -25,9 +25,9 @@ R, G, Y, D = "\033[31m", "\033[32m", "\033[33m", "\033[0m"
 
 # 咬合记录(规格在 tools/bite_specs.json,2026-11-14 --only 3/3 过):改坏的是什么 → 该红的是哪一条
 咬合 = [
-    ("把 backend/fix_advisor_ref.py 的欠债登记从 2 改成 1(等于新多出一处迁移目录外的 ALTER TABLE)",
+    ("把 backend/seed.py 的欠债登记从 1 改成 0(等于新多出一处迁移目录外的 ALTER TABLE)",
      "迁移目录外面多出了 ALTER TABLE"),
-    ("把 backend/fix_advisor_ref.py 的欠债登记从 2 改成 3(囤着的豁免)",
+    ("把 backend/seed.py 的欠债登记从 1 改成 2(囤着的豁免)",
      "有欠债已经还了却没改登记"),
     ("在第 1 条迁移文件末尾加一行注释(做过的迁移被改了,库上记的指纹对不上)",
      "库没做到最新"),
@@ -44,17 +44,11 @@ def 不扫(f):
 欠债 = {
     # 2026-11-17(W16 第一类):asr 5 / merge 1 / ops 5 / relabel 2 / seed_rating 2 共 15 处收进 m0004,运行时不再补列 → 从登记里删掉
     # 2026-11-17(W16 第二类):九个模块建表顺带补列的 13 处收进 m0005,建表语句直接带全列 → 从登记里删掉
+    # 2026-11-17(W16 第三类):八个一次性工具的 16 处收进 m0006,工具缺列就明说 → 从登记里删掉。剩三处:
+    #   seed.py 那处是建新表时顺手 ALTER 自己刚建的表(建表步骤的一部分);fingerprint 是自测给临时库造夹具;mkt_sop_seed 待查
     "agent/fingerprint.py": 1,          # 自测里在临时库上改列名,造「库结构变了」的样本 —— 不碰真库
-    "backend/fix_advisor_ref.py": 2,
-    "backend/fix_product_pattern.py": 1,
     "backend/seed.py": 1,
-    "backend/seed_repair.py": 3,
     "fakedata/mkt_sop_seed.py": 1,
-    "tools/add_cust_advisor.py": 2,
-    "tools/add_shop_code.py": 4,
-    "tools/migrate_appt_columns.py": 2,
-    "tools/migrate_order_wearer.py": 1,
-    "tools/seed_new_products.py": 1,
 }
 
 

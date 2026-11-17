@@ -115,9 +115,7 @@ def 保证有列(c, 说=print):
     这里就是空操作;只有「早就存在的那个库」要补。照 backend/fix_product_pattern.py 的先例。"""
     列 = {r[1] for r in c.execute("PRAGMA table_info(product)")}
     if "plan_on_shelf" not in 列:
-        c.execute("ALTER TABLE product ADD COLUMN plan_on_shelf TEXT")
-        c.commit()
-        说("  + product.plan_on_shelf(这个库里原来没有,已加上)")
+        raise SystemExit(f"❌ product 还没有 plan_on_shelf —— 先跑 python3 backend/migrate.py(2026-11-17 起列由第 6 条迁移管,这里不再 ALTER)")   # 2026-11-17 起加列归 m0006
         return True
     return False
 

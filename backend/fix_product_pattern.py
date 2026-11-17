@@ -175,7 +175,7 @@ def link(conn, verbose=True):
     conn.row_factory = sqlite3.Row
     c = conn
     if "pattern" not in [x[1] for x in c.execute("PRAGMA table_info(product)")]:
-        c.execute("ALTER TABLE product ADD COLUMN pattern TEXT")
+        raise RuntimeError(f"product 还没有 pattern 列 —— 先跑 python3 backend/migrate.py(2026-11-17 起列由第 6 条迁移管,这里不再 ALTER)")   # 2026-11-17 起加列归 m0006
     pats = [dict(r) for r in c.execute("SELECT code,name,gender,tpl,xz FROM pattern")]
     xzs = [dict(r) for r in c.execute("SELECT code,name,alias FROM xingzhi")]
     # 分档要 key_sizes(它要判「关键尺寸是不是空的」),比上面那份多一列

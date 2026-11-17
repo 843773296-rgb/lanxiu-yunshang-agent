@@ -118,12 +118,12 @@ def main():
     #   **回填**要在**所有造数之后**(所以仍然留在最后那一批)。
     # 两件都幂等,多跑一次只是多读一遍。
     if a.建列:
+        # 2026-11-17 起加列归 backend/migrations/m0006(重建流水线在 seed.py 之后立刻跑迁移),这一步只核对:缺就红
         if 缺列:
-            with c:
-                for 表, _ in 缺列:
-                    c.execute(f"ALTER TABLE {表} ADD COLUMN shop_code TEXT")
-                    print(f"  + {表}.shop_code")
-        print(f"  {G}加列完毕(这一轮只加列、不回填;回填在流水线最后那一批){D}")
+            print(f"  {Rd}❌ 这几处还没有 shop_code 列:{[t for t, _ in 缺列]} —— 先跑 python3 backend/migrate.py(2026-11-17 起列由第 6 条迁移管,这里不再 ALTER){D}")
+            c.close()
+            return 1
+        print(f"  {G}列都在(由迁移加的;这一轮不回填,回填在流水线最后那一批){D}")
         c.close()
         return 0
 
@@ -141,11 +141,10 @@ def main():
         c.close()
         return 0
 
-    if a.做:
-        with c:
-            for 表, _ in 缺列:
-                c.execute(f"ALTER TABLE {表} ADD COLUMN shop_code TEXT")
-                print(f"  + {表}.shop_code")
+    if a.做 and 缺列:
+        print(f"  {Rd}❌ 这几处还没有 shop_code 列:{[t for t, _ in 缺列]} —— 先跑 python3 backend/migrate.py(2026-11-17 起列由第 6 条迁移管,这里不再 ALTER){D}")
+        c.close()
+        return 1
 
     回填 = 要回填的(c, 门店)
     总 = sum(len(x[2]) for x in 回填)

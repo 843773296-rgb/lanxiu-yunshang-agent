@@ -79,7 +79,7 @@ G, Rd, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
     # 第五条守**顺序**,它是 2026-10-24 CI 真红过的那一次:
     # 加列排在写口之后,从零重建当场炸,而本地怎么跑都是绿的
     # (已经存在的库上那一列永远都在)。
-    ("把加列那一步往后挪一步(从零重建时写口跑在加列之前就炸,本地看不见)",
+    ("把加列那一步(migrate.py,2026-11-17 起由它加 shop_code)从紧跟 seed.py 挪开(从零重建时写口跑在加列之前就炸,本地看不见)",
      "加列紧跟在 seed.py 之后"),
     # 第六条:流水线**中途**才建的表,列必须写在它自己的建表语句里。
     # 2026-10-24 CI 为这件事红了第二次 —— 第一次修的是「加列排在写口之后」,
@@ -341,12 +341,13 @@ if _m:
     def 第几(名, 带=""):
         return [i for i, (p, q) in enumerate(zip(步, 全))
                 if p == 名 and (带 in q if 带 else True)]
-    建列 = 第几("tools/add_shop_code.py", "--建列")
+    # 2026-11-17 起加 shop_code 列的是 backend/migrate.py(第 6 条迁移,按 shop_key.带门店键的 加);add_shop_code --建列 只核对
+    建列 = 第几("backend/migrate.py")
     回填 = [i for i in 第几("tools/add_shop_code.py") if i not in 建列]
     seed = 第几("backend/seed.py")
     ens = 第几("tools/ensure_tables.py")
     ck(f"加列紧跟在 seed.py 之后(现在:seed 第 {[i+1 for i in seed]} 步、"
-       f"加列第 {[i+1 for i in 建列]} 步)",
+       f"加列(migrate.py)第 {[i+1 for i in 建列]} 步)",
        bool(seed) and bool(建列) and min(建列) == seed[0] + 1,
        "加列那一步不是紧跟在 seed.py 后面 —— **中间插进来的任何步骤,"
        "只要它调了带 shop_code 的写口,从零重建就当场炸**,而本地看不见")

@@ -96,8 +96,8 @@ def main():
     if not go:
         return 0
     if not 有字段:
-        c.execute("ALTER TABLE ordr ADD COLUMN wearer_id TEXT")
-        print("  已加字段 ordr.wearer_id")
+        print(f"  ❌ ordr 还没有 wearer_id —— 先跑 python3 backend/migrate.py(2026-11-17 起列由第 6 条迁移管,这里不再 ALTER)")   # 2026-11-17 起加列归 m0006
+        return 1
     n = 0
     for oid, wid, _ in 确定 + 唯一有量体:
         cur = c.execute("SELECT wearer_id FROM ordr WHERE id=?", (oid,)).fetchone()
