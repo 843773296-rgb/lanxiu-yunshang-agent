@@ -1119,7 +1119,7 @@ async function apptList(){
       ${acts()}
     </div>
     <div class="ops"><button class="btn sol" data-new-apt>+ 新增预约</button>
-      <button class="btn" data-apt-cancel>批量取消所选</button> <button class="btn" data-export title="不含客户姓名">导出所选</button></div>
+      <button class="btn" data-apt-cancel>批量取消所选</button> <button class="btn" data-export title="不含客户姓名">导出所选</button> <button class="btn" data-exp-all="appointments" title="全部预约,服务端生成,不含客户姓名和号码;店长以上">导出全部</button></div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:44px"><span class="cb" data-cball></span></th>
      ${sortTh("预约编号","id",st,"110px")}<th>客户</th>
@@ -1137,6 +1137,7 @@ async function apptList(){
   M.querySelectorAll("[data-a]").forEach(e=>e.onclick=()=>view("appt",e.dataset.a));
   M.querySelectorAll("[data-new-apt]").forEach(e=>e.onclick=()=>formAppt("",apptList));
   M.querySelectorAll("[data-export]").forEach(e=>e.onclick=()=>导出所选("客户预约",[["预约号","id"],["客户ID","customer_id"],["时间","start_ts"],["门店","shop"],["顾问","advisor"],["状态","status"]],d.rows,"id"));
+  M.querySelectorAll("[data-exp-all]").forEach(e=>e.onclick=()=>dl("/api/export/"+e.dataset.expAll));   // 11-17 W25:服务端导出(店长以上、进操作日志、手机号不出门)
   M.querySelectorAll("[data-apt-cancel]").forEach(e=>e.onclick=async()=>{ const ids=已选(); if(!ids.length){没选();return}
     if(!await sure(`取消这 ${ids.length} 个预约?`,"客户会收到取消通知;状态不允许取消的那几条会失败,结果里列出来。","批量取消"))return;
     批量跑(ids,id=>post("/api/transit",{machine:"bk-appt",target:id,to:"已取消",ctx:{}}),apptList)});
@@ -1822,7 +1823,7 @@ async function staffList(){
   M.innerHTML=chrome([["首页","workbench"],"系统","权限管理"],`
    <div class="card">
     <div class="form">${fld("工号/姓名","q",st,null,"请输入")}${fld("角色","role",st,d.facets.role)}${acts()}</div>
-    <div class="ops"><button class="btn" data-stf-exp>导出所选</button></div>
+    <div class="ops"><button class="btn" data-stf-exp>导出所选</button> <button class="btn" data-exp-all="staff" title="全部员工,服务端生成;店长以上">导出全部</button></div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:44px"><span class="cb" data-cball></span></th>
      <th style="width:140px">工号</th><th style="width:120px">姓名</th>
@@ -1848,6 +1849,7 @@ async function staffList(){
       </tr>`).join("")}
     </tbody></table></div>`);
   M.querySelectorAll("[data-stf-exp]").forEach(e=>e.onclick=()=>导出所选("员工",[["工号","no"],["姓名","name"],["角色","role"],["门店","shop"],["状态","status"]],d.rows,"no"));
+  M.querySelectorAll("[data-exp-all]").forEach(e=>e.onclick=()=>dl("/api/export/"+e.dataset.expAll));   // 11-17 W25:服务端导出(店长以上、进操作日志、手机号不出门)
   // 11-14:编辑权限(台账第四十五条第四组:只总部运营;不能改自己;不能给别人提到比自己高 —— 都在写口里拦)
   // 名下还有客户 / 任务时换门店、改角色、停用会被拒;改完那个人要重新登录
   M.querySelectorAll("[data-perm]").forEach(e=>e.onclick=()=>{
@@ -2101,7 +2103,7 @@ async function productList(){
         <option value="">全部</option>${F.category.map(c=>`<option value="${esc(c)}" ${st.category===c?"selected":""}>${esc(d.catnames[c]||c)}</option>`).join("")}
       </select></div>${acts()}</div>
     <div class="ops"><button class="btn sol" data-newprod>+ 新建商品</button>
-      <button class="btn" data-prd-on>批量上架</button> <button class="btn" data-prd-off>批量下架</button> <button class="btn" data-exp-prd>导出所选</button>
+      <button class="btn" data-prd-on>批量上架</button> <button class="btn" data-prd-off>批量下架</button> <button class="btn" data-exp-prd>导出所选</button> <button class="btn" data-exp-all="products" title="全部商品,服务端生成;店长以上">导出全部</button>
       ${d.img_cover ? `<span class="n" style="margin-left:12px" title="有图的是 AI 生成的效果图,不是实物照片;其余是按商品属性现画的剪影">
         商品图:<b style="color:var(--ink)">${d.img_cover.有}/${d.img_cover.总}</b> 款已出图
         ·<span style="color:var(--ink3)"> 其余 ${d.img_cover.总-d.img_cover.有} 款用现画的示意图</span></span>` : ""}</div>
@@ -2135,6 +2137,7 @@ async function productList(){
   M.querySelectorAll("[data-pd]").forEach(e=>e.onclick=()=>view("product",e.dataset.pd));
   M.querySelectorAll("[data-newprod]").forEach(e=>e.onclick=()=>formProduct(null,productList));
   M.querySelectorAll("[data-exp-prd]").forEach(e=>e.onclick=()=>导出所选("商品库",[["SPU","spu"],["名称","name"],["类型","kind"],["基础价","base_price"],["库存","stock"],["可用","avail"],["状态","status"]],d.rows,"spu"));
+  M.querySelectorAll("[data-exp-all]").forEach(e=>e.onclick=()=>dl("/api/export/"+e.dataset.expAll));   // 11-17 W25:服务端导出(店长以上、进操作日志、手机号不出门)
   [["data-prd-on","上架"],["data-prd-off","下架"]].forEach(([k,to])=>M.querySelectorAll(`[${k}]`).forEach(e=>e.onclick=()=>{ const ids=已选(); if(!ids.length){没选();return}
     modal(`批量${to} · 已选 ${ids.length} 款`,[{k:"note",type:"text",req:1,label:`${to}原因(必填)`+(to==="下架"?",下架后不可新增下单,历史订单保留":""),ph:"例如:面料断货"}],
       v=>批量跑(ids,id=>post("/api/transit",{machine:"bk-product",target:id,to,ctx:{note:v.note}}),productList))}));

@@ -2620,7 +2620,19 @@ _EXPORT = {
     "oplog":     ("操作日志", "SELECT ts 时间,actor 操作人,machine 对象,target 编号,"
                   "code 结果码,allowed 是否放行,reason 说明 FROM op_log WHERE {日志} "
                   "ORDER BY ts DESC LIMIT 5000"),
+    # 11-17(执行手册 W25,拍板 16):预约 / 员工 / 商品三种原来只有浏览器里拼当前页勾选的「导出所选」,
+    # 服务端这边补上「导出全部」—— 店长以上、手机号不出门(预约不带顾客姓名和号码,员工不带口令相关列)、每次进操作日志。
+    # 任务(task)没补:它按门店划范围靠的是 ops.看得到的工单(Python 里算),不是一个 WHERE 片段,页面那条「导出所选」照旧
+    "appointments": ("客户预约", "SELECT a.id 预约号,a.customer_id 客户号,a.shop 门店,s.name 顾问,a.start_ts 时间,"
+                     "a.end_ts 结束,a.status 状态,a.channel 渠道 FROM appointment a LEFT JOIN staff s ON s.no=a.advisor_no "
+                     "WHERE {店} ORDER BY a.start_ts DESC"),
+    "staff":        ("员工", "SELECT no 工号,name 姓名,role 角色,shop 归属,status 状态,hired_at 入职,last_login 最近登录 "
+                     "FROM staff WHERE {店} ORDER BY no"),
+    "products":     ("商品库", "SELECT spu SPU,name 名称,kind 类型,category 类目,base_price 基础价,status 状态,on_shelf_at 上架时间 "
+                     "FROM product ORDER BY spu"),
 }
+# 每种导出的 {店} 片段挂在哪个表别名上(没列的 = 不带别名;SQL 里没有 {店} 的不筛门店,也不带参数)
+_EXPORT_别名 = {"customers": "c", "orders": "o", "workorders": "o", "appointments": "a"}
 
 def export_csv(kind, q=None, actor="未登录", 本店=None):
     """导出 CSV。kind 见 _EXPORT;未知 kind 返回可选清单,不静默给空文件。"""
@@ -2632,8 +2644,10 @@ def export_csv(kind, q=None, actor="未登录", 本店=None):
     # 客户按客户的店、订单 / 工单按订单的店、操作日志按「谁做的」—— 和各自列表页同一条口径
     if "{日志}" in sql:
         片, 参 = _日志片(本店); sql = sql.replace("{日志}", 片)
+    elif "{店}" in sql:
+        片, 参 = _店片(本店, _EXPORT_别名.get(kind, "")); sql = sql.replace("{店}", 片)
     else:
-        片, 参 = _店片(本店, "c" if kind == "customers" else "o"); sql = sql.replace("{店}", 片)
+        参 = []          # 商品这类没有门店的表:不筛、也不能把门店参数塞进去(参数数对不上会崩)
     rs = rows(sql, *参)
     buf = io.StringIO()
     w = csv.writer(buf)
