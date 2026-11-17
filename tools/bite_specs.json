@@ -23264,5 +23264,29 @@
    }
   ],
   "预期红": "审查判不适用的还装在目录里"
+ },
+ {
+  "script": "backend/workorder_check.py",
+  "改坏": "把 server.transit 里落「待生产」时调 workorder_auto.生成 那一句去掉(状态照常流转、工单一条不建 —— 工坊那边这张单不存在,而订单页上一切正常)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                ctx[\"建了工单\"] = _wo.生成(c, target, 谁=ctx.get(\"actor_no\") or actor)\n",
+    "new": "                ctx[\"建了工单\"] = []\n"
+   }
+  ],
+  "预期红": "进待生产自动建工单(每道工艺一条、待派、不派人)"
+ },
+ {
+  "script": "backend/workorder_check.py",
+  "改坏": "把 workorder_auto.生成 里「同一道工艺已有就跳过」那一句去掉(重复点状态就多出一倍工单,产能表上这单排了两次)",
+  "file": [
+   {
+    "path": "backend/workorder_auto.py",
+    "old": "        if 码 and 码 in 已有:\n            continue\n",
+    "new": "        if False:\n            continue\n"
+   }
+  ],
+  "预期红": "再生成一次不多建(幂等)"
  }
 ]

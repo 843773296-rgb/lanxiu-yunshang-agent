@@ -659,6 +659,9 @@ run "工厂回传口径 · 重复只记一次、来早了暂存、未来/倒挂�
 run "工厂回传写口 · 生产和发货只认回传、乱序能放行、后台推不动、该催的都在(在库副本上跑)" python3 backend/factory_inbox_check.py
 run "白坯试衣 · 「没走流程」和「走了没拿到确认」不许混成一个" python3 backend/muslin_check.py
 run "白坯试衣写口 · 开裁那道闸会拦、后台改状态也绕不过、签字撤不掉(在库副本上跑)" python3 backend/fitting_write_check.py
+# 2026-11-17(执行手册 W43 ①):工单原来只在造数时生成过,运行时没写口 —— 生产中 354 张定制单只 40 张有工单。
+#   进「待生产」每道工艺一条、待派、不派人(派给谁是排产的决定);在库副本上真走状态机
+run "工单自动生成 · 定制单进待生产就有工单,每道工艺一条、待派不派人、幂等(在库副本上跑)" python3 backend/workorder_check.py
 run "交付签收口径 · 6 位码只认一单用一次、追认满 15 天要理由、不合身判责不默认顾客" python3 knowledge/pickup.py
 run "未来记录回挪 · 自测(签收在未来也算、分钟粒度不许早于下单、在办的单不动)" python3 tools/clamp_future_done.py --selftest
 run "交付签收写口 · 码核验才签收、不合身订单不动、完成要顾客确认或追认(在库副本上跑)" python3 backend/pickup_write_check.py

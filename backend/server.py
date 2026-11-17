@@ -662,6 +662,11 @@ def transit(mid, target, to, ctx, actor, me=None):
             # 对账检查会红在「数据错」上,实际错的是「谁该跟着谁」。
             c.execute("UPDATE ordr SET prd_status=?,updated=wnow() WHERE id=?",
                       (fsm.ORDER_PRD.get(to, to), target))
+            # 方案审核通过进「待生产」就给工坊建工单(执行手册 W43 ①,2026-11-17):每道工艺一条、状态「待派」、
+            # **不派人** —— 派给谁、几个工日是排产的决定,这里只负责让工坊看得见这张单。规则在 workorder_auto,幂等
+            if to=="待生产" and r[0]["kind"]=="定制品订单":
+                import workorder_auto as _wo
+                ctx["建了工单"] = _wo.生成(c, target, 谁=ctx.get("actor_no") or actor)
             # 几个到点就该落的时间戳 —— 不落的话「什么时候发的货」只能靠 op_log 翻
             if to=="生产中":
                 # 开裁记录:它决定这一单按白坯新规还是旧规判(knowledge/muslin.适用新规)
@@ -2622,6 +2627,13 @@ def update_customer(cid,d,actor,role="顾问"):
                   (d.get("name"),ph,ph[-4:],d.get("shop"),顾问工号(d.get("advisor")),
                    d.get("addr"),d.get("birthday"),cid))
     log_op(actor,"customer",cid,"编辑","编辑",True,"UPDATE","; ".join(diff),{"role":role})
+    # 资料编辑日志(执行手册 W43 ②,2026-11-17):客户资料原来只进 op_log(「编辑 → 编辑」不是状态流转,
+    # 改了哪几个字段只能从 reason 那一串里猜)。和商品 / 店铺 / 员工 / 预约一样进 edit_log,「谁把地址从哪改成哪」查得到
+    _客户字段名 = {"name": "姓名", "phone": "手机号", "shop": "门店", "advisor_no": "顾问", "addr": "地址", "birthday": "生日"}
+    log_edit(actor, d.get("actor_no"), "客户", cid, f"编辑客户 {cid}",
+             [{"字段": _客户字段名.get(k, k), "改前": old.get(k), "改后": v} for k, v in
+              dict(name=d.get("name"),phone=ph,shop=d.get("shop"),advisor_no=顾问工号(d.get("advisor")),
+                   addr=d.get("addr"),birthday=d.get("birthday")).items() if v and str(old.get(k))!=str(v)])
     return dict(ok=True,code="UPDATE",reason=f"已更新 {len(diff)} 个字段:"+"; ".join(diff[:3]))
 
 def import_customers(text,actor,role="顾问",dry=True):
