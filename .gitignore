@@ -131,8 +131,9 @@ agent/nightly/agentsite__evals__*.jsonl
 # 扣下的答案原文:原件不进库,夜跑挪过来的副本和压缩包也不进
 agent/nightly/agentsite__evals__withheld*
 
-# 第三方技能的改造版(intent/skill-third-party.md):改成只调本系统工具、用本系统口径,要进版本库;
-# 它们不是我们原创,**不进 skills_own.OURS**,状态默认「已安装待审查」,由总部运营在 Skill 管理页放进试运行。
+# 第三方技能的改造版(intent/skill-third-party.md):改成只调本系统工具、用本系统口径,要进版本库。
+# ~~它们不是我们原创,不进 skills_own.OURS~~ —— 2026-11-06 库存巡检、2026-11-17 另两个都按用户拍的进了 OURS(业务拍板 十一),
+# 按自有标准管、默认放行;来源记在各自 SKILL.md 的「来源」字段和 third_party_review.json。
 !agentsite/.claude/skills/metric-diagnostics-lanxiu/
 !agentsite/.claude/skills/activity-review-lanxiu/
 !agentsite/.claude/skills/stock-patrol-lanxiu/

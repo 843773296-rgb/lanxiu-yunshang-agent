@@ -651,6 +651,9 @@ def _差评返修(桥):
     # 这边多登记 = 拨开接管开关而聊天站永远碰不到,**看着接管了其实什么都没变**;
     # 那边多 = 这件事想接管也选不到)。这个技能是**纯只读**的,接管它只是改「谁来做」。
     "stock-patrol-lanxiu": "库存巡检",
+    # 2026-11-17 用户 11-12 拍的「两个改造版转自有」(业务拍板 十一)落地:进了 skills_own.OURS,这边同步登记。都是纯只读
+    "activity-review-lanxiu": "活动投入产出复盘",
+    "metric-diagnostics-lanxiu": "指标异动诊断",
 }
 _模板技能 = {"音频整理": "call-notes", "经营报告": "store-report", "订单风险": "deadline-rescue",
             "老客召回": "customer-recall", "差评返修": "rating-repair"}

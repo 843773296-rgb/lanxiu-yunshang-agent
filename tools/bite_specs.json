@@ -23252,5 +23252,17 @@
    }
   ],
   "预期红": "标题说的条号范围和段里的行对不上"
+ },
+ {
+  "script": "agentsite/skills_check.py",
+  "改坏": "把审查结论里一个还装在目录里的技能(analytics-reporting,可借鉴方法)改判成「不适用」—— 目录没动、结论变了,归档就该补搬;没守着的话旧版安装脚本一跑或者谁拷回一个,就又回到 9 月的「全拿」",
+  "file": [
+   {
+    "path": "agentsite/third_party_review.json",
+    "old": " \"analytics-reporting\": {\n  \"分类\": \"可借鉴方法\",\n",
+    "new": " \"analytics-reporting\": {\n  \"分类\": \"不适用\",\n"
+   }
+  ],
+  "预期红": "审查判不适用的还装在目录里"
  }
 ]

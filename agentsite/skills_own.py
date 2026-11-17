@@ -42,11 +42,20 @@ OURS = ("quote", "growth-plan", "roster", "deadline-rescue", "exchange", "patter
         #      第三方 = 已安装待审查(拦)。库里 `skill_cfg` 一条登记都没有(库重建时丢了),
         #      所以它**从「拦」变成「放行」**。为此它的正文已改成**纯只读**(摘掉了派任务)。
         #   ② `tools/takeover_skills_check.py` 会要求管理后台的 `可接管技能` 也登记它。
-        "stock-patrol-lanxiu")
+        "stock-patrol-lanxiu",
+        # 2026-11-17 按用户 11-12 拍的(业务拍板 十一)转自有:两个改造版「近 200 轮各被触发 4 次,是在用的」。
+        # 同样的两个连带后果:默认放行(两份正文都是纯只读,只调 activity_roi / channel_compare /
+        # weekly_revenue / sales_rank 这类读工具);管理后台 可接管技能 同步登记(takeover_skills_check 守)。
+        # 正文里的「改造自」说明按拍板搬出正文,来源记在 frontmatter 的「来源」字段和 third_party_review.json。
+        "activity-review-lanxiu",   # 活动投入产出复盘
+        "metric-diagnostics-lanxiu")  # 指标异动诊断
 
 # 从 Accio 提取的第三方技能:装了、注册了、能触发,但**不受我们的质量检查管**。
-# 它们的来源、体量和验证结果见 accio索引/README.md 和 agentsite/evals/runs/all239.json
-THIRD_PARTY_NOTE = "从 Accio 提取,236 个,不归我们改"
+# 它们的来源、体量和验证结果见 accio索引/README.md 和 agentsite/evals/runs/all239.json。
+# 2026-11-17 起审查判「不适用」的 212 个不再装在目录里(用户 11-12 拍,业务拍板 十):搬到仓外
+# ~/Desktop/accio-拆解/skills-archived-20261117/,tools/install_accio_skills.py 装机时按 third_party_review.json 跳过;
+# 留下的只有审查判「可借鉴 / 缺依赖 / 可适配」的。**几个一律现数**(skills_check 会印),这句话里不写数。
+THIRD_PARTY_NOTE = "从 Accio 提取,不归我们改;审查判不适用的已归档仓外"
 
 
 def is_ours(name):

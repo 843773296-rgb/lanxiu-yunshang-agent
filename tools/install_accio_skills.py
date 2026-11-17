@@ -17,12 +17,30 @@ import os, shutil, collections, json
 SRC = os.path.expanduser("~/Desktop/accio-拆解/提取")
 HERE = os.path.dirname(os.path.abspath(__file__))
 DST = os.path.join(HERE, "..", "agentsite", ".claude", "skills")
-OURS = {"quote", "growth-plan", "roster"}
+审查 = os.path.join(HERE, "..", "agentsite", "third_party_review.json")
 MAX_REF = 2_000_000          # 单个参考文件超过 2MB 就不搬
 
 
+def 自有():
+    """自有技能名单只认 skills_own.OURS 一处(原来这里写死三个,后来自有加到十三个,这里一直没跟)。"""
+    import importlib.util as u
+    sp = u.spec_from_file_location("skills_own", os.path.join(HERE, "..", "agentsite", "skills_own.py"))
+    m = u.module_from_spec(sp); sp.loader.exec_module(m)
+    return set(m.OURS)
+
+
+def 不适用():
+    """2026-11-17(用户 11-12 拍,业务拍板 十):审查判「不适用」的不再装 —— 它们归档在仓外
+    ~/Desktop/accio-拆解/skills-archived-20261117/,要用拷回来。审查文件读不到就一个都不跳,但要说出来。"""
+    if not os.path.exists(审查):
+        print("  ⚠ 读不到 third_party_review.json,审查判不适用的这次没跳过 —— 装完是全量"); return set()
+    d = json.load(open(审查, encoding="utf-8"))
+    return {k for k, v in d.items() if v.get("分类") == "不适用"}
+
+
 def main():
-    found, seen = {}, collections.Counter()
+    OURS, 跳 = 自有(), 不适用()
+    found, seen, 跳过了 = {}, collections.Counter(), 0
     for d, _, fs in os.walk(SRC):
         if "SKILL.md" not in fs:
             continue
@@ -30,7 +48,10 @@ def main():
         seen[name] += 1
         if name in OURS or name in found:
             continue
+        if name in 跳:
+            跳过了 += 1; continue
         found[name] = d
+    print(f"审查判不适用、没装的:{跳过了} 个(名单 {len(跳)} 个)")
 
     os.makedirs(DST, exist_ok=True)
     n = refs = 0

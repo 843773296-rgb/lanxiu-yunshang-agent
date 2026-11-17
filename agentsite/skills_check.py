@@ -181,6 +181,26 @@ if os.environ.get("SKILLS_LIVE") == "1":
 else:
     print("\n  (跳过实跑验证;要跑设 SKILLS_LIVE=1,约 $0.005)")
 
+# ⑥ 审查判「不适用」的第三方技能不许还装在目录里(2026-11-17,用户 11-12 拍「212 个归档到仓外」)
+#    归档是搬文件,搬完没有东西守着,哪天 install_accio_skills 旧版一跑、或者谁拷回来一个,就又回到「全拿」。
+#    目录里本来就没有第三方(CI / 别的检出)时明说「没东西可验」,不当成通过。
+print("\n⑥ 审查判不适用的,目录里不许有")
+_rv = os.path.join(HERE, "third_party_review.json")
+if not os.path.exists(_rv):
+    bad.append("third_party_review.json 不在 —— 「哪些不适用」没了依据")
+else:
+    _判 = json.load(open(_rv, encoding="utf-8"))
+    _装着的第三方 = [d for d in sorted(os.listdir(sk_dir))
+                if os.path.isfile(os.path.join(sk_dir, d, "SKILL.md")) and not skills_own.is_ours(d)]
+    _还在 = [d for d in _装着的第三方 if _判.get(d, {}).get("分类") == "不适用"]
+    if _还在:
+        bad.append(f"审查判不适用的还装在目录里 {len(_还在)} 个:{_还在[:6]}{'…' if len(_还在) > 6 else ''} —— "
+                   f"用户 11-12 拍的是归档仓外(~/Desktop/accio-拆解/skills-archived-20261117/),搬过去")
+    elif not _装着的第三方:
+        print("   ℹ 目录里一个第三方技能都没有(CI 或别的检出)—— 这条没东西可验,不是通过")
+    else:
+        print(f"   ✅ 装着的 {len(_装着的第三方)} 个第三方都是审查留下的(可借鉴 / 缺依赖 / 可适配),不适用的 0 个")
+
 print("\n" + "=" * 74)
 if bad:
     for b in bad: print("  ❌", b)
@@ -194,4 +214,7 @@ print("✅ Skill 与配置面自查通过")
 咬合 = [
     ('从 sdk 的白名单里删掉一个知识领域的工具(MCP 暴露了,模型看得见却用不了)',
      '模型看得见却用不了'),
+    # 2026-11-17 ⑥:把审查结论里一个还装着的「可借鉴方法」改判成「不适用」—— 目录没动、结论变了,就该红
+    ('把 third_party_review.json 里一个还装在目录里的技能改判成「不适用」',
+     '审查判不适用的还装在目录里'),
 ]
