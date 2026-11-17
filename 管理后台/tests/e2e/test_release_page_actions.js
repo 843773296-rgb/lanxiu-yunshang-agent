@@ -169,9 +169,18 @@ async function 打(方法, 路, 体, 谁) {
     const 版本们 = ((pd || {})["版本历史"] || []);
     const PV = 版本们.find((v) => v && v.id) || null;
     let [, 详0] = await 打("GET", `/applications/${aid}`);
-    // 连接版本:从任意一份已有清单里借一个确切版本
-    const [, hist0] = await 打("GET", "/applications");
+    // 连接版本:**先从模型连接列表直接取一个确切的配置版本**(11-18 改)。
+    // 原来只从「已有应用的发布清单」里借 —— 11-17 加了「夹具应用跑完就归档」之后,CI 的新库里
+    // 能借的应用全是夹具、跑完都归档了,而应用列表不列归档的 → 借不到 → 后面 7 组全空跑、CI 连红。
+    // 本地库里有非夹具的老应用可借,所以本地一直是绿的:**本地绿和 CI 红差在库里碰巧有什么**。
+    // 连接版本本来就挂在模型连接上,从那里取不依赖任何应用活着;借清单那条留作兜底。
     let CV = null;
+    const [, 连0] = await 打("GET", "/model-connections");
+    for (const mc of ((连0 || {}).连接 || [])) {
+      const v = (mc.配置版本 || []).find((x) => x && x.id);
+      if (v) { CV = v.id; break; }
+    }
+    const [, hist0] = CV ? [null, {}] : await 打("GET", "/applications");
     for (const a of ((hist0 || {}).应用 || [])) {
       const [, h] = await 打("GET", `/applications/${a.id}/releases`);
       const m = ((h || {}).清单们 || [])[0];
