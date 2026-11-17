@@ -1,7 +1,7 @@
 """第 6 条:重建 / 日平移流水线里那几个「一次性工具」顺带加的列,收进迁移本体(2026-11-17,执行手册 W16 第三类)。
 
 这些工具(tools/add_shop_code、add_cust_advisor、migrate_appt_columns、migrate_order_wearer、seed_new_products、
-backend/fix_advisor_ref、fix_product_pattern、seed_repair)各自在跑之前「缺列就 ALTER」—— 本意是给已经存在的库补列,
+backend/fix_advisor_ref、fix_product_pattern、seed_repair、fakedata/mkt_sop_seed)各自在跑之前「缺列就 ALTER」—— 本意是给已经存在的库补列,
 新库靠 seed.py 的建表语句。16 处 ALTER 散在 8 个文件里,哪条库做到了哪一步谁也说不清(迁移版本表管不到它们)。
 现在列清单写在这里;工具只管回填 / 建触发器 / 造数,**缺列就明说「先跑 migrate.py」**,不再偷偷补。
 重建流水线在 seed.py 之后立刻跑 migrate.py,所以这些列在第一个工具跑之前就在了。
@@ -22,7 +22,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     # tools/add_cust_advisor:订单上冗余「客户现在归谁」(触发器照旧由那个工具建)
     "ordr": (("cust_advisor_no", "TEXT"),
              # tools/migrate_order_wearer:这一单给谁穿
-             ("wearer_id", "TEXT")),
+             ("wearer_id", "TEXT"),
+             # fakedata/mkt_sop_seed:有无明确穿着日期(营销 SOP 造数的场合字段)
+             ("has_wear_date", "INT")),
     # tools/migrate_appt_columns:预约点名三态 + 渠道;客户来源渠道(用户 11-12 拍「三列都加」,台账第十二条)
     "appointment": (("named_advisor_no", "TEXT"),
                     ("named_state", "TEXT CHECK(named_state IS NULL OR named_state IN ('点名','没点','不详'))"),

@@ -172,11 +172,8 @@ def 跑(库, 真写):
     # ── ① 场合字段 + 量体→下单的双峰 ──────────────────────────
     列 = {r["name"] for r in c.execute("pragma table_info(ordr)")}
     if "has_wear_date" not in 列:
-        if 真写:
-            c.execute("alter table ordr add column has_wear_date INT")
-            print("  + 加列 ordr.has_wear_date(有无明确穿着日期)")
-        else:
-            print("  + 会加列 ordr.has_wear_date")
+        # 2026-11-17 起这一列由 backend/migrations/m0006 加,造数脚本不再偷偷改表;缺了就停,指路
+        raise SystemExit("❌ ordr 还没有 has_wear_date 列 —— 先跑 python3 backend/migrate.py(列由第 6 条迁移管)")
 
     # ⚠️ **带上 `cu.created`** —— 下面造触点要拿它当下界(C3)。
     # 第一版这里没查它,而下界那段用了 `try/except: pass` ——
