@@ -187,6 +187,27 @@ def _工具目录(c, project_id, 版本ids=None):
 
 
 # ── 工具目录接口 ───────────────────────────────────────────────────
+_澜绣适配器 = ("lanxiu-shop", "lanxiu-kb", "lanxiu-task")
+
+
+def _业务后台开关():
+    """业务后台(8760)那边每个 MCP 工具的停用 / 限流状态 → {工具名: {"启用": bool, "限流": n 或 None}};读不到回 None。
+
+    执行手册 W38 的后一半(用户 11-12 拍「先对账不迁」,2026-11-17 做):工具目录页标出「业务后台已停用 / 已限流」——
+    管理后台这边是「有没有这个工具」,业务后台那边是「这个工具现在放不放行」,两边一直对不上账(tools/switch_sync_check 11-16 起守对账,
+    这里是让人在页面上也看得见)。读的是业务后台的 sqlite(backend/mcp_registry.配置 只读连接,协议层每几秒也在读它),不经 HTTP:
+    8760 没有不登录的配置读口,管理后台又没有它的 cookie。读不到(库不在 / 换了机器)就回 None —— 页面上不标,不装作「全启用」。"""
+    import importlib.util as _u
+    根 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+    路 = os.path.join(根, "backend", "mcp_registry.py")
+    try:
+        sp = _u.spec_from_file_location("lanxiu_mcp_registry", 路)
+        m = _u.module_from_spec(sp); sp.loader.exec_module(m)
+        return {名: {"启用": bool(v.get("启用", True)), "限流": v.get("限流")} for 名, v in (m.配置() or {}).items()}
+    except Exception:          # noqa: BLE001 —— 读不到就是读不到,目录页照常开
+        return None
+
+
 @router.get(前缀 + "/tools")
 def 工具列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
            limit: int = Query(50, ge=1, le=200)):
@@ -203,6 +224,14 @@ def 工具列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
              order by d.updated_at desc limit :n
         """), {"p": project_id, "n": limit}).mappings().all()
     级中文 = {s["名"]: s["中文"] for s in DS.副作用表}
+    开关 = _业务后台开关() if any(r["adapter"] in _澜绣适配器 for r in rs) else {}
+    def _业务后台(r):
+        if r["adapter"] not in _澜绣适配器:
+            return None                                   # 不是从业务后台导入的工具,那边没有它的开关
+        if 开关 is None:
+            return {"读到了吗": False}                     # 业务后台的库读不到:不标,也不装作全启用
+        配 = 开关.get(r["name"]) or {}
+        return {"读到了吗": True, "启用": bool(配.get("启用", True)), "限流每分钟": 配.get("限流")}
     return {"items": [{
         "id": r["id"], "名称": r["name"], "用途": r["purpose"],
         "读写类型": 级中文.get(r["side_effect_type"], r["side_effect_type"]),
@@ -210,6 +239,8 @@ def 工具列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         "最新版本": (f"v{r['最新版本']}" if r["最新版本"] else None),
         "版本数": r["版本数"],
         "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
+        # W38(11-17):业务后台那边这个工具放不放行。None = 不是业务后台的工具;读到了吗=false = 那边的库读不到
+        "业务后台": _业务后台(r),
     } for r in rs], "next_cursor": None,
        "total": (int(rs[0]["全量"]) if rs else 0), "这一页几条": len(rs),
         # ── 建工具的表单要填什么,**由接口给** ──────────────────────────

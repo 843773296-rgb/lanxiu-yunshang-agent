@@ -1325,8 +1325,9 @@ def chat_order_detail(oid, handler):
     # ⚠️ 手机号**脱敏**(和别处同一条规矩:对外只给脱敏手机号)
     if 客:
         客 = dict(客[0])
+        import mask as _mk      # 打码只认 管理后台/docs/口径/敏感字段清单.json(用户 11-17 拍:手机只露后四位)
         ph = 客.get("phone") or ""
-        客["phone"] = (ph[:3] + "****" + ph[-4:]) if len(ph) >= 7 else ("有" if ph else None)
+        客["phone"] = _mk.手机(ph) if ph else None
     else:
         客 = None
     return {
@@ -3098,8 +3099,8 @@ def aftersale_detail(aid):
     cn=rows("SELECT id,name,phone,shop,advisor_no,level FROM customer WHERE id=?",a["customer_id"])
     填顾问名(cn)
     if cn:
-        c0=cn[0]; p=c0.get("phone") or ""
-        c0["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
+        import mask as _mk
+        c0=_mk.给人看行(cn[0])      # 手机只露后四位(清单)
         a["customer"]=c0
     CHAIN=dict(仅退款=["待确认","审批同意","审批失败","退款失败","待结算","已完成"],
                退货退款=["提交申请","审批同意","审批拒绝","商品寄回","已入库","退款成功","退款失败","已完成"])
@@ -3115,8 +3116,8 @@ def maintain_detail(mid):
     cn=rows("SELECT id,name,phone,shop,advisor_no FROM customer WHERE id=?",m["customer_id"])
     填顾问名(cn)
     if cn:
-        c0=cn[0]; p=c0.get("phone") or ""
-        c0["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
+        import mask as _mk
+        c0=_mk.给人看行(cn[0])      # 手机只露后四位(清单)
         m["customer"]=c0
     o=rows("SELECT id,status,amount,created FROM ordr WHERE id=?",m["order_id"])
     m["order"]=o[0] if o else None
@@ -3766,8 +3767,9 @@ def customer_list(q):
             c["已并入"] = _mg.主档(c["id"])
             c["并入说明"] = f"已并入 {c['已并入']}(同一个人;各店照旧在自己这份上开单,查的时候两份一起看)"
     填顾问名(rs)
+    import mask as _mk
     for c in rs:
-        p=c["phone"] or ""; c["phone_mask"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
+        c["phone_mask"]=_mk.手机(c["phone"] or "")
     if kw: rs=[c for c in rs if kw in c["id"] or kw in (c["name"] or "") or kw in (c["phone"] or "")]
     for k,v in f.items():
         if not v: continue
@@ -3776,7 +3778,9 @@ def customer_list(q):
         rs=[c for c in rs if c.get(k)==v]
     rs=_sort(rs,q,{"id","name","paid_amount","order_cnt","idle_days","last_interact"})
     d=_page(rs,q)
-    for c in d["rows"]: c.pop("phone",None)
+    for c in d["rows"]:
+        c.pop("phone",None)
+        _mk.给人看行(c, 跳过=("phone_mask",))     # 列表整行 SELECT *:地址只到区、微信前两位+***+后两位(用户 11-17 拍的清单)
     d["facets"]=dict(
       lifecycle=[r["v"] for r in rows("SELECT DISTINCT lifecycle v FROM customer ORDER BY v")],
       shop=[r["v"] for r in rows("SELECT DISTINCT shop v FROM customer WHERE shop!='' ORDER BY v")],   # 门店串:下拉选项要的就是显示名
@@ -3814,8 +3818,11 @@ def appt_list_q(q, 本店=None):
 def customer_detail(cid):
     r=rows("SELECT * FROM customer WHERE id=?",cid)
     if not r: return {"error":"客户不存在"}
+    import mask as _mk
     c=r[0]; p=c.get("phone") or ""
-    c["phone_mask"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p; c.pop("phone",None)
+    c["phone_mask"]=_mk.手机(p); c.pop("phone",None)
+    # 11-17 用户拍的八项「给人看怎么打码」:地址只到区、微信前两位+***+后两位;姓名 / 生日原样(清单管哪些字段,mask 管怎么打)
+    _mk.给人看行(c, 跳过=("phone_mask",))
     c["matched_list"]=[x for x in (c.get("matched") or "").split("/") if x]
     appts=rows("SELECT * FROM appointment WHERE customer_id=? ORDER BY start_ts DESC",cid)
     fus=rows("SELECT * FROM followup WHERE customer_id=? ORDER BY ts DESC",cid)

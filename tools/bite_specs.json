@@ -21368,8 +21368,8 @@
   "file": [
    {
     "path": "backend/server.py",
-    "old": "        客[\"phone\"] = (ph[:3] + \"****\" + ph[-4:]) if len(ph) >= 7 else (\"有\" if ph else None)\n",
-    "new": "        客[\"phone\"] = ph\n"
+    "old": "        客[\"phone\"] = _mk.手机(ph) if ph else None\n",
+    "new": "        客[\"phone\"] = ph if ph else None\n"
    }
   ],
   "预期红": "客户手机号是脱敏的"
@@ -23324,5 +23324,17 @@
    }
   ],
   "预期红": "重置后标记置 1"
+ },
+ {
+  "script": "backend/mask.py",
+  "改坏": "让 地址只到区 原样返回(门牌路名又露出来 —— 用户 11-17 拍的「地址只到区」在页面上就没了,而页面看着一切正常)",
+  "file": [
+   {
+    "path": "backend/mask.py",
+    "old": "    m = _区.match(s)\n    if m and m.group(3):\n",
+    "new": "    return s\n    m = _区.match(s)\n    if m and m.group(3):\n"
+   }
+  ],
+  "预期红": "地址只到区(省市区)"
  }
 ]

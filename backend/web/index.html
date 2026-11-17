@@ -3424,7 +3424,7 @@ function formEditCustomer(c,after){
     {k:"shop",type:"select",label:"归属店铺",req:1,opts:SHOPS,val:c.shop},
     {k:"advisor",type:"select",label:"销售顾问",req:1,opts:ADVS,val:c.advisor},
     {k:"birthday",label:"生日",val:c.birthday},
-    {k:"addr",label:"地址",val:c.addr},
+    {k:"addr",label:"地址",ph:"留空 = 不改(页面上显示的是只到区的地址,别把它填回去)"},
   ],v=>doOp("/api/customer-update/"+c.id,{...v},after),true);
 }
 

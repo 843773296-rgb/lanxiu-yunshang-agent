@@ -6592,6 +6592,17 @@ function 报工具(文, 坏) {
   }
 }
 
+// W38(11-17):工具目录里标出业务后台那边的开关 —— 管理后台说「有这个工具」,业务后台说「现在不放行」,两边一直对不上账;
+// 接口的 `业务后台` 为 null = 不是业务后台的工具(不标);读到了吗=false = 那边的库读不到(明说,不装作全启用)
+function 业务后台标(x) {
+  if (!x) return "";
+  if (x["读到了吗"] === false) return ` <span class="pill" title="业务后台的开关库读不到,这里不知道它放不放行">业务后台:未知</span>`;
+  const 出 = [];
+  if (x["启用"] === false) 出.push(`<span class="pill warn" title="业务后台里已停用:Agent 选不到它,目录里仍然有">业务后台已停用</span>`);
+  if (x["限流每分钟"]) 出.push(`<span class="pill" title="业务后台里限了流">业务后台限流 ${esc(String(x["限流每分钟"]))}/分</span>`);
+  return 出.length ? " " + 出.join(" ") : "";
+}
+
 async function 页_工具目录() {
   $("#main").innerHTML = `<div class="crumb">编排 / 工具与能力</div>
     <div class="head"><div><h1>工具目录</h1>
@@ -6616,7 +6627,7 @@ async function 页_工具目录() {
         <td class="k">${esc(r["接入方式"])}</td>
         <td>${r["最新版本"] ? `<span class="pill">${esc(r["最新版本"])}</span>`
               : `<span class="k">还没冻结版本</span>`}</td>
-        <td class="k">${esc(r["状态"])}</td></tr>`).join("")
+        <td class="k">${esc(r["状态"])}${业务后台标(r["业务后台"])}</td></tr>`).join("")
       + `</tbody></table>
       <div class="note">工具执行只走<b>一个入口</b>(工具网关),门上六道闸:
         注册 → 服务端绑定 → Schema → 对象范围 → 确认 → 幂等。<br>

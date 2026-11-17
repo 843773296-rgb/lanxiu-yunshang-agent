@@ -173,6 +173,15 @@ def main():
     ck("**`风险变大了吗` 由服务端算**(让界面自己比两个副作用等级的话,"
        "那条规矩就变成每个前端各实现一遍,而不一致的表现是界面少一句警告)",
        "风险变大了吗" in (det or {}), (det or {}).get("风险变大了吗"))
+    # W38 后一半(11-17):列表每一行带「业务后台」—— 业务后台导入的工具是 {读到了吗, 启用, 限流每分钟},别的工具是 null(那边没有它的开关)
+    码, 列, _ = 打("GET", f"{P}/tools?limit=200")
+    行们 = (列 or {}).get("items") or []
+    ck("工具列表每一行都带「业务后台」键(没有这个键 = 页面标不出来)", 码 == 200 and 行们 and all("业务后台" in r for r in 行们), 码)
+    澜 = [r for r in 行们 if r.get("接入方式") in ("lanxiu-shop", "lanxiu-kb", "lanxiu-task")]
+    别 = [r for r in 行们 if r.get("接入方式") not in ("lanxiu-shop", "lanxiu-kb", "lanxiu-task")]
+    ck("业务后台导入的工具:业务后台 是带「读到了吗」的字典;别的工具:null",
+       all(isinstance(r["业务后台"], dict) and "读到了吗" in r["业务后台"] for r in 澜) and all(r["业务后台"] is None for r in 别),
+       {"澜绣工具": len(澜), "别的": len(别), "例": (澜[0]["业务后台"] if 澜 else None)})
     码, 体, _ = 打("GET", f"{P}/tools/tool_nope_xyz")
     ck("不存在的工具 → 404", 码 == 404, 码)
     码, 体, _ = 打("GET", f"/api/v1/projects/project_demo_b/tools/{tid}")
