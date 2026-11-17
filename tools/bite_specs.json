@@ -12425,7 +12425,7 @@
   "file": [
    {
     "path": "tools/rebuild.sh",
-    "old": "for STEP in \"backend/seed.py\" \"tools/add_shop_code.py --建列\" \"tools/add_cust_advisor.py --建列\" \"tools/backfill_scene.py\"",
+    "old": "for STEP in \"backend/seed.py\" \"backend/migrate.py\" \"tools/add_shop_code.py --建列\" \"tools/add_cust_advisor.py --建列\" \"tools/backfill_scene.py\"",
     "new": "for STEP in \"backend/seed.py\" \"tools/add_cust_advisor.py --建列\" \"tools/add_shop_code.py --建列\" \"tools/backfill_scene.py\""
    }
   ],
@@ -21167,24 +21167,24 @@
  },
  {
   "script": "tools/migration_check.py",
-  "改坏": "把 backend/arrival_card.py 的欠债登记从 2 改成 1 —— 等于 arrival_card.py 里**新多出了一处**迁移目录外的 ALTER TABLE。棘轮必须红,而且红的是「多出了」那一条",
+  "改坏": "把 backend/fix_advisor_ref.py 的欠债登记从 2 改成 1 —— 等于 fix_advisor_ref.py 里**新多出了一处**迁移目录外的 ALTER TABLE。棘轮必须红,而且红的是「多出了」那一条",
   "file": [
    {
     "path": "tools/migration_check.py",
-    "old": "    \"backend/arrival_card.py\": 2,",
-    "new": "    \"backend/arrival_card.py\": 1,"
+    "old": "    \"backend/fix_advisor_ref.py\": 2,",
+    "new": "    \"backend/fix_advisor_ref.py\": 1,"
    }
   ],
   "预期红": "迁移目录外面多出了 ALTER TABLE"
  },
  {
   "script": "tools/migration_check.py",
-  "改坏": "把 backend/arrival_card.py 的欠债登记从 2 改成 3 —— 囤着的豁免(实际 2 处、登记 3 处)和真欠着的在绿勾上长得一样,反向检查必须红",
+  "改坏": "把 backend/fix_advisor_ref.py 的欠债登记从 2 改成 3 —— 囤着的豁免(实际 2 处、登记 3 处)和真欠着的在绿勾上长得一样,反向检查必须红",
   "file": [
    {
     "path": "tools/migration_check.py",
-    "old": "    \"backend/arrival_card.py\": 2,",
-    "new": "    \"backend/arrival_card.py\": 3,"
+    "old": "    \"backend/fix_advisor_ref.py\": 2,",
+    "new": "    \"backend/fix_advisor_ref.py\": 3,"
    }
   ],
   "预期红": "有欠债已经还了却没改登记"

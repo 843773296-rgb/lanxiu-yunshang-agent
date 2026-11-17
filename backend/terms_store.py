@@ -26,11 +26,7 @@ CREATE TABLE IF NOT EXISTS terms_accept(
 
 def 建表(c):
     c.executescript(DDL)
-    列 = {r[1] for r in c.execute("PRAGMA table_info(call_audio)")}
-    if 列 and "consent_basis" not in 列:
-        # 这一通录音的同意依据:条款接受 / 默认同意 + 一句人话。**上传那一刻定下来**,
-        # 之后条款再改版也不回头改 —— 录的时候依据是什么,就是什么
-        c.execute("ALTER TABLE call_audio ADD COLUMN consent_basis TEXT")
+    # call_audio.consent_basis 2026-11-17 起写进 asr.建表 的建表语句;老库由 backend/migrations/m0005 补,这里不再 ALTER
 
 
 def 最近接受(c, customer_id):

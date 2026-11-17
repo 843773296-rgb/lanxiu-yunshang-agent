@@ -72,13 +72,7 @@ def 最后接触(c, 同户, 店, 导购, 建档):
 
 def 建表(c):
     c.execute(知会表DDL)
-    # 11-14 前建的表没有 shop_code(首跑合并时建的那张):补列 + 按 shop 回填。幂等
-    if "shop_code" not in [r[1] for r in c.execute("PRAGMA table_info(pool_notice)")]:
-        c.execute("ALTER TABLE pool_notice ADD COLUMN shop_code TEXT")
-        import shop_key as _SK
-        门店 = _SK.门店表(c)
-        for (店,) in c.execute("SELECT DISTINCT shop FROM pool_notice").fetchall():
-            c.execute("UPDATE pool_notice SET shop_code=? WHERE shop IS ?", (_SK.该填的码(店, 门店), 店))
+    # 11-14 前建的表没有 shop_code:补列 + 按 shop 回填 2026-11-17 起归 backend/migrations/m0005(数据修补也归迁移),这里只建表
 
 
 def 已知会日(c, 同户):

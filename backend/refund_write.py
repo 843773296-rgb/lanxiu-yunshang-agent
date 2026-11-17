@@ -52,8 +52,7 @@ def _c():
 
 def 建表(c):
     """refund_trace 补 refund_no 列 + **唯一索引**(同一流水号不许登记到两笔单上)。"""
-    if "refund_no" not in {r[1] for r in c.execute("PRAGMA table_info(refund_trace)")}:
-        c.execute("ALTER TABLE refund_trace ADD COLUMN refund_no TEXT")
+    # refund_no 列:老库由 backend/migrations/m0005 补(2026-11-17 起这里不再 ALTER;重建流水线在 seed 之后立刻跑迁移,索引才建得上)
     c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_refund_no ON refund_trace(refund_no) "
               "WHERE refund_no IS NOT NULL")
     # 退押金的发起和复核(用户 2026-10-16 拍「真的两个人点」):一行一个人一步,

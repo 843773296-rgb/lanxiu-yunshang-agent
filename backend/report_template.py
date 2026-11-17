@@ -239,18 +239,7 @@ def _连(db=None):
 # 30 天是用户 10-23 定的(「试用期一个月吧」;我最初提的 14 天是拍脑袋的)。试点店到期回到已发布的那一版。
 # 判过期按**世界时间**(ops.now)和 trial_at 比 —— trial_at 是整列日期、每日平移跟着挪,两边同一个世界,天数不漂。
 试运行天数 = 30
-# 后加的列(10-23 状态线):建表语句不改 —— 老库里表已经在,CREATE IF NOT EXISTS 不会补列;补列走 ALTER,有就跳过。
-# ⚠️ status 加列时默认「已发布」:加列之前存的版本当时一存就生效,迁移成已发布,生效规则和加列前一样(别丢)。
-#    新存的一版写口里**显式**写「草稿」。
-# 日期列:trial_at / publish_at / withdraw_at(世界时间,整列日期,和 at 一样);
-# 人填的文本:trial_why / publish_why / withdraw_why(和 why 一样是原话);trial_shops 是 JSON 门店标识列表
-后加列 = [
-    ("status", "TEXT NOT NULL DEFAULT '已发布'"),
-    ("trial_shops", "TEXT"),
-    ("trial_at", "TEXT"), ("trial_by", "TEXT"), ("trial_why", "TEXT"),
-    ("publish_at", "TEXT"), ("publish_by", "TEXT"), ("publish_why", "TEXT"),
-    ("withdraw_at", "TEXT"), ("withdraw_by", "TEXT"), ("withdraw_why", "TEXT"),
-]
+# (状态线十一列 2026-11-17 起写进 确保表 的建表语句;老库补列见 backend/migrations/m0005)
 
 
 def _店表(c):
@@ -348,11 +337,13 @@ def 确保表(c):
         why TEXT NOT NULL,                      -- 为什么改(人填)
         by_no TEXT, by_name TEXT,
         at TEXT NOT NULL,                       -- 世界时间
+        -- 2026-11-17 起状态线那十一列写进建表语句(10-23 加的):新库自带;老库由 backend/migrations/m0005 补,这里不再 ALTER
+        status TEXT NOT NULL DEFAULT '已发布',
+        trial_shops TEXT,
+        trial_at TEXT, trial_by TEXT, trial_why TEXT,
+        publish_at TEXT, publish_by TEXT, publish_why TEXT,
+        withdraw_at TEXT, withdraw_by TEXT, withdraw_why TEXT,
         UNIQUE(name, version))""")
-    有 = {r[1] for r in c.execute("PRAGMA table_info(report_template_ver)")}
-    for 列, 型 in 后加列:
-        if 列 not in 有:
-            c.execute(f"ALTER TABLE report_template_ver ADD COLUMN {列} {型}")
     _迁门店标识(c)        # 幂等,平时是空操作;**跟补列同一处,就不会有「迁移还没跑」这个状态**
 
 

@@ -35,21 +35,17 @@ CREATE TABLE IF NOT EXISTS store_report_doc(
   pack TEXT NOT NULL,           -- 保存那一刻冻结的取数包(JSON)—— 数字以它为准
   supersedes TEXT,              -- 确认后再改:新的一版指回被替代的那一版
   created_at TEXT NOT NULL, created_by TEXT NOT NULL,
-  confirmed_at TEXT, confirmed_by TEXT
+  confirmed_at TEXT, confirmed_by TEXT,
+  -- 2026-11-17 起下面五列写进建表语句:新库自带;老库由 backend/migrations/m0005 补,建表函数不再 ALTER
+  trace_id TEXT,                -- 生成这一版的那一轮对话(sdk 的 trace_id,经 MCP env 的 LANXIU_TRACE 传进来)
+  rejected_at TEXT,             -- AI 管理平台打回:什么时候、谁、为什么 —— 打回的那一版不许确认
+  rejected_by TEXT,
+  reject_reason TEXT,
+  template_ver INTEGER          -- 保存那一刻生效的模板版本行号(report_template_ver.id);代码默认(没存过模板)为空
 );
 CREATE INDEX IF NOT EXISTS ix_rptdoc_key ON store_report_doc(shop, kind, period_start, revision);
 """
-# 后加的列(10-10 产出监督):建表语句不改 —— 老库里表已经在,CREATE IF NOT EXISTS 不会补列;
-# 补列走 ALTER,有就跳过。**只写一处**:CI 从零建和本地老库走的是同一段
-后加列 = [
-    ("trace_id", "TEXT"),        # 生成这一版的那一轮对话(sdk 的 trace_id,经 MCP env 的 LANXIU_TRACE 传进来)
-    ("rejected_at", "TEXT"),     # AI 管理平台打回:什么时候、谁、为什么 —— 打回的那一版不许确认
-    ("rejected_by", "TEXT"),
-    ("reject_reason", "TEXT"),
-    # 报告模板(复审第 4 节 C,10-23):保存那一刻生效的模板版本行号(report_template_ver.id)。
-    # 模板全文冻在 pack 的「报告模板」里;这一列只为「哪份报告用的哪一版」能直接查。代码默认(没存过模板)为空
-    ("template_ver", "INTEGER"),
-]
+# (trace_id / rejected_* / template_ver 五列 2026-11-17 起写进上面的建表语句;老库补列见 backend/migrations/m0005)
 
 管理角色 = ("店长", "总部运营")
 正文上限 = 20000
@@ -71,10 +67,7 @@ def 建表(c=None, db=None):
     own = c is None
     c = c or sqlite3.connect(db or DB)
     c.executescript(DDL)
-    有 = {r[1] for r in c.execute("PRAGMA table_info(store_report_doc)")}
-    for 列, 型 in 后加列:
-        if 列 not in 有:
-            c.execute(f"ALTER TABLE store_report_doc ADD COLUMN {列} {型}")
+    # 2026-11-17(W16 第二类):老表补列搬进 backend/migrations/m0005,建表语句直接带全列;这里不再 ALTER
     if own:
         c.commit(); c.close()
 

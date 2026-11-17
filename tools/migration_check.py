@@ -25,9 +25,9 @@ R, G, Y, D = "\033[31m", "\033[32m", "\033[33m", "\033[0m"
 
 # 咬合记录(规格在 tools/bite_specs.json,2026-11-14 --only 3/3 过):改坏的是什么 → 该红的是哪一条
 咬合 = [
-    ("把 backend/arrival_card.py 的欠债登记从 2 改成 1(等于新多出一处迁移目录外的 ALTER TABLE)",
+    ("把 backend/fix_advisor_ref.py 的欠债登记从 2 改成 1(等于新多出一处迁移目录外的 ALTER TABLE)",
      "迁移目录外面多出了 ALTER TABLE"),
-    ("把 backend/arrival_card.py 的欠债登记从 2 改成 3(囤着的豁免)",
+    ("把 backend/fix_advisor_ref.py 的欠债登记从 2 改成 3(囤着的豁免)",
      "有欠债已经还了却没改登记"),
     ("在第 1 条迁移文件末尾加一行注释(做过的迁移被改了,库上记的指纹对不上)",
      "库没做到最新"),
@@ -43,20 +43,12 @@ def 不扫(f):
 # 2026-11-14 实测的存量(文件 → 字面量处数)。**只许少不许多**:收进迁移一处,就把这里减一;减到 0 删掉那一行。
 欠债 = {
     # 2026-11-17(W16 第一类):asr 5 / merge 1 / ops 5 / relabel 2 / seed_rating 2 共 15 处收进 m0004,运行时不再补列 → 从登记里删掉
+    # 2026-11-17(W16 第二类):九个模块建表顺带补列的 13 处收进 m0005,建表语句直接带全列 → 从登记里删掉
     "agent/fingerprint.py": 1,          # 自测里在临时库上改列名,造「库结构变了」的样本 —— 不碰真库
-    "backend/arrival_card.py": 2,
     "backend/fix_advisor_ref.py": 2,
     "backend/fix_product_pattern.py": 1,
-    "backend/opportunity_store.py": 1,
-    "backend/order_contract.py": 2,
-    "backend/ownership_release.py": 1,
-    "backend/refund_write.py": 1,
-    "backend/report_doc.py": 2,
-    "backend/report_template.py": 2,
     "backend/seed.py": 1,
     "backend/seed_repair.py": 3,
-    "backend/terms_store.py": 1,
-    "backend/triage_config.py": 1,
     "fakedata/mkt_sop_seed.py": 1,
     "tools/add_cust_advisor.py": 2,
     "tools/add_shop_code.py": 4,

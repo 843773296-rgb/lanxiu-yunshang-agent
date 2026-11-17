@@ -163,7 +163,10 @@ def 建表(c):
                    uploaded_by TEXT,
                    then_flow TEXT,          -- 11-03 用户拍「聊天里传录音 → 自动走录音跟进」:传的那一刻记下要接着走什么
                    -- then_result:转写完成后发起的结果(运行号 / 为什么没发起)——「没发起」和「还没轮到」在页面上长得一样,必须落库
-                   then_result TEXT)""")
+                   then_result TEXT,
+                   -- consent_basis(原在 terms_store.建表 里 ALTER):这一通录音的同意依据,条款接受 / 默认同意 + 一句人话,
+                   -- **上传那一刻定下来**,之后条款再改版也不回头改
+                   consent_basis TEXT)""")
     # 转写结果
     c.execute("""create table if not exists call_transcript(
                    audio_id  TEXT primary key,

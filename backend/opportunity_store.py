@@ -85,9 +85,7 @@ CREATE TABLE IF NOT EXISTS buy_pref_recall(
 
 def 建表(c):
     c.executescript(DDL)
-    列 = {r[1] for r in c.execute("PRAGMA table_info(scheme)")}
-    if 列 and "opportunity_id" not in 列:
-        c.execute("ALTER TABLE scheme ADD COLUMN opportunity_id TEXT")
+    # scheme.opportunity_id:老库由 backend/migrations/m0005 补(2026-11-17 起这里不再 ALTER;重建流水线在 seed 之后立刻跑迁移)
 
 
 def 从通话建(c, call_id, 客户, 顾问, 诉求, 时间, 下一步=None, 预算=None):

@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS recall_advice(
   source  TEXT NOT NULL,           -- 模型 / 规则(模型没跑通时退回规则模板,**照实标**)
   model   TEXT,
   created TEXT NOT NULL,
+  -- 2026-11-17 起下面三列写进建表语句(10-10 产出监督加的):新库自带;老库由 backend/migrations/m0005 补,建表函数不再 ALTER
+  version INTEGER NOT NULL DEFAULT 1,  -- 第几版(打回重写一次 +1)
+  input   TEXT,                        -- 发给模型的材料(监督要看「它是照什么写的」)
+  trace_id TEXT,                       -- 这一次模型调用的号 —— 记录仪和 A1 上报的「外部trace」
   PRIMARY KEY(opp_id, spu));
 -- 被 AI 管理平台打回的旧版(10-10 产出监督):**挪到这里留着,不删** —— 打回的那一版连同理由
 -- 是最有价值的评测样本(人说「这样写不行」),删了就没了
@@ -43,9 +47,7 @@ CREATE TABLE IF NOT EXISTS recall_advice_log(
   input TEXT, trace_id TEXT,
   rejected_at TEXT NOT NULL, rejected_by TEXT NOT NULL, reject_reason TEXT NOT NULL);
 """
-后加列 = [("version", "INTEGER NOT NULL DEFAULT 1"),   # 第几版(打回重写一次 +1)
-         ("input", "TEXT"),                          # 发给模型的材料(监督要看「它是照什么写的」)
-         ("trace_id", "TEXT")]                       # 这一次模型调用的号 —— 记录仪和 A1 上报的「外部trace」
+# (version / input / trace_id 三列 2026-11-17 起写进上面的建表语句;老库补列见 backend/migrations/m0005)
 
 回捞类 = ("回捞", "偏好回捞", "购买偏好回捞")
 # 两种绑定合成一个来源:电话里说过的(opportunity_recall,quote = 原话)和购买记录推断的
@@ -58,10 +60,7 @@ def 建表(c):
     import opportunity_store as _S
     _S.建表(c)            # buy_pref_recall 在那边建 —— 老库里还没有它时,卡片的 UNION 也不能炸
     c.executescript(DDL)
-    有 = {r[1] for r in c.execute("PRAGMA table_info(recall_advice)")}
-    for 列, 型 in 后加列:
-        if 列 not in 有:
-            c.execute(f"ALTER TABLE recall_advice ADD COLUMN {列} {型}")
+    # 2026-11-17(W16 第二类):老表补列搬进 backend/migrations/m0005,建表语句直接带全列;这里不再 ALTER
 
 
 def _今天():

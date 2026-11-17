@@ -59,8 +59,7 @@ def 确保表(c):
         published_at TEXT, published_by TEXT,
         rollback_of INTEGER,
         snapshot TEXT)                 -- 发布那一刻**完整的**一份配置(草稿只存改了的那几项)""")
-    if "snapshot" not in {r[1] for r in c.execute("PRAGMA table_info(triage_config)")}:
-        c.execute("ALTER TABLE triage_config ADD COLUMN snapshot TEXT")   # 10-19 当天先建过一版没有这列的表
+    # snapshot 列(10-19 当天先建过一版没有它的表):老库由 backend/migrations/m0005 补,2026-11-17 起这里不再 ALTER
     c.execute("""CREATE TABLE IF NOT EXISTS triage_prompt(
         fp TEXT PRIMARY KEY,           -- ops.研判提示词版本 那个 12 位指纹
         task_type TEXT NOT NULL,

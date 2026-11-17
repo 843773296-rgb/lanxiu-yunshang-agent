@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS order_contract(
   no7_ack_by TEXT);                 -- 勾的时候登录的账号(门店当面下单 = 顾问念给顾客听、顾客同意后勾)
 """
 # 10-10 晚加的两列:表在这之前就建过的库(本地 / 已部署),CREATE IF NOT EXISTS 不会补列
-补列 = (("no7_ack_at", "TEXT"), ("no7_ack_by", "TEXT"))
+# (no7_ack_at / no7_ack_by 在上面的建表语句里;老库补列见 backend/migrations/m0005)
 
 全部 = "/contract"
 
@@ -44,10 +44,7 @@ def 下载(order_id):
 
 def 建表(c):
     c.executescript(DDL)
-    有 = {r[1] for r in c.execute("PRAGMA table_info(order_contract)")}
-    for 列, 型 in 补列:
-        if 列 not in 有:
-            c.execute(f"ALTER TABLE order_contract ADD COLUMN {列} {型}")
+    # 2026-11-17(W16 第二类):老表补列搬进 backend/migrations/m0005,建表语句直接带全列;这里不再 ALTER
 
 
 def 拼这一单(c, order_id, 今天, 七天确认=None):
