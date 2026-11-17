@@ -13100,8 +13100,8 @@
   "file": [
    {
     "path": "backend/query_index_check.py",
-    "old": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\",\n            \"ix_ordr_cust_adv\"]   # 2026-10-25:顾问那条范围条件的冗余列(19→6.5 ms,3.1x)",
-    "new": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\"]"
+    "old": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\",\n            \"ix_ordr_cust_adv\",   # 2026-10-25:顾问那条范围条件的冗余列(19→6.5 ms,3.1x)\n            \"ix_appt_cust\", \"ix_fu_cust\"]   # 2026-11-17 W45:客户详情页的预约 / 跟进按客户号(10.5x / 11.8x,副本上量的)",
+    "new": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\",\n            \"ix_appt_cust\", \"ix_fu_cust\"]"
    }
   ],
   "预期红": "登记的索引就是这"
@@ -23348,5 +23348,17 @@
    }
   ],
   "预期红": "公海 · 带缓存的扫描 = 逐户查库"
+ },
+ {
+  "script": "backend/query_index_check.py",
+  "改坏": "把 ix_appt_cust 的 DDL 改成只按 start_ts —— 客户详情页那条按 customer_id 的查询用不上它,索引白占空间,而 DDL 看着还像那回事(10-24 两条白加的索引就是这样混进来的)",
+  "file": [
+   {
+    "path": "backend/query_index.py",
+    "old": "        本体=\"CREATE INDEX ix_appt_cust ON appointment(customer_id, start_ts)\",\n",
+    "new": "        本体=\"CREATE INDEX ix_appt_cust ON appointment(start_ts)\",\n"
+   }
+  ],
+  "预期红": "计划里真的用上它"
  }
 ]

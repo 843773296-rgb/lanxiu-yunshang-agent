@@ -95,6 +95,17 @@ def _一个顾问(c):
     return r[0] if r else None
 
 
+def _一个预约最多的客户(c):
+    """选择性最差的那位(预约最多)—— 和 _一个顾问 同一个理由:只有 1 条预约的客户上快很多证明不了什么。"""
+    r = c.execute("SELECT customer_id FROM appointment GROUP BY customer_id ORDER BY COUNT(*) DESC LIMIT 1").fetchone()
+    return r[0] if r else None
+
+
+def _一个跟进最多的客户(c):
+    r = c.execute("SELECT customer_id FROM followup GROUP BY customer_id ORDER BY COUNT(*) DESC LIMIT 1").fetchone()
+    return r[0] if r else None
+
+
 # ⚠️ **`锚` 是这张表里最容易被忽略的一列。**
 # 它是「我登记的这条查询,现在还在代码里」的凭据 —— 一段**从那个文件里原样抄来**的片段。
 # 没有它的话,这张表就是那条 SQL 的**第二份手抄件**:哪天 tasks.py 把查询改了,
@@ -161,6 +172,31 @@ def _一个顾问(c):
                         _一个顾问(c), _一个顾问(c)),
         实测="19.03 → 8.22 ms(2.3x,真库副本上量的);"
              "拆 UNION 那条路 16.17 ms(1.2x)已否决",
+    ),
+    # ── 2026-11-17(执行手册 W45 零风险那半)—— 照本文件的规矩**量了再加**,在真库副本上各跑 30 次:
+    #    客户详情页一打开就查这一位的全部预约和跟进(server.customer_detail),两张表都是 1 万行上下、按客户号全表扫。
+    #    手册点名的 op_log(target) 也量了:6327 行、0.046 → 0.038 ms(1.2x),**不加** —— 和 10-24 那两条白加的一样,计划变了耗时没变。
+    dict(
+        名="ix_appt_cust",
+        表="appointment",
+        本体="CREATE INDEX ix_appt_cust ON appointment(customer_id, start_ts)",
+        要求="用上",          # 不是覆盖(SELECT * 要回表),但只回这一位客户的那几行;带 start_ts 省掉 ORDER BY 的排序
+        为什么="客户详情页取这位客户的全部预约、按时间倒序:1.4 万行按 customer_id 全表扫。",
+        锚=("backend/server.py", 'FROM appointment WHERE customer_id=? ORDER BY start_ts DESC'),
+        查询="SELECT * FROM appointment WHERE customer_id=? ORDER BY start_ts DESC",
+        取参=lambda c: (_一个预约最多的客户(c),),
+        实测="0.693 → 0.066 ms(10.5x,真库副本上量的;取预约最多的那位客户)",
+    ),
+    dict(
+        名="ix_fu_cust",
+        表="followup",
+        本体="CREATE INDEX ix_fu_cust ON followup(customer_id, ts)",
+        要求="用上",
+        为什么="客户详情页取这位客户的全部跟进、按时间倒序:8611 行按 customer_id 全表扫。",
+        锚=("backend/server.py", 'FROM followup WHERE customer_id=? ORDER BY ts DESC'),
+        查询="SELECT * FROM followup WHERE customer_id=? ORDER BY ts DESC",
+        取参=lambda c: (_一个跟进最多的客户(c),),
+        实测="0.385 → 0.033 ms(11.8x,真库副本上量的;取跟进最多的那位客户)",
     ),
 ]
 
