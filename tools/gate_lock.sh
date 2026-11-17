@@ -96,7 +96,7 @@ if [ "${1:-}" = "--selftest" ] || [ "${1:-}" = "--自测" ]; then
   DEAD=999999
   while kill -0 "$DEAD" 2>/dev/null; do DEAD=$((DEAD + 1)); done
   echo "$DEAD 崩掉的那一轮 2026-01-01 00:00:00" > "$D/owner"
-  OUT="$(LANXIU_LOCK_DIR="$D" LANXIU_LOCK_CAP=5 "$ME" --who 自测3 echo 抢到了 2>&1)"
+  OUT="$(LANXIU_LOCK_DIR="$D" LANXIU_LOCK_CAP=5 LANXIU_LOCK_SLEEP=1 "$ME" --who 自测3 echo 抢到了 2>&1)"
   if printf '%s' "$OUT" | grep -q "抢到了" && printf '%s' "$OUT" | grep -q "陈锁"; then
     say 0 "陈锁(原主进程已不在)被抢走,而且**大声说了出来**"
   else
@@ -113,7 +113,7 @@ if [ "${1:-}" = "--selftest" ] || [ "${1:-}" = "--自测" ]; then
   # 而「一个活着的 pid」自测脚本自己就是,根本不用造。
   ALIVE=$$
   echo "$ALIVE 正在跑的那一轮 2026-01-01 00:00:00" > "$D/owner"
-  LANXIU_LOCK_DIR="$D" LANXIU_LOCK_CAP=1 LANXIU_LOCK_SHOUT=1 "$ME" --who 自测4 echo 不该跑到 >/dev/null 2>&1
+  LANXIU_LOCK_DIR="$D" LANXIU_LOCK_CAP=1 LANXIU_LOCK_SHOUT=1 LANXIU_LOCK_SLEEP=1 "$ME" --who 自测4 echo 不该跑到 >/dev/null 2>&1
   RC=$?
   if [ "$RC" = 3 ] && [ -d "$D" ]; then say 0 "原主还活着:不抢、等到封顶退 3,而且没把别人的锁删掉"
   else say 1 "原主还活着:不抢、等到封顶退 3,而且没把别人的锁删掉" "退出码=$RC 锁还在=$([ -d "$D" ] && echo 是 || echo 否)"; fi
@@ -185,7 +185,7 @@ trap release EXIT INT TERM
 # 墙钟仍然读,但只用来**对比报一行诊断**,不参与判定:
 # > 一个「真的等了很久」和一个「系统时间跳了」,
 # > **在那一个 WAITED 数字上长得一模一样** —— 所以把两个数都印出来。
-SLEEP_SEC=20                 # 每轮睡多久。**WAITED 是按它算的**,改这儿两处一起变
+SLEEP_SEC="${LANXIU_LOCK_SLEEP:-20}"   # 每轮睡多久。**WAITED 是按它算的**。2026-11-17 起可配(W33 ①):自测传 1 秒,省掉两轮 20 秒的干等;正常用默认 20
 START_WALL=$(date +%s)       # 只为诊断,不参与封顶判定
 ROUNDS=0
 SKEW_SAID=0
