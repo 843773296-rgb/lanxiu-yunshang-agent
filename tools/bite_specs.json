@@ -23456,5 +23456,17 @@
    }
   ],
   "预期红": "顾问走 HTTP 导出 → 403 EXPORT_ROLE"
+ },
+ {
+  "script": "tools/dbpath_check.py",
+  "改坏": "给一个没有自己拼路径的模块(backend/mask.py)加一行 DB = os.path.join(dirname(__file__), 'lanxiu.db') —— 新代码又自己拼了",
+  "file": [
+   {
+    "path": "backend/mask.py",
+    "old": "import os as _os\n",
+    "new": "import os as _os\nDB = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), \"lanxiu.db\")\n"
+   }
+  ],
+  "预期红": "自己拼库路径的行比登记的欠债多"
  }
 ]
