@@ -148,7 +148,8 @@ async function 打(方法, 路, 体, 谁) {
   // ── 夹具:自己建一个应用,别动现成的 ──────────────────────────────
   // ⚠️ 拿现成应用来点,会把别人的生产指针切走 ——
   // **攻击测试写脏了不还原,下一轮的结论就不可信,而且先害的是别人那份测试。**
-  const 名 = `发布链页面-${Math.random().toString(16).slice(2, 8)}`;
+  // 名字带「e2e」:tools/clean_e2e_residue.py(端到端跑完自动收尾)只认名字带 e2e 的;11-17 前叫「发布链页面-」,正式项目里堆了 199 个
+  const 名 = `e2e 发布链页面-${Math.random().toString(16).slice(2, 8)}`;
   let [码, app] = await 打("POST", "/applications", { 名字: 名, 流水线: "prompt" });
   ck("建一个自己的应用当夹具 → 201", 码 === 201 && app && app.id, 码);
   if (!app || !app.id) { 结束(); return; }

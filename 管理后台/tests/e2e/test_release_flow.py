@@ -116,7 +116,8 @@ def main():
         sys.exit(1)
 
     # ── 一、建应用 ─────────────────────────────────────────────────
-    名 = f"发布咬合-{uuid.uuid4().hex[:6]}"
+    # 名字带「e2e」:tools/clean_e2e_residue.py 只认名字带 e2e 的(用户 11-13 拍);11-17 前叫「发布咬合-」,正式项目里堆了 212 个
+    名 = f"e2e 发布咬合-{uuid.uuid4().hex[:6]}"
     码, a = 打("POST", f"{P}/applications", {"名字": 名, "流水线": "prompt"})
     ck("建应用 → 201", 码 == 201 and (a or {}).get("id"), 码)
     aid = (a or {}).get("id")
@@ -371,7 +372,21 @@ def main():
     ck("拿这份**没审过**的清单发生产 → 422(生产只认审过的)",
        码 == 422 and (体 or {}).get("code") == "CANNOT_DEPLOY", 码)
 
-    print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}")
+    # ── 八、夹具自己收尾:归档(11-17 加的口)——留着不收,正式项目里一轮一个,堆到 1100 个页面就渲不出来了 ──
+    码, 体 = 打("POST", f"{P}/applications/{aid}/archive", {})
+    ck("归档不写理由 → 422", 码 == 422, 码)
+    码, 体 = 打("POST", f"{P}/applications/{aid}/archive", {"理由": "e2e 夹具收尾"}, 谁="U003")
+    ck("viewer 归档 → 403", 码 == 403, 码)
+    码, 体 = 打("POST", f"{P}/applications/{aid}/archive", {"理由": "e2e 夹具收尾"})
+    ck("归档夹具应用 → 200(行不删,清单 / 运行照样能打开)", 码 == 200 and (体 or {}).get("已归档") is True, (码, 体))
+    码, 体 = 打("GET", f"{P}/applications")
+    ck("归档后不在列表里", 码 == 200 and aid not in {a["id"] for a in (体 or {}).get("应用", [])}, 码)
+    码, 体 = 打("GET", f"{P}/releases/{rid}")
+    ck("归档后出过的清单照样能打开", 码 == 200 and (体 or {}).get("id") == rid, 码)
+    码, 体 = 打("POST", f"{P}/applications/{aid}/archive", {"理由": "再点一次"})
+    ck("已归档再点一次 → 200、什么都不改、照实说", 码 == 200 and "早就归档" in ((体 or {}).get("note") or ""), (码, 体))
+
+    print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}(夹具已清)")
     if 挂:
         for x in 挂:
             print("   挂:", x)

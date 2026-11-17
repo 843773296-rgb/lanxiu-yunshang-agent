@@ -477,6 +477,11 @@ test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 mak
 	@echo ""
 	@$(MAKE) --no-print-directory page-smoke
 	@echo ""
+# 2026-11-17 自动收尾(用户 11-13 拍「现在就清,并加自动收尾」):端到端每跑一轮在演示项目里留下几个名字带 e2e 的夹具
+#   (应用 / 工作流 / 密钥),堆到 1100 个应用那天「应用与发布」页渲染超时、页面冒烟连红两页。只动名字带 e2e 的;只报不拦
+	@echo "▸ 收尾:归档这一轮名字带 e2e 的夹具(只动带 e2e 的;失败只报不拦)"
+	@AIMC_PROJECT=project_demo_a ./.venv/bin/python tools/clean_e2e_residue.py --执行 2>&1 | tail -3 || true
+	@echo ""
 	@echo "⚠️ **这一轮没跑的**(CI 里跑不了,不是忘了):"
 	@echo "   · test_knowledge_flow.py / test_knowledge_write_flow.py ——"
 	@echo "     它们有一条**会真调 Claude 精排**(月租额度),CI 里没凭据"

@@ -68,23 +68,30 @@ def 现状():
                      and k.revoked_at is null and k.archived_at is null order by k.created_at""")
     流 = 查(f"""select id, name from workflows where project_id='{项目}' and name ilike '%e2e%'
                and archived_at is null order by created_at""")
+    # 11-17 加:不挂工作流的 e2e 夹具应用(发布流程 / 发布链页面两份测试每轮各建一个)—— 原来没有归档口,正式项目里堆到 1100 个,
+    # 「应用与发布」页渲染超时、页面冒烟连红两页。走 POST /applications/{id}/archive(只收不挂工作流的;挂着的归工作流那个口)。
+    # `--连旧名` 把 11-17 改名之前造的两种旧名(发布咬合-xxxxxx / 发布链页面-xxxxxx)也算进来 —— 只这两个前缀、后面六位十六进制,别的名字不碰
+    旧名 = " or name ~ '^(发布咬合|发布链页面)-[0-9a-f]{6}$'" if "--连旧名" in sys.argv else ""
+    应 = 查(f"""select id, name from applications where project_id='{项目}' and workflow_id is null
+               and archived_at is null and (name ilike '%e2e%'{旧名}) order by created_at""")
     别钥 = 查(f"""select count(*) from access_keys k join applications a on a.project_id=k.project_id and a.id=k.application_id
                  join workflows w on w.project_id=a.project_id and w.id=a.workflow_id
                 where k.project_id='{项目}' and w.name ilike '%e2e%' and w.archived_at is null
                   and k.name not ilike '%e2e%' and k.revoked_at is null and k.archived_at is null""")[0][0]
-    return 钥, 流, int(别钥)
+    return 钥, 流, int(别钥), 应
 
 
 def main():
-    钥, 流, 别钥 = 现状()
-    print(f"项目 {项目}:没吊销的 e2e 密钥 {len(钥)} 把 · 没归档的 e2e 工作流 {len(流)} 条")
+    钥, 流, 别钥, 应 = 现状()
+    print(f"项目 {项目}:没吊销的 e2e 密钥 {len(钥)} 把 · 没归档的 e2e 工作流 {len(流)} 条 · 没归档的 e2e 夹具应用 {len(应)} 个"
+          + ("(含 11-17 前的两种旧名)" if "--连旧名" in sys.argv else "(旧名要加 --连旧名)"))
     print(f"  不动:挂在 e2e 工作流上、名字不带 e2e 的没吊销密钥 {别钥} 把(挂着它的工作流归档会被拒)")
     if "--执行" not in sys.argv:
         print("(只看没动。真做加 --执行,先拿锁)")
         return 0
     os.makedirs(os.path.expanduser("~/lanxiu-backups"), exist_ok=True)
     存 = os.path.expanduser(f"~/lanxiu-backups/e2e残留清理-{datetime.datetime.now():%m%d%H%M}.json")
-    json.dump({"密钥": 钥, "工作流": 流}, open(存, "w"), ensure_ascii=False, indent=1)
+    json.dump({"密钥": 钥, "工作流": 流, "应用": 应}, open(存, "w"), ensure_ascii=False, indent=1)
     print(f"清单已存 {存}")
     吊, 吊错 = 0, []
     for kid, _ in 钥:
@@ -100,15 +107,25 @@ def main():
             归 += 1
         else:
             拒.setdefault(f"{c} {(b or {}).get('code')}", []).append(wid)
-    钥2, 流2, _ = 现状()
-    print(f"吊销 {吊} 把(失败 {len(吊错)})· 归档 {归} 条 · 被拒 {sum(len(v) for v in 拒.values())} 条")
+    归应, 拒应 = 0, {}
+    for aid, _ in 应:
+        c, b = 打(P + f"/applications/{aid}/archive", {"理由": 理由})
+        if c == 200:
+            归应 += 1
+        else:
+            拒应.setdefault(f"{c} {(b or {}).get('code')}", []).append(aid)
+    钥2, 流2, _, 应2 = 现状()
+    print(f"吊销 {吊} 把(失败 {len(吊错)})· 归档工作流 {归} 条(被拒 {sum(len(v) for v in 拒.values())})"
+          f"· 归档应用 {归应} 个(被拒 {sum(len(v) for v in 拒应.values())})")
     for k, v in 拒.items():
-        print(f"  被拒 {k}:{len(v)} 条(例 {v[0]})")
+        print(f"  工作流被拒 {k}:{len(v)} 条(例 {v[0]})")
+    for k, v in 拒应.items():
+        print(f"  应用被拒 {k}:{len(v)} 个(例 {v[0]})")
     for x in 吊错[:5]:
         print(f"  吊销失败 {x}")
-    ok = len(钥2) == len(钥) - 吊 and len(流2) == len(流) - 归
+    ok = len(钥2) == len(钥) - 吊 and len(流2) == len(流) - 归 and len(应2) == len(应) - 归应
     print(f"核数:剩 e2e 密钥 {len(钥2)}(应 {len(钥) - 吊})· 剩 e2e 工作流 {len(流2)}(应 {len(流) - 归})"
-          + (" ✅ 对得上" if ok else " ❌ 对不上"))
+          f"· 剩 e2e 夹具应用 {len(应2)}(应 {len(应) - 归应})" + (" ✅ 对得上" if ok else " ❌ 对不上"))
     return 0 if ok and not 吊错 else 1
 
 

@@ -212,6 +212,44 @@ def 应用详情(project_id: str, aid: str,
     }
 
 
+@router.post(前缀 + "/applications/{aid}/archive")
+async def 归档应用(project_id: str, aid: str, request: Request, me: 身份 = Depends(要权限("生产审核/发布/回滚"))):
+    """归档一个**不挂工作流**的应用,行不删(出过的清单、跑过的运行、调用记录都还指着它)。
+
+    2026-11-17 加:端到端(发布流程 / 发布链页面)每跑一轮各建一个夹具应用,没有归档口就只能留着 —— 正式项目里
+    堆到 1100 个,「应用与发布」页渲染超时,页面冒烟连红两页。挂着工作流的应用跟工作流一起归档(workflows_api.归档工作流),
+    这里只收**没有 workflow_id** 的;挂着的请走工作流那个口,两处规则不抄两份。
+
+    一道闸,不过就 409、什么都不改:还有**没吊销的访问密钥**绑在它上面(外面的系统还能调)。
+    环境指针不拦:归档的意思正是「这个应用不再给用户跑」,指针留在行上只当历史。要写理由(进审计)。已归档再点:什么都不改,照实说。"""
+    体 = await request.json() if await request.body() else {}
+    理由 = (体.get("理由") or "").strip()
+    if len(理由) < 2:
+        raise _错(422, "VALIDATION", "要写归档理由", "比如「e2e 测试残留」「应用已停用」", field_errors={"理由": "必填"})
+    with 事务() as c:
+        a = c.execute(text("""select id, name, workflow_id, archived_at from applications
+                               where project_id=:p and id=:i for update"""),
+                      {"p": project_id, "i": aid}).mappings().first()
+        if not a:
+            raise _错(404, "NOT_FOUND", f"没有应用 {aid}", "回列表重新进入")
+        if a["archived_at"]:
+            return {"id": aid, "已归档": True, "note": "早就归档了,这次什么都没改"}
+        if a["workflow_id"]:
+            raise _错(409, "APPLICATION_HAS_WORKFLOW", "这个应用挂在一条工作流上,要连工作流一起归档",
+                      f"走 POST /workflows/{a['workflow_id']}/archive(它会连带归档这个应用)")
+        钥 = c.execute(text("""select count(*) from access_keys where project_id=:p and application_id=:i
+                                and revoked_at is null and archived_at is null
+                                and (expires_at is null or expires_at > now())"""),
+                       {"p": project_id, "i": aid}).scalar()
+        if 钥:
+            raise _错(409, "APPLICATION_HAS_LIVE_KEYS", f"还有 {钥} 把访问密钥没吊销,外面的系统还能调它",
+                      "先在「访问接口」里把这些密钥吊销(要写理由),再来归档")
+        c.execute(text("""update applications set archived_at=now(), updated_at=now(), revision=revision+1
+                           where project_id=:p and id=:i"""), {"p": project_id, "i": aid})
+        _审计(c, me, "application.archive", {"application_id": aid, "name": a["name"]}, reason=理由)
+    return {"id": aid, "已归档": True, "note": "不在列表里了;出过的清单、跑过的运行、调用记录照样能打开"}
+
+
 @router.get(前缀 + "/applications/{aid}/releases")
 def 发布清单历史(project_id: str, aid: str,
            me: 身份 = Depends(要权限("查看有权配置"))):
