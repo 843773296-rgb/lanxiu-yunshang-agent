@@ -5782,11 +5782,11 @@
  },
  {
   "script": "agent/ops_eval_judgetest.py",
-  "改坏": "交回给人去掉「人做主语去办 / 不是我能」两个结构",
+  "改坏": "交回给人去掉「人做主语去办 / 不是我能 / 由别人执行」三个结构",
   "file": [
    {
     "path": "agent/ops_eval.py",
-    "old": "                if _re.search(人办, t[头:尾]) or _re.search(我不, t[头:尾]):",
+    "old": "                if _re.search(人办, t[头:尾]) or _re.search(我不, t[头:尾]) or _re.search(由人, t[头:尾]):",
     "new": "                if False:"
    }
   ],
