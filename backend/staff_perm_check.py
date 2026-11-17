@@ -70,7 +70,9 @@ def main():
     前 = q(员工列)
     r1 = server.save_staff_perm(dict(no=空顾问["no"], role="店长"), 店长)
     r2 = server.save_staff_perm(dict(no=店长["no"], role="总部运营", shop=""), 店长)
-    ck("① 店长改不了别人、也给自己提不了权", r1.get("code") == "WRONG_ROLE" and r2.get("code") == "WRONG_ROLE"
+    # 11-18:用户 11-17 20:3x 拍「店长只能停用本店顾问」后,店长不再是一进门就 WRONG_ROLE ——
+    # 改别人的角色回 MANAGER_ONLY_OFF(只能停用),改自己回 SELF_EDIT。拒绝照旧、员工表一个字没动,只是理由更具体
+    ck("① 店长改不了别人、也给自己提不了权", r1.get("code") == "MANAGER_ONLY_OFF" and r2.get("code") == "SELF_EDIT"
        and q(员工列) == 前, 2, json.dumps([r1.get("code"), r2.get("code")]))
     r = server.save_staff_perm(dict(no=总部["no"], status="停用"), 总部)
     ck("① 总部运营改不了自己", r.get("code") == "SELF_EDIT" and q(员工列) == 前, 1, r.get("code"))
