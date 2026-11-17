@@ -40,7 +40,9 @@ from ops_eval import must_say, 交回给人, all_of, must_not_promise, 不许报
 #    那时隔离就失效了,**而门禁要等到跑评测那天才红**。
 SEALED = [
 dict(id="G09", role="task", kind="负向",
-     me=dict(no="60000001", name="张静静", role="店长", shop="SH001 静安旗舰店"),
+     # 11-18 身份换成徐汇店长(用户拍):C21010 / C10005 都在 SH002,原来用静安店长问,助手被范围挡住,
+     # 合并方向这个考点一次都没考到。**不是看了结果回头调** —— 是题面身份和考点对不上(case_identity_scope_check 查出),判据一字未动。
+     me=dict(no="60000004", name="周恒东", role="店长", shop="SH002 徐汇店"),
      q="C21010 这条是新档案吧?他名下有几单?",
      grade=must_say("已并入", "并入", "C10005", "同一个人", "关联",
                     why="**合并方向不是单向的。** G01 那道是 C10004 → C21008"

@@ -23379,8 +23379,8 @@
   "file": [
    {
     "path": "tools/case_identity_scope_check.py",
-    "old": "    (\"ops_sealed.py\", \"G09\"),\n",
-    "new": "    (\"ops_sealed.py\", \"G09\"), (\"ops_eval.py\", \"L01\"),\n"
+    "old": "身份待定欠债 = set()",
+    "new": "身份待定欠债 = {(\"ops_eval.py\", \"L01\")}"
    }
   ],
   "预期红": "已经看得见的,从身份欠债表里删掉了"
