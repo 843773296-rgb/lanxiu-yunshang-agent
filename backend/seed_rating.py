@@ -25,7 +25,7 @@
 它只是让两个页面显示不同的东西。
 """
 from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
-import os, sqlite3, sys
+import os, re, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
@@ -121,7 +121,14 @@ def _建(c):
     # 写 rating_write_check 那条「老表补列」时当场撞到的。
     表, 索引 = DDL.split("\nCREATE INDEX", 1)
     c.executescript(表)
-    _补列(c)
+    # 2026-11-17(W16 第一类):老表补列搬进了 backend/migrations/m0004,这里不再 ALTER。
+    # 索引引用的列老表上可能还没有(迁移还没跑)—— 那就先不建索引、说一句;下一次建表(迁移之后)会补上。
+    # 新建的表 DDL 自带全部列,索引直接建。
+    有 = {r[1] for r in c.execute("PRAGMA table_info(rating)")}
+    要 = set(re.findall(r"\((\w+)", 索引)) | set(re.findall(r",\s*(\w+)\s*\)", 索引))
+    if 要 - 有:
+        print(f"  ⚠ rating 老表还缺 {sorted(要 - 有)},索引先不建 —— 跑 python3 backend/migrate.py 之后再建表一次")
+        return
     c.executescript("CREATE INDEX" + 索引)
 
 
@@ -129,13 +136,9 @@ def _建(c):
 # 新列只会出现在从零重建的库里,而本地库和 CI 库从此长得不一样(eb3af41 那次就是反过来栽的)。
 # 所以已有的表要逐列补。**列清单从 DDL 里现取**,不另抄一份 —— 抄一份就会有一天漏一列。
 def _补列(c):
-    import re
-    有 = {r[1] for r in c.execute("PRAGMA table_info(rating)")}
-    体 = re.search(r"CREATE TABLE IF NOT EXISTS rating\((.*?)\);", re.sub(r"--[^\n]*", "", DDL), re.S).group(1)
-    for 段 in 体.split(","):
-        字 = 段.split()
-        if len(字) >= 2 and 字[0] not in 有:
-            c.execute(f"ALTER TABLE rating ADD COLUMN {' '.join(字)}")
+    """**空壳**(2026-11-17,W16 第一类):老表补列搬进了 backend/migrations/m0004(它从本文件的 DDL 现读列清单);
+    这里什么都不做。留着是因为第 1 条迁移(m0001)原样调用它,做过的迁移不许改。"""
+    return None
 
 
 def main():

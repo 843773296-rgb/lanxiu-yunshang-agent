@@ -28,11 +28,13 @@ if HERE not in sys.path:
 状态们 = ("待审核", "已采用", "已驳回", "已并入")
 
 
+改判列 = ("relabel_review", "relabel_by_no", "relabel_reviewer", "relabel_reviewed_at", "relabel_note")
+
+
 def 确保列(c):
-    有 = {r[1] for r in c.execute("PRAGMA table_info(triage)")}
-    for col in ("relabel_review", "relabel_by_no", "relabel_reviewer", "relabel_reviewed_at", "relabel_note"):
-        if col not in 有:
-            c.execute(f"ALTER TABLE triage ADD COLUMN {col} TEXT")
+    """**空壳**(2026-11-17,W16 第一类):这五列的补列搬进了 backend/migrations/m0004;这里什么都不做。
+    留着是因为第 1 条迁移(m0001)原样调用它。写口用 migrate.没做到(c, "triage", 改判列) 判「列到了没」。"""
+    return None
 
 
 def _连(db=None):

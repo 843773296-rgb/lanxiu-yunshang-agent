@@ -51,6 +51,21 @@ def _指纹(路径):
     return hashlib.sha256(open(路径, "rb").read()).hexdigest()[:16]
 
 
+def 缺列(c, 表, 列们):
+    """→ 这张表上还没有的列(按给的顺序)。给写口用:**缺列就明说「还没做到第几条迁移」**,不在运行时偷偷 ALTER
+    (2026-11-17,第 4 条迁移之后运行时没有任何路径会补列;照 delivery_notice_write 的先例)。表不在也算全缺。"""
+    有 = {r[1] for r in c.execute(f"PRAGMA table_info({表})")}
+    return [x for x in 列们 if x not in 有]
+
+
+def 没做到(c, 表, 列们, 第几条=4):
+    """→ None(列都在)或一句能照着做的话。写口拿它直接回 dict(ok=False, code="NO_COLUMN", reason=...)。"""
+    缺 = 缺列(c, 表, 列们)
+    if not 缺:
+        return None
+    return f"这个库还没做到第 {第几条} 条迁移({表} 缺 {' / '.join(缺)})—— 跑 python3 backend/migrate.py"
+
+
 def 迁移们(目录=目录):
     """[(编号, 名字, 路径, 指纹)],按编号排。跳号 / 重号直接抛 —— 那不是能「先跑着」的状态。"""
     有 = []

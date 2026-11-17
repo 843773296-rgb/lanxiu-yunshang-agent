@@ -155,7 +155,15 @@ def 建表(c):
                    path      TEXT not null,
                    seconds   REAL,
                    source    TEXT not null, -- 真实录音 / 合成(测试用)
-                   created   TEXT not null)""")
+                   created   TEXT not null,
+                   -- 2026-11-17(W16 第一类)起下面六列写进建表语句:新库自带;老库由 backend/migrations/m0004 补,运行时不再 ALTER
+                   channel   TEXT,          -- 沟通方式:电话 / 上门 / 到店(业务 D7)
+                   status    TEXT,          -- 排队 / 转写中 / 完成 / 失败;NULL = 不经过流水线(造的逐字稿)
+                   fail_reason TEXT,
+                   uploaded_by TEXT,
+                   then_flow TEXT,          -- 11-03 用户拍「聊天里传录音 → 自动走录音跟进」:传的那一刻记下要接着走什么
+                   -- then_result:转写完成后发起的结果(运行号 / 为什么没发起)——「没发起」和「还没轮到」在页面上长得一样,必须落库
+                   then_result TEXT)""")
     # 转写结果
     c.execute("""create table if not exists call_transcript(
                    audio_id  TEXT primary key,
@@ -167,39 +175,25 @@ def 建表(c):
                    trad      TEXT,          -- 转写结果里的繁体字(空=全简体)
                    created   TEXT not null,
                    edited_by TEXT,          -- 人工校对过就记下是谁
-                   edited_at TEXT)""")
-    _补列(c)
-
-
-def _补列(c):
-    """10-03 录音接进业务流程时加的列。老库没有就补(ALTER 只加列,不动已有数据)。"""
-    有 = {r[1] for r in c.execute("PRAGMA table_info(call_audio)")}
-    for 列, 型 in (("channel", "TEXT"),        # 沟通方式:电话 / 上门 / 到店(业务 D7)
-                   ("status", "TEXT"),         # 排队 / 转写中 / 完成 / 失败;NULL = 不经过流水线(造的逐字稿)
-                   ("fail_reason", "TEXT"),
-                   ("uploaded_by", "TEXT"),
-                   # 11-03 用户拍「聊天里传录音 → 自动走录音跟进」:传的那一刻记下要接着走什么,
-                   # 转写完成后由转写工人发起;结果(运行号 / 为什么没发起)落 then_result ——
-                   # 「没发起」和「还没轮到」在页面上长得一样,所以必须落库
-                   ("then_flow", "TEXT"),
-                   ("then_result", "TEXT")):
-        if 列 not in 有:
-            c.execute(f"ALTER TABLE call_audio ADD COLUMN {列} {型}")
-    有 = {r[1] for r in c.execute("PRAGMA table_info(call_transcript)")}
+                   edited_at TEXT,
+                   -- 2026-11-17 起写进建表语句(老库由 m0004 补):raw_text 纠错之前 whisper 吐的原样;fixes 改了哪几处(JSON)——
+                   -- 改过的稿和原稿长得一模一样,不留原稿「客户真说的是被子、被改成了褙子」永远查不回来
+                   raw_text  TEXT,
+                   fixes     TEXT,
+                   -- speaker_src:说话人是怎么分出来的:声道 / 模型 / 未分 / 文本自带 ——「声道分的」和「模型猜的」在逐字稿里长得一模一样
+                   speaker_src TEXT)""")
+    # 人工核过的「原写法 → 行业词」对照(原来在 _补列 里顺带建;建表归建表函数,不归补列)
     c.execute("""CREATE TABLE IF NOT EXISTS asr_verified_pair(
                    src TEXT NOT NULL, dst TEXT NOT NULL,      -- 原写法 → 行业词(等长)
                    verified_by TEXT NOT NULL, verified_at TEXT NOT NULL,
                    basis TEXT,                                -- 依据:哪通录音里核过的 / 谁说的
                    PRIMARY KEY(src, dst))""")
-    for 列 in ("raw_text", "fixes"):
-        # raw_text:纠错之前 whisper 吐的原样;fixes:改了哪几处(JSON)。**改过的稿和原稿长得一模一样**,
-        # 不留原稿的话,「客户真说的是被子、被改成了褙子」这种事永远查不回来
-        if 列 not in 有:
-            c.execute(f"ALTER TABLE call_transcript ADD COLUMN {列} TEXT")
-    if "speaker_src" not in 有:
-        # 说话人是怎么分出来的:声道 / 模型 / 未分 / 文本自带(造的逐字稿)。
-        # **「声道分的」和「模型猜的」在逐字稿里长得一模一样** —— 都是「客户:……」
-        c.execute("ALTER TABLE call_transcript ADD COLUMN speaker_src TEXT")
+
+
+def _补列(c):
+    """**空壳**(2026-11-17,W16 第一类):call_audio 六列、call_transcript 三列的补列搬进了 backend/migrations/m0004,
+    建表语句也直接带上了;这里什么都不做。留着是因为第 1 条迁移(m0001)原样调用它,做过的迁移不许改。"""
+    return None
 
 
 def _世界今天():

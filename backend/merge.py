@@ -43,14 +43,18 @@ def _有列(c):
 
 
 def _确保列(c):
-    if "merged_into" not in {r[1] for r in c.execute("PRAGMA table_info(customer)")}:
-        c.execute("ALTER TABLE customer ADD COLUMN merged_into TEXT")
+    """**空壳**(2026-11-17,W16 第一类):merged_into 的补列搬进了 backend/migrations/m0004;这里什么都不做。
+    留着是因为第 1 条迁移(m0001)原样调用它,而做过的迁移文件不许改。运行时不再有任何路径 ALTER customer。"""
+    return None
 
 
 def 确保列():
-    """老库补 merged_into 列(新建的库 seed 里就有)。读路径在 SELECT 这一列之前调一次。"""
+    """读路径在 SELECT merged_into 之前调一次:列不在就**明说**(不再偷偷补)—— 新库 seed 里就有,老库由迁移补。"""
+    import migrate
     with _c() as c:
-        _确保列(c)
+        话 = migrate.没做到(c, "customer", ("merged_into",))
+    if 话:
+        raise RuntimeError(话)
 
 
 def 关联档摘要(主, c=None):

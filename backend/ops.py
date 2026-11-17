@@ -753,8 +753,8 @@ def 差评研判提示词(ref):
 
 
 def _确保等顾客列(c):
-    if "waiting" not in {r[1] for r in c.execute("PRAGMA table_info(task)")}:
-        c.execute("ALTER TABLE task ADD COLUMN waiting TEXT")
+    """**空壳**(2026-11-17,W16 第一类):task.waiting 的补列搬进 backend/migrations/m0004;留着给 m0001 原样调用。"""
+    return None
 
 
 def 标等顾客(task_id, 等什么, me, 取消=False, 来源="页面"):
@@ -793,7 +793,11 @@ def 标等顾客(task_id, 等什么, me, 取消=False, 来源="页面"):
         return dict(ok=False, code="NO_REASON", reason="要写清在等顾客什么(如「等顾客寄回衣服」)—— 没理由的不收")
     值 = None if 取消 else f"{话[:60]} · {谁}"
     with _c() as c:
-        _确保等顾客列(c)
+        import migrate as _mg
+        没 = _mg.没做到(c, "task", ("waiting",))
+        if 没:
+            _记(False, "NO_COLUMN", 没)
+            return dict(ok=False, code="NO_COLUMN", reason=没)
         c.execute("UPDATE task SET waiting=? WHERE id=?", (值, task_id))
     _记(True, "UNWAIT" if 取消 else "WAIT", "取消在等顾客" if 取消 else f"在等顾客:{话[:60]}")
     return dict(ok=True, code="UNWAIT" if 取消 else "WAIT", 在等顾客=值,
@@ -960,7 +964,10 @@ def save_triage(task_id, breakpoint, case_id, text, trajectory,
     p = parse_draft(text)
     conf = confidence(trajectory, p)
     with _c() as c:
-        _确保后加的列(c)            # 每次都调(幂等,一次 PRAGMA)—— 见那个函数的注释
+        import migrate as _mg
+        没 = _mg.没做到(c, "triage", 后加的列)      # 2026-11-17:不再运行时补列,缺了就明说(研判落库是流水线调的,抛出来比静默写坏好)
+        if 没:
+            raise RuntimeError(没)
         cur = c.execute(
             "INSERT INTO triage(task_id,breakpoint,case_id,created,ai_root_cause,ai_action,"
             "ai_evidence,ai_confidence,ai_text,tool_calls,cost,latency_ms,model,"
@@ -1131,10 +1138,10 @@ def _确保后加的列(c):
     只有某一条路径会写:**每一条研判都该有它**,条件调的话没传 prompt_ver 的
     那些写入会撞「no such column」。
     """
-    有 = {r[1] for r in c.execute("PRAGMA table_info(triage)")}
-    for col in ("receipt", "receipt_kind", "prompt_ver", "delivery_check", "withheld_draft"):
-        if col not in 有:
-            c.execute(f"ALTER TABLE triage ADD COLUMN {col} TEXT")
+    return None     # 2026-11-17(W16 第一类):**空壳**,五列的补列搬进 backend/migrations/m0004;留着给 m0001 原样调用
+
+
+后加的列 = ("receipt", "receipt_kind", "prompt_ver", "delivery_check", "withheld_draft")
 
 
 def 回执行不行(c, 任务, 单号):
@@ -1255,7 +1262,11 @@ def 办结(triage_id, 单号, me, 来源="页面"):
         _记(False, "ALREADY", 话)
         return dict(ok=False, code="ALREADY", reason=话)
     with _c() as c:
-        _确保后加的列(c)    # 老库没有这几列(新建的库 seed 里就有);补列不改任何已有数据
+        import migrate as _mg
+        没 = _mg.没做到(c, "triage", 后加的列)      # 2026-11-17:不再运行时补列,缺了就明说
+        if 没:
+            _记(False, "NO_COLUMN", 没)
+            return dict(ok=False, code="NO_COLUMN", reason=没)
         行, 类, 话 = 回执行不行(c, 任务, 单号)
         if not 行:
             _记(False, "NO_RECEIPT", 话)
@@ -1363,8 +1374,10 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
                 else:
                     # ⚠️ **不再当场写 truth**(用户 2026-10-19 拍「改判先审核」):一个人的判断不直接变成标准答案。
                     # 记成待审核的候选 → 总部运营审(不能是改判人自己)→ 换考卷时再并入(`relabel.py`)
-                    import relabel as _rl
-                    _rl.确保列(c)
+                    import relabel as _rl, migrate as _mg
+                    没 = _mg.没做到(c, "triage", _rl.改判列)      # 2026-11-17:不再运行时补列,缺了就明说
+                    if 没:
+                        raise RuntimeError(没)
                     c.execute("UPDATE triage SET relabel_review='待审核', relabel_by_no=? WHERE id=?",
                               (me.get("no"), triage_id))
                     flowed = True          # 进了候选(不是进了评测集)—— 返回里叫「进候选待审核」
@@ -1435,10 +1448,8 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
 
 
 def _确保重开列(c):
-    有 = {r[1] for r in c.execute("PRAGMA table_info(triage)")}
-    for col, ty in (("reopen_count", "INT DEFAULT 0"), ("reopen_note", "TEXT")):
-        if col not in 有:
-            c.execute(f"ALTER TABLE triage ADD COLUMN {col} {ty}")
+    """**空壳**(2026-11-17,W16 第一类):reopen_count / reopen_note 的补列搬进 backend/migrations/m0004;留着给 m0001 原样调用。"""
+    return None
 
 
 def _能重开吗(task_type, me):
@@ -1484,9 +1495,10 @@ def 重开(triage_id, me, 原因, 来源="页面"):
                                 "relabel_review")}
     撤下 = False
     with _c() as c:
-        _确保重开列(c)
-        import relabel as _rl
-        _rl.确保列(c)
+        import relabel as _rl, migrate as _mg
+        没 = _mg.没做到(c, "triage", ("reopen_count", "reopen_note") + _rl.改判列)   # 2026-11-17:不再运行时补列,缺了就明说
+        if 没:
+            return dict(ok=False, code="NO_COLUMN", reason=没)
         改 = c.execute("UPDATE triage SET status='待复核', human_root_cause=NULL, human_action=NULL, human_note=NULL, "
                        "handler=NULL, handled_at=NULL, reopen_count=COALESCE(reopen_count,0)+1, reopen_note=?, "
                        "relabel_review=CASE WHEN relabel_review IN ('待审核','已采用','已并入') THEN '已撤回' "

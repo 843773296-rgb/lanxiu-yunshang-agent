@@ -43,7 +43,8 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
      "不认识的标签(「面料手感好」挂不上四个分项)→ 整份退回,不静默丢掉"),
     ("在 seed_rating 的建表里加一句 ALTER,给 rating 加个 status 列",
      "rating 表没有 status 列"),
-    ("把 seed_rating._建() 里的补列去掉", "已有的老表补完列,和从零建的列一致"),
+    # 2026-11-17 起老表补列归第 4 条迁移(backend/migrations/m0004,它从 seed_rating.DDL 现读列清单);攻击点跟着搬过去
+    ("把第 4 条迁移里「rating 的列从 DDL 现读」那一支关掉(老表再也补不齐)", "已有的老表补完列,和从零建的列一致"),
     ("把 worldclock.已发生的时间列 里 rating 那三行去掉",
      "四列时间都登记进了 worldclock.已发生的时间列"),
     # ── 2026-10-14 退款金额 + 超线上升一级 ─────────────────────────────
@@ -126,7 +127,11 @@ def run(T):
     try:
         _新 = sqlite3.connect(":memory:"); seed_rating.建表(_新)
         _老 = sqlite3.connect(":memory:"); _老.execute("CREATE TABLE rating(pkg_id TEXT PRIMARY KEY, star INTEGER)")
-        seed_rating.建表(_老); seed_rating.建表(_老)      # 跑两遍:补过的不许再补
+        # 2026-11-17(W16 第一类):老表补列不再在建表里做,归 backend/migrations/m0004 —— 所以老表走一遍迁移补齐,再建表(建索引)。
+        # 跑两遍:补过的不许再补、建过的不许再建
+        import migrate as _mg
+        _mg.补齐(_老, 说=lambda *a, **k: None); seed_rating.建表(_老)
+        _mg.补齐(_老, 说=lambda *a, **k: None); seed_rating.建表(_老)
         _新列 = [r[1] for r in _新.execute("PRAGMA table_info(rating)")]
         _老列 = [r[1] for r in _老.execute("PRAGMA table_info(rating)")]
         _对, _说 = sorted(_老列) == sorted(_新列), f"老表 {len(_老列)} 列、新表 {len(_新列)} 列,差 {sorted(set(_新列) ^ set(_老列))}"
