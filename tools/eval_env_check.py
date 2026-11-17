@@ -160,6 +160,8 @@ def _夜跑推送场景(带别人的提交):
     g = lambda *a, cwd=克: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd,
                                           capture_output=True, text=True)
     g("init", "-q", "--bare", "-b", "main", 远, cwd=根); g("clone", "-q", 远, 克, cwd=根)
+    # 被测的夜跑代码自己 commit 时不带 -c user.*;CI 跑手没有全局 git 身份 → 「set the identity」(11-17 CI 红)。写成仓库级配置,被测代码继承
+    g("config", "user.name", "t"); g("config", "user.email", "t@t")
     os.makedirs(os.path.join(克, "tools")); os.makedirs(os.path.join(克, "agent", "nightly"))
     open(os.path.join(克, "tools", "scan_secrets.sh"), "w").write("#!/bin/sh\nexit 0\n")
     os.chmod(os.path.join(克, "tools", "scan_secrets.sh"), 0o755)
