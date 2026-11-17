@@ -3,6 +3,7 @@
 执行手册 W28(2026-11-17;用户 11-12 拍「总部运营审,开发合并」,业务拍板 十八):
 门店 / 顾问对 knowledge/*.md 里某一段口径提修订 → 总部运营审 → 采纳那一刻生成带括号注记的改动文本 → 开发照着改 md、过门禁 → 标已合并。
 一张表 knowledge_revisions,状态 待审 / 已采纳 / 已驳回 / 已合并;审过的要有审的人和时刻、驳回要写说明、已合并要有合并时刻(库 CHECK 和 models.py 同一组)。
+列的可空照契约生成的模型(默认可空),「必填」在接口里拦 422 —— 契约没有逐列必填登记,模型和迁移要一致才过 alembic_sync_check。
 
 Revision ID: b7c1d2e3f4a5
 Revises: 5a9f567d29b4
@@ -31,13 +32,13 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.TIMESTAMP(timezone=True), nullable=True),
     sa.Column('revision', sa.BigInteger(), nullable=True),
     sa.Column('archived_at', sa.TIMESTAMP(timezone=True), nullable=True),
-    sa.Column('knowledge_path', sa.Text(), nullable=False),
-    sa.Column('section_name', sa.Text(), nullable=False),
-    sa.Column('current_text', sa.Text(), nullable=False),
-    sa.Column('proposed_text', sa.Text(), nullable=False),
-    sa.Column('basis_note', sa.Text(), nullable=False),
-    sa.Column('applicant_code', sa.Text(), nullable=False),
-    sa.Column('status', sa.Text(), nullable=False),
+    sa.Column('knowledge_path', sa.Text(), nullable=True),
+    sa.Column('section_name', sa.Text(), nullable=True),
+    sa.Column('current_text', sa.Text(), nullable=True),
+    sa.Column('proposed_text', sa.Text(), nullable=True),
+    sa.Column('basis_note', sa.Text(), nullable=True),
+    sa.Column('applicant_code', sa.Text(), nullable=True),
+    sa.Column('status', sa.Text(), nullable=True),
     sa.Column('review_note', sa.Text(), nullable=True),
     sa.Column('reviewed_by', sa.Text(), nullable=True),
     sa.Column('reviewed_at', sa.TIMESTAMP(timezone=True), nullable=True),
@@ -53,8 +54,11 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('project_id', 'id', name='pk_knowledge_revisions')
     )
     op.create_index('ix_knowledge_revisions_proj_status', 'knowledge_revisions', ['project_id', 'status'], unique=False)
+    op.create_index('ix_knowledge_revisions_proj_updated', 'knowledge_revisions', ['project_id', sa.literal_column('updated_at DESC')], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_index('ix_knowledge_revisions_proj_status', table_name='knowledge_revisions')
+    # IF EXISTS:第一版迁移没建 proj_updated 那条索引,退版本时它不在 —— 退不许卡在「要删的东西不存在」上
+    op.execute('DROP INDEX IF EXISTS ix_knowledge_revisions_proj_updated')
+    op.execute('DROP INDEX IF EXISTS ix_knowledge_revisions_proj_status')
     op.drop_table('knowledge_revisions')

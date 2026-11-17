@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 项目 = "project_demo_a"
@@ -32,7 +33,8 @@ def ck(名, 真, 补=""):
 
 
 def 打(方法, 路, 体=None, 谁=总部):
-    req = urllib.request.Request(基址 + 路, method=方法, data=json.dumps(体).encode() if 体 is not None else None)
+    req = urllib.request.Request(基址 + urllib.parse.quote(路, safe="/?=&"), method=方法,   # 路径 / 查询里有中文(文件名、状态)要编码
+                                 data=json.dumps(体).encode() if 体 is not None else None)
     req.add_header("X-Dev-User", 谁); req.add_header("content-type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -50,7 +52,7 @@ def main():
         码, 文件 = 打("GET", f"{P}/knowledge-revisions/files")
         ck("取得到 knowledge/ 的文件清单", 码 == 200 and (文件 or {}).get("文件们"), (码, 文件))
         文 = (文件 or {}).get("文件们", ["01-形制.md"])[0]
-        码, 段 = 打("GET", f"{P}/knowledge-revisions/files?file={文}")
+        码, 段 = 打("GET", f"{P}/knowledge-revisions/files?file={文}")   # 中文由 打() 统一编码,这里别再编一次(编两次服务端解出来还是百分号)
         ck("取得到那份文件的段标题", 码 == 200 and (段 or {}).get("段"), (码, 段))
         一段 = (段 or {}).get("段", [""])[0]
         # 从文件里原样取一句当「原来写的」
