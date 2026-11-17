@@ -388,6 +388,13 @@ _额外检查 = {
         # 不采纳 / 重开 / 请求补充 / 答复 一定要写为什么(给提的人看的那句话也在这里)
         ("ck_opinion_events_note", "action_code in ('开始核实', '关联问题', '提的人补充', '店长通过') or note is not null"),
     ],
+    # 知识修订申请(11-17,W28):状态枚举和「到了这个状态就必须有」—— 接口里拦 422,库这一层再钉一次
+    "knowledge_revisions": [
+        ("ck_knowledge_revisions_status", "status in ('待审', '已采纳', '已驳回', '已合并')"),
+        ("ck_knowledge_revisions_reviewed", "status = '待审' or (reviewed_by is not null and reviewed_at is not null)"),
+        ("ck_knowledge_revisions_rejected_note", "status <> '已驳回' or review_note is not null"),
+        ("ck_knowledge_revisions_merged", "status <> '已合并' or merged_at is not null"),
+    ],
     # 问题单(11-12,PRD §4.2 / §5.2):枚举从 issue_flow.py 拼;三条「到了这个状态就必须有」的字段 ——
     # 接口里也拦(422),库这一层再钉一次:下一个写入方(补数据的 SQL、脚本)不会经过接口那个 if
     "issues": [

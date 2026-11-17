@@ -248,6 +248,8 @@
     "seq": "BIGINT", "supersedes_score_id": "TEXT",
     # 意见处理时间线(11-04):前后两个状态 —— 套不上后缀约定,点名登记(不给 TEXT 兜底)
     "from_status": "TEXT", "to_status": "TEXT",
+    # 知识修订申请(11-17):原来写的 / 改成什么 / 生成的改动文本 —— 都是整段正文,不是 note(备注)也不是 name
+    "current_text": "TEXT", "proposed_text": "TEXT", "patch_text": "TEXT",
     # 问题单(11-12):标题套不上后缀约定;处理时限 / 重新评估是**日历日不是时刻**(和 world_date 同一个理由:
     # 存成 timestamp 会带一个看起来像真时刻的 00:00)—— 点名登记成 DATE
     "title": "TEXT", "due_date": "DATE", "reevaluate_date": "DATE",

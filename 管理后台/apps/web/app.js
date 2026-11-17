@@ -122,6 +122,7 @@ const 导航 = [
   ["#/runs", "运行记录", true, true],
   ["#/opinions", "意见受理", true, true],
   ["#/issues", "问题单", true, true],
+  ["#/knowledge-revisions", "知识修订", true, true],
   ["#/capabilities", "能力档案", true, true],
   ["#/capability-board", "改进看板", true, true],
   ["#/acceptance", "上线验收", true, true],
@@ -1602,6 +1603,82 @@ async function 页_告警() {
 /* ── 意见受理(11-04;意见收集 PRD §4.1 / §5.1;用户拍:总部运营统一受理、1 个工作日首次处理、跳周末和法定假日)──
  * 清单:待受理排前,超时标红(**只标红,不当成已解决**)。详情:原话、时间线、这一步能做的动作 ——
  * 动作按钮照接口给的「能做的动作」画,页面不另写一份流转规则(两份迟早分叉)。 */
+/* ── 知识修订申请(11-17,W28):谁都能提、只总部运营审、采纳生成带注记的改动文本、开发改 md 后标已合并 ── */
+async function 页_知识修订清单(筛 = "") {
+  const 头 = `<div class="crumb">知识修订</div>
+    <div class="head"><div><h1>知识修订申请</h1>
+      <div class="sub">${md("门店对 knowledge/*.md 里某一段口径提修订。**只总部运营审**(三家店各审会审出三个版本);审过不直接改文件 —— 生成一段带括号注记的改动文本,由开发改 md、过门禁,再标「已合并」。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d, 文件;
+  try {
+    d = await 请求(`${P()}/knowledge-revisions?limit=100` + (筛 ? `&status=${encodeURIComponent(筛)}` : ""));
+    文件 = await 请求(`${P()}/knowledge-revisions/files`);
+  } catch (e) { const s = 错误块(e, () => 页_知识修订清单(筛)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 筛条 = `<div>` + ["", ...(d.状态们 || [])].map((t) => `<button data-krf="${esc(t)}"${t === 筛 ? ' class="on"' : ""}>${esc(t || "全部")}</button>`).join("") + `</div>`;
+  const 表 = !d.items.length ? 状态("", "还没有修订申请", "下面可以提一条:指到哪份 md、哪一段,原来写的那句从文件里原样复制。").html
+    : `<table><thead><tr><th>什么时候</th><th>文件 · 段</th><th>原来写的 → 改成</th><th>提的人</th><th>状态</th><th></th></tr></thead><tbody>`
+      + d.items.map((x) => `<tr>
+          <td class="k">${esc(String(x.提交时刻 || "").slice(5, 16).replace("T", " "))}</td>
+          <td>${esc(x.知识文件)}<div class="k">${esc(x.段)}</div></td>
+          <td>${esc(String(x.原来写的 || "").slice(0, 40))}<div class="k">→ ${esc(String(x.改成 || "").slice(0, 40))}</div></td>
+          <td class="k">${esc(x.提的人)}</td>
+          <td>${x.状态 === "待审" ? '<span class="pill warn">' : '<span class="pill">'}${esc(x.状态)}</span></td>
+          <td><button data-kropen="${esc(x.id)}">打开</button></td></tr>`).join("") + `</tbody></table>`;
+  const 提 = `<h2>提一条修订</h2>
+    <div><select id="kr-file"><option value="">选文件</option>${(文件.文件们 || []).map((f) => `<option>${esc(f)}</option>`).join("")}</select>
+      <select id="kr-sec"><option value="">先选文件再选段</option></select></div>
+    <textarea id="kr-cur" rows="2" placeholder="原来写的(从文件里原样复制一句,至少 4 字)" style="width:100%"></textarea>
+    <textarea id="kr-new" rows="2" placeholder="改成什么" style="width:100%"></textarea>
+    <input id="kr-why" placeholder="依据(史料 / 标准 / 业务拍板,至少 4 字)" style="width:100%">
+    <div><button id="kr-go">提交</button> <span class="k" id="kr-msg"></span></div>`;
+  $("#main").innerHTML = 头 + 筛条 + 表 + 提;
+  $("#main").querySelectorAll("[data-krf]").forEach((b) => { b.onclick = () => 页_知识修订清单(b.dataset.krf); });
+  $("#main").querySelectorAll("[data-kropen]").forEach((b) => { b.onclick = () => { location.hash = "#/knowledge-revision/" + encodeURIComponent(b.dataset.kropen); }; });
+  $("#kr-file").onchange = async () => {
+    const f = $("#kr-file").value; const sel = $("#kr-sec");
+    sel.innerHTML = `<option value="">选段</option>`;
+    if (!f) return;
+    try { const r = await 请求(`${P()}/knowledge-revisions/files?file=${encodeURIComponent(f)}`);
+      sel.innerHTML += (r.段 || []).map((s) => `<option>${esc(s)}</option>`).join(""); } catch (e) { $("#kr-msg").textContent = String(e.message || e); }
+  };
+  $("#kr-go").onclick = async () => {
+    $("#kr-msg").textContent = "提交中…";
+    try {
+      await 请求(`${P()}/knowledge-revisions`, { method: "POST", body: JSON.stringify({
+        知识文件: $("#kr-file").value, 段: $("#kr-sec").value, 原来写的: $("#kr-cur").value, 改成: $("#kr-new").value, 依据: $("#kr-why").value }) });
+      页_知识修订清单(筛);
+    } catch (e) { $("#kr-msg").textContent = (e.field_errors ? Object.entries(e.field_errors).map(([k, v]) => `${k}:${v}`).join(";") : "") || String(e.message || e); }
+  };
+}
+
+async function 页_知识修订详情(id) {
+  const 头 = `<div class="crumb"><a href="#/knowledge-revisions">知识修订</a> / ${esc(id)}</div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/knowledge-revisions/${encodeURIComponent(id)}`); }
+  catch (e) { const s = 错误块(e, () => 页_知识修订详情(id)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const kv = (k, v) => `<tr><td class="k">${esc(k)}</td><td>${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
+  const 动作 = d.能做的动作 || [];
+  const 钮 = 动作.map((a) => `<button data-kract="${esc(a)}">${esc(a)}</button>`).join(" ");
+  $("#main").innerHTML = 头 + `<div class="head"><div><h1>${esc(d.知识文件)} · ${esc(d.段)}</h1>
+      <div class="sub">提的人 ${esc(d.提的人)} · 状态 <b>${esc(d.状态)}</b></div></div></div>
+    <table><tbody>${kv("原来写的", d.原来写的)}${kv("改成", d.改成)}${kv("依据", d.依据)}
+      ${kv("审的人 / 时刻", d.审的人 ? `${d.审的人} · ${String(d.审的时刻 || "").slice(0, 16).replace("T", " ")}` : "")}${kv("审核说明", d.审核说明)}
+      ${kv("合并的人 / 时刻", d.合并的人 ? `${d.合并的人} · ${String(d.合并时刻 || "").slice(0, 16).replace("T", " ")}` : "")}</tbody></table>
+    ${d.改动文本 ? `<h2>改动文本(给开发)</h2><pre>${esc(d.改动文本)}</pre>` : ""}
+    ${钮 ? `<h2>处理</h2><textarea id="kr-act-note" rows="2" placeholder="说明(驳回必填,提的人看得到)"></textarea><div>${钮}</div><div class="k" id="kr-act-why"></div>` : `<div class="note">这一步没有能做的动作(已是终态)。</div>`}`;
+  $("#main").querySelectorAll("[data-kract]").forEach((b) => {
+    b.onclick = async () => {
+      const a = b.dataset.kract; const 说明 = $("#kr-act-note").value;
+      try {
+        if (a === "已合并") await 请求(`${P()}/knowledge-revisions/${encodeURIComponent(id)}/merged`, { method: "POST", body: "{}" });
+        else await 请求(`${P()}/knowledge-revisions/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify({ 决定: a, 说明 }) });
+        页_知识修订详情(id);
+      } catch (e) { $("#kr-act-why").textContent = (e.field_errors ? Object.entries(e.field_errors).map(([k, v]) => `${k}:${v}`).join(";") : "") || String(e.message || e); }
+    };
+  });
+}
+
 async function 页_意见受理(页 = 1, 筛 = "") {
   const 头 = `<div class="crumb">意见受理</div>
     <div class="head"><div><h1>意见受理</h1>
@@ -9722,6 +9799,8 @@ async function 路由() {
     if (h.startsWith("#/opinion/")) return await 页_意见详情(decodeURIComponent(h.slice(10)));
     if (h === "#/issues") return await 页_问题单清单();
     if (h.startsWith("#/issue/")) return await 页_问题单详情(decodeURIComponent(h.slice(8)));
+    if (h === "#/knowledge-revisions") return await 页_知识修订清单();
+    if (h.startsWith("#/knowledge-revision/")) return await 页_知识修订详情(decodeURIComponent(h.slice(21)));
     if (h.startsWith("#/verification/")) return await 页_验证记录详情(decodeURIComponent(h.slice(15)));
     if (h.startsWith("#/rollout/")) return await 页_发布记录详情(decodeURIComponent(h.slice(10)));
     if (h === "#/capabilities") return await 页_能力档案清单();

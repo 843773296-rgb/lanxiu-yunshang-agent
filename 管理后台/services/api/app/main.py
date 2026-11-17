@@ -206,6 +206,7 @@ import issues_api as _ISS  # 问题单(11-12,意见收集 PRD §4.2 / §5.2):多
 import capabilities_api as _CAP  # 能力档案与改进看板(11-12,意见收集 PRD §4.4):状态流转表在 capability_flow.py,评测 / 样本 / 运行量现查不存
 import improvements_api as _IMP  # 改进验证与发布(11-12,意见收集 PRD §4.3):验证记录三组证据 / 发布记录实际采用回执,问题单三步的前置条件
 import acceptance_api as _ACC  # 上线验收(11-12,W41):十条场景签字 + 「做完」三项判定,口径在 acceptance_flow.py
+import knowledge_revisions_api as _KR  # 知识修订申请(11-17,W28):谁都能提、只总部运营审、采纳生成带注记的改动文本、开发改 md 后标已合并
 import open_api as _OA              # 访问 API(11-03):外部系统带密钥跑应用的生产版;先工作流,聊天那一半还没做
 app.include_router(_WF.router)
 app.include_router(_AG.router)
@@ -213,6 +214,7 @@ app.include_router(_KB.router)
 app.include_router(_UP.router)
 app.include_router(_RUN.router)
 app.include_router(_HM.router)
+app.include_router(_KR.router)
 app.include_router(_RC.router)
 app.include_router(_DS.router)
 app.include_router(_TR.router)

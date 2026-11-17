@@ -995,6 +995,15 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "change_snapshot 记这一步改了哪些字段的前后值(改根因 / 搁置的日期 / 指向哪个主问题 / 关闭的说明和证据)",
        "暂不处理 / 标为重复 / 验证失败 / 发布失败 / 复发 / 重新评估 必须带 note;**发布失败是一行 待发布 → 待发布**,状态不动、记录留下"],
       依赖=["issues"]),
+    # 知识条目修订申请(2026-11-17,执行手册 W28;用户 11-12 拍「总部运营审,开发合并」,业务拍板 十八)
+    E("knowledge_revisions", "知识修订申请", 项目级, 可改,
+      ["knowledge_path", "section_name", "current_text", "proposed_text", "basis_note", "applicant_code",
+       "status", "review_note", "reviewed_by", "reviewed_at", "patch_text", "merged_by", "merged_at"],
+      ["门店 / 顾问对 knowledge/*.md 里某一段口径提修订:指到哪份 md、哪一段(标题)、原来写的是什么(要在文件里**原样找得到**)、"
+       "改成什么、依据是什么。**只总部运营审**(用户否决「店长就能审」:三家店可能改出三个版本);审过了不直接改 md ——",
+       "采纳那一刻生成 patch_text:新口径 + 括号注记「(日期 总部运营 X 审过的修订申请 编号;依据:…;原来写的是「…」)」,"
+       "形状照 knowledge/01-形制.md 里 11-07 那 9 处;开发照着改 md、重跑 derive、过门禁,再把这条标「已合并」",
+       "状态:待审 → 已采纳 → 已合并;待审 → 已驳回(要写为什么)。库 CHECK:审过的要有审的人和时刻;驳回必须带说明;已合并要有合并时刻"]),
     # ②'''''' 上线验收(2026-11-12,执行手册 W41;业务拍板 11-12 第一条「做完 = 试点两周 + 十条验收签字 + 费用上限」)
     E("acceptance_items", "上线验收记录", 项目级, 可改,
       ["scenario_code", "scenario_name", "expected_note", "sort_no", "tested_by", "tested_date", "verdict",
