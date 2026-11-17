@@ -251,6 +251,8 @@ setTimeout(() => {
     // 聊天助手页签(10-28):一个岗位一张卡,不分页
     "#/studio/chat": { 接口: "/chat-assistants", 列表: "items" },
     "#/studio/app": { 接口: "/applications", 列表: "应用" },
+    // 知识修订申请(11-17,W28):清单页行级对账按 items 里的 id
+    "#/knowledge-revisions": { 接口: "/knowledge-revisions", 列表: "items" },
     "#/integrations/models": { 接口: "/model-connections", 列表: "连接" },
     "#/integrations/tools": { 接口: "/tools", 列表: "items" },
     "#/agents": { 接口: "/agents", 列表: "items" },
