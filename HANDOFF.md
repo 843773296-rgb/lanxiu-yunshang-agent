@@ -2177,31 +2177,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-17 12:05。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-17 13:19。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w1117` |
-| 最新提交 | 19cb107e · 2026-11-17 · 迁移第 6 条补一列:营销 SOP 造数脚本里小写的 alter(ordr.has_wear_date)也收进去,欠债 3 → 2 |
-| 代码量 | 1170 个 Python 文件 / 209111 行(不含 .venv) |
+| 分支 | `main` |
+| 最新提交 | 489cb8b6 · 2026-11-17 · 知识条目修订申请:谁都能提、只总部运营审、采纳生成带括号注记的改动文本、开发改 md 后标已合并(执行手册 W28,用户 11-12 拍的业务拍板 十八) |
+| 代码量 | 1173 个 Python 文件 / 209223 行(不含 .venv) |
 | 验收 | `./check.sh` 共 435 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
+M .feynman/tool-eval.json
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+ M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
+?? "--\350\207\252\346\265\213.log"
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/backup-launchd.log
+?? .feynman/health/
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? ".feynman/nightly-eval/2026-11-16-factory_eval.py.\345\264\251.log"
+?? .feynman/world-shift-launchd.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+489cb8b6 知识条目修订申请:谁都能提、只总部运营审、采纳生成带括号注记的改动文本、开发改 md 后标已合并(执行手册 W28,用户 11-12 拍的业务拍板 十八)
+82ffebee 加两条量过的索引:客户详情页的预约 / 跟进按客户号(10.5x / 11.8x);op_log(target) 量出来 1.2x 不加(执行手册 W45 索引那半)
+a3356a7c 门禁最慢那条检查 147 → 62 秒:公海扫描改成一次装好整库字典再逐户判,检查里加「两种跑法一字不差」的对账;重建步数断言 51 → 52(W33 ④)
 19cb107e 迁移第 6 条补一列:营销 SOP 造数脚本里小写的 alter(ordr.has_wear_date)也收进去,欠债 3 → 2
 dc0221e3 迁移目录第 6 条:八个一次性工具的 16 处加列收进迁移本体,工具缺列就红并指路 migrate.py(W16 第三类,欠债 19 → 3)
-f00461d7 给人看的打码按清单落地(手机 / 身份证后四位、地址只到区、外部账号前两位+***+后两位)+ 工具目录标业务后台开关(清单第 11、12 项;W40-③ / W38 后一半)
-67753eda 门禁分层两件(W33 ① ②):锁的轮询间隔可配(自测 60 秒 → 22 秒)+ 本地快门 quick_gate.py 只跑覆盖到改动的那几条
-6bce9559 迁移目录第 5 条:九个模块「建表时顺带给老表补列」的 13 处收进迁移本体,建表语句直接带全列;重建在造数后立刻跑一次迁移(W16 第二类,欠债 32 → 19)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
