@@ -1836,7 +1836,7 @@ async function staffList(){
       <td><span class="pill ${SPILL[r.status]}">${esc(r.status)}</span></td>
       <td class="mono">${esc(r.updated_by)}</td>
       <td class="mono" style="color:var(--ink3)">${esc(r.updated)}</td>
-      <td>${ROLE==="总部运营"&&!(ME&&ME.no===r.no)?`<span class="lk" data-perm="${esc(r.no)}">编辑</span> <span class="lk" data-rstpw="${esc(r.no)}">重置口令</span>`:`<span class="lk dead" title="${ME&&ME.no===r.no?"不能改自己的权限":"改权限只有总部运营能做"}">编辑</span>`}</td></tr>`).join("")}
+      <td>${ROLE==="店长"&&r.role==="顾问"&&r.status==="启用"&&ME&&ME.no!==r.no&&r.shop===ME.shop?`<span class="lk" data-stfoff="${esc(r.no)}">停用</span>`:ROLE==="总部运营"&&!(ME&&ME.no===r.no)?`<span class="lk" data-perm="${esc(r.no)}">编辑</span> <span class="lk" data-rstpw="${esc(r.no)}">重置口令</span>`:`<span class="lk dead" title="${ME&&ME.no===r.no?"不能改自己的权限":"改权限只有总部运营能做"}">编辑</span>`}</td></tr>`).join("")}
     </tbody></table>${pagerC(d)}</div>
    <div class="card"><div class="hd"><h3>角色权限矩阵</h3>
      <span class="n">来源:后台 PRD 第 8 章与 6.2 —— 原设计稿的权限管理页无角色列,此表为按 PRD 补充</span></div>
@@ -1864,6 +1864,12 @@ async function staffList(){
     if(!await sure("重置口令",`给 ${r.no} ${r.name} 重置口令?\n他现在的登录会全部下线,下次登录必须先改密。临时口令只显示这一次。`,"重置")) return;
     const x=await post("/api/staff-reset-pwd",{no:r.no});
     if(x.ok) res(true,x.code,`${x.reason}\n临时口令:${x.temp}`); else res(false,x.code||"ERR",x.reason||x.error||"没成");
+  });
+  // 11-17 店长停用(W19,用户 20:3x 拍「店长只能停用」):只本店顾问、只能停不能开;开通 / 改角色 / 换店 / 重置口令找总部运营;名下有客户或任务会被写口拒(先转移);停完他的登录立刻全下线
+  M.querySelectorAll("[data-stfoff]").forEach(e=>e.onclick=async()=>{
+    const r=d.rows.find(x=>x.no===e.dataset.stfoff)||{};
+    if(!await sure("停用员工",`停用 ${r.no} ${r.name}?\n他现在的登录会全部下线;名下还有客户或没办完的任务会被拒,要先转移。重新开通要找总部运营。`,"停用")) return;
+    doOp("/api/staff-perm",{no:r.no,status:"停用"},staffList);
   });
   bindTable(st,staffList);
 }

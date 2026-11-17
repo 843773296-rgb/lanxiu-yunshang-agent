@@ -1020,12 +1020,26 @@ def save_staff_perm(d, me):
     def 拒(码, 为何):
         log_op(谁, "staff", no or "?", "改权限", "拒绝", False, 码, 为何, {"role": 角色})
         return dict(ok=False, code=码, reason=为何)
-    if 角色 != "总部运营": return 拒("WRONG_ROLE", f"改权限只有总部运营能做,当前角色:{角色 or '未知'}")
+    # 用户 2026-11-17 20:3x 拍(执行手册 W19 店长那半):**店长只能停用本店的顾问**(紧急止损);
+    # 开通、改角色、换门店、重置口令仍只总部运营 —— 11-14 台账第四十五条第四组「改员工权限只总部运营」不动,只在它旁边开这一道窄口。
+    # 停用走的是下面同一条路:名下有客户 / 任务照样拒(HAS_WORK),停完作废他全部会话(当天就登不进)。
+    店长只停用 = 角色 == "店长"
+    if 角色 not in ("总部运营", "店长"): return 拒("WRONG_ROLE", f"改权限只有总部运营能做,当前角色:{角色 or '未知'}")
     if no == str((me or {}).get("no") or ""):
-        return 拒("SELF_EDIT", "不能改自己的权限 —— 要改请找另一位总部运营")
+        return 拒("SELF_EDIT", "不能改自己的权限 —— 要改请找另一位总部运营" if not 店长只停用 else "不能停用自己 —— 要停请找总部运营")
     old = rows("SELECT no,name,role,shop,shop_code,status FROM staff WHERE no=?", no)
     if not old: return 拒("NO_STAFF", f"没有员工 {no}")
     old = old[0]
+    if 店长只停用:
+        想改 = {k for k in ("role", "shop", "status") if d.get(k) is not None and str(d.get(k)) != str(old[k] or "")}   # shop 传空串 = 要调成总部,也算想改
+        if (想改 - {"status"}) or (d.get("status") or "") != "停用":
+            return 拒("MANAGER_ONLY_OFF", "店长只能停用本店员工;开通、改角色、换门店要找总部运营")
+        if old["status"] == "停用": return 拒("ALREADY_OFF", f"{old['name']} 已经是停用")
+        我 = rows("SELECT shop_code FROM staff WHERE no=?", str((me or {}).get("no") or ""))
+        if not 我 or not 我[0]["shop_code"] or 我[0]["shop_code"] != (old["shop_code"] or ""):
+            return 拒("OTHER_SHOP", f"{old['name']} 不是你这家店的人 —— 店长只能停用本店员工")
+        if old["role"] != "顾问":
+            return 拒("ABOVE_ME", f"店长只能停用本店的顾问;{old['name']} 是{old['role']},要总部运营来停")
     新角色 = d.get("role") or old["role"]
     新状态 = d.get("status") or old["status"]
     新归属 = old["shop"] if d.get("shop") is None else str(d.get("shop") or "").strip()
@@ -1345,15 +1359,23 @@ def order_list(q, 本店=None):
     kind=(q.get("kind") or [""])[0]; src=(q.get("source") or [""])[0]
     片, 参 = _店片(本店, "o")   # 按门店划范围(用户 10-23 拍;11-11 补齐):列表和下面的页签计数都只算本店
     片0, 参0 = _店片(本店)
-    rs=rows(f"""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
-               ON o.customer_id=c.id WHERE {片} ORDER BY o.created DESC""",*参)
-    if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["cname"] or "")]
-    if kind: rs=[r for r in rs if r["kind"]==kind]
-    if src:  rs=[r for r in rs if r["source"]==src]
+    # 11-17(执行手册 W45 分页那半):筛和翻页都在 SQL 里做,只把这一页取进内存。
+    # 原来整张 ordr(2.6 万行)LEFT JOIN 客户全读进来再 Python 筛、再切页 —— 实测空筛一次 511 ms;
+    # 筛只看订单本身的字段,显示的内容一样;判据在 order_list_check(明细只给这一页)和 page_smoke。
+    # 关键词用 instr(逐字包含,和 Python 的 `in` 一样大小写敏感);同一秒的单按单号兜底排序,翻页才不会串行
+    条, 参数 = [片], list(参)
+    if kw: 条.append("(instr(o.id, ?) > 0 OR instr(COALESCE(c.name, ''), ?) > 0)"); 参数 += [kw, kw]
+    if kind: 条.append("o.kind=?"); 参数.append(kind)
+    if src:  条.append("o.source=?"); 参数.append(src)
     # status 存的就是设计稿口径,直接按页签筛
     unmapped = tab != "全部" and tab not in TAB_MAP
-    if tab != "全部": rs=[r for r in rs if r["status"]==tab]
-    d=_page(rs,q)
+    if tab != "全部": 条.append("o.status=?"); 参数.append(tab)
+    哪些 = " AND ".join(条)
+    page, per, st = _页参(q)
+    total = rows(f"SELECT COUNT(*) c FROM ordr o LEFT JOIN customer c ON o.customer_id=c.id WHERE {哪些}", *参数)[0]["c"]
+    rs=rows(f"""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
+               ON o.customer_id=c.id WHERE {哪些} ORDER BY o.created DESC, o.id DESC LIMIT ? OFFSET ?""", *参数, per, st)
+    d=_页(rs, total, page, per)
     # 明细和顾问名**只给这一页**取(10-21):原来对全部 26560 张单各查一次明细、再整表补顾问名,最后只显示 100 张 ——
     # 一页要 17 秒,后台订单页和页面冒烟都被它拖住(冒烟限时内翻不完 5 页,报成「找不到有确认书的单」)。
     # 筛选只看订单本身的字段,不看明细,所以先筛先分页、再补,显示的内容一样
@@ -1367,11 +1389,13 @@ def order_list(q, 本店=None):
     d["facets"]=dict(kind=[r["v"] for r in rows("SELECT DISTINCT kind v FROM ordr")],
                      source=[r["v"] for r in rows("SELECT DISTINCT source v FROM ordr ORDER BY v")])
     d["prd_states"]=["待付款","方案确认中","待发货","待收货","已完成","已关闭"]
-    d["counts"]={s:rows(f"SELECT COUNT(*) c FROM ordr WHERE prd_status=? AND {片0}",s,*参0)[0]["c"] for s in d["prd_states"]}
+    # 11-17:原来 6 + 12 条 COUNT 各扫一遍表(每条 2–4 ms,合起来占这个接口一半时间),改成两条 GROUP BY 各扫一遍;形状不变,没有的状态照旧是 0
+    按状态={r["s"]:r["c"] for r in rows(f"SELECT prd_status s, COUNT(*) c FROM ordr WHERE {片0} GROUP BY prd_status",*参0)}
+    d["counts"]={s:按状态.get(s,0) for s in d["prd_states"]}
     # 每个设计稿页签下有多少单 —— 用来证明「多对一」而不是「筛不出数据」
-    d["tab_counts"]={t:rows(f"SELECT COUNT(*) c FROM ordr WHERE status=? AND {片0}",t,*参0)[0]["c"]
-                     for t in DESIGN_TABS if t!="全部"}
-    d["tab_counts"]["全部"]=rows(f"SELECT COUNT(*) c FROM ordr WHERE {片0}",*参0)[0]["c"]
+    按页签={r["s"]:r["c"] for r in rows(f"SELECT status s, COUNT(*) c FROM ordr WHERE {片0} GROUP BY status",*参0)}
+    d["tab_counts"]={t:按页签.get(t,0) for t in DESIGN_TABS if t!="全部"}
+    d["tab_counts"]["全部"]=sum(按页签.values())
     return d
 
 def cat_paths():
@@ -3709,11 +3733,19 @@ def op_logs(n=200, 本店=None):
     片, 参 = _日志片(本店)   # 按门店划范围(用户 10-23 拍;11-11 补齐):只看本店员工留下的
     return rows(f"SELECT * FROM op_log WHERE {片} ORDER BY id DESC LIMIT ?",*参,n)
 
-def _page(all_rows, q):
+def _页参(q):
+    """页号 / 每页条数 / 偏移 —— 页 ≥1,每页 5–100,默认 10。`_page`(内存切页)和 SQL 分页的入口都从这里取,口径只写一次。"""
     page=max(1,int(q.get("page",[1])[0])); per=min(100,max(5,int(q.get("per",[10])[0])))
-    total=len(all_rows); st=(page-1)*per
-    return dict(rows=all_rows[st:st+per], total=total, page=page, per=per,
-                pages=max(1,(total+per-1)//per))
+    return page, per, (page-1)*per
+
+def _页(这一页, total, page, per):
+    """把 SQL 已经 LIMIT/OFFSET 过的那一页包成和 `_page` 一样的形状(rows/total/page/per/pages)—— 前端 pagerC 读 total / page,形状不变。"""
+    return dict(rows=这一页, total=total, page=page, per=per, pages=max(1,(total+per-1)//per))
+
+def _page(all_rows, q):
+    """内存切页:小表(实测 _simple 那几张表一次 ≤ 11 ms)照旧整表读进来再切。大表(客户 8 千 / 订单 2.6 万)走 SQL 分页,见 customer_list / order_list。"""
+    page, per, st = _页参(q)
+    return _页(all_rows[st:st+per], len(all_rows), page, per)
 
 def _sort(rs,q,allow):
     k=(q.get("sort") or [None])[0]
@@ -3757,8 +3789,31 @@ def customer_list(q):
     # 而它认的是工号。不取的话删列之后这一栏会静默变空。
     import merge as _mg
     _mg.确保列()
-    rs=rows("""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
-               paid_amount,last_interact,idle_days,amount_12m,archived,merged_into FROM customer""")
+    # 11-17(执行手册 W45 分页那半):筛、排、翻页都在 SQL 里做,只把这一页取进内存(原来 8 千行全读、Python 筛、再切页,实测 61 ms)。
+    # 「销售顾问」下拉里是显示串(「A04 陆微」/「陆微」),库里存的是工号 —— 反查花名册拿工号去筛,认不出就一户都不给(不猜);
+    # 「公海」= 没有导购(advisor_no 空)。排序:选了列就按那列(空值靠后、倒序时靠前,和原来 _sort 一样),再按 rowid 兜底,翻页才稳定
+    条, 参数 = ["1=1"], []
+    if kw: 条.append("(instr(id, ?) > 0 OR instr(COALESCE(name, ''), ?) > 0 OR instr(COALESCE(phone, ''), ?) > 0)"); 参数 += [kw, kw, kw]
+    for k,v in f.items():
+        if not v: continue
+        if k=="advisor":
+            if v==公海标签:
+                条.append("(advisor_no IS NULL OR advisor_no='')"); continue
+            工号们=[no for no,(名,短) in _花名册().items() if (f"{短} {名}" if 短 else 名)==v]
+            条.append(f"advisor_no IN ({','.join('?'*len(工号们))})" if 工号们 else "0=1"); 参数 += 工号们; continue
+        条.append(f"{k}=?"); 参数.append(v)
+    排=(q.get("sort") or [None])[0]
+    if 排 in {"id","name","paid_amount","order_cnt","idle_days","last_interact"}:
+        向="DESC" if (q.get("dir") or ["asc"])[0]=="desc" else "ASC"
+        按=f"({排} IS NULL) {向}, {排} {向}, rowid"
+    else:
+        按="rowid"
+    哪些=" AND ".join(条)
+    page, per, st = _页参(q)
+    total = rows(f"SELECT COUNT(*) c FROM customer WHERE {哪些}", *参数)[0]["c"]
+    rs=rows(f"""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
+               paid_amount,last_interact,idle_days,amount_12m,archived,merged_into FROM customer
+               WHERE {哪些} ORDER BY {按} LIMIT ? OFFSET ?""", *参数, per, st)
     # 软合并(10-14):已并入别人的档案**照样列、标上并入了谁** —— 不隐去。
     # 用户 10-14 拍「新记录还记在本店那份档案上」:各店照旧给本店的档案开单量体,
     # 列表把本店那份藏起来,本店的人就找不到自己的顾客了(第 1 批是隐去的,按这个拍板改回)。
@@ -3770,14 +3825,7 @@ def customer_list(q):
     import mask as _mk
     for c in rs:
         c["phone_mask"]=_mk.手机(c["phone"] or "")
-    if kw: rs=[c for c in rs if kw in c["id"] or kw in (c["name"] or "") or kw in (c["phone"] or "")]
-    for k,v in f.items():
-        if not v: continue
-        if k=="advisor" and v==公海标签:
-            rs=[c for c in rs if not c.get("advisor_no")]; continue
-        rs=[c for c in rs if c.get(k)==v]
-    rs=_sort(rs,q,{"id","name","paid_amount","order_cnt","idle_days","last_interact"})
-    d=_page(rs,q)
+    d=_页(rs, total, page, per)
     for c in d["rows"]:
         c.pop("phone",None)
         _mk.给人看行(c, 跳过=("phone_mask",))     # 列表整行 SELECT *:地址只到区、微信前两位+***+后两位(用户 11-17 拍的清单)

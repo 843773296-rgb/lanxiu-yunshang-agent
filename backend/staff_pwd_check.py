@@ -28,6 +28,7 @@ sys.path[:0] = [HERE, ROOT]
     ("把 do_POST 里「带首登改密标记只放改密口」那道闸去掉", "带标记打写口 → 403 MUST_CHANGE_PWD"),
     ("让 change_password 不再核对旧口令", "旧口令错 → 拒"),
     ("让 set_temp_password 不置标记", "重置后标记置 1"),
+    ("让店长那道窄口不再核对是不是本店的人", "店长停用别店员工 → 拒(OTHER_SHOP)"),
 ]
 
 FAIL, N = [], [0]
@@ -100,6 +101,46 @@ def run(T):
     ck("新口令能登录、不再带标记", bool(tok2) and (auth.who(tok2) or {}).get("must_change_pwd") == 0)
     tok3, _ = auth.login(目标["no"], temp)
     ck("临时口令作废", not tok3)
+    # ── 店长停用(用户 11-17 20:3x 拍:店长只能停用本店顾问;开通 / 改角色 / 换店 / 重置口令仍只总部运营)──
+    店 = c.execute("SELECT shop_code FROM staff WHERE no=?", (店长["no"],)).fetchone()[0]
+    本店顾问 = c.execute("SELECT no,name FROM staff WHERE role='顾问' AND status='启用' AND shop_code=? AND no NOT IN (?,?) ORDER BY no LIMIT 1",
+                      (店, 目标["no"], 顾问["no"])).fetchone()
+    别店 = c.execute("SELECT no,name FROM staff WHERE role='顾问' AND status='启用' AND shop_code!=? AND shop_code!='' ORDER BY no LIMIT 1", (店,)).fetchone()
+    ck("样本:店长本店一位顾问 + 别店一位顾问", bool(店 and 本店顾问 and 别店), (店, bool(本店顾问), bool(别店)))
+    if 店 and 本店顾问 and 别店:
+        本店顾问, 别店 = dict(本店顾问), dict(别店)
+        # 副本上先把他名下的客户 / 任务挪空 —— 「名下有活不许停」那道闸归改权限自己的判据,这里验的是店长那道窄口
+        with c:
+            c.execute("UPDATE customer SET advisor_no=NULL WHERE advisor_no=?", (本店顾问["no"],))
+            c.execute("DELETE FROM schedule WHERE assignee_no=? AND status='有效'", (本店顾问["no"],))
+        r = server.save_staff_perm({"no": 别店["no"], "status": "停用"}, me=店长)
+        ck("店长停用别店员工 → 拒(OTHER_SHOP)", r.get("code") == "OTHER_SHOP", r.get("code"))
+        r = server.save_staff_perm({"no": 本店顾问["no"], "role": "店长"}, me=店长)
+        ck("店长改角色 → 拒(只能停用)", r.get("code") == "MANAGER_ONLY_OFF", r.get("code"))
+        r = server.save_staff_perm({"no": 本店顾问["no"], "shop": "", "status": "停用"}, me=店长)
+        ck("店长停用时顺手换门店 → 拒(只能停用)", r.get("code") == "MANAGER_ONLY_OFF", r.get("code"))
+        r = server.save_staff_perm({"no": 店长["no"], "status": "停用"}, me=店长)
+        ck("店长停用自己 → 拒", r.get("code") == "SELF_EDIT", r.get("code"))
+        另店长 = c.execute("SELECT no FROM staff WHERE role='店长' AND status='启用' AND no!=? LIMIT 1", (店长["no"],)).fetchone()
+        if 另店长:
+            r = server.save_staff_perm({"no": 另店长[0], "status": "停用"}, me=店长)
+            ck("店长停用另一位店长 → 拒", r.get("code") in ("OTHER_SHOP", "ABOVE_ME"), r.get("code"))
+        tok_off, _ = auth.login(本店顾问["no"], "lanxiu@2026")
+        ck("前提:那位顾问能登录", bool(tok_off))
+        r = server.save_staff_perm({"no": 本店顾问["no"], "status": "停用"}, me=店长)
+        ck("店长停用本店顾问 → 成", bool(r.get("ok")) and r.get("code") == "UPDATE", r.get("code"))
+        ck("停用后状态是停用", c.execute("SELECT status FROM staff WHERE no=?", (本店顾问["no"],)).fetchone()[0] == "停用")
+        ck("停用后他原来的会话立刻下线", auth.who(tok_off) is None)
+        t2, 说 = auth.login(本店顾问["no"], "lanxiu@2026")
+        ck("停用后登不进去,提示里说了已停用", not t2 and "停用" in (说 or ""), 说)
+        r = server.save_staff_perm({"no": 本店顾问["no"], "status": "停用"}, me=店长)
+        ck("再停一次 → 拒(已经是停用)", r.get("code") == "ALREADY_OFF", r.get("code"))
+        r = server.save_staff_perm({"no": 本店顾问["no"], "status": "启用"}, me=店长)
+        ck("店长开通 → 拒(开通只总部运营)", r.get("code") == "MANAGER_ONLY_OFF", r.get("code"))
+        r = server.save_staff_perm({"no": 本店顾问["no"], "status": "启用"}, me=总部)
+        ck("总部运营能开通回来", bool(r.get("ok")), r.get("code"))
+        日志 = c.execute("SELECT title FROM edit_log WHERE target=? ORDER BY rowid DESC LIMIT 2", (本店顾问["no"],)).fetchall()
+        ck("停用 / 开通都进了资料编辑日志", len(日志) == 2, len(日志))
     # ── 会话文件锁:源码层 ──
     src = open(os.path.join(HERE, "auth.py"), encoding="utf-8").read()
     写 = src.count("_写盘(") - 1          # 减去 def 那一处
@@ -108,7 +149,7 @@ def run(T):
 
 
 def main():
-    print("员工首登改密 / 重置口令 · 检查(在库的临时副本上跑,真库不动)")
+    print("员工首登改密 / 重置口令 / 店长停用 · 检查(在库的临时副本上跑,真库不动)")
     print("=" * 84)
     tmp = tempfile.mkdtemp(prefix="pwd-")
     T = os.path.join(tmp, "lanxiu.db")
@@ -122,7 +163,7 @@ def main():
         print(f"\033[31m❌ 首登改密 {len(FAIL)} 处不符合预期(验了 {N[0]} 条)\033[0m")
         for f in FAIL: print(f"   · {f}")
         return 1
-    print(f"\033[32m✅ 首登改密 {N[0]} 条全过\033[0m —— 重置置标记、带标记只放改密口、改对归零、临时口令作废")
+    print(f"\033[32m✅ 首登改密 {N[0]} 条全过\033[0m —— 重置置标记、带标记只放改密口、改对归零、临时口令作废;店长只能停用本店顾问、停完当场下线")
     return 0
 
 

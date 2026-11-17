@@ -198,7 +198,19 @@ def _一个跟进最多的客户(c):
         取参=lambda c: (_一个跟进最多的客户(c),),
         实测="0.385 → 0.033 ms(11.8x,真库副本上量的;取跟进最多的那位客户)",
     ),
-]
+    dict(
+        名="ix_ordr_created",
+        表="ordr",
+        本体="CREATE INDEX ix_ordr_created ON ordr(created DESC, id DESC)",
+        要求="用上",          # 排序用,不是覆盖:取到那一页的行再回表
+        为什么="订单列表 2026-11-17 改成 SQL 分页(LIMIT/OFFSET)之后,每翻一页都要把 2.6 万张单按下单时间排一遍"
+               "(计划里 USE TEMP B-TREE FOR ORDER BY);翻到后面的页更慢(第 200 页 62 ms)。"
+               "带上 id 做第二键是因为同一秒的单要有确定顺序,否则翻页会串行。",
+        锚=("backend/server.py", "ORDER BY o.created DESC, o.id DESC LIMIT ? OFFSET ?"),
+        查询="SELECT o.id FROM ordr o WHERE 1=1 ORDER BY o.created DESC, o.id DESC LIMIT ? OFFSET ?",
+        取参=lambda c: (10, 2000),
+        实测="第 1 页 11.9 → 0.1 ms;第 200 页 62.0 → 0.8 ms(.backup 副本上各 30 次取最好)",
+    ),]
 
 # 建库路径上必须有人调 `建索引()`。判据按这张表逐个去文本里找 ——
 # ⚠️ **这不是形式主义**:删掉一处调用,本地那个库里索引还在、一路绿,

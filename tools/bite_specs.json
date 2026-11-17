@@ -10207,12 +10207,12 @@
  },
  {
   "script": "backend/order_list_check.py",
-  "改坏": "明细又对全部订单各查一次",
+  "改坏": "明细又对全部订单各查一次(11-17 分页进 SQL 后 rs 就是这一页,原攻击「for r in rs」成了空操作,改成真对整张 ordr 逐行查明细)",
   "file": [
    {
     "path": "backend/server.py",
     "old": "    填顾问名(d[\"rows\"])\n    for r in d[\"rows\"]:",
-    "new": "    填顾问名(d[\"rows\"])\n    for r in rs:"
+    "new": "    填顾问名(d[\"rows\"])\n    for r in rows(\"SELECT id FROM ordr\"):\n"
    }
   ],
   "预期红": "明细只给这一页取:查 ordr_item 的次数不超过这一页的张数"
@@ -13100,8 +13100,8 @@
   "file": [
    {
     "path": "backend/query_index_check.py",
-    "old": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\",\n            \"ix_ordr_cust_adv\",   # 2026-10-25:顾问那条范围条件的冗余列(19→6.5 ms,3.1x)\n            \"ix_appt_cust\", \"ix_fu_cust\"]   # 2026-11-17 W45:客户详情页的预约 / 跟进按客户号(10.5x / 11.8x,副本上量的)",
-    "new": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\",\n            \"ix_appt_cust\", \"ix_fu_cust\"]"
+    "old": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\",\n            \"ix_ordr_cust_adv\",   # 2026-10-25:顾问那条范围条件的冗余列(19→6.5 ms,3.1x)\n            \"ix_appt_cust\", \"ix_fu_cust\",\n            \"ix_ordr_created\"]",
+    "new": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\",\n            \"ix_appt_cust\", \"ix_fu_cust\",\n            \"ix_ordr_created\"]"
    }
   ],
   "预期红": "登记的索引就是这"
@@ -20240,12 +20240,12 @@
  },
  {
   "script": "backend/ownership_transfer_check.py",
-  "改坏": "客户页筛「公海」退回按名字比(没有导购的名字是空,一户都筛不出)",
+  "改坏": "客户页筛「公海」的 SQL 条件改成 0=1(一户都筛不出)—— 11-17 分页进 SQL 后,原来那行 Python 过滤没了,攻击点跟着挪到 WHERE 片段上",
   "file": [
    {
     "path": "backend/server.py",
-    "old": "            rs=[c for c in rs if not c.get(\"advisor_no\")]; continue",
-    "new": "            rs=[c for c in rs if c.get(\"advisor\")==v]; continue"
+    "old": "                条.append(\"(advisor_no IS NULL OR advisor_no='')\"); continue\n",
+    "new": "                条.append(\"0=1\"); continue\n"
    }
   ],
   "预期红": "公海 · 客户页「销售顾问」筛「公海」筛得出刚释放的那户,筛不出还有导购的"
@@ -23408,5 +23408,17 @@
    }
   ],
   "预期红": "范围闸取不到"
+ },
+ {
+  "script": "backend/staff_pwd_check.py",
+  "改坏": "让店长那道窄口不再核对是不是本店的人(别店店长也能把这家店的顾问停掉 —— 11-17 拍的是「只能停用**本店**员工」)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if not 我 or not 我[0][\"shop_code\"] or 我[0][\"shop_code\"] != (old[\"shop_code\"] or \"\"):\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "店长停用别店员工 → 拒(OTHER_SHOP)"
  }
 ]
