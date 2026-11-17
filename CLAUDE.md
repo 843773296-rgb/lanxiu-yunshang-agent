@@ -200,7 +200,7 @@ LANXIU_PROVIDER=claude   # 走 Claude(CLI 登录态,月租,不额外花钱)
    ⚠️ 2026-11-17 起外面再包一层 **`./tools/ship.sh`**(同样的参数):它只做一件事 —— 把三件被运行时一直写的跟踪文件
    (`.feynman/tool-eval.json` / `agentsite/evals/funnel.jsonl` / `agentsite/evals/skill_usage.jsonl`)挪开、`git checkout --`、
    跑 pre_push、**不管绿红都放回**(trap)。这套手工动作做了十几次,漏放回一次运行态就丢一截。
-   新加检查用 `python3 tools/new_check.py tools/xxx_check.py --标题 …` 起骨架(样本量 / 自测 / 咬合清单 + 自动挂 check.sh);
+   新加检查用 `python3 tools/new_check_scaffold.py tools/xxx_check.py --标题 …` 起骨架(样本量 / 自测 / 咬合清单 + 自动挂 check.sh);
    改了口径要刷生成类文档用 `./tools/sync_docs.sh`(待办 / 工具表 / README / SOP 一次全刷再对账)。
    ⚠️ **次数仍然是一次**,只是挪了位置 —— 省掉了「rebase 前那一次」,不比原来贵。
    起因(用户 2026-11-11 让我先查市面做法再定):业界这条规矩叫

@@ -81,6 +81,28 @@ $("#f").addEventListener("submit", async ev=>{
       headers:{"content-type":"application/json"},
       body:JSON.stringify({login_name:no, password:pw})});
     const d=await r.json();
+    if(d.ok&&d.must_change_pwd){
+      // 首登改密(W19,2026-11-17):总部运营重置过口令的人,改成自己的才能往下走 —— 后端在改密前把别的口都 403 了
+      $("#f").innerHTML=`<p style="margin:0 0 10px;color:var(--ink)">这是临时口令,先改成你自己的密码(至少 8 位,不能用演示口令)。</p>
+        <div class="f"><label for="n1">新密码</label><input id="n1" type="password" autocomplete="new-password"></div>
+        <div class="f"><label for="n2">再输一次</label><input id="n2" type="password" autocomplete="new-password"></div>
+        <button id="go2">改密并进入</button><p id="err"></p>`;
+      $("#go2").onclick=async()=>{
+        const n1=$("#n1").value, n2=$("#n2").value;
+        if(n1!==n2) return err("两次输的不一样");
+        $("#go2").disabled=true;
+        try{
+          const r2=await fetch("/api/change-password",{method:"POST",headers:{"content-type":"application/json"},
+            body:JSON.stringify({old:pw,new:n1})});
+          const d2=await r2.json();
+          if(d2.ok){ const back=new URLSearchParams(location.search).get("back");
+            location.href = back && /^\/(?![\/\\])/.test(back) ? back : "/"; return; }
+          err(d2.reason||"改密失败");
+        }catch(e){ err("连不上服务:"+e.message); }
+        $("#go2").disabled=false;
+      };
+      return;
+    }
     if(d.ok){
       // 登录成功不停在这一页 —— 回到进来时想去的地方
       const back=new URLSearchParams(location.search).get("back");

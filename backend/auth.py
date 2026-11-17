@@ -30,7 +30,7 @@
 真上线要加「首次登录强制改密」。
 """
 from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
-import hashlib, hmac, json, os, secrets, sqlite3, threading, datetime as dt
+import contextlib, fcntl, hashlib, hmac, json, os, secrets, sqlite3, threading, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
@@ -79,6 +79,25 @@ def _文件():
 
 def _指纹(tok):
     return hashlib.sha256((tok or "").encode()).hexdigest()
+
+
+@contextlib.contextmanager
+def _文件锁():
+    """跨进程文件锁(执行手册 W19,体检 A §1.3):8760 和 8770 两个进程都读改写 .auth_sessions.json,
+    进程内的 _LOCK 管不到对方 —— 两边同时「读 → 改 → 整文件写回」,后写的把先写的那一条会话冲掉,
+    表现是「刚登录的人隔几秒就掉线」而且不报错。锁文件单独一个(锁正文文件会和 os.replace 换名打架);
+    持有方只做一次读写,拿不到就等。调用方已持 _LOCK。"""
+    p = _文件() + ".lock"
+    try:
+        f = open(p, "a")
+    except OSError:
+        yield; return            # 锁文件都开不了(只读目录):退回到没锁 —— 比拒绝登录好
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        try: fcntl.flock(f, fcntl.LOCK_UN)
+        finally: f.close()
 
 
 def _读盘():
@@ -130,9 +149,11 @@ def login(login_name, password):
         return None, "工号或密码不对"
     _bump_fail(u["no"], reset=True)
     tok = secrets.token_urlsafe(24)
-    who = {"no": u["no"], "name": u["name"], "role": u["role"], "shop": u["shop"]}
+    # 首登改密标记(W19,迁移 m0003):列没加之前 .get 拿到的是 None → 0,代码先到列后到也不会 500
+    who = {"no": u["no"], "name": u["name"], "role": u["role"], "shop": u["shop"],
+           "must_change_pwd": int(u.get("must_change_pwd") or 0)}
     now = dt.datetime.now()
-    with _LOCK:
+    with _LOCK, _文件锁():
         _SESS[tok] = dict(who, at=now)
         d = _读盘(); d[_指纹(tok)] = dict(who, at=now.isoformat()); _写盘(d)
     return tok, who
@@ -154,15 +175,78 @@ def who(token):
         if not s: return None
         if (dt.datetime.now() - s["at"]).total_seconds() > TTL_HOURS * 3600:
             _SESS.pop(token, None); return None
-        return {k: s[k] for k in ("no", "name", "role", "shop")}
+        return {"no": s["no"], "name": s["name"], "role": s["role"], "shop": s["shop"],
+                "must_change_pwd": int(s.get("must_change_pwd") or 0)}
 
 
 def logout(token):
-    with _LOCK:
+    with _LOCK, _文件锁():
         _SESS.pop(token or "", None)
         d = _读盘()
         if d.pop(_指纹(token), None) is not None:
             _写盘(d)
+
+
+MIN_PWD = 8
+演示口令 = "lanxiu@2026"     # seed 里公开的演示口令;改密不许改成它
+
+
+def _新哈希(pw, it):
+    salt = secrets.token_hex(16)
+    return salt, hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), it).hex()
+
+
+def change_password(token, old, new):
+    """登录的人给自己改密(W19)。→ (ok, 说法)。成功后标记归 0、**别的会话全下线、当前这一枚保留**。
+    规矩只有三条、全是结构能验的:至少 8 位;不能是演示口令;不能和旧的一样。「强度」不在这里枚举。"""
+    s = who(token)
+    if not s: return False, "没登录"
+    new = new or ""
+    if len(new) < MIN_PWD: return False, f"新密码至少 {MIN_PWD} 位"
+    if new == 演示口令: return False, "不能用演示口令"
+    if new == (old or ""): return False, "新密码不能和旧密码一样"
+    rs = _rows("SELECT * FROM staff WHERE no=?", s["no"])
+    if not rs: return False, "工号或密码不对"
+    u = rs[0]
+    algo = u.get("pwd_algo") or ""
+    if not (algo.startswith("pbkdf2_sha256$") and u.get("pwd_salt") and u.get("pwd_hash")):
+        return False, "这个账号还没设密码,请联系总部运营"
+    it = int(algo.split("$", 1)[1])
+    got = hashlib.pbkdf2_hmac("sha256", (old or "").encode(), bytes.fromhex(u["pwd_salt"]), it).hex()
+    if not hmac.compare_digest(got, u["pwd_hash"]):
+        _bump_fail(u["no"])
+        return False, "工号或密码不对"
+    salt, h = _新哈希(new, it)
+    with closing(sqlite3.connect(DB)) as c, c:
+        有 = {r[1] for r in c.execute("PRAGMA table_info(staff)")}
+        c.execute("UPDATE staff SET pwd_salt=?,pwd_hash=?,fail_count=0,locked_until=NULL"
+                  + (",must_change_pwd=0" if "must_change_pwd" in 有 else "") + " WHERE no=?", (salt, h, u["no"]))
+    作废(u["no"])                      # 旧口令登录的会话全下线
+    who_ = {"no": s["no"], "name": s["name"], "role": s["role"], "shop": s["shop"], "must_change_pwd": 0}
+    now = dt.datetime.now()
+    with _LOCK, _文件锁():             # 当前这一枚重新登记,标记归 0
+        _SESS[token] = dict(who_, at=now)
+        d = _读盘(); d[_指纹(token)] = dict(who_, at=now.isoformat()); _写盘(d)
+    return True, "密码已改;别的设备上的登录已下线"
+
+
+def set_temp_password(no):
+    """总部运营给员工重置口令(W19):随机临时口令**只回这一次**;置首登改密标记;这个人所有会话下线。
+    → (临时口令, 说法) 或 (None, 为什么不行)。角色闸在调用方(server.reset_staff_pwd),这里只管库。"""
+    rs = _rows("SELECT no, pwd_algo FROM staff WHERE no=?", str(no or ""))
+    if not rs: return None, f"没有员工 {no}"
+    algo = rs[0].get("pwd_algo") or ""
+    it = int(algo.split("$", 1)[1]) if algo.startswith("pbkdf2_sha256$") else 120_000
+    temp = secrets.token_urlsafe(9)[:12]
+    salt, h = _新哈希(temp, it)
+    with closing(sqlite3.connect(DB)) as c, c:
+        有 = {r[1] for r in c.execute("PRAGMA table_info(staff)")}
+        if "must_change_pwd" not in 有:
+            return None, "库里还没有「首登改密」这一列 —— 先跑 python3 backend/migrate.py"
+        c.execute("UPDATE staff SET pwd_algo=?,pwd_salt=?,pwd_hash=?,fail_count=0,locked_until=NULL,must_change_pwd=1 WHERE no=?",
+                  (f"pbkdf2_sha256${it}", salt, h, rs[0]["no"]))
+    作废(rs[0]["no"])
+    return temp, "临时口令只显示这一次;对方下次登录必须先改密"
 
 
 def 作废(no):
@@ -174,7 +258,7 @@ def 作废(no):
     """
     no = str(no or "")
     if not no: return 0
-    with _LOCK:
+    with _LOCK, _文件锁():
         内 = [t for t, s in _SESS.items() if str(s.get("no")) == no]
         for t in 内: _SESS.pop(t, None)
         d = _读盘(); 盘 = [k for k, v in d.items() if str(v.get("no")) == no]

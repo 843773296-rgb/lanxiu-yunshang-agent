@@ -1836,7 +1836,7 @@ async function staffList(){
       <td><span class="pill ${SPILL[r.status]}">${esc(r.status)}</span></td>
       <td class="mono">${esc(r.updated_by)}</td>
       <td class="mono" style="color:var(--ink3)">${esc(r.updated)}</td>
-      <td>${ROLE==="总部运营"&&!(ME&&ME.no===r.no)?`<span class="lk" data-perm="${esc(r.no)}">编辑</span>`:`<span class="lk dead" title="${ME&&ME.no===r.no?"不能改自己的权限":"改权限只有总部运营能做"}">编辑</span>`}</td></tr>`).join("")}
+      <td>${ROLE==="总部运营"&&!(ME&&ME.no===r.no)?`<span class="lk" data-perm="${esc(r.no)}">编辑</span> <span class="lk" data-rstpw="${esc(r.no)}">重置口令</span>`:`<span class="lk dead" title="${ME&&ME.no===r.no?"不能改自己的权限":"改权限只有总部运营能做"}">编辑</span>`}</td></tr>`).join("")}
     </tbody></table>${pagerC(d)}</div>
    <div class="card"><div class="hd"><h3>角色权限矩阵</h3>
      <span class="n">来源:后台 PRD 第 8 章与 6.2 —— 原设计稿的权限管理页无角色列,此表为按 PRD 补充</span></div>
@@ -1858,6 +1858,13 @@ async function staffList(){
       {k:"shop",type:"select",label:"归属(总部岗位留空)",opts:归属,val:r.shop||""},
       {k:"status",type:"select",label:"状态",opts:["启用","停用"],val:r.status}],
       v=>doOp("/api/staff-perm",{...v,no:r.no},staffList),true)});
+  // 11-17 重置口令(W19):只总部运营、不能给自己;临时口令只在这一次的提示里出现,不进日志
+  M.querySelectorAll("[data-rstpw]").forEach(e=>e.onclick=async()=>{
+    const r=d.rows.find(x=>x.no===e.dataset.rstpw)||{};
+    if(!await sure("重置口令",`给 ${r.no} ${r.name} 重置口令?\n他现在的登录会全部下线,下次登录必须先改密。临时口令只显示这一次。`,"重置")) return;
+    const x=await post("/api/staff-reset-pwd",{no:r.no});
+    if(x.ok) res(true,x.code,`${x.reason}\n临时口令:${x.temp}`); else res(false,x.code||"ERR",x.reason||x.error||"没成");
+  });
   bindTable(st,staffList);
 }
 

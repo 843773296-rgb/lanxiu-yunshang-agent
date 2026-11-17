@@ -23288,5 +23288,41 @@
    }
   ],
   "预期红": "再生成一次不多建(幂等)"
+ },
+ {
+  "script": "backend/staff_pwd_check.py",
+  "改坏": "把 do_POST 里「带首登改密标记只放改密口」那道闸去掉(拿临时口令登录的人直接能写库,而口令是总部运营经聊天发出去的)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            if 登录人.get(\"must_change_pwd\") and p not in (\"/api/change-password\", \"/api/logout\"):\n",
+    "new": "            if False:\n"
+   }
+  ],
+  "预期红": "带标记打写口 → 403 MUST_CHANGE_PWD"
+ },
+ {
+  "script": "backend/staff_pwd_check.py",
+  "改坏": "让 change_password 不再核对旧口令(拿到一枚没过期的 cookie 就能把别人的口令改掉)",
+  "file": [
+   {
+    "path": "backend/auth.py",
+    "old": "        _bump_fail(u[\"no\"])\n        return False, \"工号或密码不对\"\n",
+    "new": "        pass\n"
+   }
+  ],
+  "预期红": "旧口令错 → 拒"
+ },
+ {
+  "script": "backend/staff_pwd_check.py",
+  "改坏": "让 set_temp_password 不置首登改密标记(临时口令变成长期口令,「必须先改」形同虚设)",
+  "file": [
+   {
+    "path": "backend/auth.py",
+    "old": ",must_change_pwd=1 WHERE no=?",
+    "new": ",must_change_pwd=0 WHERE no=?"
+   }
+  ],
+  "预期红": "重置后标记置 1"
  }
 ]

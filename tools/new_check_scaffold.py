@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """新检查脚手架(执行手册 W32,2026-11-17):一条检查要同时落四处,少一处就是「写了 ≠ 在跑」。
 
-    python3 tools/new_check.py tools/xxx_check.py --标题 "门禁里那行的标题" [--干跑]
+    python3 tools/new_check_scaffold.py tools/xxx_check.py --标题 "门禁里那行的标题" [--干跑]
 
 它做的事(每一件都对应一次栽过的事):
   ① 生成 `tools/xxx_check.py` 骨架 —— 先报样本量、0 条就红、自测先过再真跑、模块级 `咬合 = [...]` 清单

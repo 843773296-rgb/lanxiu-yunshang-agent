@@ -1067,6 +1067,29 @@ def save_staff_perm(d, me):
                 reason=(f"已保存:{'、'.join(x['字段'] for x in 改了)}" + (f";{old['name']} 要重新登录才能用新权限" if 改了 else ""))
                        if 改了 else "没有改动(也留了一条记录)")
 
+
+def reset_staff_pwd(no, me):
+    """给员工重置口令(执行手册 W19,2026-11-17):回一个临时口令、**只回这一次**;对方下次登录必须先改密;他原来的会话全下线。
+
+    谁能做:**只总部运营、不能给自己**(照 11-14 台账第四十五条第四组「改员工权限只总部运营」的口径;
+    手册里「店长开通 / 停用本店员工」和那条拍板撞了,店长那半等用户另拍)。
+    临时口令不进任何日志(进了等于写在台账里);日志只记「谁给谁重置了」。"""
+    import auth as _auth
+    no = str(no or "").strip(); 角色 = (me or {}).get("role"); 谁 = (me or {}).get("name") or "?"
+    def 拒(码, 为何):
+        log_op(谁, "staff", no or "?", "—", "重置口令", False, 码, 为何, {"role": 角色})
+        return dict(ok=False, code=码, reason=为何)
+    if 角色 != "总部运营": return 拒("WRONG_ROLE", f"重置口令只有总部运营能做,当前角色:{角色 or '未知'}")
+    if no == str((me or {}).get("no") or ""): return 拒("SELF_EDIT", "不能重置自己的口令 —— 自己改走「改密」,忘了找另一位总部运营")
+    old = rows("SELECT no,name,status FROM staff WHERE no=?", no)
+    if not old: return 拒("NO_STAFF", f"没有员工 {no}")
+    temp, 说 = _auth.set_temp_password(no)
+    if not temp: return 拒("RESET_FAILED", 说)
+    log_op(谁, "staff", no, "—", "重置口令", True, "PWD_RESET", f"给 {old[0]['name']} 重置口令,首登须改密;原有会话已下线", {"role": 角色})
+    log_edit(谁, (me or {}).get("no"), "员工", no, f"重置口令 {no} {old[0]['name']}",
+             [{"字段": "口令", "改前": "(原口令)", "改后": "(临时口令,首次登录必须改)"}])
+    return dict(ok=True, code="PWD_RESET", temp=temp, reason=f"已给 {old[0]['name']} 重置;{说}")
+
 def staff_list(q, 本店=None):
     kw=(q.get("q") or [""])[0].strip()
     ro=(q.get("role") or [""])[0]
@@ -4143,6 +4166,9 @@ class H(BaseHTTPRequestHandler):
         # 新加一个会带出客户姓名 / 电话 / 地址的读接口,要加进 `要登录的读`。
         if _要登录(p) and not _me(self):
             return self._send({"error": "请先登录 —— 这一页带着客户信息", "code": "NO_AUTH"}, 401)
+        # 首登改密(W19,2026-11-17):拿临时口令登录的人,改密之前只能看 /api/me(上面已回)—— 带客户信息的读一律 403
+        if _要登录(p) and (_me(self) or {}).get("must_change_pwd"):
+            return self._send({"error": "先改密再用 —— 这是用临时口令登录的", "code": "MUST_CHANGE_PWD"}, 403)
         # 存过的经营报告(用户 10-10:确认后要给个链接能直达)—— 身份只从 Cookie 换,
         # 范围规则和 chat 里 list_reports 是**同一个函数**(report_doc.列 / 取),页面不另写一套
         if p.startswith("/api/contract/"):
@@ -4789,6 +4815,11 @@ class H(BaseHTTPRequestHandler):
             if not 登录人:
                 return self._send({"error": "没登录", "code": "NO_LOGIN",
                                    "reason": "请先登录 —— 写操作要记下是谁做的,不替任何人署名"}, 401)
+            # 首登改密(W19,2026-11-17):带着「必须改密」标记的会话,写口只放改密和退出 —— 临时口令是总部运营发的、
+            # 可能经过聊天 / 纸条,拿它干的任何事都不该算在这个人头上
+            if 登录人.get("must_change_pwd") and p not in ("/api/change-password", "/api/logout"):
+                return self._send({"error": "先改密再用 —— 这是用临时口令登录的", "code": "MUST_CHANGE_PWD",
+                                   "reason": "总部运营给你重置了口令,先改成自己的再操作"}, 403)
         if p == "/api/export-selected":
             # 页面上「导出所选」(11-09 拍「没有单条写接口的先做导出所选」)是**浏览器里**拼 CSV 的,
             # 绕过了上面 GET /api/export/ 那道「店长以上 + 进操作日志」(用户 11-12 拍,台账第十六条)。
@@ -5264,6 +5295,17 @@ class H(BaseHTTPRequestHandler):
             return self._send(_cl.用(str(body.get("token") or ""), body))
         if p=="/api/staff-perm":
             return self._send(save_staff_perm(body, 登录人))
+        if p=="/api/change-password":
+            # 自己给自己改(W19)。旧口令要对;身份只从会话取;改完别的会话下线、当前这枚保留(auth.change_password)
+            _tok = ""
+            for part in (self.headers.get("cookie") or "").split(";"):
+                k, _, v = part.strip().partition("=")
+                if k == "lx_token": _tok = v
+            ok, 说 = auth.change_password(_tok, body.get("old"), body.get("new"))
+            log_op(登录人["name"], "staff", 登录人["no"], "—", "改密", bool(ok), "PWD_CHANGED" if ok else "PWD_REJECT", 说, {})
+            return self._send(dict(ok=bool(ok), code="PWD_CHANGED" if ok else "PWD_REJECT", reason=说), 200 if ok else 400)
+        if p=="/api/staff-reset-pwd":
+            return self._send(reset_staff_pwd(body.get("no"), 登录人))
         if p=="/api/appt-edit":
             return self._send(edit_appointment(body, 登录人))
         if p=="/api/targeted-ops":
