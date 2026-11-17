@@ -574,6 +574,7 @@ run "写死的模型 id · 「模型」字段里装的是 id 不是说明、没�
 run "评测集分层 · 每套题都打了频率标、分层表没过期条目、题数只许涨(改标签凑 60/30/10 要红)、「这份频率还没拿流量对过账」那句话不许删" python3 tools/eval_tier_check.py
 run "评测题面 · 有指代就得有编号,或写明是故意的" python3 tools/case_check.py
 run "判据点名要的工具,那个角色手上真有吗(kb 没有 check_write,要求它调=那道题永久挂、而成绩单上读起来像模型不谨慎;工具集取不到要红不要跳过)" ./agentsite/.venv/bin/python tools/case_tool_reachable_check.py
+run "评测题点名的客户,那道题的身份看得见吗(身份配错时模型被范围闸正确挡住,成绩单却记成没答好 —— 11-17 L01 两轮稳定挂;范围闸取不到要红)" ./agentsite/.venv/bin/python tools/case_identity_scope_check.py
 run "改动影响面 · 警示段落找不着就是正则漏了" python3 tools/impact.py --selftest
 run "评测夹具 · 写死了对象就得声明前提,而前提得成立" python3 tools/fixture_check.py
 run "状态流转引擎 · 17 个用例" python3 backend/fsm.py

@@ -23360,5 +23360,53 @@
    }
   ],
   "预期红": "库里的 DDL 和登记逐字一致"
+ },
+ {
+  "script": "tools/case_identity_scope_check.py",
+  "改坏": "把 L01 的身份改回默认(删掉它那行 me=湖滨店长)—— 11-17 两轮都挂的那个原样",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "     me=dict(no=\"60000007\", name=\"李明华\", role=\"店长\", shop=\"SH003 杭州湖滨店\"),\n     q=\"C10001 这个客户",
+    "new": "     q=\"C10001 这个客户"
+   }
+  ],
+  "预期红": "题里点名的客户,那道题的身份看得见"
+ },
+ {
+  "script": "tools/case_identity_scope_check.py",
+  "改坏": "往 `身份待定欠债` 里塞一道身份看得见的题(L01)—— 修好了还挂着,囤着的欠债和真欠债长得一样",
+  "file": [
+   {
+    "path": "tools/case_identity_scope_check.py",
+    "old": "    (\"ops_eval.py\", \"G04\"), (\"ops_eval.py\", \"G07\"),\n",
+    "new": "    (\"ops_eval.py\", \"G04\"), (\"ops_eval.py\", \"G07\"), (\"ops_eval.py\", \"L01\"),\n"
+   }
+  ],
+  "预期红": "已经看得见的,从身份欠债表里删掉了"
+ },
+ {
+  "script": "tools/case_identity_scope_check.py",
+  "改坏": "往 `故意越权` 里塞一道身份看得见的题(L01)—— 豁免要真的够不着",
+  "file": [
+   {
+    "path": "tools/case_identity_scope_check.py",
+    "old": "故意越权 = {}\n",
+    "new": "故意越权 = {(\"ops_eval.py\", \"L01\"): \"(咬合用)\"}\n"
+   }
+  ],
+  "预期红": "「故意越权」名单里的题,身份真的看不见"
+ },
+ {
+  "script": "tools/case_identity_scope_check.py",
+  "改坏": "把 `取范围闸()` 里的 `import api_member` 改成不存在的模块 —— 跑不起来不叫通过",
+  "file": [
+   {
+    "path": "tools/case_identity_scope_check.py",
+    "old": "    import api_member\n",
+    "new": "    import api_member_不存在\n"
+   }
+  ],
+  "预期红": "范围闸取不到"
  }
 ]
