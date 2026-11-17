@@ -46,8 +46,11 @@ def _日们(c, sql, *a):
     return [r[0] for r in c.execute(sql, a).fetchall() if r[0]]
 
 
-def 最后接触(c, 同户, 店, 导购, 建档):
-    """→ (日期 或 None, 来自哪一类)。"""
+def 最后接触(c, 同户, 店, 导购, 建档, 缓存=None):
+    """→ (日期 或 None, 来自哪一类)。带 缓存(扫描() 一次建好的整库字典)时不再逐户查库 —— 结果必须和逐户查一字不差
+    (ownership_transfer_check 有一条「带缓存的扫描 = 逐户查询」的对账)。"""
+    if 缓存 is not None:
+        return OP.最后维护日(*_从缓存取接触(缓存, 同户, 店, 导购), 建档)
     q = ",".join("?" * len(同户))
     订单 = _日们(c, f"SELECT COALESCE(paid_at, created) FROM ordr WHERE customer_id IN ({q}) AND shop=?", *同户, 店)
     跟进 = []
@@ -58,6 +61,61 @@ def 最后接触(c, 同户, 店, 导购, 建档):
     到店 = _日们(c, f"SELECT start_ts FROM appointment WHERE customer_id IN ({q}) AND shop=? "
                   f"AND status IN ('已到店','已完成','已预约')", *同户, 店)
     return OP.最后维护日(订单, 跟进, 到店, 建档)
+
+
+def _从缓存取接触(缓存, 同户, 店, 导购):
+    """和上面四条 SQL 逐一对应:`shop=?` / `advisor_no=?` 在 SQL 里对 NULL 永远不成立,这里 店 / 导购 为空就取不到。"""
+    订单, 跟进, 到店 = [], [], []
+    for cid in 同户:
+        if 店 is not None:
+            订单 += 缓存["订单"].get((cid, 店), [])
+            到店 += 缓存["到店"].get((cid, 店), [])
+        if 导购:
+            跟进 += 缓存["跟进"].get((cid, 导购), [])
+            跟进 += 缓存["日程完结"].get((cid, 导购), [])
+    return 订单, 跟进, 到店
+
+
+def 建缓存(c):
+    """扫描() 用:整库各读一遍,按 (客户, 店) / (客户, 导购) 装进字典。性能剖析(2026-11-17):逐户查 14385 户要 13 万次 execute、
+    79 秒;整库读几遍只要几秒。**字典里只装 SQL 原来会选到的行**(同样的 status / type 过滤、同样的 COALESCE、同样丢掉空值)。"""
+    def 装(sql, 键数=2):
+        d = {}
+        for r in c.execute(sql).fetchall():
+            if r[键数]:
+                d.setdefault(tuple(r[:键数]), []).append(r[键数])
+        return d
+    有表 = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    账户 = {}
+    for cid, acc in c.execute("SELECT id, account_id FROM customer").fetchall():
+        账户[cid] = acc
+    同户表 = {}
+    for cid, acc in c.execute("SELECT id, account_id FROM customer WHERE account_id IS NOT NULL AND COALESCE(merged_into,'')='' ORDER BY id").fetchall():
+        同户表.setdefault(acc, []).append(cid)
+    知会 = {}
+    for cid, d in c.execute("SELECT customer_id, MAX(start_ts) FROM schedule WHERE type=? GROUP BY customer_id", (知会类型,)).fetchall():
+        if d: 知会[cid] = str(d)[:10]
+    知会单 = {}
+    if "pool_notice" in 有表:
+        for cid, d in c.execute("SELECT customer_id, MAX(noticed_on) FROM pool_notice GROUP BY customer_id").fetchall():
+            if d: 知会单[cid] = str(d)[:10]
+    return {
+        "订单": 装("SELECT customer_id, shop, COALESCE(paid_at, created) FROM ordr"),
+        "跟进": 装("SELECT customer_id, advisor_no, ts FROM followup"),
+        "日程完结": 装(f"SELECT customer_id, advisor_no, COALESCE(end_ts, start_ts) FROM schedule "
+                      f"WHERE status IN ('完结','已完成') AND type NOT IN ('{知会类型}','{指派类型}')"),
+        "到店": 装("SELECT customer_id, shop, start_ts FROM appointment WHERE status IN ('已到店','已完成','已预约')"),
+        "账户": 账户, "同户表": 同户表, "知会": 知会, "知会单": 知会单,
+    }
+
+
+def _同户从缓存(缓存, cid):
+    """和 account_owner.同户档案(c, [cid]) 一致:自己在前,再接同账户下其它在用档案(按 id 序);没账户就只有自己。"""
+    acc = 缓存["账户"].get(cid)
+    出 = [cid]
+    if acc:
+        出 += [x for x in 缓存["同户表"].get(acc, []) if x != cid]
+    return 出
 
 
 知会表DDL = """CREATE TABLE IF NOT EXISTS pool_notice(
@@ -75,8 +133,11 @@ def 建表(c):
     # 11-14 前建的表没有 shop_code:补列 + 按 shop 回填 2026-11-17 起归 backend/migrations/m0005(数据修补也归迁移),这里只建表
 
 
-def 已知会日(c, 同户):
+def 已知会日(c, 同户, 缓存=None):
     """→ 'YYYY-MM-DD' 或 None。pool_notice 和合并前的一户一条旧任务取最晚的那天。表还没建(从没写过)= 没知会过。"""
+    if 缓存 is not None:
+        日们 = [缓存["知会"][x] for x in 同户 if x in 缓存["知会"]] + [缓存["知会单"][x] for x in 同户 if x in 缓存["知会单"]]
+        return max(日们) if 日们 else None
     q = ",".join("?" * len(同户))
     日们 = []
     r = c.execute(f"SELECT MAX(start_ts) FROM schedule WHERE type=? AND customer_id IN ({q})", (知会类型, *同户)).fetchone()
@@ -112,8 +173,9 @@ def _派清单(c, 导购, 店, 户们, 今天):
     return sid
 
 
-def 扫描(c, 今天, 只这家店=None):
+def 扫描(c, 今天, 只这家店=None, 不用缓存=False):
     """→ [dict(客户, 同户, 店, 导购, 最后接触, 来自, 已知会日, 动作, 已过天数, 理由)]。只读。每个账户一行。
+    不用缓存=True 走原来的逐户查库(慢;对账用:两种跑法结果必须一字不差)。
     只这家店:给了就只扫档案在这家店的客户(用户 11-13 拍「公海首跑先挑一家店试」)。"""
     出, 见过 = [], set()
     # 受保护客户(评测夹具 + 评测真值依赖的客户)不扫:11-13 静安首跑给其中 12 户发了知会,
@@ -124,12 +186,13 @@ def 扫描(c, 今天, 只这家店=None):
     条件, 参 = "", ()
     if 只这家店:
         条件, 参 = " AND shop=?", (只这家店,)
+    缓存 = None if 不用缓存 else 建缓存(c)      # 一次装好整库,逐户只查字典(2026-11-17,W33 ④:79 秒 → 几秒)
     for cid, 店, 导购, 建档 in c.execute(
             "SELECT id, shop, advisor_no, created FROM customer "
             "WHERE advisor_no IS NOT NULL AND advisor_no<>''" + 条件 + " ORDER BY id", 参).fetchall():
         if cid in 见过 or cid in 保护:
             continue
-        r = 判一户(c, cid, 今天, (店, 导购, 建档))
+        r = 判一户(c, cid, 今天, (店, 导购, 建档), 缓存=缓存)
         if 保护.intersection(r["同户"]):
             见过.update(r["同户"])
             continue
@@ -138,13 +201,13 @@ def 扫描(c, 今天, 只这家店=None):
     return 出
 
 
-def 判一户(c, cid, 今天, 档=None):
-    """一个客户(连同户)今天该不动 / 知会 / 释放。扫描和检查共用这一份。"""
+def 判一户(c, cid, 今天, 档=None, 缓存=None):
+    """一个客户(连同户)今天该不动 / 知会 / 释放。扫描和检查共用这一份。带 缓存 时不查库(扫描() 给的),否则逐户查。"""
     import account_owner as AO
     店, 导购, 建档 = 档 or c.execute("SELECT shop, advisor_no, created FROM customer WHERE id=?", (cid,)).fetchone()
-    同户 = AO.同户档案(c, [cid]) or [cid]
-    维, 来自 = 最后接触(c, 同户, 店, 导购, 建档)
-    知 = 已知会日(c, 同户)
+    同户 = (_同户从缓存(缓存, cid) if 缓存 is not None else AO.同户档案(c, [cid])) or [cid]
+    维, 来自 = 最后接触(c, 同户, 店, 导购, 建档, 缓存=缓存)
+    知 = 已知会日(c, 同户, 缓存=缓存)
     判 = OP.该放吗(维, 今天, 知)
     return dict(客户=cid, 同户=同户, 店=店, 导购=导购, 最后接触=str(维) if 维 else None, 来自=来自, 已知会日=知, **判)
 

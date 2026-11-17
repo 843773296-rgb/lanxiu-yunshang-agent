@@ -23336,5 +23336,17 @@
    }
   ],
   "预期红": "地址只到区(省市区)"
+ },
+ {
+  "script": "backend/ownership_transfer_check.py",
+  "改坏": "扫描的整库缓存里「订单」那一支把 COALESCE(paid_at, created) 换成 created(付款日和下单日不是同一天的单,最后接触算早了)—— 逐户查库那条路不变,所以只有两种跑法的对账能抓到;第一版攻击「去掉 type 过滤」在库上不可观测(完结的知会任务一条都没有),换成这一刀",
+  "file": [
+   {
+    "path": "backend/ownership_release.py",
+    "old": "        \"订单\": 装(\"SELECT customer_id, shop, COALESCE(paid_at, created) FROM ordr\"),\n",
+    "new": "        \"订单\": 装(\"SELECT customer_id, shop, created FROM ordr\"),\n"
+   }
+  ],
+  "预期红": "公海 · 带缓存的扫描 = 逐户查库"
  }
 ]
