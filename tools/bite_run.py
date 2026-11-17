@@ -161,7 +161,12 @@ def _忽略(软链):
                                 # ⚠️ 这一条和下面那个模型目录的处理**刻意不同**:
                                 # 没人读的整份不带,只读的走软链 —— 分开它们的是
                                 # 「有没有代码会去读它」,不是大小。
-                                "spans.jsonl.1")
+                                "spans.jsonl.1",
+                                # 夜跑留在本地的未压缩滚动日志(`agent/nightly/agentsite__evals__funnel.jsonl`,
+                                # 11-18 03:54 涨到 123 MB,副本 403 MB > 400 MB,第五轮全量重放 61 个脚本全部拒跑)——
+                                # 它 gitignore、只有 nightly_eval 读它去压 .gz(不在门禁里跑);eval_env_check 用的是自己造的临时文件。
+                                # 和上面 spans.jsonl.1 同一条判据:**没人读的整份不带**。压缩版 .gz 照带(名字不匹配这条)
+                                "agentsite__evals__*.jsonl")
     def f(目录, 名字们):
         # 库的临时日志(-journal / -wal / -shm)不带:它们随写随删,复制到一半消失会让 copytree 报
         # Errno 2(10-03 队友撞到过)—— 而且带过去也没用,副本里的库是独立打开的。
