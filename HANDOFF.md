@@ -20,10 +20,12 @@
 
 1. ✅ 体检 45 条中 22 条修掉(7e7d5863 / f79f31c2),报告 4a775439 已发飞书
 2. ✅ 子代理第一批四路合进 w1117(95224f50 Prompt 变量编辑;b6c3beb5 评测发起取消 + datasets 版本们;92a78c82 旋钮方案页;122279a4 连接停用/Agent 连接下拉/失败任务卡/待办链接/面包屑/试跑 100 条/实体去哪列/冒烟管理员轮,两处冲突手解)。合并后 16 页 U001 + 5 页 U002 冒烟全绿。**全部只过渲染没真点过**(子代理只许 GET)
-3. 🟡 batch12 第一次 e2e-ci 红 3 条(22:23):加资料引了接口没有的「版本」字段、工具详情脚注测试认旧词、Agent 跑 http 000(模型调用网络瞬断,同时段别的 agent_run 都完成)—— 前两条已修(含测试一起改),第三条当瞬断重跑。**下一次 batch12 并回的是全部 1–6**
+3. 🟡 batch12 **第二轮 22:29 起**(并回 f63afb53,27 笔,含 1–6 全部;aimc 已重启跑新代码;e2e-ci 约 22:45 完 → ship 约 23:1x 推;fc 排在后面推 1 笔文档,23:30 后它就不推了)。第一次 e2e-ci 红 3 条(22:23):加资料引了接口没有的「版本」字段、工具详情脚注测试认旧词、Agent 跑 http 000(模型调用网络瞬断,同时段别的 agent_run 都完成)—— 前两条已修(含测试一起改),第三条当瞬断重跑。**下一次 batch12 并回的是全部 1–6**
 4. ✅ 暂停 / 取消 / 继续 / 核实接执行侧(2bbb922e,未推):runner 要暂停吗 回调 + pause 检查点;worker 刷新令牌读 execution_runs 两个标记、取消收成 cancelled、_挂起 支持 paused;runctl 取消同步 jobs.cancel_requested、继续真排任务、核实查桥请求回执后送回 paused/running;离线测试 test_pause_checkpoint 14/14、make test-orchestration 全绿。**worker 那一半没真跑过**。原计划:runner.跑一张图 加「要暂停吗」回调 → 节点边界返回 paused 检查点;worker `_打点器` 读 execution_runs.pause_requested/cancel_requested;_挂起 支持 paused;runctl.cancel 同步 jobs.cancel_requested;runctl.resume 改调 run_resume.排恢复(挂起态加 paused);worker `except 取消了` 把 execution_runs 收成 cancelled;reconcile 待定
 5. ✅ 子代理第二批全合入:用量预算块(42c78bf3)、工具选择策略页 + 训练/部署标灰(91a6f4e4)、工具连接+工具组页(a8ac8f06,Makefile/app.js 两处冲突手解)、数据集页新建/冻结/导出/补脱敏 + PATCH /datasets(57da1278);PATCH /datasets 和连接 archive/unarchive 补进 contract/endpoints.py 并重生成 openapi/ts。合并后 datasets / groups / conns / tool 详情 / 搭建 页冒烟绿。原记录:✅ 用量预算块(42c78bf3,合 07474e2a;预算接口 GET 也要 admin,非 admin 看 403 态);✅ 工具选择策略页 + 训练/部署标灰(91a6f4e4,合 5f33b6d3);⬜ 工具连接+工具组页、数据集页 还在跑。合并后 7 页冒烟绿。子代理都说两条棘轮(css_class_check 30>29、md_render_check 50>32)**在合并前就红**,不在 e2e-ci 里;ship 的全量门禁会不会跑它们看日志
-6. ⬜ 第二批合并 + 推;10:00 夜间汇总发飞书、刷交接、删提醒
+6. ⬜ 推完之后:① 子代理 a979bd(22:3x 派)在给今晚新接口写 e2e(prompt-runs 绑连接 / 连接停用 / PATCH datasets / 运行取消暂停 / 评测取消),交回后合入、登记 E2E_CI、再推一批;② runctl 取消队列中运行顺手收任务(ff 之后那笔,未推);③ 剩下的小项:Agent 调试默认输入按 schema 生成、日志策略 If-Match 用 projects.revision、viewer 的「看进度」按钮、费用说明「mock 没计价」在 live 上也这么写、知识库文档列表页(要补 GET 接口);④ 10:00 夜间汇总发飞书、刷交接、CronDelete c258b450
+- **未验证的预判**:暂停 / 取消的 worker 那一半没在真库上跑过(e2e 子代理会试抓 running 窗口);子代理们的写操作(建连接 / 建组 / 冻结 / PATCH 数据集 / 建方案 / 发起评测)全只过了代码审读和渲染,e2e-ci 现有测试覆盖不到新按钮的 POST,靠 a979bd 补的测试
+- **判据**:只认「被包的命令退出码」;Agent 跑 http 000 那种瞬断红不算代码红,同时段别的 agent_run 都完成就重跑
 - 旋钮页子代理提到两条棘轮 css_class_check 30>29、md_render_check 37>32 **在 ff8e39a4 上就红**(fc 推得上去说明不在门禁里,可能只在 make test)。看 ship 日志再说
 
 ### 🟡 11-18 21:5x · 用户拍了体检四件;batch12 在跑(Fable 5.1)
