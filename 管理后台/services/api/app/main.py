@@ -837,7 +837,10 @@ def 任务详情(project_id: str, job_id: str, me: 身份 = Depends(要权限("�
             tr = {"trace_id": tid, "阶段": 段, "看得到原文": 看原文,
                   "用量": [dict(x) for x in 用],
                   # **未知费用显示「未知」,不用 0 代替**(规格开头的数字约定)
-                  "费用说明": "mock 适配器没有真实计价 → 记为未知,**不是 0**"}
+                  # 11-18:真跑(source=live)也会记成未知 —— 原来这句一律说「mock 没计价」,真跑的人看了以为跑的是 mock
+                  "费用说明": ("真模型跑的(live):token 记了,金额要等价目表 / 外部账单核对 → 先记为未知,**不是 0**"
+                           if any((x["source"] or "") == "live" for x in 用)
+                           else "mock 适配器没有真实计价 → 记为未知,**不是 0**")}
     状态 = j["status"]
     return {"id": j["id"], "type": j["type"], "status": 状态,
             "是终态吗": 状态 in ST.找("job")["终态"],

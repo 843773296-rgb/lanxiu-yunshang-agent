@@ -6268,9 +6268,34 @@ async function 做_冻结agent() {
   }
 }
 
+/* 按 JSON Schema 造一份占位输入(11-18):required 的字段按类型给最小值 —— string 给 "示例"、数字 1、布尔 false、
+ * 数组给一个元素(按 items 类型)、对象递归;认不出 schema 就退回 {products:["甲","乙"]}(模板那份)。只是让「试运行」有东西可发,不是真数据 */
+function 按Schema造输入(sch) {
+  const 造 = (s, 深 = 0) => {
+    if (!s || typeof s !== "object" || 深 > 4) return "示例";
+    const t = Array.isArray(s.type) ? s.type[0] : s.type;
+    if (s.enum && s.enum.length) return s.enum[0];
+    if (t === "string") return "示例";
+    if (t === "number" || t === "integer") return typeof s.minimum === "number" ? s.minimum : 1;
+    if (t === "boolean") return false;
+    if (t === "array") return [造(s.items || {}, 深 + 1)];
+    if (t === "object" || s.properties) {
+      const o = {};
+      const 要 = (s.required && s.required.length) ? s.required : Object.keys(s.properties || {});
+      要.forEach((k) => { o[k] = 造((s.properties || {})[k] || {}, 深 + 1); });
+      return o;
+    }
+    return "示例";
+  };
+  if (!sch || typeof sch !== "object" || (!sch.properties && !sch.type)) return { products: ["甲", "乙"] };
+  const 出 = 造(sch);
+  return (出 && typeof 出 === "object" && !Array.isArray(出)) ? 出 : { products: ["甲", "乙"] };
+}
+
 async function 做_跑agent() {
   if (agent态.脏) await 做_存agent();
-  const 输入 = agent态.调试输入 || { products: ["甲", "乙"] };
+  // 11-18:原来写死 {products:[甲,乙]}(模板的 schema);改过 input_schema 后首跑必 422「输入不合法」。按当前 schema 生成一份占位输入
+  const 输入 = agent态.调试输入 || 按Schema造输入((((agent态.草稿 || {}).配置) || {}).input_schema);   // 配置在 草稿.配置 里(接口形状)
   try {
     const d = await 请求(`${P()}/agent-runs`, {
       method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() },
