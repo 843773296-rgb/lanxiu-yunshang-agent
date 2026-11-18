@@ -8220,6 +8220,7 @@ async function 页_知识库() {
         <td>${r["就绪索引数"]} 个已就绪 ${_mock标(r["索引是mock吗"])}
             ${r["索引模型"] ? `<div class="k">${esc(r["索引模型"])}</div>` : ""}</td>
         <td><button data-kb="${esc(r.id)}">看索引</button>
+            <button data-docs="${esc(r.id)}">看文档</button>
             <button data-chunks="${esc(r.id)}">看切片</button>
             ${r["能检索吗"] ? `<button data-try="${esc(r.id)}">去检索</button>` : ""}</td>
       </tr>`).join("")
@@ -8239,6 +8240,9 @@ async function 页_知识库() {
     b.onclick = () => {
       location.hash = "#/chunks/" + encodeURIComponent(b.dataset.chunks);
     };
+  });
+  $("#main").querySelectorAll("[data-docs]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/docs/" + encodeURIComponent(b.dataset.docs); };
   });
   $("#main").querySelectorAll("[data-try]").forEach((b) => {
     b.onclick = () => { location.hash = "#/retrieval/" + encodeURIComponent(b.dataset.try); };   // 带上库 id,到了那页就选这个库的索引
@@ -8268,6 +8272,85 @@ async function 页_知识库() {
  * 换成 hash 要改现有那套 `slice(n)` 的路由解析(它不解析查询串),
  * 而这一页是第一个有真分页的页面 —— **先把取舍写下来,别让它成为默认**。 */
 let _切片页 = { kb: null, off: 0, doc: null };
+
+/* ══════════════════════════════════════════════════════════════════
+ * 文档列表(11-18 体检补的)
+ *
+ * 知识库页每行有「文档数」,而**没有任何地方能看见那几篇是什么** ——
+ * 发新版本 / 拆文档都要文档 id,原来只能 curl 切片接口反推。
+ * 这一页回答三件事:库里有哪几份资料 / 每份改过几版 / 最新那一版切了几段。
+ *
+ * ⚠️ 「片段数」是**最新版**的。片段绑的是文档版本不是文档,旧版本的片段留着
+ * 但索引不收 —— 接口返回的 note 原样过 md() 摆在底部,别在这儿另写一遍口径。
+ * 分页状态照切片页:放模块变量、不进 hash(取舍见 _切片页 上面那段)。
+ * ══════════════════════════════════════════════════════════════ */
+let _文档页 = { kb: null, off: 0 };
+
+async function 页_文档列表(kbId) {
+  if (_文档页.kb !== kbId) _文档页 = { kb: kbId, off: 0 };
+  const 每页 = 30;
+  const 头 = `<div class="crumb"><a href="#/kb">知识库</a> · 文档</div>
+    <div class="head"><div><h1>文档</h1>
+      <div class="sub">${md("这个知识库里有哪几份资料、每份改过几版。**改一篇资料不会动旧版本** —— 新版要再建一次索引才生效。")}</div>
+    </div><div><a href="#/uploads"><button>加资料</button></a></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  const q = new URLSearchParams({ limit: String(每页), offset: String(_文档页.off) });
+  let d;
+  try {
+    d = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(kbId)}/documents?${q}`);
+  } catch (e) {
+    const s = 错误块(e, () => 页_文档列表(kbId));
+    $("#main").innerHTML = 头 + s.html; s.挂(); return;
+  }
+  const 头2 = `<div class="crumb"><a href="#/kb">知识库</a> · ${esc(d["知识库"].name)} · 文档</div>
+    <div class="head"><div><h1>文档</h1>
+      <div class="sub">${md("这个知识库里有哪几份资料、每份改过几版。**改一篇资料不会动旧版本** —— 新版要再建一次索引才生效。")}</div>
+    </div><div><a href="#/uploads"><button>加资料</button></a>
+      <a href="#/chunks/${encodeURIComponent(kbId)}"><button>看切片</button></a></div></div>`;
+  if (!d.total) {
+    const s = 状态("", "这个知识库还没有文档",
+      "先去「加资料」把文件传上来,校验通过后那一页有「收进知识库」。\n\n"
+      + "⚠️ **也可能是你的角色看不到这个库里的文档** —— "
+      + "「一篇都没有」和「一篇都看不到」在这个列表上长得一模一样,所以这句话要写出来。",
+      { 文: "去加资料", 做: () => { location.hash = "#/uploads"; } });
+    $("#main").innerHTML = 头2 + s.html; s.挂(); return;
+  }
+  const 末 = Math.min(_文档页.off + 每页, d.total);
+  const 状 = (r) => r["停用了吗"] ? `<span class="pill fail">停用</span>`
+    : !r["最新版本"] ? `<span class="pill fail">没有版本</span>`
+    : `<span class="pill ok">在用</span>`;
+  $("#main").innerHTML = 头2 + `<table><thead><tr>
+      <th>名字</th><th>来源</th><th class="num">版本</th><th>最新版本</th><th>状态</th><th></th>
+      </tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td data-raw="原文"><b>${esc(r["名字"])}</b><div class="k">${esc(r.id)} · 建于 ${时间(r["建于"])}</div></td>
+        <td>${esc(r["来源"] || "—")}</td>
+        <td class="num">${r["版本数"]}</td>
+        <td>${r["最新版本"]
+              ? `<code>${esc(r["最新版本"]["哈希前12"] || "(没哈希)")}</code> · ${r["最新版本"]["片段数"]} 段 · v${r["最新版本"]["版次"]}
+                 <div class="k">建于 ${时间(r["最新版本"]["建于"])} · ${esc(r["最新版本"].id)}</div>`
+              : `<span class="k">—</span>`}</td>
+        <td>${状(r)}${r["怎么读"] ? `<div class="k">${md(r["怎么读"])}</div>` : ""}</td>
+        <td>${r["最新版本"] && !r["停用了吗"]
+              ? `<button data-doc-chunks="${esc(r.id)}">看切片</button>` : ""}</td>
+      </tr>`).join("")
+    + `</tbody></table>
+       <div class="note">第 ${_文档页.off + 1}–${末} 篇,共 ${d.total} 篇
+         <button id="pv"${_文档页.off ? "" : " disabled"}>上一页</button>
+         <button id="nx"${末 < d.total ? "" : " disabled"}>下一页</button>
+       </div>
+       <div class="note">${md(d.note || "")}</div>`;
+  const 跳 = (off) => { _文档页.off = off; 页_文档列表(kbId); };
+  if ($("#pv")) $("#pv").onclick = () => 跳(Math.max(0, _文档页.off - 每页));
+  if ($("#nx")) $("#nx").onclick = () => 跳(_文档页.off + 每页);
+  $("#main").querySelectorAll("[data-doc-chunks]").forEach((b) => {
+    // 切片页按 document_id 筛的状态在模块变量里(见 _切片页):先设筛选再换页,到了就只看这一篇
+    b.onclick = () => {
+      _切片页 = { kb: kbId, off: 0, doc: b.dataset.docChunks };
+      location.hash = "#/chunks/" + encodeURIComponent(kbId);
+    };
+  });
+}
 
 async function 页_切片列表(kbId) {
   if (_切片页.kb !== kbId) _切片页 = { kb: kbId, off: 0, doc: null };
@@ -11428,6 +11511,9 @@ async function 路由() {
     // 但更长的前缀写在前面 —— 下一个人加 `#/chunkset/` 时就不会踩。
     if (h.startsWith("#/chunks/")) return await 页_切片列表(decodeURIComponent(h.slice(9)));
     if (h.startsWith("#/chunk/")) return await 页_切片详情(decodeURIComponent(h.slice(8)));
+    // `#/docs/` 是知识库的文档列表(11-18)。现在没有 `#/doc/`;以后加的话第 6 个字符一个是 s 一个是 /,
+    // 不会互吃,但照上面的规矩长前缀写在前面
+    if (h.startsWith("#/docs/")) return await 页_文档列表(decodeURIComponent(h.slice(7)));
     if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));
     if (h === "#/retrieval") return await 页_召回测试();
     if (h.startsWith("#/retrieval/")) return await 页_召回测试(decodeURIComponent(h.slice(12)));
