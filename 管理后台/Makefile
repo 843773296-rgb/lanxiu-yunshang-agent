@@ -360,7 +360,8 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	    echo "     跑 \`python3 tools/import_lanxiu_prompts.py\`(CI 里在「灌演示数据」那一步)"; \
 	    exit 1; fi; \
 	  rc=0; \
-	  for h in '#/prompts' '#/kb' '#/acceptance'; do \
+	  for h in '#/prompts' '#/kb' '#/acceptance' \
+	           '#/members' '#/audit' '#/integrations/tools' '#/retrieval' '#/human' '#/runs' '#/outputs' '#/usage'; do \
 	    printf "  %-12s " "$$h"; \
 	    out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
 		node tests/e2e/page_smoke.js "$$h" 2>&1); \
