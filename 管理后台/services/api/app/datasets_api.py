@@ -115,10 +115,19 @@ def 数据集列表(project_id: str, me: 身份 = Depends(要权限("查看有�
             版 = c.execute(text("""select count(*) from dataset_versions
                                  where project_id=:p and dataset_id=:d"""),
                            {"p": project_id, "d": d["id"]}).scalar()
+            # 11-18:评测中心「发起评测」要选**冻结版本的 id**,而列表原来只给计数 ——
+            # 人只能去数据库里抄 id。只给 id / 样本数 / 冻结时间,不给内容(契约:样本内容要额外授权)
+            版们 = c.execute(text("""select id, sample_count, created_at from dataset_versions
+                                  where project_id=:p and dataset_id=:d
+                                  order by created_at desc, id desc"""),
+                            {"p": project_id, "d": d["id"]}).mappings().all()
             出.append({
                 "id": d["id"], "名字": d["name"], "格式": d["format"],
                 "用途": d["purpose"], "revision": d["revision"],
                 "冻结过几版": 版,
+                "版本们": [{"id": v["id"], "样本数": v["sample_count"],
+                          "冻结于": v["created_at"].isoformat() if v["created_at"] else None}
+                         for v in 版们],
                 "脱敏策略": d["redaction_policy"] or None,
                 "样本数": 账["总数"], "分档": 账["分档"],
                 "能导出吗": not 拒,

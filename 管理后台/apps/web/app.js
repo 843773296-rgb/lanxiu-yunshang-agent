@@ -7183,21 +7183,85 @@ async function 页_待办详情(hid) {
  * ⚠️ **「有分数」不等于「能当结论」。** 规格 §18 要求四个东西同时在场:
  * 候选 + 基线 + 冻结的数据版本 + 记录在案的判据版本。
  * 缺任何一个,跑出来的数**看起来仍然是个分数** —— 而那是这一页的核心危险。 */
+// 后台派发评测的终态 —— **照抄后端 eval_dispatch.评测终态们**,别自己加:
+// 后端只对不在这几档里的评测受理取消,这里多写一档就是摆一个点了回 409 的按钮,少写一档就是藏掉一个能停的
+const 评测终态们 = new Set(["已完成", "超时", "超出费用上限", "已取消"]);
+// 看进度 / 发起 / 取消都走服务端「运行评测」这条能力;这里只决定摆不摆按钮(§5.2:前端不是授权)
+const 能运行评测 = () => ["admin", "editor", "trainer", "approver"].includes(我的角色);
+// 项目里所有工作流的已冻结版本(后台派发时候选 / 基线只认 workflow_versions.id)。
+// 列表接口只给「最新冻结版本 vN」不给 id,所以要逐条进详情取 `版本们`;一次页面里只拉一遍
+let 工作流版本缓存 = null;
+async function 取工作流版本们() {
+  if (工作流版本缓存) return 工作流版本缓存;
+  const 流们 = [];
+  for (let 页 = 1, 页数 = 1; 页 <= 页数 && 页 <= 50; 页++) {
+    const d = await 请求(`${P()}/workflows?limit=100&page=${页}`);
+    流们.push(...(d.items || []));
+    页数 = d["页数"] || 1;
+  }
+  const 出 = [];
+  for (const w of 流们) {
+    if (!w["版本数"]) continue;             // 没冻结过的,进详情也是空的
+    const x = await 请求(`${P()}/workflows/${encodeURIComponent(w.id)}`);
+    (x["版本们"] || []).forEach((v) => 出.push({ id: v.id, 名: `${w["名称"]} · ${v["版本"]} · ${v.id}` }));
+  }
+  工作流版本缓存 = 出;
+  return 出;
+}
+
 async function 页_评测中心() {
+  工作流版本缓存 = null;      // 换项目 / 刚冻结了新版本,重进这一页要看到
   const 头 = `<div class="crumb">评测中心</div>
     <div class="head"><div><h1>回归验收</h1>
       <div class="sub">${md(`改完之后跑一遍,看有没有退步。**有分数 ≠ 能当结论。**`)}</div>
     </div><div><a href="#/compare"><button>实验对比</button></a></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
-  let d;
-  try { d = await 请求(`${P()}/evaluations`); }
+  let d, 数据集 = null, 数据集错 = null;
+  try {
+    // 数据集列表拿不到(比如 viewer 没有「查看有权配置」)不该拖垮整页 —— 表单里明说,列表照常
+    [d, 数据集] = await Promise.all([请求(`${P()}/evaluations`),
+      请求(`${P()}/datasets`).catch((e) => { 数据集错 = e; return null; })]);
+  }
   catch (e) { const s = 错误块(e, 页_评测中心); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  // 数据集版本下拉:从 `版本们` 来(11-18 加的字段)。老后端没有这个字段 → 退成文本框,别把人卡死
+  const 版本项 = [];
+  ((数据集 || {})["数据集"] || []).forEach((ds) => (ds["版本们"] || []).forEach((v) =>
+    版本项.push({ id: v.id, 名: `${ds["名字"]} · ${v["样本数"] ?? "?"} 题 · ${v.id}` })));
+  const 表单 = `<details class="card" id="ev-new"><summary><b>发起评测</b> <span class="k">候选 + 基线 + 冻结的数据版本 + 判据版本,四个都要在场</span></summary>
+    <div style="margin-top:8px">
+      <label class="f">执行方式</label>
+      <select id="ev-mode"><option value="外部登记">外部登记(建一条记录,结果在外面跑完登记进来)</option>
+        <option value="后台派发">后台派发(后台把每道题派成工作流运行,要花钱)</option></select>
+      <div class="k" id="ev-mode-why">外部登记时候选 / 基线是任意引用(写清是哪一版、哪套提示词就行);后台派发时必须是已冻结的工作流版本。</div>
+      <div id="ev-refs">
+        <label class="f">候选 <span class="req">*</span></label><input id="ev-cand" style="width:100%" placeholder="比如 独立路由器 haiku-4-5 + 提示词缓存">
+        <label class="f">基线 <span class="req">*</span></label><input id="ev-base" style="width:100%" placeholder="比如 关键词检索 @k=5">
+      </div>
+      <label class="f">数据集版本 <span class="req">*</span></label>
+      ${版本项.length
+        ? `<select id="ev-dsv"><option value="">请选择(只列冻结过的版本)</option>${版本项.map((v) => `<option value="${esc(v.id)}">${esc(v.名)}</option>`).join("")}</select>`
+        : `<input id="ev-dsv" style="width:100%" placeholder="dsv_… 冻结版本 id">
+           <div class="k">${数据集错 ? `数据集列表读不到(${esc(数据集错.message)}),先手填版本 id`
+             : ((数据集 || {})["数据集"] || []).length && !((数据集 || {})["数据集"] || []).some((x) => "版本们" in x)
+               ? "这个后端的数据集列表还没给版本 id(要 11-18 之后的后端),先手填"
+               : md("项目里还没有冻结过的数据集版本 —— 去「数据集」页先冻一版,**不静默用当前样本**")}</div>`}
+      <label class="f">判据版本 <span class="req">*</span></label><input id="ev-scorer" style="width:100%" placeholder="比如 router_probe@9ba7ef5c02c0 —— 换了判据的两轮不可比">
+      <div id="ev-dispatch" style="display:none">
+        <label class="f">超时分钟 <span class="req">*</span> <span style="color:var(--ink3)">1–1440;到点没跑完的取消、记成「超时」</span></label><input id="ev-timeout" type="number" min="1" max="1440" style="width:100%">
+        <label class="f">费用上限(美元) <span class="req">*</span> <span style="color:var(--ink3)">已知花费超过它就停,记成「超出费用上限」</span></label><input id="ev-cap" type="number" min="0" step="0.01" style="width:100%">
+        <label class="f">轮数 <span style="color:var(--ink3)">1–5,默认 2:只跑 1 轮看不出波动</span></label><input id="ev-rounds" type="number" min="1" max="5" value="2" style="width:100%">
+        <label class="f">评审连接 <span style="color:var(--ink3)">选填;题里只有期望说明、要模型评审时必须给(模型连接版本 id)</span></label><input id="ev-judge" style="width:100%" placeholder="mcv_…">
+      </div>
+      <div class="acts" style="margin-top:10px"><button class="pri" id="ev-go">发起</button></div>
+      <div id="ev-fb"></div>
+    </div></details><div id="ev-msg"></div>`;
   if (!d.items.length) {
-    $("#main").innerHTML = 头 + 状态("", "还没有评测实验",
-      "跑 `tools/seed_evals.py` 可以灌一组示例。").html;
+    $("#main").innerHTML = 头 + 表单 + 状态("", "还没有评测实验",
+      "点上面的「发起评测」建第一个:候选、基线、冻结的数据集版本、判据版本四个都要在场。外面跑完的也可以先建一条「外部登记」,再把逐题结果登记进来。").html;
+    挂评测表单();
     return;
   }
-  $("#main").innerHTML = 头 + `<table><thead><tr>
+  $("#main").innerHTML = 头 + 表单 + `<table><thead><tr>
       <th>候选</th><th>基线</th><th>状态</th><th class="num">题</th>
       <th>数据集版本</th><th>判据</th><th>能当结论吗</th></tr></thead><tbody>`
     + d.items.map((r) => `<tr>
@@ -7206,7 +7270,10 @@ async function 页_评测中心() {
         <td>${r["有基线吗"] ? esc((r.baseline_ref || {})["名"] || (r.baseline_ref || {})["ref"] || "有")
                             : `<span class="pill fail">没有基线</span>`}</td>
         <td>${esc(r.status || "—")}<div class="k">${esc(r.executor_code || "")}</div>
-          ${r.executor_code === "后台派发" ? `<button data-evp="${esc(r.id)}">看进度</button>` : ""}</td>
+          ${r.executor_code !== "后台派发" ? ""
+            : !能运行评测() ? `<div class="k">看进度 / 取消要「运行评测」能力 —— 你现在是 <b>${esc(我的角色 || "?")}</b>,所以这里不摆按钮</div>`
+            : `<button data-evp="${esc(r.id)}">看进度</button>`
+              + (评测终态们.has(r.status) ? "" : ` <button data-evc="${esc(r.id)}">取消</button>`)}</td>
         <td class="num">${r["题数"]}</td>
         <td class="k">${esc(String(r.dataset_version_id || "—").slice(-10))}</td>
         <td class="k">${esc(r.scorer_version || "—")}</td>
@@ -7215,6 +7282,27 @@ async function 页_评测中心() {
                  <div class="k">${esc(r["为什么不能当结论"] || "")}</div>`}</td>
       </tr>`).join("")
     + `</tbody></table><div id="evp"></div><div class="note">${md(d.note || "")}</div>`;
+  挂评测表单();
+  // 取消(DF-05):要理由、要 If-Match(进度里的 revision)—— 半途停掉的评测,过后得说得出是谁停的、为什么
+  $("#main").querySelectorAll("[data-evc]").forEach((b) => b.onclick = async () => {
+    const eid = b.dataset.evc;
+    const 理由 = await 问一句("取消这次评测", md("没跑完的运行会被取消,**已经收回的结果留着**;评测记成「已取消」,不能再恢复。"),
+      { 输入: "为什么停(必填,会进审计)", 多行: true, 必填: true, 确定: "取消评测", 取消: "先不" });
+    if (!理由) return;
+    b.disabled = true;
+    try {
+      const g = await 请求(`${P()}/evaluations/${encodeURIComponent(eid)}/progress`);
+      if (g.revision == null) throw Object.assign(new Error("进度接口没给 revision,取消要拿它做 If-Match"),
+        { 体: { code: "NO_REVISION", advice: "刷新一次;还是这样就是进度接口的问题" } });
+      const r = await 请求(`${P()}/evaluations/${encodeURIComponent(eid)}/cancel`,
+        { method: "POST", headers: { "If-Match": String(g.revision) }, body: JSON.stringify({ 理由 }) });
+      await 页_评测中心();
+      $("#ev-msg").innerHTML = `<div class="note">已取消 ${esc(r.id)},取消了 ${esc(r["取消了"] ?? "?")} 次运行。${md(r.note || "")}</div>`;
+    } catch (e) {
+      b.disabled = false;
+      const s = 错误块(e, null); $("#evp").innerHTML = s.html;
+    }
+  });
   // 后台派发的评测(DF-05):派了几次、收回几次、每次运行是谁在跑 —— **「已派发」只是排上队,不是在跑**
   $("#main").querySelectorAll("[data-evp]").forEach((b) => b.onclick = async () => {
     const box = $("#evp");
@@ -7240,6 +7328,64 @@ async function 页_评测中心() {
           <td>${x["收回了吗"] ? "是" : "否"}</td></tr>`).join("")
       + `</tbody></table></div>`;
   });
+}
+
+/* 发起评测表单的行为(11-18):切执行方式 → 候选 / 基线在文本框和「已冻结工作流版本」下拉之间换;
+ * 提交带 Idempotency-Key(评测要花钱,超时重发一次就是再跑一遍题);
+ * 422 的 field_errors **逐字段摆在表单下面** —— 这个后台的惯例是错误要能指到字段,一句「建不了」没人知道改哪 */
+function 挂评测表单() {
+  const 方式 = () => $("#ev-mode").value || "外部登记";
+  const 文本框 = () => {
+    $("#ev-refs").innerHTML = `<label class="f">候选 <span class="req">*</span></label><input id="ev-cand" style="width:100%" placeholder="比如 独立路由器 haiku-4-5 + 提示词缓存">
+      <label class="f">基线 <span class="req">*</span></label><input id="ev-base" style="width:100%" placeholder="比如 关键词检索 @k=5">`;
+  };
+  $("#ev-mode").onchange = async () => {
+    const 派 = 方式() === "后台派发";
+    $("#ev-dispatch").style.display = 派 ? "" : "none";
+    if (!派) { 文本框(); return; }
+    $("#ev-refs").innerHTML = `<div class="k">正在读项目里的工作流版本…</div>`;
+    let 版们;
+    try { 版们 = await 取工作流版本们(); }
+    catch (e) { $("#ev-refs").innerHTML = 错误块(e, null).html; return; }
+    if (!版们.length) {
+      $("#ev-refs").innerHTML = `<div class="state"><h3>项目里还没有冻结过的工作流版本</h3>
+        <p>${md("后台派发要候选和基线都是**已冻结的工作流版本**。先到工作室把工作流冻结一版,或者换成「外部登记」。")}</p></div>`;
+      return;
+    }
+    const 选 = (id) => `<select id="${id}"><option value="">请选择</option>${版们.map((v) => `<option value="${esc(v.id)}">${esc(v.名)}</option>`).join("")}</select>`;
+    $("#ev-refs").innerHTML = `<label class="f">候选 <span class="req">*</span> <span style="color:var(--ink3)">工作流名 · 版本号 · id</span></label>${选("ev-cand")}
+      <label class="f">基线 <span class="req">*</span> <span style="color:var(--ink3)">要和候选不同 —— 同一版自己比自己,差值只剩波动</span></label>${选("ev-base")}`;
+  };
+  $("#ev-go").onclick = async () => {
+    const fb = $("#ev-fb");
+    const 派 = 方式() === "后台派发";
+    const 体 = { 执行方式: 方式(), 候选: ($("#ev-cand").value || "").trim(), 基线: ($("#ev-base").value || "").trim(),
+      数据集版本: ($("#ev-dsv").value || "").trim(), 判据版本: ($("#ev-scorer").value || "").trim() };
+    if (派) {
+      // 空就不送:后端的 int()/float() 把空串也判成「必填」,但送个空值过去再被打回,不如本地先留白
+      体.超时分钟 = $("#ev-timeout").value === "" ? null : Number($("#ev-timeout").value);
+      体.费用上限 = $("#ev-cap").value === "" ? null : Number($("#ev-cap").value);
+      体.轮数 = $("#ev-rounds").value === "" ? 2 : Number($("#ev-rounds").value);
+      const 评审 = ($("#ev-judge").value || "").trim();
+      if (评审) 体.评审连接 = 评审;
+    }
+    $("#ev-go").disabled = true;
+    fb.innerHTML = `<div class="k">提交中…</div>`;
+    try {
+      const r = await 请求(`${P()}/evaluations`, { method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(体) });
+      await 页_评测中心();
+      $("#ev-msg").innerHTML = `<div class="note"><b>${r["新建了吗"] === false ? "没有新建" : "已建"} ${esc(r.id)}</b> · 状态 ${esc(r.status || "")}`
+        + (r["派了"] != null ? ` · 派了 ${esc(r["派了"])} 次运行` : "") + `<br>${md(r.note || "")}</div>`;
+    } catch (e) {
+      $("#ev-go").disabled = false;
+      const b = e.体 || {};
+      const 条 = Object.entries(b.field_errors || {}).map(([k, v]) =>
+        `<li><b>${esc(k)}</b>:${md(Array.isArray(v) ? v.join(";") : String(v))}</li>`).join("");
+      fb.innerHTML = `<div class="state err"><h3>${esc(b.code || "出错了")} · ${esc(e.message)}</h3>
+        ${条 ? `<ul>${条}</ul>` : ""}<p>${md(b.advice ? `**下一步:**${b.advice}` : "服务端没给建议")}</p></div>`;
+    }
+  };
 }
 
 /* ── 实验对比(M5:/experiments 重建)──────────────────────────────────
