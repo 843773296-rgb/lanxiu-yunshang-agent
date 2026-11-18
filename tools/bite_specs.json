@@ -23579,5 +23579,17 @@
    }
   ],
   "预期红": "该挂:发起后又自己写了通话要点"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "「万」为单位的金额不认了 —— 11-19 夜跑「实付 6.3万」又会被判成编数",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "        算得出 |= {x for x in 疑 if x in 万 and re.search(re.escape(x) + r\"\\s*万\", text)}\n",
+    "new": ""
+   }
+  ],
+  "预期红": "真跑钉回:金额换成「万」写一位小数,不算编数"
  }
 ]

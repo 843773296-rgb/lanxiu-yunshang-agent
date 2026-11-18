@@ -208,6 +208,16 @@ def 判(text, traj, 事实):
     # ⚠️ 运算的两头必须**都写在回答里**(且是工具给过的数):工具返回里几百个数,任取两个相减几乎凑得出
     # 任何两位数 —— 不限的话「编一个数」也会被当成「算出来的」,这条判据就废了。读的人看得见两头,才核得了
     算得出 = _算得出(set(_数们(text)) & 池数, text, 事实.get("今天")) if 疑 else set()
+    # 11-19 夜跑三晚 0/1 里两处冤枉(真跑原话):
+    #   ①「实付 6.3万」—— 工具给 63xxx.xx,换成「万」写一位小数。只认**后面紧跟「万」**的那种,且要对得上工具里某个数
+    #   ②「后面还有 612 个该联系的」—— 工具给 615,回答列了 3 位 → 615 − 3。减数是**回答里列出的客户人数**
+    #     (结构上数得出,不是任取),被减数必须写在回答里且是工具给的
+    if 疑:
+        万 = {f"{round(float(x) / 1e4, k)}" for x in 池数 if re.fullmatch(r"\d+(\.\d+)?", x) and float(x) >= 1000 for k in (1, 2)}
+        算得出 |= {x for x in 疑 if x in 万 and re.search(re.escape(x) + r"\s*万", text)}
+        列了 = len([c for c in 答号 if c in set(事实.get("名单") or []) | set(事实.get("预警") or [])])
+        写着的 = {int(float(x)) for x in set(_数们(text)) & 池数 if re.fullmatch(r"\d+", x)}
+        算得出 |= {str(a - 列了) for a in 写着的 if 列了 and a > 列了}
     编的数 = sorted(x for x in 疑 if x not in 算得出)
     if 编的数:
         坏.append(f"数:工具返回里没有这些数,也不是拿工具里的数算对的 {编的数[:8]}")
