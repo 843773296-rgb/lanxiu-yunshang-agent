@@ -112,6 +112,9 @@ const 导航 = [
   ["#/uploads", "加资料", true, true],
   ["#/retrieval", "召回测试", true, true],
   ["#/integrations", "集成", true],
+  // 11-18:工具选择策略(selection_api.py 那套接口此前前端零引用)。挂在「集成」底下 —— 它配的是「Agent 怎么从工具目录里挑工具」,
+  // 和「集成 → 工具」是同一批对象;⚠️ 后端明说**还没有任何东西在消费它**,页面顶上原样显示那句话
+  ["#/selection", "工具选择策略", true, true],
   // 11-08 用户拍:「查询理解」(Query Understanding)只是个分组、没有自己的页面;下属实体识别 / 查询路由 / 意图识别,各自列表-详情-配置
   ["grp", "查询理解"],
   ["#/entities", "实体识别", true, true],
@@ -9943,12 +9946,16 @@ async function 页_训练任务() {
     <div class="head"><div><h1>训练任务</h1>
       <div class="sub"><b>训练目标和参数更新方式是两个维度</b> ——
         SFT/DPO 是目标,LoRA/全量是更新方式,不是三选一。</div></div></div>
+    <div class="note warn">⚠️ <b>训练执行器还没接</b>(11-18 拍:模型训练先不做)—— 这一页<b>只看登记</b>,提交入口没摆。
+      体检查实「提交训练」只往表里插一行、永远排队,后台没有任何东西会去跑它。</div>
     <div id="list"><div class="state">加载中…</div></div>`;
   try {
     const d = await 请求(`${P()}/training-jobs`);
     if (!d["任务"].length) {
+      // 11-18 前这里教人「提交训练要 trainer 角色」—— 而提交了也只是插一行永远排队(没有执行器)。先把真相写上,别教人去提交
       $("#list").innerHTML = 状态("", "还没有训练任务",
-        "提交训练要 **trainer 角色**(或拿了专项授权的 admin)—— "
+        "**训练执行器还没接(11-18 拍:模型训练先不做)—— 这一页只看登记,提交入口没摆。** "
+        + "等执行器接上再开提交:那时要 **trainer 角色**(或拿了专项授权的 admin),"
         + "而且**幂等键是硬要求**:超时重发一次 = 再烧一遍 GPU。").html;
       return;
     }
@@ -10021,6 +10028,8 @@ async function 页_模型产物() {
     <div class="head"><div><h1>模型产物</h1>
       <div class="sub"><b>训练完成只代表得到产物</b> ——
         有产物 → 产物可用(校验过) → 在服务用户,是三件不同的事。</div></div></div>
+    <div class="note warn">⚠️ <b>部署还没接执行侧</b>(11-18 拍:模型训练先不做)—— 「部署」按钮标灰了:
+      体检查实它只往表里插一行,没有任何查询接口,点了只会永远「部署请求中」。登记和三道闸照旧显示。</div>
     <div id="list"><div class="state">加载中…</div></div>`;
   try {
     const d = await 请求(`${P()}/model-artifacts`);
@@ -10054,9 +10063,11 @@ async function 页_模型产物() {
                 `<div>· ${md(x.slice(0, 90))}</div>`).join("")
             : `<span class="pill ok">三道闸都过了</span>`}</td>
         <td>${能部署 && r["能部署吗"]
-            ? `<select data-env="${esc(r.id)}">${环境们.map((e) =>
+            // 11-18 拍「模型训练先不做」:部署没接执行侧,按钮 disabled(挂产物事件 的 onclick 仍在,点不动;接上那天把 disabled 去掉就行)
+            ? `<select data-env="${esc(r.id)}" disabled>${环境们.map((e) =>
                 `<option>${esc(e)}</option>`).join("")}</select>
-               <button data-dep="${esc(r.id)}">部署</button>`
+               <button data-dep="${esc(r.id)}" disabled title="部署还没接执行侧">部署</button>
+               <div class="k">部署还没接执行侧,点了只会永远「部署请求中」(11-18 拍:模型训练先不做)</div>`
             : 能部署
               ? `<span class="k">闸没过,不摆按钮</span>`
               : `<span class="k">要「生产审核/发布/回滚」</span>`}</td>
@@ -10512,6 +10523,243 @@ async function 页_旋钮与方案() {
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
 
+/* ── 工具选择策略(11-18)────────────────────────────────────────────────
+ * 后端 selection_api.py 那套接口(列表 / 详情 / 建 / 改草稿 / 校验 / 冻结)此前**前端一处都没引**。
+ * 真项目里有 1 条草稿「只开路由器」,而每个响应都带着「⚠️还没生效:这条策略还没有任何东西在消费它」——
+ * **这句话原样显示在每一页最顶上**。规格 §16 第四阶段的检索实现没做,策略配得出来、冻得进去,
+ * 而 agent_loop 不读它;少了这句,「配了」和「生效了」在页面上长得一模一样。
+ * 权限:看要「查看有权配置」(谁都能看);建 / 改草稿 / 校验 / 冻结都要「改筛选策略」(编辑、管理员默认有,审核发布者要授权)——
+ * 和旋钮方案是同一条能力,所以直接用 旋钮_能改()。
+ * 头:改草稿带 If-Match=draft_revision(不带 409 IF_MATCH_REQUIRED,不对 409 REVISION_CONFLICT);
+ * 这套接口**不要 Idempotency-Key**(建策略 / 冻结都没读它)。422 的 field_errors 逐字段摆(建策略是 名称 / 用途;冻结是 闸)。 */
+const 选择策略动作 = {
+  async 建(体) {
+    return await 请求(`${P()}/tool-selection-policies`, { method: "POST", body: JSON.stringify(体) });
+  },
+  async 改草稿(pid, 版, 体) {
+    return await 请求(`${P()}/tool-selection-policies/${encodeURIComponent(pid)}/draft`,
+      { method: "PATCH", headers: { "If-Match": String(版) }, body: JSON.stringify(体) });
+  },
+  async 校验(pid, 配) {
+    return await 请求(`${P()}/tool-selection-policies/${encodeURIComponent(pid)}/validate`,
+      { method: "POST", body: JSON.stringify(配) });
+  },
+  async 冻结(pid, 配) {
+    return await 请求(`${P()}/tool-selection-policies/${encodeURIComponent(pid)}/versions`,
+      { method: "POST", body: JSON.stringify(配) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.选择策略动作 = 选择策略动作;
+
+// 「还没生效」那条横幅:每个响应都带,**放在页面最顶上、表格之前**;后端哪天不带了就明说(别静默消失 —— 消失那天可能正是它开始生效的那天,也可能是字段改名了)
+function 选择策略_生效横幅(d) {
+  const 文 = d && d["⚠️还没生效"];
+  return 文
+    ? `<div class="note warn" id="sel-live"><b>⚠️ 还没生效</b> —— ${md(文)}</div>`
+    : `<div class="note warn" id="sel-live"><b>⚠️ 接口这次没带「还没生效」这个字段</b> —— 要么策略已经开始被消费了,要么字段改了名。<b>别把这当成「生效了」</b>,去 selection_api.py 核一下</div>`;
+}
+
+// 422 的 field_errors 逐字段显示:对得上输入框的摆到字段下面(#sel-fe-<字段>),对不上的并进总提示;「闸」那组走 闸文()
+function 选择策略_报错(e, 字段们, 说) {
+  const b = e.体 || {}, fe = b.field_errors || {}, 剩 = [];
+  字段们.forEach((f) => { if ($(`#sel-fe-${f}`)) $(`#sel-fe-${f}`).innerHTML = ""; });
+  for (const [f, v] of Object.entries(fe)) {
+    if (f === "闸") continue;   // 闸文() 已经逐条列出
+    const 文 = (Array.isArray(v) ? v : [v]).map((x) => md(typeof x === "string" ? x : JSON.stringify(x))).join(";");
+    if (字段们.includes(f) && $(`#sel-fe-${f}`)) $(`#sel-fe-${f}`).innerHTML = "⚠️ " + 文;
+    else 剩.push(`${esc(f)}:${文}`);
+  }
+  const 冲突 = e.码 === 409 ? "<br><b>草稿已经被别人改过(或没带 If-Match)—— 刷新这一页,拿新的 draft_revision 再提交</b>" : "";
+  说(md(闸文(e)).replace(/\n/g, "<br>") + (剩.length ? "<br>" + 剩.join("<br>") : "") + 冲突, true);
+}
+
+async function 页_工具选择策略() {
+  $("#main").innerHTML = `<div class="crumb">集成 / 工具选择策略</div>
+    <div class="head"><div><h1>工具选择策略</h1>
+      <div class="sub">${md("策略指定 Agent **怎么从工具目录里挑工具**(固定组 / 关键词检索 / 预算 / 没结果怎么办),**不替谁授权** —— 规格 §3「筛选得分高不授予权限」。身份 / 授权 / 密钥 / 对象范围由服务端绑定,不进策略")}</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/tool-selection-policies`);
+    const 项 = d.items || [];
+    const 能改 = 旋钮_能改();
+    const 表 = 项.length
+      ? `<table><thead><tr><th>策略</th><th>用途</th><th>负责人</th><th>状态</th><th>版本数</th><th>草稿版</th><th></th></tr></thead><tbody>
+        ${项.map((p) => `<tr data-policy="${esc(p.id)}">
+          <td><a href="#/selection/${encodeURIComponent(p.id)}"><b>${esc(p["名称"] || p.id)}</b></a><div class="k">${esc(p.id)}</div></td>
+          <td class="k" data-raw="原文">${esc(p["用途"] || "—")}</td>
+          <td class="k">${esc(p["负责人"] || "—")}</td>
+          <td>${p["状态"] === "active" ? `<span class="pill">active</span>` : `<span class="pill warn">${esc(p["状态"] || "?")}</span>`}
+            <div class="k">「active」只是策略自己的状态字段 —— <b>不等于有东西在消费它</b>(见顶上)</div></td>
+          <td class="k">${esc(p["版本数"] ?? 0)}${Number(p["版本数"] || 0) === 0 ? `<div class="k">没有版本的策略绑不上去</div>` : ""}</td>
+          <td class="k">${esc(p.draft_revision ?? 0)}</td>
+          <td><a href="#/selection/${encodeURIComponent(p.id)}">配置 / 版本 / 校验</a></td></tr>`).join("")}
+        </tbody></table>`
+      : 状态("", "这个项目还没有工具选择策略",
+          "策略 = 一种挑工具的方式 + 预算 + 没结果 / 目录出错时怎么办。**首版只支持固定工具组和关键词检索**;建好之后要冻结出版本才绑得上去 —— 而就算冻结了,现在也还没有东西在消费它(见顶上那句)。").html;
+    const 模式表 = (d["可选模式"] || []).length
+      ? `<h2>可选模式</h2><table><thead><tr><th>值</th><th>中文</th><th>首版支持吗</th><th>说明</th></tr></thead><tbody>
+        ${d["可选模式"].map((m) => `<tr><td><code>${esc(m["值"])}</code></td><td>${esc(m["中文"])}</td>
+          <td>${m["首版支持吗"] ? `<span class="pill ok">首版支持</span>` : `<span class="pill warn">扩展,首版不支持</span>`}</td>
+          <td class="k">${md(m["说明"] || "")}</td></tr>`).join("")}</tbody></table>` : "";
+    const 动作表 = `<div class="note">${md(d["⚠️两个动作别混"] || "")}<br>
+      <b>没结果怎么办</b>:${(d["可选的没结果怎么办"] || []).map((x) => `<code>${esc(x["值"])}</code> ${esc(x["中文"])}`).join(" · ")}<br>
+      <b>目录出错怎么办</b>:${(d["可选的目录出错怎么办"] || []).map((x) => `<code>${esc(x["值"])}</code> ${esc(x["中文"])}`).join(" · ")}</div>`;
+    const 建表单 = 能改
+      ? `<div class="state" id="sel-new"><h3>新建策略</h3>
+          <p class="k">只建一个空壳(名称 + 用途),配置在详情页里校验、冻结成版本。「用途」是下一个人判断它为什么长这样的唯一线索</p>
+          <p><label>名称<br><input id="sel-name" style="width:min(320px,90%)"></label><div class="k err" id="sel-fe-名称"></div></p>
+          <p><label>用途<br><textarea id="sel-purpose" rows="3" style="width:min(520px,95%)"></textarea></label><div class="k err" id="sel-fe-用途"></div></p>
+          <p><button class="pri" id="sel-go">建策略</button></p>
+          <div class="k">${md("建好**也还没生效** —— 没有版本的策略绑不上去;而且现在没有任何东西在消费这些策略")}</div></div>`
+      : `<div class="note">建 / 改策略要「改筛选策略」这条能力(编辑、管理员默认有,审核发布者要授权)——
+          你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆表单</b>:摆一个填完被 403 的表单,只是把拒绝往后挪一步。</div>`;
+    $("#list").innerHTML = 选择策略_生效横幅(d)
+      + `<h2>${项.length} 条策略</h2><div class="note">${md(d.note || "")}</div>` + 表 + 模式表 + 动作表
+      + `<div id="sel-msg"></div>` + 建表单;
+    if (!$("#sel-go")) return;
+    const 说 = (文, 坏) => { if ($("#sel-msg")) $("#sel-msg").innerHTML = 文
+      ? (坏 ? `<div class="state err"><p>${文}</p></div>` : `<div class="state"><p>${文}</p></div>`) : ""; };
+    $("#sel-go").onclick = async () => {
+      const 名 = String(($("#sel-name") && $("#sel-name").value) || "").trim();
+      const 用途 = String(($("#sel-purpose") && $("#sel-purpose").value) || "").trim();
+      $("#sel-go").disabled = true; 说("提交中…");
+      try {
+        const r = await 选择策略动作.建({ 名称: 名, 用途 });
+        await 页_工具选择策略();
+        说(`建好了 <a href="#/selection/${encodeURIComponent(r.id)}"><b>${esc(r["名称"] || r.id)}</b></a>(${esc(r.id)})<br>${md(r.note || "")}<br>${md(r["⚠️还没生效"] || "")}`);
+      } catch (e) { 选择策略_报错(e, ["名称", "用途"], 说); $("#sel-go").disabled = false; }
+    };
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+// 一个版本一行里的「限额」:五个数,按后端的中文名显示
+const 选择策略_限额名 = { initial_candidates: "初次候选数", new_definition_tokens: "单次新增定义额度",
+  active_definition_tokens: "活动定义总额度", max_rediscovery: "最多补搜几次", selection_timeout_ms: "筛选超时(毫秒)" };
+
+async function 页_工具选择策略详情(pid) {
+  $("#main").innerHTML = `<div class="crumb"><a href="#/selection">集成 / 工具选择策略</a> / ${esc(pid)}</div>
+    <div class="head"><div><h1 id="sel-t">${esc(pid)}</h1><div class="sub" id="sel-sub"></div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    // 详情接口不带词表(可选模式 / 两个动作),从列表接口拿;列表读不到不挡详情,表单退成文本框
+    const [d, 表] = await Promise.all([
+      请求(`${P()}/tool-selection-policies/${encodeURIComponent(pid)}`),
+      请求(`${P()}/tool-selection-policies`).catch(() => ({})),
+    ]);
+    const 能改 = 旋钮_能改();
+    const 草 = d["草稿"] || {}, 版本们 = d["版本历史"] || [], 最新 = 版本们[0] || null;
+    $("#sel-t").textContent = d["名称"] || pid;
+    $("#sel-sub").innerHTML = `${esc(pid)} · 状态 <b>${esc(d["状态"] || "?")}</b> · 草稿版 <code>${esc(d.draft_revision)}</code> · ${版本们.length} 个冻结版本 · ${md(d.note || "")}`;
+    const 对 = (v) => v == null || v === "" ? `<span class="k">—</span>` : `<code>${esc(v)}</code>`;
+    const 限额文 = (限) => 限 && typeof 限 === "object" && Object.keys(限).length
+      ? Object.entries(限).map(([k, v]) => `<div>${esc(选择策略_限额名[k] || k)} <code>${esc(v)}</code></div>`).join("") : `<span class="k">—</span>`;
+    const 版本表 = 版本们.length
+      ? `<table><thead><tr><th>版本</th><th>模式</th><th>绑了什么</th><th>限额</th><th>没结果 / 目录出错</th><th>独立路由</th><th>候选缓存</th><th>变更说明</th><th>冻结</th></tr></thead><tbody>
+        ${版本们.map((v) => `<tr data-version="${esc(v["版本"])}">
+          <td><b>${esc(v["版本"])}</b><div class="k">哈希 ${esc(String(v["内容哈希"] || "").slice(0, 12))}</div></td>
+          <td>${esc(v["模式中文"] || "?")}<div class="k"><code>${esc(v["模式"] || "")}</code> · ${esc(v["加载方式"] || "")}</div></td>
+          <td class="k">目录快照 ${对(v["目录快照"])}<br>默认工具组版本 ${对(v["默认工具组版本"])}</td>
+          <td class="k">${限额文(v["限额"])}</td>
+          <td class="k">没结果:<code>${esc(v["没结果怎么办"] || "")}</code><br>目录出错:<code>${esc(v["目录出错怎么办"] || "")}</code></td>
+          <td class="k">${v["开了独立路由吗"] ? `<span class="pill warn">开了</span><br>实验 ${对(v["路由实验"])}<br>模型连接 ${对(v["路由模型连接"])}` : `<span class="pill">关</span>`}</td>
+          <td class="k">${v["开了候选缓存吗"] ? `<span class="pill warn">开了</span>` : `<span class="pill">关</span>`}</td>
+          <td class="k" data-raw="原文">${esc(v["变更说明"] || "—")}</td>
+          <td class="k">${时间(v["冻结时间"])}<br>${esc(v["冻结的人"] || "")}</td></tr>`).join("")}
+        </tbody></table>`
+      : 状态("", "还没有冻结过版本", "没有版本的策略绑不上去。下面填好配置 → 先「校验」→ 再「冻结成版本」。**校验过了不等于冻得进去**(冻结时还会再校一遍)。").html;
+    const 不能改 = `<div class="note">改草稿 / 校验 / 冻结要「改筛选策略」这条能力(编辑、管理员默认有,审核发布者要授权)——
+      你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆表单</b>。</div>`;
+    const 草稿块 = `<h2>草稿</h2><div class="note">改草稿要带 If-Match=<code>${esc(d.draft_revision)}</code>(就是上面那个草稿版号);别人先改了就 409,刷新再改。<b>已冻结的版本一个字不动</b></div>`
+      + (能改
+        ? `<div class="state" id="sel-draft"><h3>改名称 / 用途 / 负责人</h3>
+            <p><label>名称<br><input id="sel-d-name" style="width:min(320px,90%)" value="${esc(d["名称"] || "")}"></label><div class="k err" id="sel-fe-名称"></div></p>
+            <p><label>用途<br><textarea id="sel-d-purpose" rows="3" data-raw="原文" style="width:min(520px,95%)">${esc(草["用途"] || "")}</textarea></label><div class="k err" id="sel-fe-用途"></div></p>
+            <p><label>负责人<br><input id="sel-d-owner" style="width:min(200px,90%)" value="${esc(草["负责人"] || "")}"></label><div class="k err" id="sel-fe-负责人"></div></p>
+            <p><button class="pri" id="sel-d-go">保存草稿(If-Match ${esc(d.draft_revision)})</button></p></div>`
+        : `<div class="k" data-raw="原文">用途:${esc(草["用途"] || "—")} · 负责人:${esc(草["负责人"] || "—")}</div>` + 不能改);
+    // 配置表单:预填最新版本,没有版本就空着。词表从列表接口来;读不到就退成文本框
+    const 模式们 = (表["可选模式"] || []), 空们 = (表["可选的没结果怎么办"] || []), 错们 = (表["可选的目录出错怎么办"] || []);
+    const 选 = (id, 项们, 现, 空话) => 项们.length
+      ? `<select id="${id}"><option value="">${esc(空话)}</option>${项们.map((x) => `<option value="${esc(x["值"])}"${现 === x["值"] ? " selected" : ""}>${esc(x["中文"])} (${esc(x["值"])})${x["首版支持吗"] === false ? " —— 扩展,首版不支持" : ""}</option>`).join("")}</select>`
+      : `<input id="${id}" value="${esc(现 || "")}" placeholder="${esc(空话)}" style="width:min(320px,90%)">`;
+    const 限 = (最新 && 最新["限额"]) || {};
+    const 数 = (k) => `<label>${esc(选择策略_限额名[k])} <code>${esc(k)}</code><br><input type="number" id="sel-c-${k}" step="1" value="${限[k] == null ? "" : esc(限[k])}" placeholder="必填,不给默认值" style="width:140px"></label>`;
+    const 配置块 = `<h2>配置 → 校验 → 冻结</h2>`
+      + (能改
+        ? `<div class="state" id="sel-cfg"><h3>${最新 ? `按 ${esc(最新["版本"])} 预填,改完冻结成新版本` : "第一版配置"}</h3>
+            <p class="k">${md("限额**不给默认值**:一个猜出来的预算会在它不够用那天表现成「模型没看到那个工具」,而不报错。开独立路由要指一次跑完、有基线的评测,还要给探过的模型连接。身份 / 授权 / 密钥 / 范围类的键**不许进策略**")}</p>
+            <p><label>模式<br>${选("sel-c-mode", 模式们, 最新 && 最新["模式"], "选一种")}</label></p>
+            <p>${["initial_candidates", "new_definition_tokens", "active_definition_tokens", "max_rediscovery", "selection_timeout_ms"].map(数).join(" ")}</p>
+            <p><label>没结果怎么办<br>${选("sel-c-empty", 空们, 最新 && 最新["没结果怎么办"], "选一种")}</label>
+               <label style="margin-left:12px">目录出错怎么办<br>${选("sel-c-err", 错们, 最新 && 最新["目录出错怎么办"], "选一种")}</label></p>
+            <p><label>目录快照 <span class="k">(关键词检索必填,只认「已就绪」)</span><br><input id="sel-c-snap" value="${esc((最新 && 最新["目录快照"]) || "")}" style="width:min(320px,90%)"></label>
+               <label style="margin-left:12px">默认工具组版本 <span class="k">(固定工具组必填)</span><br><input id="sel-c-group" value="${esc((最新 && 最新["默认工具组版本"]) || "")}" style="width:min(320px,90%)"></label></p>
+            <p><label><input type="checkbox" id="sel-c-router"${最新 && 最新["开了独立路由吗"] ? " checked" : ""}> 开独立路由</label>
+               <label style="margin-left:12px">路由实验(评测 id)<br><input id="sel-c-evidence" value="${esc((最新 && 最新["路由实验"]) || "")}" style="width:min(260px,90%)"></label>
+               <label style="margin-left:12px">路由模型连接(model_connections 的 id)<br><input id="sel-c-conn" value="${esc((最新 && 最新["路由模型连接"]) || "")}" style="width:min(260px,90%)"></label></p>
+            <p><label><input type="checkbox" id="sel-c-cache"${最新 && 最新["开了候选缓存吗"] ? " checked" : ""}> 开候选缓存 <span class="k">(首版不许开,勾了校验会红)</span></label></p>
+            <p><label>变更说明(冻结时写进版本)<br><textarea id="sel-c-note" rows="2" style="width:min(520px,95%)"></textarea></label></p>
+            <p><button id="sel-c-validate">校验(不落版本)</button> <button class="pri" id="sel-c-freeze">冻结成新版本</button></p>
+            <div id="sel-c-out"></div></div>`
+        : 不能改);
+    $("#list").innerHTML = 选择策略_生效横幅(d) + `<div id="sel-msg"></div>` + 草稿块
+      + `<h2>版本历史(${版本们.length})</h2>` + 版本表 + 配置块;
+    const 说 = (文, 坏) => { if ($("#sel-msg")) $("#sel-msg").innerHTML = 文
+      ? (坏 ? `<div class="state err"><p>${文}</p></div>` : `<div class="state"><p>${文}</p></div>`) : ""; };
+    if ($("#sel-d-go")) {
+      $("#sel-d-go").onclick = async () => {
+        const 体 = { 名称: String($("#sel-d-name").value || "").trim(), 用途: String($("#sel-d-purpose").value || "").trim(), 负责人: String($("#sel-d-owner").value || "").trim() };
+        $("#sel-d-go").disabled = true; 说("提交中…");
+        try {
+          const r = await 选择策略动作.改草稿(pid, d.draft_revision, 体);
+          await 页_工具选择策略详情(pid);
+          说(`草稿保存了,草稿版现在是 <code>${esc(r.draft_revision)}</code><br>${md(r.note || "")}`);
+        } catch (e) { 选择策略_报错(e, ["名称", "用途", "负责人"], 说); $("#sel-d-go").disabled = false; }
+      };
+    }
+    if (!$("#sel-c-validate")) return;
+    const 读配置 = () => {
+      const v = (id) => String(($(id) && $(id).value) || "").trim();
+      const 限额 = {};
+      for (const k of Object.keys(选择策略_限额名)) { const s = v(`#sel-c-${k}`); if (s !== "") 限额[k] = Number(s); }
+      const 配 = { 模式: v("#sel-c-mode"), 限额, 没结果怎么办: v("#sel-c-empty"), 目录出错怎么办: v("#sel-c-err"),
+        加载方式: "append_within_run", 开独立路由: !!($("#sel-c-router") && $("#sel-c-router").checked),
+        开候选缓存: !!($("#sel-c-cache") && $("#sel-c-cache").checked) };
+      if (v("#sel-c-snap")) 配["目录快照"] = v("#sel-c-snap");
+      if (v("#sel-c-group")) 配["默认工具组版本"] = v("#sel-c-group");
+      if (配["开独立路由"]) { 配["路由实验"] = v("#sel-c-evidence"); 配["路由模型连接"] = v("#sel-c-conn"); }
+      if (v("#sel-c-note")) 配["变更说明"] = v("#sel-c-note");
+      return 配;
+    };
+    const 出 = (html) => { if ($("#sel-c-out")) $("#sel-c-out").innerHTML = html; };
+    $("#sel-c-validate").onclick = async () => {
+      $("#sel-c-validate").disabled = true; 出(`<div class="state"><p>校验中…</p></div>`);
+      try {
+        const r = await 选择策略动作.校验(pid, 读配置());
+        const 问 = r["问题"] || [];
+        出(`<div class="state${问.length ? " err" : ""}"><h3>${问.length ? `没过:${问.length} 条问题` : "校验过了"}</h3>
+          ${问.length ? `<p>${问.map((x) => "· " + md(x)).join("<br>")}</p>` : ""}
+          <p class="k">${md(r["⚠️校验过了不等于冻得进去"] || "")}</p>
+          <p class="k">${md(r["⚠️还没生效"] || "")}</p>
+          <details><summary>归一后的配置</summary><pre data-raw="原文">${esc(JSON.stringify(r["归一后的配置"] || {}, null, 1))}</pre></details></div>`);
+      } catch (e) { 出(`<div class="state err"><p>${md(闸文(e)).replace(/\n/g, "<br>")}</p></div>`); }
+      $("#sel-c-validate").disabled = false;
+    };
+    $("#sel-c-freeze").onclick = async () => {
+      if (!(await 问一句("冻结成新版本?", `冻结后这一版<b>不可改</b>;会按同一套规则再校一遍,没过就 422 逐条列出。<br>冻结<b>不改变生产引用</b>,而且现在也没有东西在消费它。`, { 确定: "冻结", 取消: "先不" }))) return;
+      $("#sel-c-freeze").disabled = true; 出(`<div class="state"><p>冻结中…</p></div>`);
+      try {
+        const r = await 选择策略动作.冻结(pid, 读配置());
+        await 页_工具选择策略详情(pid);
+        说(`冻结了 <b>${esc(r["版本"] || "")}</b>(${esc(r.id || "")})<br>${md(r.note || "")}<br>${md(r["⚠️还没生效"] || "")}`);
+      } catch (e) {
+        出(`<div class="state err"><p>${md(闸文(e)).replace(/\n/g, "<br>")}</p></div>`);
+        $("#sel-c-freeze").disabled = false;
+      }
+    };
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
 async function 路由() {
   if (离开拦截()) return;
   if (!location.hash.startsWith("#/workflow/")) document.body.classList.remove("wf-full");   // 只有编排页是全屏
@@ -10584,6 +10832,8 @@ async function 路由() {
     if (h.startsWith("#/app/")) return await 页_应用详情(decodeURIComponent(h.slice(6)));
     if (h === "#/members") return await 页_成员与权限();
     if (h === "#/knobs") return await 页_旋钮与方案();
+    if (h === "#/selection") return await 页_工具选择策略();
+    if (h.startsWith("#/selection/")) return await 页_工具选择策略详情(decodeURIComponent(h.slice(12)));
     if (h === "#/datasets") return await 页_数据集();
     if (h.startsWith("#/samples/")) return await 页_样本(decodeURIComponent(h.slice(10)));
     if (h === "#/training") return await 页_训练任务();
