@@ -6641,7 +6641,7 @@ async function 画工具详情(tid) {
         ${md(d["⚠️在生产上吗怎么算的"] || d["⚠️答不出的"])}</div>` : ""}
       ${配套区}
       <div class="note"><b>规格 §8.2 那七个页签都在了</b>（模型说明那一页 11-14 补的：别名 / 适用不适用 / 任务示例）。
-        <b>还没做的</b>：「添加配套」「检查依赖」两个按钮 —— 配套关系现在只能在冻结工具组版本时给，而工具组页面还没有。</div>`;
+        <b>还没做的</b>：「添加配套」「检查依赖」两个按钮 —— <b>缺的是</b>从这一页直接把配套关系落到工具组版本上的入口，现在要去<a href="#/integrations/groups">工具组</a>页冻结版本时给。</div>`;
     // ── 规格 §8.2「版本与差异」:**哈希不同只说明改了,不说明改了什么** ──
     //
     // 这一页的价值不是「告诉你两版不一样」—— 内容哈希已经告诉你了。
@@ -8124,7 +8124,7 @@ async function 走三步() {
           try {
             const r = await 请求(`${P()}/knowledge-bases/${encodeURIComponent($("#up-kb").value)}/documents`,
                                 { method: "POST", body: JSON.stringify({ upload_id: a.id, name: f.name }) });
-            $("#up-msg").innerHTML = `收进去了:文档 <code>${esc(r.document_id || r.id || "")}</code>${r["版本"] || r.version_id ? ` · 版本 ${esc(r["版本"] || r.version_id)}` : ""}。`
+            $("#up-msg").innerHTML = `收进去了:文档 <code>${esc(r.document_id || r.id || "")}</code>。`
               + `<a href="#/kb/${encodeURIComponent($("#up-kb").value)}">去建一次索引</a>(不建索引,检索还查不到它)`;
           } catch (e3) { const bb = e3.体 || {}; $("#up-msg").innerHTML = `<b style="color:var(--fail)">${esc(bb.message || e3.message)}</b> ${md(bb.advice || "")}`; bt.disabled = false; }
         };
@@ -10737,7 +10737,7 @@ async function 页_工具选择策略详情(pid) {
       try {
         const r = await 选择策略动作.校验(pid, 读配置());
         const 问 = r["问题"] || [];
-        出(`<div class="state${问.length ? " err" : ""}"><h3>${问.length ? `没过:${问.length} 条问题` : "校验过了"}</h3>
+        出(`${问.length ? '<div class="state err">' : '<div class="state">'}<h3>${问.length ? `没过:${问.length} 条问题` : "校验过了"}</h3>
           ${问.length ? `<p>${问.map((x) => "· " + md(x)).join("<br>")}</p>` : ""}
           <p class="k">${md(r["⚠️校验过了不等于冻得进去"] || "")}</p>
           <p class="k">${md(r["⚠️还没生效"] || "")}</p>
