@@ -12,6 +12,14 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-18 15:xx · 交接 —— logo 接进三个界面(未推);用户拍了三件;待推一批要先跑 e2e-ci(Opus 5.5)
+
+- **用户拍板(11-18)**:① 主检出 06:40 那份项目日志**已丢**(git checkout);② 飞书「重新授权」—— 查下来不用人点:make_log 原来调 `~/Desktop/chatgpt` 那份发布脚本(它的登录过期),**改成本仓库 tools/feishu_publish.py**、目标仍是通用文件夹 PJWW…(88abdbb4),实发一次成功并清了 1 份旧版;③ **允许无界面浏览器给本地静态页拍图,不点击、不登录、不联网**(已写进记忆 web-search-yes-browser-no)。
+  - 拍法坑:headless 最小视口 500,要 390 就套 390 宽 iframe;**`sips -c` 是居中裁**,要么 iframe 加 margin-left:55px 再裁,要么别用它 —— 我因此误报过一次「介绍页左偏」,已向 c2 认错。
+- **logo**:用户给 `~/Desktop/1024px.png`(3072 方图,米驼底白字 LONSUEE),说所有界面直接用。5bbd4f13:原图缩 512 进 `docs/品牌/`;运营平台顶栏 + 每页标签图标走 nav.py 的 `LOGO` 内嵌常量(app.py 注入 icon);8760 首页 .mk 另内嵌一份;AI 管理后台放 `管理后台/apps/web/logo-96.jpg` 走 /static/。离线渲染三处页头看过、密钥扫描干净。**改了 管理后台/ → 推前必须 make test-e2e-ci;服务要重启才看得到(8770 用 kickstart)。**
+- **待推(工作树领先 origin/main)**:34839147 计数、88abdbb4 发布脚本、5bbd4f13 logo + 几笔交接。等 eureka-fc 推完(它说 pre_push 第三遍、约 15:0x 推;之后跑 13 道题、再改 tools/nightly_eval.py 入库清单 —— **那个文件别碰**;它还改了 tools/bite_run.py 让 spans.jsonl.1 走只读软链)。
+- **介绍页**:c2 已换 logo、手机版切换按钮改两行两列;我量过 390 宽全在屏内、无溢出;交互三样只读代码核过逻辑对,**真点击要用户自己点**(超出我的许可)。
+
 ### 🟡 11-18 13:4x · 交接(压缩前,第二份)—— 8770 已重启修好研判队列;介绍页新增 16 页的核对派给子助手在跑(Opus 5.5)
 
 - **8770 研判队列跑不动**:根因是常驻服务 com.lanxiu.agentsite 进程从 11-15 没换过(有人用 start.sh 的 nohup 另起,端口被占起不来,老进程一直在)。13:10 用 `launchctl kickstart -k gui/$(id -u)/com.lanxiu.agentsite` 重启,首页 302、四页 200、队列 19 条/16 条有草稿、详情 `/api/ops-detail?id=N` 0.07s。**以后重启 8770 一律 kickstart,别 nohup。** 「重新研判」(调模型+写库)没点。
