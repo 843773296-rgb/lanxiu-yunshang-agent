@@ -57,10 +57,10 @@ def stats():
                            ("物料", "material"), ("师傅", "artisan")]:
             try: rows[label] = c.execute(f"SELECT COUNT(*) FROM {sql}").fetchone()[0]
             except Exception: pass
-    py = subprocess.run(["bash", "-c",
-                         f"find {ROOT} -name '*.py' -not -path '*/.git/*' "
-                         f"-not -path '*/.venv/*' -not -path '*__pycache__*' | wc -l"],
-                        capture_output=True, text=True).stdout.strip()
+    # 只数版本库登记的:原来 find 整个目录,把 .claude/worktrees 下每个工作副本、仓外搬回来的技能
+    # 全算进去 —— 11-18 06:40 定时生成写成 5589,而真数 1177(此前的 4342 也早已虚高)。
+    py = str(len(subprocess.run(["git", "-C", ROOT, "ls-files", "*.py"],
+                                capture_output=True, text=True).stdout.split()))
     checks = subprocess.run(["bash", "-c", f"grep -c '^run ' {ROOT}/check.sh"],
                             capture_output=True, text=True).stdout.strip()
     rows["Python 文件"] = py
