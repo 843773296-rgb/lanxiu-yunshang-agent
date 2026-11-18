@@ -413,10 +413,18 @@ async function 页_prompt详情(pid) {
   catch (e) {
     const s = 错误块(e, () => 页_prompt详情(pid)); $("#main").innerHTML = s.html; s.挂(); return;
   }
-  const 草 = d.草稿, m = 草.messages || {}, 变量 = 草.variable_schema || [];
+  const 草 = d.草稿, m = 草.messages || {};
+  // 11-18:变量表改成可编辑,所以这里拿的是**自己的一份拷贝**(页面上改的是它,保存时整份发回去)。
+  // ⚠️ 从 prompts.py 导入的那 20 条,variable_schema 存的是 `{}` 不是 `[]` —— 不归一化成数组,下面 .map 当场崩;
+  // 每个变量对象还可能带页面不认识的字段(比如「长度上限」),拷贝整个对象、只改编辑过的键,别把它们丢了
+  const 变量 = (Array.isArray(草.variable_schema) ? 草.variable_schema : []).map((v) => Object.assign({}, v));
   let rev = 草.revision;                 // 乐观锁:每次保存后要更新它
   let 脏 = false;                        // 未保存标记(§5.4「未保存」状态)
   const 出要 = 草.output_schema || {};
+  const 类型们 = ["string", "number", "boolean", "array", "object"];
+  const 来源们 = ["用户输入", "上一步结果", "检索上下文", "受控系统字段"];   // 和下面说明文字里那四种是同一份
+  // 默认值可能不是字串(number / object);显示用 JSON 文本,**别让 esc 吃到对象**(会显示成 [object Object])
+  const 默认文 = (v) => v.默认值 == null ? "" : (typeof v.默认值 === "string" ? v.默认值 : JSON.stringify(v.默认值));
 
   const 版本行 = (d.版本历史 || []).map((v) => `
     <tr><td class="num">v${v.version_no}</td>
@@ -446,14 +454,14 @@ async function 页_prompt详情(pid) {
         <label class="f">用户模板　<span style="color:var(--ink3)">变量写成 <code>{{名称}}</code></span></label>
         <textarea class="t mono" data-raw="原文" id="e-user" rows="6">${esc(m.user || "")}</textarea>
 
-        <label class="f">输入变量</label>
+        <label class="f">输入变量　<span style="color:var(--ink3)">名称要和模板里的 <code>{{名称}}</code> 一一对上,改完点「保存草稿」才算</span></label>
         <div id="vars"></div>
         <div class="note">${md(`**定义变量不等于已经取得数据。** 每个变量都要说清来源
           (用户输入 / 上一步结果 / 检索上下文 / 受控系统字段)—— 来源没绑上,
           它在运行时就是空的。`)}</div>
 
-        <label class="f">输出要求</label>
-        <pre class="io" id="e-out" data-raw="原文">${esc(JSON.stringify(出要, null, 2))}</pre>
+        <label class="f">输出要求　<span style="color:var(--ink3)">JSON 对象;不合法不会发请求</span></label>
+        <textarea class="t mono" id="e-out" data-raw="原文" rows="8">${esc(JSON.stringify(出要, null, 2))}</textarea>
 
         <label class="f">变更说明 <span class="req">*</span>
           <span style="color:var(--ink3)">保存正式版本必填 —— 它是以后唯一能想起「为什么改」的地方</span></label>
@@ -493,28 +501,105 @@ async function 页_prompt详情(pid) {
         : `<div class="state" style="padding:20px">还没有正式版本 —— 左边补齐之后点「保存为新版本」。</div>`}
     </div>`;
 
-  /* 变量表(左)+ 测试输入(右)—— 同一份变量定义,两个用途 */
-  const 画变量 = () => {
-    $("#vars").innerHTML = 变量.length ? `<table><thead><tr>
-        <th>名称</th><th>说明</th><th>类型</th><th>来源</th><th>必填</th><th>默认值</th>
-      </tr></thead><tbody>${变量.map((v) => `<tr>
-        <td class="num">${esc(v.名称)}</td><td>${esc(v.说明 || "")}</td>
-        <td>${esc(v.类型 || "string")}</td><td>${esc(v.来源 || "—")}</td>
-        <td>${v.必填 ? '<span class="pill warn">必填</span>' : "可选"}</td>
-        <td>${esc(v.默认值 ?? "—")}</td></tr>`).join("")}</tbody></table>`
-      : `<div class="note">${md(`还没定义变量。模板里写了 <code>{{x}}</code> 但没定义的话,
-          「保存为新版本」会被拦住 —— 那不是刁难:**没定义来源的变量在运行时是空的**。`)}</div>`;
-    $("#testvars").innerHTML = 变量.length ? 变量.map((v) => `
-      <label class="f">${esc(v.名称)}${v.必填 ? ' <span class="req">*</span>' : ""}
-        <span style="color:var(--ink3)">${esc(v.说明 || "")}</span></label>
-      <textarea class="t" data-tv="${esc(v.名称)}" rows="${v.名称 === "article" ? 4 : 1}"
-        placeholder="${esc(v.默认值 ?? "")}"></textarea>`).join("")
-      : `<div class="note">这条 Prompt 没有变量 —— 直接点运行测试。</div>`;
+  /* 变量表(左,可编辑)+ 测试输入(右)—— 同一份变量定义,两个用途。
+   * 11-18 体检:原来左边是只读表,而后端 PATCH 早就收「变量」—— 模板里写了 {{x}} 没地方定义,
+   * 「保存为新版本」永远灰,页面还提示「先把来源配上」而无处可配。
+   * 左右分开画:每敲一个字只重画右边(重画左边会把焦点打掉);加 / 删一行才重画左边。 */
+  const 选项 = (们, 当前, 空文) => {
+    const 列 = 们.slice();
+    if (当前 && !列.includes(当前)) 列.push(当前);   // 库里已有、但不在这几种里的值:照样列出来,别静默改掉
+    return (空文 ? `<option value=""${当前 ? "" : " selected"}>${esc(空文)}</option>` : "")
+      + 列.map((x) => `<option value="${esc(x)}"${x === 当前 ? " selected" : ""}>${esc(x)}</option>`).join("");
   };
+  const 画变量表 = () => {
+    $("#vars").innerHTML = (变量.length ? `<table><thead><tr>
+        <th>名称</th><th>说明</th><th>类型</th><th>来源</th><th>必填</th><th>默认值</th><th></th>
+      </tr></thead><tbody>${变量.map((v, i) => `<tr>
+        <td><input class="t mono" data-raw="原文" data-vi="${i}" data-vk="名称" placeholder="article" value="${esc(v.名称 || "")}"></td>
+        <td><input class="t" data-raw="原文" data-vi="${i}" data-vk="说明" value="${esc(v.说明 || "")}"></td>
+        <td><select class="t" data-vi="${i}" data-vk="类型">${选项(类型们, v.类型 || "string")}</select></td>
+        <td><select class="t" data-vi="${i}" data-vk="来源">${选项(来源们, v.来源 || "", "(没配来源)")}</select></td>
+        <td style="text-align:center"><input type="checkbox" data-vi="${i}" data-vk="必填"${v.必填 ? " checked" : ""}></td>
+        <td><input class="t mono" data-raw="原文" data-vi="${i}" data-vk="默认值" value="${esc(默认文(v))}"></td>
+        <td><button data-vdel="${i}" title="删掉这个变量">删</button></td></tr>`).join("")}</tbody></table>`
+      : `<div class="note">${md(`还没定义变量。模板里写了 \`{{x}}\` 但没定义的话,
+          「保存为新版本」会被拦住 —— 那不是刁难:**没定义来源的变量在运行时是空的**。`)}</div>`)
+      + `<div style="margin-top:6px"><button id="b-addvar">加一个变量</button></div>`;
+  };
+  const 画测试输入 = () => {
+    // 重画会清掉右边已经敲进去的测试值 —— 先按行号存下来,画完放回去(改名称不该把人刚敲的内容吃掉)
+    const 旧 = {};
+    document.querySelectorAll("[data-tv]").forEach((t) => { if (t.dataset.ti != null) 旧[t.dataset.ti] = t.value; });
+    $("#testvars").innerHTML = 变量.length ? 变量.map((v, i) => `
+      <label class="f">${esc(v.名称 || "(还没起名)")}${v.必填 ? ' <span class="req">*</span>' : ""}
+        <span style="color:var(--ink3)">${esc(v.说明 || "")}</span></label>
+      <textarea class="t" data-tv="${esc(v.名称 || "")}" data-ti="${i}" rows="${v.名称 === "article" ? 4 : 1}"
+        placeholder="${esc(默认文(v))}"></textarea>`).join("")
+      : `<div class="note">这条 Prompt 没有变量 —— 直接点运行测试。</div>`;
+    document.querySelectorAll("[data-tv]").forEach((t) => { if (旧[t.dataset.ti] != null) t.value = 旧[t.dataset.ti]; });
+  };
+  const 画变量 = () => { 画变量表(); 画测试输入(); };
   画变量();
 
   const 标脏 = () => { 脏 = true; $("#fb").textContent = "有未保存的改动"; $("#fb").className = "msg"; };
-  ["#e-用途", "#e-system", "#e-user", "#e-why"].forEach((s) => { $(s).oninput = 标脏; });
+  ["#e-用途", "#e-system", "#e-user", "#e-why", "#e-out"].forEach((s) => { $(s).oninput = 标脏; });
+
+  // 默认值那一格敲的是文本,按「类型」转回去:number 转数、boolean 转真假、array / object 按 JSON 解;
+  // 转不动就**原样存字串**(不吞、不报错 —— 它只是默认值,运行时按 string 用也不会崩)
+  const 按类型 = (类型, 文) => {
+    if (文 === "") return undefined;
+    if (类型 === "number") { const n = Number(文); return Number.isFinite(n) ? n : 文; }
+    if (类型 === "boolean") return 文 === "true" ? true : (文 === "false" ? false : 文);
+    if (类型 === "array" || 类型 === "object") {
+      try { const j = JSON.parse(文); if (Array.isArray(j) === (类型 === "array") && typeof j === "object" && j) return j; } catch (e) { /* 不是 JSON,原样存 */ }
+    }
+    return 文;
+  };
+  // 事件挂在 #vars 容器上(委托):行是重画出来的,逐个绑会在每次重画后丢掉
+  const 改变量 = (e) => {
+    const t = e.target, i = Number(t.dataset.vi), k = t.dataset.vk;
+    if (!k || !变量[i]) return;
+    if (k === "必填") 变量[i].必填 = !!t.checked;
+    else if (k === "默认值") { const 值 = 按类型(变量[i].类型 || "string", t.value); if (值 === undefined) delete 变量[i].默认值; else 变量[i].默认值 = 值; }
+    else 变量[i][k] = t.value;
+    标脏();
+    if (k !== "类型" && k !== "来源") 画测试输入();   // 右边只用到名称 / 说明 / 必填 / 默认值
+  };
+  $("#vars").oninput = 改变量;
+  $("#vars").onchange = 改变量;    // select / checkbox 在有些浏览器只发 change
+  $("#vars").onclick = (e) => {
+    const t = e.target;
+    if (t.id === "b-addvar") {
+      变量.push({ 名称: "", 说明: "", 类型: "string", 来源: "", 必填: false });
+      标脏(); 画变量();
+      const 新 = document.querySelector(`#vars [data-vi="${变量.length - 1}"][data-vk="名称"]`);
+      if (新) 新.focus();
+    } else if (t.dataset.vdel != null) {
+      变量.splice(Number(t.dataset.vdel), 1);
+      标脏(); 画变量();
+    }
+  };
+  // 保存前的本地校验 —— 只拦服务端那条「模板里用了没定义的变量」**查不出来**的两种坏法:空名、重名
+  // (名字和模板对不对得上,交给服务端 _能存版本 判,页面不再判一遍 —— 两份规矩会不一致)
+  const 查变量 = () => {
+    const 见 = new Set();
+    for (let i = 0; i < 变量.length; i++) {
+      const n = String(变量[i].名称 || "").trim();
+      if (!n) return `第 ${i + 1} 个变量**还没起名** —— 要么填上,要么删掉这一行`;
+      if (见.has(n)) return `变量名 **${n}** 重复了 —— 同名两行,运行时不知道该用哪一个`;
+      见.add(n); 变量[i].名称 = n;
+    }
+    return "";
+  };
+  // 输出要求:textarea 里是 JSON 文本;空着算 {}。不是合法 JSON、或不是对象(数组 / 数字),都不发请求
+  const 解析输出要求 = () => {
+    const 文 = $("#e-out").value.trim();
+    if (!文) return {};
+    let j;
+    try { j = JSON.parse(文); } catch (e) { throw new Error(`输出要求不是合法 JSON:${e.message}`); }
+    if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("输出要求要是一个 JSON **对象**(花括号包起来的键值对),不能是数组或单个值");
+    return j;
+  };
 
   const 校验提示 = (判) => {
     const ok = 判 && 判.行;
@@ -535,6 +620,12 @@ async function 页_prompt详情(pid) {
   };
 
   $("#b-draft").onclick = async () => {
+    // 先在本地把形状查对,**查不过不发请求** —— 发过去一个坏的 output_schema 会写进库,运行时才炸
+    let 输出要求;
+    const 变量错 = 查变量();
+    try { if (!变量错) 输出要求 = 解析输出要求(); }
+    catch (e) { $("#fb").innerHTML = `<b>没保存:</b>${md(e.message)}`; $("#fb").className = "msg bad"; return; }
+    if (变量错) { $("#fb").innerHTML = `<b>没保存:</b>${md(变量错)}`; $("#fb").className = "msg bad"; return; }
     $("#b-draft").disabled = true;
     try {
       const r = await 请求(`${P()}/prompts/${encodeURIComponent(pid)}/draft`, {
@@ -543,6 +634,7 @@ async function 页_prompt详情(pid) {
         body: JSON.stringify({
           用途: $("#e-用途").value, system: $("#e-system").value,
           user: $("#e-user").value, 变更说明: $("#e-why").value,
+          变量, 输出要求,                           // 11-18 起一起发:后端 PATCH 本来就收这两项,只是前端一直没发
         }),
       });
       rev = r.revision; $("#rev").textContent = rev; 脏 = false;
