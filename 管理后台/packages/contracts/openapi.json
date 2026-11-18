@@ -7933,7 +7933,7 @@
     },
     "/api/v1/projects/{project_id}/chat-takeovers/{skill}/runs": {
       "post": {
-        "description": "只在这里判两件事:技能**现在**真开着接管(否则 409 TAKEOVER_OFF)、澜绣工号绑的是谁(没绑 409 NOT_BOUND)。**以绑定的那个人的身份**发起,不拿调用方顶替;跑的是最新候选版本",
+        "description": "只在这里判两件事:技能**现在**真开着接管(否则 409 TAKEOVER_OFF)、澜绣工号绑的是谁(没绑 409 NOT_BOUND)、开始节点的必填项给齐没有(缺了 422 TAKEOVER_INPUT_MISSING,不建运行)。**以绑定的那个人的身份**发起,不拿调用方顶替;跑的是最新候选版本",
         "operationId": "post_chat-takeovers_skill_runs",
         "parameters": [
           {
