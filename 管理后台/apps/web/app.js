@@ -1619,8 +1619,8 @@ async function 页_知识修订清单(筛 = "") {
     : `<table><thead><tr><th>什么时候</th><th>文件 · 段</th><th>原来写的 → 改成</th><th>提的人</th><th>状态</th><th></th></tr></thead><tbody>`
       + d.items.map((x) => `<tr>
           <td class="k">${esc(String(x.提交时刻 || "").slice(5, 16).replace("T", " "))}</td>
-          <td>${esc(x.知识文件)}<div class="k">${esc(x.段)}</div></td>
-          <td>${esc(String(x.原来写的 || "").slice(0, 40))}<div class="k">→ ${esc(String(x.改成 || "").slice(0, 40))}</div></td>
+          <td>${esc(x.知识文件)}<div class="k"><span data-raw="原文">${esc(x.段)}</span></div></td>
+          <td><span data-raw="原文">${esc(String(x.原来写的 || "").slice(0, 40))}</span><div class="k">→ <span data-raw="原文">${esc(String(x.改成 || "").slice(0, 40))}</span></div></td>
           <td class="k">${esc(x.提的人)}</td>
           <td>${x.状态 === "待审" ? '<span class="pill warn">' : '<span class="pill">'}${esc(x.状态)}</span></td>
           <td><button data-kropen="${esc(x.id)}">打开</button></td></tr>`).join("") + `</tbody></table>`;
@@ -1658,14 +1658,17 @@ async function 页_知识修订详情(id) {
   try { d = await 请求(`${P()}/knowledge-revisions/${encodeURIComponent(id)}`); }
   catch (e) { const s = 错误块(e, () => 页_知识修订详情(id)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
   const kv = (k, v) => `<tr><td class="k">${esc(k)}</td><td>${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
+  /* 原来写的 / 改成 / 段名 / 改动文本 都是 knowledge/*.md 的原文(本身就是 Markdown,常带 **),
+   * 要能逐字对回源文件,所以原样显示并标 data-raw="原文" —— 冒烟的「字面星号」判据对它豁免(11-18 远端冒烟红在这)。 */
+  const kv原文 = (k, v) => `<tr><td class="k">${esc(k)}</td><td data-raw="原文">${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
   const 动作 = d.能做的动作 || [];
   const 钮 = 动作.map((a) => `<button data-kract="${esc(a)}">${esc(a)}</button>`).join(" ");
-  $("#main").innerHTML = 头 + `<div class="head"><div><h1>${esc(d.知识文件)} · ${esc(d.段)}</h1>
+  $("#main").innerHTML = 头 + `<div class="head"><div><h1>${esc(d.知识文件)} · <span data-raw="原文">${esc(d.段)}</span></h1>
       <div class="sub">提的人 ${esc(d.提的人)} · 状态 <b>${esc(d.状态)}</b></div></div></div>
-    <table><tbody>${kv("原来写的", d.原来写的)}${kv("改成", d.改成)}${kv("依据", d.依据)}
+    <table><tbody>${kv原文("原来写的", d.原来写的)}${kv原文("改成", d.改成)}${kv("依据", d.依据)}
       ${kv("审的人 / 时刻", d.审的人 ? `${d.审的人} · ${String(d.审的时刻 || "").slice(0, 16).replace("T", " ")}` : "")}${kv("审核说明", d.审核说明)}
       ${kv("合并的人 / 时刻", d.合并的人 ? `${d.合并的人} · ${String(d.合并时刻 || "").slice(0, 16).replace("T", " ")}` : "")}</tbody></table>
-    ${d.改动文本 ? `<h2>改动文本(给开发)</h2><pre>${esc(d.改动文本)}</pre>` : ""}
+    ${d.改动文本 ? `<h2>改动文本(给开发)</h2><pre data-raw="原文">${esc(d.改动文本)}</pre>` : ""}
     ${钮 ? `<h2>处理</h2><textarea id="kr-act-note" rows="2" placeholder="说明(驳回必填,提的人看得到)"></textarea><div>${钮}</div><div class="k" id="kr-act-why"></div>` : `<div class="note">这一步没有能做的动作(已是终态)。</div>`}`;
   $("#main").querySelectorAll("[data-kract]").forEach((b) => {
     b.onclick = async () => {
