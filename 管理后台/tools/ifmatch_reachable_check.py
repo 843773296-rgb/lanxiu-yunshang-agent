@@ -241,6 +241,18 @@ P = f"{基址}/api/v1/projects/{项目}"
         说明="2026-09-29 补的:原来**没有任何接口能列出样本**,"
              "而它的错误提示写着「把样本详情里的 revision 放进 If-Match」——"
              "**指着一个不存在的接口**"),
+    "PATCH /datasets/{id}": dict(                     # 11-18 体检夜:补脱敏声明 / 改用途;列表每行就带 revision
+        取id=("/datasets", "数据集[0].id"),
+        读="/datasets", 字段="数据集[0].revision", 项目="project_demo_a",
+        说明="数据集页「改脱敏策略 / 用途」那张小表单从列表行拿 revision"),
+    "POST /model-connections/{id}/archive": dict(     # 11-18 体检夜:停用连接;列表每条带 revision(原来就有)
+        取id=("/model-connections", "连接[0].id"),
+        读="/model-connections", 字段="连接[0].revision", 项目="project_demo_a",
+        说明="模型与连接页「停用」按钮带 data-rev,从列表行拿"),
+    "POST /model-connections/{id}/unarchive": dict(
+        取id=("/model-connections", "连接[0].id"),
+        读="/model-connections", 字段="连接[0].revision", 项目="project_demo_a",
+        说明="同上,「启用」按钮;停用的那几条要带 ?含停用=true 才列,但 revision 字段同一处"),
     "POST /chat-handoffs/{id}/resolve": dict(
         取id=("/chat-handoffs", "items[0].id"),
         读="/chat-handoffs/{id}", 字段="revision", 项目="project_demo_a",
