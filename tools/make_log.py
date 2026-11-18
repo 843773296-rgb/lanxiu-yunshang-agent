@@ -107,28 +107,15 @@ def build():
 # HANDOFF.md 那边早就写清了同一条(「自动区一律不许手写 —— 手写会漂」),
 # 我在这边犯了它。
 #
-# 手写的东西放 `澜绣云裳agent-项目日志-手记.md`,生成时**原样接在自动区后面**。
-# 放在单独文件而不是靠标记切分:标记会被人删掉、会被编辑器改掉,
-# 而一个独立文件不会因为谁多按了一次回车就消失。
-NOTES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                     "澜绣云裳agent-项目日志-手记.md")
-
-
-def with_notes(md):
-    if not os.path.exists(NOTES):
-        return md
-    hand = open(NOTES, encoding="utf-8").read().strip()
-    if not hand:
-        return md
-    return (md + "\n\n" + "=" * 60 + "\n\n"
-            "# 手记\n\n"
-            "> 下面是**手写**的综述,不是从 git 生成的。\n"
-            "> 源文件 `docs/归档/项目日志-手记.md` —— 改要改那个,改这里会被下次生成抹掉。\n\n"
-            + hand + "\n")
+# 原来这里接一份手写综述(`with_notes`),读的文件名是 `澜绣云裳agent-项目日志-手记.md` ——
+# **那个文件从来不存在**(根目录那份叫 `项目日志-手记.md`),所以手记一次也没进过日志,而且不报错。
+# 2026-11-18 用户拍「不接,就归档」:那份 9 月的综述已搬进 docs/归档/,日志只由提交记录生成。
+# 读不到的路径整段删掉,免得以后有人以为它在起作用。
+# 教训还在:生成的文件里不许手写内容 —— 真要再加手写段,先让生成器认得它、再加一条检查盯着它真被读到了。
 
 
 if __name__ == "__main__":
-    md = with_notes(build())
+    md = build()
     open(OUT, "w", encoding="utf-8").write(md)
     print(f"写好 {OUT}  ({len(md.splitlines())} 行 / {len(md)} 字符)")
     if "--publish" in sys.argv:
