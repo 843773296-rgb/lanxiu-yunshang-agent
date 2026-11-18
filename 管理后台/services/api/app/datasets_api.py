@@ -4,6 +4,7 @@
 
     GET    /datasets                              列表(**只给计数,不给内容**)
     POST   /datasets                              建
+    PATCH  /datasets/{id}                         补脱敏声明 / 改用途(乐观锁;11-18 补的洞)
     PATCH  /datasets/{id}/samples/{sample_id}     改样本(乐观锁)
     POST   /datasets/{id}/versions                冻结(**固化内容**)
     GET    /datasets/{id}/export                  导出训练数据(**七道闸**)
@@ -182,6 +183,111 @@ async def 建数据集(project_id: str, request: Request,
                      if 策略 else
                      "⚠️ **没声明脱敏策略** —— 这个数据集导出时会被拦在那道闸上。"
                      "声明的写法:`无需脱敏:<理由>`,或者描述它需要脱什么")}
+
+
+def _规整脱敏策略(v):
+    """把表单里填的脱敏策略整理成库里认的样子;不合格返回 (None, 为什么)。
+
+    合法值只有两族(`training.脱敏还没选型` 怎么判的,这里就怎么收):
+      · `无需脱敏:<理由>`  —— 前缀后面**必须有理由**。「无需脱敏:」四个字加一个冒号
+        等于没说为什么,而导出那道闸会照它放行、一个字都不改;
+      · 其余任何非空描述       —— 等于「确实需要脱」,导出时会被 422 REDACTOR_NOT_CHOSEN 拦住,
+        这是**对的**(脱敏器还没选型,不假装在脱),所以这里不拒它,只在返回里明说。
+    半角冒号归成全角 —— 人在键盘上十有八九打的是 `:`,而判据认的是 `:`,
+    不归一的话「无需脱敏:数据已人工核过」会被当成「需要脱敏」,导出 422 而人看不出哪儿错了。
+    """
+    if v is None:
+        return None, "必填 —— 要撤回声明不是这里的事,改成「无需脱敏:<理由>」或描述它需要脱什么"
+    s = str(v).strip()
+    if not s:
+        return None, "不能是空的 —— 空等于「没人声明过怎么脱」,那正是现在卡住的那一道"
+    头 = training.无需脱敏前缀
+    半角 = 头[:-1] + ":"
+    if s.startswith(半角):
+        s = 头 + s[len(半角):]
+    if s.startswith(头) and not s[len(头):].strip():
+        return None, f"「{头}」后面要写理由(为什么这份数据里没有要脱的东西)—— 导出会照它放行且一个字都不改"
+    if len(s) > 500:
+        return None, "太长了(500 字以内)—— 这是一句声明,不是脱敏方案正文"
+    return s, None
+
+
+@router.patch(前缀 + "/datasets/{dsid}")
+async def 改数据集(project_id: str, dsid: str, request: Request,
+             if_match: str = Header(default=None, alias="If-Match"),
+             me: 身份 = Depends(要权限("改训练样本"))):
+    """给已经建好的数据集**补脱敏声明**、改用途。**要 If-Match**(数据集自己的 revision)。
+
+    ⚠️ 2026-11-18 补的,补的是一个洞:`redaction_policy` 原来**只能在建的时候给**,
+    而建那条接口又明说「可以不给,先建起来再补声明」—— 于是列表页「卡在哪」第一条写着
+    「下一步是去声明」,而**全仓没有任何一条接口能声明**。真项目 3 个数据集里 2 个就卡在这。
+    > 一句指着不存在的动作的建议,比不给建议更糟 —— 读起来完全合理,照着做做不到。
+
+    只收这两个字段。名字 / 格式不在这里改:名字改了冻结过的版本对不上人话,
+    格式改了样本内容不会跟着变 —— 两个都是「换一个数据集」的事,不是「改一笔」。
+    """
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match",
+                  "把数据集列表里这一行的 revision 放进 If-Match 头再提交(是**数据集**的 revision,不是样本的)")
+    体 = await request.json()
+    改, 坏 = {}, {}
+    if "脱敏策略" in 体 or "redaction_policy" in 体:
+        v, 为什么 = _规整脱敏策略(体.get("脱敏策略", 体.get("redaction_policy")))
+        if 为什么:
+            坏["脱敏策略"] = 为什么
+        else:
+            改["redaction_policy"] = v
+    if "用途" in 体 or "purpose" in 体:
+        v = 体.get("用途", 体.get("purpose"))
+        v = (str(v).strip() or None) if v is not None else None
+        if v is not None and len(v) > 200:
+            坏["用途"] = "太长了(200 字以内)"
+        else:
+            改["purpose"] = v
+    if 坏:
+        raise _错(422, "VALIDATION", "字段不合格", "按每个字段的提示改了再提交", field_errors=坏)
+    if not 改:
+        raise _错(422, "VALIDATION", "没有要改的字段", "可改:脱敏策略 / 用途",
+                  field_errors={"脱敏策略": "没给", "用途": "没给"})
+    with 事务() as c:
+        d = c.execute(text("""select * from datasets
+                             where project_id=:p and id=:i and archived_at is null
+                             for update"""),
+                      {"p": project_id, "i": dsid}).mappings().first()
+        if not d:
+            raise _错(404, "NOT_FOUND", f"没有数据集 {dsid}", "回列表重新进入")
+        # 照 runctl._换状态 的写法:先比 revision,再在 UPDATE 的 WHERE 里再比一次 ——
+        # 拿到行之后、写之前被人改了,rowcount 为 0 当场 409,不静默覆盖
+        if str(d["revision"]) != str(if_match).strip('"'):
+            raise _错(409, "REVISION_CONFLICT",
+                      f"这个数据集已经被改过(你拿的是 {if_match},现在是 {d['revision']})",
+                      "刷新列表看一眼别人改了什么再提交;**不要用旧 revision 覆盖**",
+                      field_errors={"revision": f"当前 {d['revision']}"})
+        新版 = int(d["revision"] or 0) + 1
+        套 = ", ".join(f"{k}=:{k}" for k in 改)
+        n = c.execute(text(f"""update datasets set {套}, revision=:_rev, updated_at=now()
+                              where project_id=:_p and id=:_i and revision=:_old"""),
+                      {**改, "_rev": 新版, "_p": project_id, "_i": dsid,
+                       "_old": d["revision"]}).rowcount
+        if n == 0:
+            raise _错(409, "REVISION_CONFLICT", "刚刚有人改了这个数据集",
+                      "并发:拿到行之后、写之前被人改了。刷新再试")
+        _审计(c, me, "dataset.update",
+              {"dataset_id": dsid, "改了": sorted(改),
+               "脱敏策略": (改.get("redaction_policy") or "")[:120],
+               "原脱敏策略": (d["redaction_policy"] or "")[:120]})
+        # 改完当场把「现在能不能导出」重算一遍报给他 —— 不然他得回列表再看一眼才知道这一改有没有把闸打开
+        形 = _取样本(c, project_id, dsid)
+        策略 = 改.get("redaction_policy", d["redaction_policy"])
+        能, 拒, 账 = training.能导出吗(形, 脱敏策略=策略)
+    还没选 = training.脱敏还没选型(策略)
+    return {"id": dsid, "revision": 新版, "改了": sorted(改),
+            "脱敏策略": 策略 or None, "用途": 改.get("purpose", d["purpose"]),
+            "能导出吗": not 拒, "卡在哪": 拒 or None,
+            "note": ("**声明成了「需要脱敏」** —— 这是对的,但脱敏器还没选型(正则 / 白名单 / 模型要先拍板),"
+                     "所以导出仍会被拦,拦的理由会从「没声明」变成「脱敏器没选型」"
+                     if 还没选 and "redaction_policy" in 改 else
+                     "改好了。「能导出吗」是现算的 —— 上面那一栏就是改完之后的样子")}
 
 
 @router.get(前缀 + "/datasets/{dsid}/samples")

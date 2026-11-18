@@ -10102,37 +10102,290 @@ function 挂绑定事件() {
   });
 }
 
+/* ── 数据集:新建 / 冻结一版 / 导出 / 补脱敏声明 ──────────────────────
+ *
+ * 11-18 体检:这一页原来**零动作** —— 后端四条写口(建 / 冻结 / 导出 / 改样本)一条都没接,
+ * 而「卡在哪」第一条常是「没声明脱敏策略……下一步是去声明」,**而全仓没有一条接口能声明**
+ * (redaction_policy 只能在建的时候给)。真项目 3 个数据集里 2 个卡在这。
+ * 所以今晚补的是:后端 PATCH /datasets/{id}(只收 脱敏策略 / 用途,要 If-Match),
+ * 前端把四个动作摆上,「没声明脱敏策略」旁边直接给「去声明」。
+ *
+ * ⚠️ 导出那条**不是读一下数据**:成功返回的是 NDJSON 文件(不是 JSON),所以不走 请求();
+ * 403 NEED_CONTENT_GRANT 是**权限不够**不是坏了 —— 把 advice 原样显示;
+ * 422(一条都不剩 / 没声明 / 脱敏器没选型)把后端那几句原样显示 —— training.py 文件头:
+ * 「一条都不剩必须是拒,不是空文件」,所以这里也不许把 422 画成「导出了 0 条」。
+ *
+ * 按钮按能力摆(服务端给的 `能力`,老接口没有时退回角色):改训练样本 → 建 / 冻结 / 改声明 / 导出;
+ * 导出另要「查看敏感输入/独立测试答案」,摆不摆由前者定,后者只写一句提醒 —— 真拦截在服务端(§5.2)。 */
+const 脱敏声明选项 = [
+  ["无需", "无需脱敏:<理由> —— 这份数据里没有要脱的东西(导出放行,一个字都不改)"],
+  ["需要", "需要脱敏(描述脱什么)—— 脱敏器还没选型,声明了导出仍会被拦,但拦的理由会变对"],
+];
+function 脱敏声明表单(当前) {
+  const 当 = String(当前 || "");
+  const 无需 = /^无需脱敏[::]/.test(当);
+  const 种 = !当 ? "无需" : 无需 ? "无需" : "需要";
+  const 文 = 无需 ? 当.replace(/^无需脱敏[::]/, "") : 当;
+  return `<label class="f">脱敏策略</label>
+    <select class="t" id="ds-种">${脱敏声明选项.map(([k, t]) =>
+      `<option value="${k}"${k === 种 ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
+    <label class="f" id="ds-理由标"><span>${种 === "无需" ? "为什么无需脱敏" : "需要脱什么"}</span> <span class="req">*</span></label>
+    <textarea class="t" id="ds-理由" rows="2" placeholder="比如:全部是评测题面,由标注员手写,不含客户信息">${esc(文)}</textarea>`;
+}
+function 读脱敏声明() {
+  const 种 = $("#ds-种") ? $("#ds-种").value : "无需";
+  const 理由 = ($("#ds-理由") ? $("#ds-理由").value : "").trim();
+  if (!理由) return { 错: 种 === "无需" ? "「无需脱敏」后面要写理由 —— 导出会照它放行且一个字都不改" : "要写清需要脱什么" };
+  return { 值: 种 === "无需" ? `无需脱敏:${理由}` : 理由 };
+}
+function 挂脱敏声明切换() {
+  const s = $("#ds-种"); if (!s) return;
+  s.onchange = () => { const l = $("#ds-理由标"); if (l) l.innerHTML = `<span>${s.value === "无需" ? "为什么无需脱敏" : "需要脱什么"}</span> <span class="req">*</span>`; };
+}
+const 数据集动作 = {
+  能改() {
+    return (能力 || []).includes("改训练样本") || 我的角色 === "annotator" || 我的角色 === "admin";
+  },
+  能看原文() { return (能力 || []).includes("查看敏感输入/独立测试答案"); },
+  async 建(体) {
+    return await 请求(`${P()}/datasets`, { method: "POST", body: JSON.stringify(体) });
+  },
+  async 冻结(dsid) {
+    return await 请求(`${P()}/datasets/${encodeURIComponent(dsid)}/versions`, { method: "POST", body: "{}" });
+  },
+  async 改(dsid, 补丁, revision) {
+    if (revision == null) {
+      const e = new Error("这一行读不到 revision —— 列表接口应该给它");
+      e.体 = { code: "NO_DATASET_REVISION", advice: "刷新一次;还是这样就是列表接口没返回 revision" }; e.码 = 0;
+      throw e;
+    }
+    return await 请求(`${P()}/datasets/${encodeURIComponent(dsid)}`,
+      { method: "PATCH", headers: { "If-Match": String(revision) }, body: JSON.stringify(补丁) });
+  },
+  // 导出成功是 NDJSON 文件,不是 JSON —— 自己 fetch,成功交回 { 文, 头 },失败抛和 请求() 同形的错
+  async 导出(dsid, 要mock) {
+    const r = await fetch(`${P()}/datasets/${encodeURIComponent(dsid)}/export${要mock ? "?要mock=1" : ""}`,
+      { headers: { "X-Dev-User": 我 } });
+    if (!r.ok) {
+      let b = null; try { b = await r.json(); } catch (e) { b = null; }
+      const err = new Error((b && b.message) || `HTTP ${r.status}`); err.体 = b || {}; err.码 = r.status; throw err;
+    }
+    const 文 = await r.text();
+    const 头 = {}; ["x-sample-count", "x-contains-mock", "x-quarantined", "x-quarantined-by", "x-redacted", "content-disposition"]
+      .forEach((k) => { 头[k] = r.headers.get(k); });
+    return { 文, 头 };
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.数据集动作 = 数据集动作;
+
 async function 页_数据集() {
+  const 能改 = 数据集动作.能改();
   $("#main").innerHTML = `<div class="crumb">微调 / 数据集</div>
     <div class="head"><div><h1>数据集</h1>
       <div class="sub">这一页回答 <b>能不能导出、卡在哪</b> ——
-        而「能导出吗」是<b>现算</b>的,不是存的字段(存的会漂)。</div></div></div>
+        而「能导出吗」是<b>现算</b>的,不是存的字段(存的会漂)。</div></div>
+      <div class="acts">${能改 ? `<button class="pri" id="ds-new">新建数据集</button>`
+        : `<span class="k">新建 / 冻结 / 导出 / 改声明要「改训练样本」这条能力(标注员、管理员默认有;编辑、训练操作员要专项授权),你是 ${esc(我的角色 || "?")}</span>`}</div></div>
+    <div id="dsmsg"></div>
     <div id="list"><div class="state">加载中…</div></div>`;
+  if (能改) $("#ds-new").onclick = 新建数据集表单;
+  await 画数据集();
+}
+
+function 数据集提示(html, 坏) {
+  if (!$("#dsmsg")) return;
+  // class 写成两段字面,不拼 —— css_class_check 钉着「拼出来的 class 只许少不许多」
+  $("#dsmsg").innerHTML = 坏 ? `<div class="note warn">${html}</div>` : `<div class="note">${html}</div>`;
+}
+// 把后端一条拒的错误体画成人能照着做的话:code · message · advice,field_errors 逐条原样(data-raw)
+function 拒的明细(e) {
+  const b = e.体 || {};
+  const 条 = Object.entries(b.field_errors || {}).map(([k, v]) => {
+    const 值 = Array.isArray(v) ? v : [v];
+    return `<li><b>${esc(k)}</b>:${值.map((x) => `<span>${md(String(x))}</span>`).join("<br>")}</li>`;
+  }).join("");
+  return `<b>${esc(b.code || "出错了")}</b> · <span>${md(e.message || "")}</span>`
+    + (b.advice ? `<br><b>下一步:</b><span>${md(b.advice)}</span>` : "")
+    + (条 ? `<ul>${条}</ul>` : "");
+}
+
+async function 画数据集() {
+  const 能改 = 数据集动作.能改(), 能看原文 = 数据集动作.能看原文();
   try {
     const d = await 请求(`${P()}/datasets`);
     if (!d["数据集"].length) {
-      $("#list").innerHTML = 状态("", "还没有数据集", d.note || "").html;
+      $("#list").innerHTML = 状态("", "还没有数据集",
+        (d.note || "") + (能改 ? "\n\n点右上角「新建数据集」建第一个 —— 建的时候就把脱敏策略声明了,省得回头补。" : "")).html;
       return;
     }
     $("#list").innerHTML = `<table><thead><tr><th>数据集</th><th>样本</th>
-      <th>分档</th><th>冻结过几版</th><th>能导出吗</th></tr></thead><tbody>`
-      + d["数据集"].map((r) => `<tr>
-        <td><b>${esc(r["名字"])}</b><div class="k">${esc(r.id)}</div></td>
+      <th>分档</th><th>冻结的版本</th><th>脱敏策略</th><th>能导出吗 / 卡在哪</th><th>动作</th></tr></thead><tbody>`
+      + d["数据集"].map((r) => {
+        const 卡 = r["卡在哪"] || [];
+        // 后端那几句是判据,整句显示不截断(原来只给第一条的前 54 字);「没声明脱敏策略」旁边直接给「去声明」—— 建议指着的动作就在旁边
+        const 卡块 = 卡.map((x) => `<div class="k">${md(x)}${
+          能改 && /没声明脱敏策略/.test(x)
+            ? ` <button class="mini" data-declare="${esc(r.id)}" data-rev="${esc(r.revision)}">去声明</button>` : ""}</div>`).join("");
+        // 今晚刚加的 版本们(id / 样本数 / 冻结于);老后端没有它时退回计数
+        const 版 = Array.isArray(r["版本们"])
+          ? (r["版本们"].length
+              ? r["版本们"].map((v) => `<div class="k"><code style="font-size:11px">${esc(v.id)}</code> · ${esc(v["样本数"])} 条 · ${时间(v["冻结于"])}</div>`).join("")
+              : `<span class="k">还没冻结过</span>`)
+          : `${esc(r["冻结过几版"])} 版`;
+        return `<tr data-dsrow="${esc(r.id)}">
+        <td><b>${md(r["名字"])}</b><div class="k">${esc(r.id)} · ${esc(r["格式"] || "?")}${r["用途"] ? ` · <span>${md(r["用途"])}</span>` : ""}</div>
+          <div class="k">revision ${esc(r.revision)}</div></td>
         <td>${r["样本数"]
           ? `<a href="#/samples/${encodeURIComponent(r.id)}">${r["样本数"]}</a>`
           : `<span class="k">0</span>`}</td>
         <td class="k">${esc(Object.entries(r["分档"] || {})
               .map(([k, v]) => `${k} ${v}`).join("、") || "—")}</td>
-        <td>${r["冻结过几版"]}</td>
-        <td>${r["能导出吗"] ? `<span class="pill">可以</span>`
-              : `<span class="pill warn">不行</span>`}
-          ${(r["卡在哪"] || []).length
-            ? `<div class="k">${md((r["卡在哪"] || [])[0].slice(0, 54))}</div>` : ""}
+        <td>${版}</td>
+        <td>${r["脱敏策略"] ? `<span>${md(r["脱敏策略"])}</span>` : `<span class="pill warn">没声明</span>`}</td>
+        <td>${r["能导出吗"] ? `<span class="pill ok">可以</span>` : `<span class="pill warn">不行</span>`}
+          ${卡块}
           ${r["还有一道看内容的闸"]
-            ? `<div class="k">⚠️ ${esc(r["还有一道看内容的闸"].slice(0, 54))}</div>` : ""}
-        </td></tr>`).join("")
+            ? `<div class="k">⚠️ <span data-raw="原文">${esc(r["还有一道看内容的闸"])}</span></div>` : ""}
+        </td>
+        <td class="relacts">${能改 ? `
+          <button class="mini" data-freeze="${esc(r.id)}">冻结一版</button>
+          <button class="mini" data-export="${esc(r.id)}" title="${能看原文 ? "" : "你没有「查看敏感输入/独立测试答案」授权 —— 点了会被 403 拦,那不是坏了"}">导出</button>
+          <button class="mini" data-declare="${esc(r.id)}" data-rev="${esc(r.revision)}">改脱敏策略 / 用途</button>
+          ${能看原文 ? "" : `<div class="k">导出另要「查看敏感输入」授权</div>`}`
+          : `<span class="k">要「改训练样本」</span>`}</td></tr>`;
+      }).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
-  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+    if (!能改) return;
+    document.querySelectorAll("[data-freeze]").forEach((b) => { b.onclick = () => 冻结一版(b); });
+    document.querySelectorAll("[data-export]").forEach((b) => { b.onclick = () => 导出数据集(b); });
+    document.querySelectorAll("[data-declare]").forEach((b) => {
+      b.onclick = () => 改数据集表单(b.dataset.declare, b.dataset.rev,
+        ((d["数据集"] || []).find((x) => x.id === b.dataset.declare) || {}));
+    });
+  } catch (e) { const s = 错误块(e, 画数据集); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+async function 冻结一版(b) {
+  const dsid = b.dataset.freeze;
+  if (!(await 问一句("冻结一版?", `把 <code>${esc(dsid)}</code> 现在的全部样本<b>固化</b>成一个版本 —— 之后改样本不会改到这一版。<br>
+    内容和上一版一模一样时<b>不会新建</b>(同样的字节冻出两个版本号,「那次评测用的是哪一版」就有了两个答案)。`, { 确定: "冻结" }))) return;
+  b.disabled = true;
+  数据集提示("冻结中…");
+  try {
+    const r = await 数据集动作.冻结(dsid);
+    数据集提示(`${r["新建了吗"] === false ? "<b>没有新建</b>" : "<b>冻好了</b>"}:版本 <code>${esc(r.id)}</code> · ${esc(r["样本数"])} 条 · 分集 ${esc(Object.entries(r["分集"] || {}).map(([k, v]) => `${k} ${v}`).join("、") || "—")}<br>
+      <span>${md(r.note || "")}</span>`, r["新建了吗"] === false);
+    await 画数据集();
+  } catch (e) {
+    // 422 CANNOT_FREEZE 的 field_errors.样本 是一条条「还差什么」—— 一次报全,原样给
+    数据集提示(拒的明细(e), true);
+    b.disabled = false;
+  }
+}
+
+async function 导出数据集(b) {
+  const dsid = b.dataset.export;
+  b.disabled = true;
+  数据集提示("导出中…(服务端要过八道闸)");
+  try {
+    const { 文, 头 } = await 数据集动作.导出(dsid, false);
+    const 条数 = (文 || "").split("\n").filter((x) => x.trim()).length;
+    // ⚠️ 空文件按契约不该出现(一条不剩是 422)—— 真出现了就是后端的契约破了,明说,别画成「导出了 0 条」
+    if (!条数) {
+      数据集提示(`<b>服务端返回了一个空文件</b>(x-sample-count=${esc(头["x-sample-count"])})—— 按契约「一条都不剩必须是拒,不是空文件」,这是后端的契约破了,别拿它去训练。`, true);
+      b.disabled = false; return;
+    }
+    const 名 = ((头["content-disposition"] || "").match(/filename="([^"]+)"/) || [])[1] || `${dsid}.jsonl`;
+    let 链 = "";
+    if (typeof Blob !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
+      const url = URL.createObjectURL(new Blob([文], { type: "application/x-ndjson" }));
+      链 = `<a href="${url}" download="${esc(名)}">下载 ${esc(名)}</a>`;
+    }
+    const 隔离 = Number(头["x-quarantined"] || 0);
+    数据集提示(`<b>导出了 ${条数} 条</b>(JSONL,每行一条 {id, content})${链 ? " · " + 链 : ""}<br>
+      <span class="k">含 mock:${esc(头["x-contains-mock"] || "?")} · 脱敏:${esc(头["x-redacted"] || "?")}
+      · 被敏感信息检测隔离 ${隔离} 条${隔离 ? `(${esc(头["x-quarantined-by"] || "")};每条为什么在审计记录 dataset.export 里)` : ""}</span>
+      <details><summary>看前 3 行</summary><pre class="io" data-raw="原文">${esc(文.split("\n").slice(0, 3).join("\n"))}</pre></details>`,
+      隔离 > 0);
+  } catch (e) {
+    const b体 = e.体 || {};
+    if (e.码 === 403 && b体.code === "NEED_CONTENT_GRANT") {
+      // 权限不够不是坏了:能改样本不等于能把全部原文带走 —— 把 advice 原样显示
+      数据集提示(`<b>导出要另一条授权</b>(${esc(b体.code)}):<span>${md(e.message)}</span><br>
+        <b>下一步:</b><span>${md(b体.advice || "")}</span>`, true);
+    } else {
+      // 422:没声明 / 脱敏器没选型 / 一条都不剩 —— 后端的话原样给,field_errors.闸 / 账 / 隔离 逐条
+      数据集提示(拒的明细(e), true);
+    }
+  }
+  b.disabled = false;
+}
+
+function 新建数据集表单() {
+  弹层("新建数据集", `
+    <label class="f">名字 <span class="req">*</span></label><input class="t" id="ds-名" placeholder="比如:门店顾问问答留出集">
+    <label class="f">格式 <span class="req">*</span></label><input class="t" id="ds-格" placeholder="qa 或 jsonl(现有的两种)" value="qa">
+    <label class="f">用途</label><input class="t" id="ds-途" placeholder="评测 / 训练 / 其他(可不填)" value="评测">
+    <div class="note">脱敏策略<b>建的时候就声明</b> —— 不声明也能建,但导出会被拦在「没声明」那道闸上,回头还得来补。</div>
+    ${脱敏声明表单("")}
+    <div id="ds-err" class="err"></div>
+    <div class="acts" style="margin-top:12px"><button class="pri" id="ds-ok">建</button> <button id="ds-no">取消</button></div>`);
+  挂脱敏声明切换();
+  $("#ds-no").onclick = 关弹层;
+  $("#ds-ok").onclick = async () => {
+    const 名 = $("#ds-名").value.trim(), 格 = $("#ds-格").value.trim(), 途 = $("#ds-途").value.trim();
+    if (!名 || !格) { $("#ds-err").textContent = "名字和格式都要填。"; return; }
+    const 声 = 读脱敏声明();
+    if (声.错) { $("#ds-err").textContent = 声.错; return; }
+    $("#ds-ok").disabled = true;
+    try {
+      const r = await 数据集动作.建({ 名字: 名, 格式: 格, 用途: 途 || null, 脱敏策略: 声.值 });
+      关弹层();
+      数据集提示(`<b>建好了</b>:<code>${esc(r.id)}</code> ${esc(r["名字"])}。<span>${md(r.note || "")}</span>`);
+      await 画数据集();
+    } catch (e) {
+      $("#ds-err").innerHTML = 拒的明细(e);
+      $("#ds-ok").disabled = false;
+    }
+  };
+}
+
+function 改数据集表单(dsid, rev, 行) {
+  弹层("改脱敏策略 / 用途", `
+    <div class="k"><code>${esc(dsid)}</code> · ${esc(行["名字"] || "")} · revision ${esc(rev)}</div>
+    ${脱敏声明表单(行["脱敏策略"] || "")}
+    <label class="f">用途</label><input class="t" id="ds-途" placeholder="评测 / 训练 / 其他" value="${esc(行["用途"] || "")}">
+    <div class="note">${md("只改这两项。名字 / 格式不在这里改:名字改了冻结过的版本对不上人话,格式改了样本不会跟着变 —— 那是「换一个数据集」的事。**声明成「需要脱敏」是对的**,但脱敏器还没选型,导出仍会被拦,拦的理由会从「没声明」变成「脱敏器没选型」。")}</div>
+    <div id="ds-err" class="err"></div>
+    <div class="acts" style="margin-top:12px"><button class="pri" id="ds-ok">保存</button> <button id="ds-no">取消</button></div>`);
+  挂脱敏声明切换();
+  $("#ds-no").onclick = 关弹层;
+  $("#ds-ok").onclick = async () => {
+    const 声 = 读脱敏声明();
+    if (声.错) { $("#ds-err").textContent = 声.错; return; }
+    const 补 = { 脱敏策略: 声.值, 用途: $("#ds-途").value.trim() || null };
+    $("#ds-ok").disabled = true;
+    try {
+      const r = await 数据集动作.改(dsid, 补, rev);
+      关弹层();
+      数据集提示(`<b>改好了</b>(revision ${esc(r.revision)},改了 ${esc((r["改了"] || []).join("、"))})。
+        现在${r["能导出吗"] ? `<span class="pill ok">能导出</span>` : `<span class="pill warn">仍不能导出</span>`}
+        ${(r["卡在哪"] || []).map((x) => `<div class="k">${md(x)}</div>`).join("")}
+        <span>${md(r.note || "")}</span>`, !r["能导出吗"]);
+      await 画数据集();
+    } catch (e) {
+      const b = e.体 || {};
+      if (e.码 === 409) {
+        // IF_MATCH_REQUIRED / REVISION_CONFLICT:别人改过了 —— 提示刷新,不许用旧 revision 覆盖
+        $("#ds-err").innerHTML = `${esc(b.code || "409")}:<span>${md(e.message)}</span>
+          <br>${md(b.advice || "")} <button class="mini" id="ds-refresh">刷新列表</button>`;
+        $("#ds-refresh").onclick = async () => { 关弹层(); await 画数据集(); };
+      } else {
+        $("#ds-err").innerHTML = 拒的明细(e);
+      }
+      $("#ds-ok").disabled = false;
+    }
+  };
 }
 
 /* ── 数据集 / 样本:看一条、改一条 ────────────────────────────────────
