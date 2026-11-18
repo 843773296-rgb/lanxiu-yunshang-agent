@@ -72,8 +72,13 @@ def 设状态(rid, st):
 
 
 with 连接() as c:
+    # 11-18:只借**早已结束**的运行 —— 原来借「最新一条」,门禁和别的 e2e 并发时抢走了人家刚发起、还在跑的运行,
+    # 结尾一还原把一条已经 succeeded 的运行写回 queued(库里真出现过)。终态 + 结束超过 10 分钟的才借
     rid = c.execute(text("""select id from execution_runs where project_id=:p
-                          and archived_at is null order by created_at desc limit 1"""),
+                          and archived_at is null
+                          and status in ('succeeded','failed','cancelled','expired','incomplete')
+                          and ended_at < now() - interval '10 minutes'
+                          order by created_at desc limit 1"""),
                     {"p": 项目}).scalar()
 if not rid:
     print("❌ 库里没有 execution_run —— **这不叫跳过**")
@@ -139,13 +144,17 @@ ck("409 NOT_PAUSED_YET", 码 == 409 and r.get("code") == "NOT_PAUSED_YET", 码)
 ck("理由说清「它还在跑,谈不上从检查点继续」",
    "还在跑" in ((r or {}).get("advice") or ""), (r or {}).get("advice"))
 
-print("▸ ④ 真停了之后才能继续")
+print("▸ ④ 真停了之后才能继续 —— 而且「继续」要真排任务,没有检查点就明说排不了")
+# 11-18 起 resume 走 run_resume.排恢复 真插恢复任务(原来只改状态成 queued、没人领,永远排队)。
+# 这里的 paused 是夹具直接改库造的,**没有检查点** —— 所以要的是 409 RESUME_NO_CHECKPOINT,不是 202 装成继续了
 rev2 = 设状态(rid, "paused")
 码, r2 = 打("POST", f"{P}/execution-runs/{rid}/resume", 体={"revision": rev2}, 键=f"r2{唯一}")
-ck("202 → queued", 码 == 202 and r2["status"] == "queued", f"{码} {r2.get('status')}")
-ck("note 说「用量和循环计数保留」", "保留" in (r2.get("note") or ""))
-ck("而且说清**不把暂停期间更新的 Prompt 静默装进来**",
-   "静默装进来" in (r2.get("note") or ""), r2.get("note"))
+ck("没有检查点 → 409 RESUME_NO_CHECKPOINT(不假装排回去了)",
+   码 == 409 and r2.get("code") == "RESUME_NO_CHECKPOINT", f"{码} {r2.get('code')}")
+ck("advice 说清「没有可接着跑的检查点,取消重发」", "检查点" in ((r2 or {}).get("advice") or ""), (r2 or {}).get("advice"))
+with 连接() as c:
+    _st = c.execute(text("select status from execution_runs where id=:i"), {"i": rid}).scalar()
+ck("被拒之后状态没被改成 queued(事务整体回滚)", _st == "paused", _st)
 
 print("▸ ⑤ 取消:两条路,而且都不承诺撤销已发生的动作")
 rev3 = 设状态(rid, "queued")

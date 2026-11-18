@@ -234,7 +234,9 @@ def 取消一次(c, project_id, run_id, r, rev, *, 谁):
     目标 = "cancelled" if 直接取消 else "cancel_requested"
     新rev = _换状态(c, project_id, run_id, r, 目标, rev,
                  谁=谁, 动作="cancel",
-                 额外={"cancel_requested": True})
+                 # 直接取消(没开跑)是终态,要像 worker 那条路一样写结束时间和原因 —— 不写的话运行记录「结束」列是空的(11-18 e2e 抓到)
+                 额外={"cancel_requested": True, **({"ended_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                                                 "completion_reason": "CANCELLED"} if 直接取消 else {})})
     # 11-18:worker 的取消令牌读的是 jobs.cancel_requested(lease.续租 顺手读回),原来这里只改 execution_runs 那两列,
     # 执行侧一个字都读不到 —— 正在跑的照跑到底。现在同步点亮这次运行名下还没结束的任务
     c.execute(text("""update jobs set cancel_requested=true, updated_at=now()

@@ -549,7 +549,10 @@ ck("**有阻断时冻结被拒**,而且 field_errors 指到具体字段",
 
 c, d = 打("GET", P + f"/agents/{aid}")
 cfg = dict(d["草稿"]["配置"])
-cfg["connection_version_id"] = [x for x in d["可选连接"] if x["原生工具调用"]][0]["id"]
+# 11-18:原来取「第一条支持工具调用的」—— 名单顺序一变就拿到别的测试留下的本地假接口(端口早死了,跑 Agent http 000)。
+# 这条测试要的是演示用 mock 工具调用连接(MODEL_ADAPTER=anthropic 下它照样走 mock),按模式点名,没有才退回第一条
+_候 = [x for x in d["可选连接"] if x["原生工具调用"]]
+cfg["connection_version_id"] = ([x for x in _候 if x.get("模式") == "mock"] or _候)[0]["id"]
 打("PATCH", P + f"/agents/{aid}/draft", 体={"配置": cfg},
   头={"If-Match": str(d["草稿"]["revision"])})
 c, b = 打("POST", P + f"/agents/{aid}/validate")

@@ -1991,6 +1991,13 @@ class _打点器:
                 self.暂停了 = bool(行[0])
                 if 行[1]:
                     self.取消了 = True
+        # 运行类任务在这儿提交一次(见 跑一轮 里那段说明):放开 execution_runs / jobs 的行锁,API 的暂停 / 取消才写得进来。
+        # 只对 workflow_run / agent_run 做 —— prompt_run 靠「有 trace 就当做过」去重,半截提交会让重试误判成幂等命中
+        if self.job.get("type") in ("workflow_run", "agent_run"):
+            try:
+                self.c.commit()
+            except Exception:            # noqa: BLE001 —— 不在事务里(比如调用方传的是 事务() 的连接且已结束)就算了
+                pass
 
     def 要暂停吗(self):
         """给 runner 在每个节点边界问的:先刷令牌;取消就在这儿抛(走 except 取消了 那条收尾),否则答要不要停。"""
@@ -2056,7 +2063,12 @@ def 跑一轮(类型=None, 项目=None):
         return f"{名}:没有处理器 → 失败(**而且这不该发生**:捞的时候过滤过了)"
 
     try:
-        with 事务() as c:
+        # 11-18:原来整次执行裹在一个 事务() 里 —— execution_runs 写成 running **不提交**,外面读到的永远是 queued;
+        # runctl 的 pause / cancel 要 for update 那一行,被 worker 的行锁挡到跑完才回 409(e2e 用 8 秒的假模型接口量到的)。
+        # 所以运行类任务(workflow_run / agent_run)改成**节点边界提交**:打点器的 刷新令牌 每次提交到此为止的东西,
+        # 行锁随之放开,API 的暂停 / 取消写得进去,下一次刷令牌就读得到。连接用 连接()(autobegin),最后一笔显式 commit;
+        # 中途抛异常 → 连接关闭回滚**最后那一段**,已提交的事件 / 步骤留着(它们是真发生过的),失败状态由下面 except 各自开事务写。
+        with 连接() as c:
             打点 = _打点器(c, job)
             打点("开始", {"阶段": "start", "worker": 我是谁})
             出 = f(c, job, 打点)
@@ -2064,6 +2076,7 @@ def 跑一轮(类型=None, 项目=None):
             ok, 说 = L.收尾(c, job["project_id"], job["id"], 我是谁, "已完成")
             if not ok:
                 raise 干不了("LEASE_LOST", {"说明": 说})
+            c.commit()
         return f"{名}:已完成 {出}"
     except 取消了:
         with 事务() as c:
