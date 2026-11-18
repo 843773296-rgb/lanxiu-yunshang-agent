@@ -111,6 +111,38 @@ def _列表(items, total=None, next_cursor=None):
     return {"items": items, "next_cursor": next_cursor, "total": total}
 
 
+def _定调试连接(c, project_id, 点名):
+    """Prompt 调试运行用哪个模型连接 → (连接id 或 None, 来源一句话)。
+
+    11-18 用户报「运行测试每次都排队、不给答案」。查实两层:快照里**从来没有** `model_connection_id`,
+    Worker 的 `_取冻结的模型连接` 读不到 → 真跑模式(`MODEL_ADAPTER=anthropic`)下每一次都
+    `NO_MODEL_CONNECTION`;而页面只查一次任务状态,看到的永远是「排队中」。
+    `tests/e2e/test_exec_mode_flow.py` 的 `提交()` 自己往快照里塞这个键,注释写「真实链路里这是发布包给的」——
+    而 Prompt 调试没有发布包,所以这条路一直是断的。
+
+    规矩:调用方点名 → 用它(得是这个项目里启用的连接,不然 422);
+    没点名 → 项目里**恰好一条**启用的生成连接就用它,来源写明「项目唯一」;零条或多条**不猜**,
+    返回 None,信封里明说会失败、该去哪选 —— 让人在模型供应商页去定,而不是这里替他挑。
+    ⚠️ 不按适配器是不是 mock 过滤:mock 连接也是一条连接,跑不跑 mock 由 `执行模式.定` 按 MODEL_ADAPTER 决定。
+    """
+    行们 = c.execute(text("""select id, adapter, display_name from model_connections
+                           where project_id=:p and purpose='generate' and status='active'
+                             and archived_at is null order by created_at"""),
+                    {"p": project_id}).mappings().all()
+    if 点名:
+        点名 = str(点名).strip()
+        if not any(r["id"] == 点名 for r in 行们):
+            raise _错(422, "MODEL_CONNECTION_UNKNOWN", f"这个项目里没有启用的生成连接 {点名}",
+                      "在「集成 → 模型供应商」里看有哪些启用的连接,或者不传这个字段让系统用项目里唯一那条",
+                      field_errors={"model_connection_id": "不是这个项目里启用的生成连接"})
+        return 点名, "调用方点名"
+    if len(行们) == 1:
+        return 行们[0]["id"], "项目里唯一一条启用的生成连接,没点名时默认用它"
+    return None, ("项目里没有启用的生成连接 —— 真跑模式下这次运行会失败(NO_MODEL_CONNECTION)"
+                  if not 行们 else
+                  f"项目里有 {len(行们)} 条启用的生成连接,没点名不替你挑 —— 真跑模式下这次运行会失败(NO_MODEL_CONNECTION)")
+
+
 def _异步(job_id, resource_id, project_id, status="排队中", trace_id=None):
     """异步信封。**status 不许写「已完成」** —— 那是用假完成冒充执行。"""
     return {"job_id": job_id, "status": status, "resource_id": resource_id,
@@ -666,9 +698,13 @@ async def 跑一次(project_id: str, request: Request,
         # 只是那个计数器动了)。而 revision **不是请求的一部分**。
         # > 一个把「别人碰过这条草稿」当成「你提交了另一份请求」的幂等判断,
         # > 和一个正确的,**在那个 409 上长得一模一样**。
+        连接id, 连接来源 = _定调试连接(c, project_id, 体.get("model_connection_id"))
         请求摘要 = {"messages": d["messages"], "variable_schema": d["variable_schema"],
-                 "params": d["params"], "变量": 变量}
+                 "params": d["params"], "变量": 变量,
+                 # 连接也算「这次请求的配置」:同一个幂等键换了连接 → 冲突,不是复用
+                 "model_connection_id": 连接id}
         快照 = {**请求摘要,
+               "模型连接来源": 连接来源,
                # 留痕「这份快照是从哪条草稿的哪一版固化来的」——
                # 只有 id 的话,事后查不出当时它是第几版。
                # ⚠️ `prompt_drafts` 上**没有** `draft_revision` 这一列,
@@ -741,7 +777,12 @@ async def 跑一次(project_id: str, request: Request,
     # ⚠️ **到这里任务只是「排队中」,一个模型都还没调。**
     # 这正是 202 的含义 —— 规格 §19.1:「异步动作返回 202 与 job_id,
     # **不能返回「已经训练完成」**」。Worker 捞到之后才真的跑。
-    return _异步(job, run, project_id, status="排队中")
+    信封 = _异步(job, run, project_id, status="排队中")
+    # 信封里写明这次绑了哪条连接 / 为什么没绑 —— 没绑的那种**在这里就说会失败**,
+    # 别让人盯着「排队中」等一个注定失败的任务(11-18 用户就是这么等的)。
+    信封["模型连接"] = 连接id
+    信封["模型连接说明"] = 连接来源
+    return 信封
 
 
 
@@ -782,6 +823,8 @@ def 任务详情(project_id: str, job_id: str, me: 身份 = Depends(要权限("�
             "是终态吗": 状态 in ST.找("job")["终态"],
             "attempts": j["attempts"], "target_ref": t,
             "事件": [dict(x) for x in ev], "结果": tr,
+            # 失败原因原来只在库里:页面拿到「失败」却不知道为什么(11-18 补)
+            "error_code": j["error_code"], "error_detail": j["error_detail"],
             "演示模式": CFG.演示模式()}
 
 

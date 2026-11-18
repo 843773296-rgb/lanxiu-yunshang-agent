@@ -20,7 +20,8 @@ const errs = [];
 const 写过 = new Map();
 function 造(id) {
   const o = {
-    id, value: "", textContent: "", style: {}, dataset: {}, disabled: false,
+    // `options`:真浏览器里 <select> 一定有它;桩里没有的话,审计页管理员那一支(`sel.options.length`)在桩里抛、浏览器里不抛 —— 11-18 查实这一页的红是桩的红
+    id, value: "", textContent: "", style: {}, dataset: {}, disabled: false, options: [],
     className: "", classList: { add() {}, remove() {}, contains: () => false },
     addEventListener() {}, removeEventListener() {}, appendChild() {}, remove() {},
     setAttribute() {}, getAttribute: () => null, scrollIntoView() {},

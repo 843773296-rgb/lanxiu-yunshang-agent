@@ -400,6 +400,81 @@ async function 页_prompt列表() {
   await 画();
 }
 
+/* 模型连接下拉(Prompt 详情页 + 单条试跑共用,11-18):只列这个项目里**启用的生成连接**;恰好一条就默认选中
+ * (服务端没点名时也会选它,两边一致);零条明说「运行会失败」而不是摆一个空下拉;mock 适配器的连接标出来 —— 它返回的是编出来的回答。 */
+async function 画模型连接(容器, 选id) {
+  const 盒 = $(容器); if (!盒) return;
+  let d;
+  try { d = await 请求(`${P()}/model-connections`); }
+  catch (e) {
+    盒.innerHTML = `<div class="note warn">读不到模型连接:${esc(e.message)} —— 不传连接的话,服务端会用项目里唯一那条;没有就会失败</div>`;
+    return;
+  }
+  const 们 = (d["连接"] || []).filter((c) => c["用途"] === "generate" && c["状态"] === "active");
+  if (!们.length) {
+    盒.innerHTML = `<div class="note warn">${md("这个项目**没有启用的生成连接** —— 运行测试会失败(NO_MODEL_CONNECTION)。去「集成 → 模型供应商」建一条并探测过。")}</div>`;
+    return;
+  }
+  const 是mock = (c) => /mock/i.test(String(c["适配器"] || ""));
+  盒.innerHTML = `<label class="f">这次用哪条模型连接</label>
+    <select id="${选id}">${们.map((c) => `<option value="${esc(c.id)}">${esc(c["适配器"])} · ${esc(c.id)}${是mock(c) ? "(mock,答案是编的)" : ""}</option>`).join("")}</select>
+    <div class="k">${们.length === 1 ? "项目里只有这一条启用的生成连接,默认就用它" : `有 ${们.length} 条启用的,选一条 —— 服务端不替你挑`}</div>
+    ${们.some(是mock) ? `<div class="note warn">${md("mock 适配器返回的是**编出来的回答**,不许计入真实评测或发布;跑不跑 mock 由服务的 MODEL_ADAPTER 决定")}</div>` : ""}`;
+}
+const 选中的连接 = (选id) => { const s = $("#" + 选id); return s && s.value ? s.value : undefined; };
+
+/* 等一个任务到终态(11-18):原来页面派完任务**只查一次**,看到的永远是「排队中」—— 用户报「每次都排队、不给答案」。
+ * 两秒一问,最多两分钟;`写状态` 每一轮回一次,让人看见它真在等而不是卡住。超时就把最后一次看到的交回去,**标明没结束**。
+ * 人换了页,`请求` 对 GET 返回一个永不结束的 Promise,这个循环就自然停了,不会往新页面上写。 */
+async function 等任务(job, 写状态, 最多毫秒 = 120000) {
+  const 起 = Date.now();
+  for (;;) {
+    const j = await 请求(`${P()}/jobs/${encodeURIComponent(job)}`);
+    if (j["是终态吗"] || Date.now() - 起 > 最多毫秒) return j;
+    if (写状态) 写状态(j, Math.round((Date.now() - 起) / 1000));
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
+/* 一次运行的结果卡(Prompt 详情页 + 单条试跑共用)。失败要把**为什么**摆出来 —— 接口 11-18 起带 error_code / error_detail,
+ * 原来页面拿到「失败」两个字就没了。 */
+function 运行结果html(j) {
+  const 果 = j["结果"] || {};
+  const 段 = 果["阶段"] || [];
+  const 用 = 果["用量"] || [];
+  const 败 = j.status === "失败" || !!j["error_code"];
+  const 细 = j["error_detail"] || {};
+  const 原因 = 败 ? `<div class="note warn">${md("**失败:" + (j["error_code"] || "没给错码") + "** —— "
+      + (typeof 细 === "object" && 细["为什么"] ? 细["为什么"] : JSON.stringify(细)))}</div>` : "";
+  return `
+      <div style="font-weight:600;margin-bottom:6px">实际输出
+        <span class="vtag">· ${esc(j.status)}${j["是终态吗"] ? "(终态)" : "(<b>还没结束</b>)"}</span></div>
+      ${原因}
+      ${段.map((s) => `
+        <div class="vtag">阶段:${esc(s["阶段"])}</div>
+        <pre class="io" data-raw="原文">${esc(typeof s["输出"] === "string" ? s["输出"]
+                                : (s["输出"] && s["输出"].text) || JSON.stringify(s["输出"], null, 2))}</pre>
+        <details><summary>应用实际发送给模型的内容${果["看得到原文"] ? "" : "(已脱敏)"}</summary>
+          <pre class="io" data-raw="原文">${esc(JSON.stringify(s["实际发送"], null, 2))}</pre>
+          ${果["看得到原文"] ? "" : `<div class="note">${md(`**默认脱敏。** 看原文要
+            「查看敏感输入/独立测试答案」专项权限 —— 换成 U004 能看到差别。`)}</div>`}
+        </details>`).join("")}
+      <div class="two" style="margin-top:8px">
+        <div><div class="vtag">用量</div>
+          ${用.map((u) => `<div style="font-size:12.5px">
+            ${esc(u.resource || "")} ${esc(u.quantity)} ${esc(u.unit || "")} ·
+            费用 ${u.amount_known ? esc(u.amount) : "<b>未知</b>"} (来源 ${esc(u.source || "")})
+          </div>`).join("") || "—"}
+          <div class="note">${md(果["费用说明"] || "")}</div></div>
+        <div><div class="vtag">事件</div>
+          ${(j["事件"] || []).map((e) => `<div style="font-size:12.5px">
+            #${e.seq} ${esc(e.kind)} ${esc(String(e.at || "").slice(0, 19))}</div>`).join("")}
+          <div class="note">Trace <code>${esc(果["trace_id"] || "—")}</code></div></div>
+      </div>
+      <div class="note">${md(`跑完可以「加入问题集」「保存为评测样本」—— 新样本**先进待审核**,
+        避免把错误答案当成真值。(这两个按钮还没实现)`)}</div>`;
+}
+
 /* ── Prompt 详情(§8.2 / §8.3 / §8.4 / §8.5)──────────────────────
  * 左约 60%:任务与指令 / 消息模板 / 变量 / 输出要求
  * 右约 40%:模型与参数 / 测试输入 / 运行测试 / 实际输出
@@ -470,9 +545,7 @@ async function 页_prompt详情(pid) {
       <div>
         <div class="card">
           <div style="font-weight:600;margin-bottom:6px">模型与参数</div>
-          <div class="note warn">${md(`当前是 **mock 适配器** —— 它返回的是编出来的回答,
-            **不许计入真实评测或发布**。接真实连接后这里会列出该连接**实际支持**的参数
-            (不支持的参数会返回明确错误,不会被静默忽略)。`)}</div>
+          <div id="mconn"><div class="k">读模型连接…</div></div>
           <label class="f">测试输入　<span style="color:var(--ink3)">和模板独立保存,运行结果不会覆盖模板</span></label>
           <div id="testvars"></div>
           <div style="margin-top:10px">
@@ -512,6 +585,9 @@ async function 页_prompt详情(pid) {
       : `<div class="note">这条 Prompt 没有变量 —— 直接点运行测试。</div>`;
   };
   画变量();
+  // 这次运行用哪条模型连接(11-18):原来这儿是一句写死的「当前是 mock 适配器」,而真跑模式下快照里没绑连接,
+  // 每一次都 NO_MODEL_CONNECTION;现在列出项目里启用的生成连接,唯一那条默认选中(和服务端没点名时的选法一致)
+  await 画模型连接("#mconn", "m-conn");
 
   const 标脏 = () => { 脏 = true; $("#fb").textContent = "有未保存的改动"; $("#fb").className = "msg"; };
   ["#e-用途", "#e-system", "#e-user", "#e-why"].forEach((s) => { $(s).oninput = 标脏; });
@@ -593,10 +669,17 @@ async function 页_prompt详情(pid) {
         // **幂等键**:这一次点击一个键 —— 超时重发不会跑第二遍(也不会多花一次钱)
         headers: { "Idempotency-Key": (crypto.randomUUID ? crypto.randomUUID()
                                         : String(Date.now()) + Math.random()) },
-        body: JSON.stringify({ prompt_id: pid, 变量: 变 }),
+        body: JSON.stringify({ prompt_id: pid, 变量: 变, model_connection_id: 选中的连接("m-conn") }),
       });
-      $("#runmsg").textContent = `任务 ${r.job_id} · ${r.status}`;
-      await 画运行(r.job_id);
+      $("#runmsg").textContent = `任务 ${r.job_id} · ${r.status}`
+        + (r["模型连接"] ? "" : ` · ⚠️ ${r["模型连接说明"] || "没绑模型连接"}`);
+      // 原来这里只查一次任务状态就停了 —— 任务刚受理当然是「排队中」,于是页面上永远是排队(11-18 用户报的就是这个)
+      const j = await 等任务(r.job_id, (x, 秒) => {
+        $("#runmsg").textContent = `任务 ${r.job_id} · ${x.status} · 等了 ${秒} 秒`;
+      });
+      $("#runout").style.display = "";
+      $("#runout").innerHTML = 运行结果html(j);
+      $("#runmsg").textContent = `任务 ${r.job_id} · ${j.status}` + (j["是终态吗"] ? "" : " · 两分钟还没结束,去「运行记录」看");
     } catch (e) {
       const b = e.体 || {};
       // 缺变量这类**调用前就被拦住**的错,要指到字段上(§5.3)
@@ -611,39 +694,6 @@ async function 页_prompt详情(pid) {
     $("#b-run").disabled = false;
   };
 
-  async function 画运行(job) {
-    const j = await 请求(`${P()}/jobs/${encodeURIComponent(job)}`);
-    const 果 = j.结果 || {};
-    const 段 = 果.阶段 || [];
-    const 用 = 果.用量 || [];
-    $("#runout").style.display = "";
-    $("#runout").innerHTML = `
-      <div style="font-weight:600;margin-bottom:6px">实际输出
-        <span class="vtag">· ${esc(j.status)}${j.是终态吗 ? "(终态)" : "(**还没结束**)"}</span></div>
-      ${段.map((s) => `
-        <div class="vtag">阶段:${esc(s.阶段)}</div>
-        <pre class="io">${esc(typeof s.输出 === "string" ? s.输出
-                                : (s.输出 && s.输出.text) || JSON.stringify(s.输出, null, 2))}</pre>
-        <details><summary>应用实际发送给模型的内容${果.看得到原文 ? "" : "(已脱敏)"}</summary>
-          <pre class="io" data-raw="原文">${esc(JSON.stringify(s.实际发送, null, 2))}</pre>
-          ${果.看得到原文 ? "" : `<div class="note">${md(`**默认脱敏。** 看原文要
-            「查看敏感输入/独立测试答案」专项权限 —— 换成 U004 能看到差别。`)}</div>`}
-        </details>`).join("")}
-      <div class="two" style="margin-top:8px">
-        <div><div class="vtag">用量</div>
-          ${用.map((u) => `<div style="font-size:12.5px">
-            ${esc(u.resource || "")} ${esc(u.quantity)} ${esc(u.unit || "")} ·
-            费用 ${u.amount_known ? esc(u.amount) : "<b>未知</b>"} (来源 ${esc(u.source || "")})
-          </div>`).join("") || "—"}
-          <div class="note">${md(果.费用说明 || "")}</div></div>
-        <div><div class="vtag">事件</div>
-          ${(j.事件 || []).map((e) => `<div style="font-size:12.5px">
-            #${e.seq} ${esc(e.kind)} ${esc(String(e.at || "").slice(0, 19))}</div>`).join("")}
-          <div class="note">Trace <code>${esc(果.trace_id || "—")}</code></div></div>
-      </div>
-      <div class="note">${md(`跑完可以「加入问题集」「保存为评测样本」—— 新样本**先进待审核**,
-        避免把错误答案当成真值。(这两个按钮还没实现)`)}</div>`;
-  }
 }
 
 /* ── 术语配置(11-06;用户拍「后台页面这次一起做」)────────────────────────────
@@ -6711,7 +6761,7 @@ async function 页_工具目录() {
       </tr></thead><tbody>`
       + d.items.map((r) => `<tr>
         <td><a href="#/tool/${encodeURIComponent(r.id)}"><b>${esc(r["名称"])}</b></a>
-          </td><td>${esc(r["用途"] || "—")}</td>
+          </td><td data-raw="原文">${esc(r["用途"] || "—")}</td>
         <td>${r["读写类型"] === "只读" ? `<span class="pill">只读</span>`
               : `<span class="pill warn">${esc(r["读写类型"])}</span>`}</td>
         <td class="k">${esc(r["接入方式"])}</td>
@@ -7188,6 +7238,7 @@ async function 页_单条试跑() {
       <label class="f">选一条 Prompt</label>
       <select id="pp">${ps.items.map((p) =>
         `<option value="${esc(p.id)}">${esc(p.name || p.key || p.id)}</option>`).join("")}</select>
+      <div id="tconn"></div>
       <label class="f">变量(JSON)</label>
       <textarea id="vv" rows="4">{}</textarea>
       <button class="pri" id="go">试跑一次</button>
@@ -7195,6 +7246,7 @@ async function 页_单条试跑() {
         不是答案 —— 下面显示的是**真实状态**,不是假进度条。`)}</div>
       <div id="步"></div>
     </div>`;
+  await 画模型连接("#tconn", "t-conn");
   $("#go").onclick = 只跑一次(async () => {
     const 步 = $("#步");
     let 变量;
@@ -7210,14 +7262,19 @@ async function 页_单条试跑() {
       const 键 = "tryout-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
       const r = await 请求(`${P()}/prompt-runs`, {
         method: "POST", headers: { "Idempotency-Key": 键 },
-        body: JSON.stringify({ prompt_id: $("#pp").value, 变量 }),
+        body: JSON.stringify({ prompt_id: $("#pp").value, 变量, model_connection_id: 选中的连接("t-conn") }),
       });
       步.innerHTML = `<div class="note">
-        派出去了:任务 <code>${esc(r.job_id)}</code>,状态 <b title="${esc(r.status)}">${esc(_英转中[r.status] || r.status)}</b><br>
+        派出去了:任务 <code>${esc(r.job_id)}</code>,状态 <b id="t-st" title="${esc(r.status)}">${esc(_英转中[r.status] || r.status)}</b><br>
         ${md("**202 —— 一个模型都还没调完。**"
-             + "这是任务信封,不是答案;要看结果去运行记录。")}
+             + "这是任务信封,不是答案;下面等它跑完(最多两分钟),等不到去运行记录看。")}
+        ${r["模型连接"] ? "" : `<br>⚠️ ${esc(r["模型连接说明"] || "没绑模型连接")}`}
         ${r.note ? "<br>" + md(r.note) : ""}</div>
-        <a href="#/runs"><button>去运行记录看</button></a>`;
+        <a href="#/runs"><button>去运行记录看</button></a><div id="t-out"></div>`;
+      // 11-18 前这一页到此为止 —— 人只看到「排队中」三个字;现在等到终态把结果摆在下面
+      const j = await 等任务(r.job_id, (x, 秒) => { const t = $("#t-st"); if (t) t.textContent = `${_英转中[x.status] || x.status} · 等了 ${秒} 秒`; });
+      const t = $("#t-st"); if (t) t.textContent = _英转中[j.status] || j.status;
+      const 出 = $("#t-out"); if (出) 出.innerHTML = `<div class="card"><div class="body">${运行结果html(j)}</div></div>`;
     } catch (e) {
       const s = 错误块(e, null);
       步.innerHTML = s.html;
@@ -8485,10 +8542,10 @@ async function 页_审计记录() {
           <td class="k">${esc(String(r["什么时候"] || "").slice(0, 19))}</td>
           <td>${esc(r["谁"] || "—")}</td>
           <td><b>${esc(r["做了什么"])}</b></td>
-          <td class="k">${esc(JSON.stringify(r["对象"] || {}).slice(0, 60))}</td>
+          <td class="k" data-raw="原文">${esc(JSON.stringify(r["对象"] || {}).slice(0, 60))}</td>
           <td>${r["结果"] === "ok" ? `<span class="pill" title="ok">成功</span>`
                 : `<span class="pill warn" title="${esc(r["结果"] || "")}">${esc(_英转中[r["结果"]] || r["结果"] || "—")}</span>`}</td>
-          <td class="k">${esc((r["为什么"] || "—").slice(0, 70))}</td></tr>`).join("")
+          <td class="k" data-raw="原文">${esc((r["为什么"] || "—").slice(0, 70))}</td></tr>`).join("")
         + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
     } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
   };
@@ -9086,9 +9143,9 @@ function 页_成员表单(d, 预填) {
       摆一个填完被 403 的表单,只是把拒绝往后挪一步。</div>`;
   }
   const 角色们 = d["可选角色"] || [];
-  const 可授权 = d["可授权的能力"] || [];
   const p = 预填 || {};
   const 已有 = new Set(p["专项授权"] || []);
+  const 初角 = p["角色"] || (角色们[0] && 角色们[0]["值"]) || "";
   return `<div class="state">
     <h3>${p["工号"] ? `改 ${esc(p["工号"])} 的权限` : "加一个成员"}</h3>
     <p class="k">${md(d["⚠️可授权是默认关的"] || "")}</p>
@@ -9099,12 +9156,21 @@ function 页_成员表单(d, 预填) {
     <p><label>角色<br><select id="m-role">${角色们.map((r) =>
       `<option value="${esc(r["值"])}"${r["值"] === p["角色"] ? " selected" : ""}
         >${esc(r["中文"])}（${esc(r["值"])}）</option>`).join("")}</select></label></p>
-    <p>专项授权（<b>只列可授权的那几条</b>）<br>
-      ${可授权.map((c, i) => `<label style="display:inline-block;margin-right:10px">
-        <input type="checkbox" data-grant="${i}" value="${esc(c)}"${
-          已有.has(c) ? " checked" : ""}> ${esc(c)}</label>`).join("")}</p>
+    <p>专项授权（<b>只列这个角色可授权的那几条</b>,换角色会跟着变）<br>
+      <span id="m-grants">${授权框html(d, 初角, 已有)}</span></p>
     <p><button class="pri" id="m-go">保存</button>
       ${p["工号"] ? `<button id="m-cancel">取消</button>` : ""}</p></div>`;
+}
+
+/* 专项授权的勾选框:接口的 `可授权的能力` 是**按角色**给的(dict),不是一张总表 —— 给一个角色加它不能被授权的能力
+ * 「存得下但不生效」。11-18 查实:页面原来把它当数组 `.map`,**管理员一打开成员页整页只剩「出错了」**;
+ * CI 冒烟用的是 U002(非管理员,不摆表单),所以从没红过。 */
+function 授权框html(d, 角色, 已有) {
+  const 表 = d["可授权的能力"] || {};
+  const 们 = Array.isArray(表) ? 表 : (表[角色] || []);
+  if (!们.length) return `<span class="k">这个角色没有可授权的能力</span>`;
+  return 们.map((c, i) => `<label style="display:inline-block;margin-right:10px">
+    <input type="checkbox" data-grant="${i}" value="${esc(c)}"${已有.has(c) ? " checked" : ""}> ${esc(c)}</label>`).join("");
 }
 
 function 挂成员事件(d) {
@@ -9119,6 +9185,14 @@ function 挂成员事件(d) {
     $("#m-cancel").onclick = () => {
       if ($("#mform")) $("#mform").innerHTML = 页_成员表单(d, null);
       挂成员事件(d);
+    };
+  }
+  const 角 = $("#m-role");
+  if (角 && $("#m-grants")) {
+    角.onchange = () => {           // 换角色 → 可授权的那几条跟着换,已勾的还在名单里就保留
+      const 勾 = new Set();
+      document.querySelectorAll("[data-grant]").forEach((c) => { if (c.checked) 勾.add(c.value); });
+      $("#m-grants").innerHTML = 授权框html(d, 角.value, 勾);
     };
   }
   if (!$("#m-go")) return;

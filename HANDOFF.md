@@ -12,6 +12,18 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-18 20:5x · AI 管理后台全页体检(用户要「确定是否所有能力已可用」)+ 修「运行测试每次都排队」(Fable 5.1)
+
+- **体检方法**:page_smoke 的桩(scratchpad `smoke_dump.js`,加了 DUMP 把渲出的文字落盘)以 U001 + project_lanxiu 渲 39 个一级页;54 个列表接口逐个 curl;结果在 scratchpad `smoke_summary.txt` / `api_probe.txt` / `smoke/*.txt`。
+- **查实的坏**(都已在工作树改,**未提交**):
+  ① Prompt「运行测试」/「单条试跑」:页面派完任务**只查一次**状态 → 永远显示排队;且 POST /prompt-runs 的快照里**从来没有** model_connection_id,真跑模式(launchd 的 aimc 是 MODEL_ADAPTER=anthropic)下 worker 每次 NO_MODEL_CONNECTION(库里 61 条这样失败的,用户 U002 在 demo_a 的 4 次都是)。修:main.py `_定调试连接`(点名优先;项目唯一启用生成连接默认用;零/多条不猜,信封写明会失败)+ 快照/幂等摘要带连接 + GET /jobs 露 error_code/detail;app.js 顶层 `画模型连接` / `等任务`(2 秒轮询最多 2 分钟)/ `运行结果html`,两页共用。
+  ② 成员与权限:管理员打开整页「出错了」—— 接口 `可授权的能力` 是按角色的 dict,页面当数组 `.map`;CI 冒烟用 U002 非管理员所以没红过。修:`授权框html(d, 角色, 已有)`,换角色跟着变。
+  ③ 审计页管理员那支在**桩**里抛(`sel.options` 桩没有),浏览器没事 → page_smoke.js 的 造() 加 `options: []`;审计「对象/为什么」、工具目录「用途」是原文带 `**` → data-raw="原文"。
+- **未验证的预判**:① 后端改动只过了 ast,**没对真服务跑过**(8801 跑的是主检出旧代码)—— 下一步起临时实例 8899(worktree 代码、aimc_dev、MODEL_ADAPTER=anthropic)真跑一次 pr_tl05 看 job 成功,再跑 test_api_flow / test_exec_mode_flow / test_prompt_snapshot_flow(AIMC_BASE=8899);② 并回主检出后 **aimc 要 kickstart**(API 进程不重载)再跑 e2e-ci。
+- **体检里不是 bug 的**:空数据页(Agent 0 / 能力档案 0 / 问题单 0 / 知识修订 0 / 产出 0 / 定时 0 / 训练 0 / 产物 0)、上线验收 0/10 未签、健康页无人工判读(8770 没接 POST /feedback)、「定时触发还没做」「Agent 线上(生产)还没接」是明写的未实现。
+- **数据卫生(待拍)**:project_lanxiu 有 689 个成员,687 个是 e2e 残留(E2EOP 292 / E2EAK 232 / E2EHO 47 / E2EIS 36 / E2ECP 35 / E2EIV 34),来自默认打 project_lanxiu 的那十几份 e2e(test_access_api_flow 等);审计里 access_key.issue 991、application.create 234 同源。e2e-ci 每跑一次再加。要么测试收尾清自己建的,要么改打 e2e 专用项目;残留清理是共享库写,要锁 + 告 fc。**没问用户,没动。**
+- **锁**:batch11(默认项目 fbaa7fbb)ship 在跑;推完 eureka-fc 要锁跑接管评测 25 分钟,之后才轮到这批(管理后台改了 → 先 kickstart aimc → e2e-ci → ship)。
+
 ### ✅ 11-18 20:0x · 已推 a0d89c9d —— Prompt 简介 / README 介绍页链接 / 差评汇编进知识库 / 召回测试修好(Opus 5.5)
 
 - 全量门禁退出码 0(中途红过一次:导入脚本里的全角标点被编辑器改成半角,charset_fullwidth_check 41→42;改用 chr() 拼,回 41)。e2e-ci 0 在 batch9 那次(管理后台代码相同)。
