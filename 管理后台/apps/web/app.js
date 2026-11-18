@@ -7926,7 +7926,85 @@ async function 页_用量与成本() {
     + `</tbody></table>
        <div class="note">${md(`⚠️ **每次调用写几行,不是一行** —— token 分
          input / output / cache 几档记,因为**它们的单价差一个数量级**。
-         合成一个数之后,补上价目表也算不回来了。`)}</div>`;
+         合成一个数之后,补上价目表也算不回来了。`)}</div>
+
+    <h2>预算</h2>
+    <div id="bdg"><div class="k">正在读预算…</div></div>`;
+  await 画预算块();
+}
+
+/* ── 预算(11-18 体检查出:后端 GET/POST /budgets 从 09 月就有,前端一页都没调 —— 用量页只看得见花了多少,
+ * 设不了也看不见上限)。
+ * ⚠️ 三条这一块特有的规矩,全部来自后端那两条接口的注释:
+ *   ① **没有某个范围的那一行 = 没设上限**,不是「上限 0」—— 0 的意思是一分都不许花。所以上限 / 已预留是 null 时显示「未知」,不写 0;
+ *   ② 「已预留」**不是**「已花」—— 预留是打算花,花掉是已经花。表头照后端的词写,不改成「已用」骗人;
+ *   ③ GET 和 POST 要的是同一条能力「配置密钥与预算」(admin)—— 非 admin 连列表都是 403,这一块要自己接住,不能把整页拖红。
+ * 空态不许承诺「超线会告警」:alert_rules.py 的 指标们 / 外部指标们 里**没有预算这一项**(11-18 查过),写了就是空头支票。 */
+const _预算金额 = (x, 币) => x == null ? `<span class="pill warn">未知</span>` : `${Number(x).toFixed(2)} ${esc(币 || "")}`;
+
+async function 画预算块() {
+  const 能设 = 能力.includes("配置密钥与预算") || 我的角色 === "admin";
+  let d;
+  try { d = await 请求(`${P()}/budgets`); }
+  catch (e) {
+    const b = e.体 || {};
+    if (e.码 === 403) {
+      // 预期中的拒绝,不是出错:列表和设预算走同一条能力,看不到就是没这条能力
+      $("#bdg").innerHTML = 状态("", "看不到预算", `${b.message || e.message}\n\n${b.advice ? `**下一步:**${b.advice}` : ""}`).html;
+      return;
+    }
+    const s = 错误块(e, 画预算块); $("#bdg").innerHTML = s.html; s.挂(); return;
+  }
+  const 们 = d["预算"] || [];
+  const 表 = !们.length
+    ? 状态("", "还没设预算", `没有任何一行 = **没设上限**,不是「上限 0」。设了之后这里显示已预留 / 上限。
+        ⚠️ **超线目前不会自动告警** —— 告警页能盯的指标里没有预算这一项,要看得回到这一页。`).html
+    : `<table><thead><tr><th>范围</th><th>周期</th><th class="num">已预留 / 上限</th><th class="num">还能预留</th><th>说明</th></tr></thead><tbody>`
+      + 们.map((r) => `<tr>
+        <td><b>${esc(r["范围"])}</b><div class="k">${esc(r.id || "")}</div></td>
+        <td>${esc(r["周期"])}</td>
+        <td class="num">${_预算金额(r["已预留"], r["币种"])} / ${_预算金额(r["上限"], r["币种"])}</td>
+        <td class="num">${_预算金额(r["还能预留"], r["币种"])}</td>
+        <td class="k">${md(r.note || "")}</td>
+      </tr>`).join("")
+      + `</tbody></table>`;
+  const 选 = (id, 项们) => `<select id="${id}">${项们.map((v) => `<option value="${v}">${v}</option>`).join("")}</select>`;
+  const 表单 = 能设
+    ? `<h3>设一条预算</h3>
+      <div class="note">${md("同一个「范围 + 周期」再设一次是**改上限**,不是再建一行。想表达「不限」就别设;`0` 是一分都不许花。")}</div>
+      <label class="f">范围 <span class="req">*</span></label>${选("bdg-scope", ["project", "connection"])}
+      <label class="f">周期 <span class="req">*</span></label>${选("bdg-period", ["day", "month", "total"])}
+      <label class="f">上限 <span class="req">*</span></label><input id="bdg-limit" type="number" min="0" step="0.01" placeholder="比如 50" style="width:100%">
+      <label class="f">币种 <span class="req">*</span> <span style="color:var(--ink3)">不给默认值 —— 两个币种混在一列里,合计是个没意义的数</span></label><input id="bdg-cur" placeholder="比如 USD" style="width:100%">
+      <button class="pri" id="bdg-go">设预算</button>
+      <div id="bdg-fb"></div>`
+    : `<div class="k">设预算要「配置密钥与预算」这条能力(admin 才有),你是 ${esc(我的角色 || "?")} —— 所以这里不摆表单。要设请让管理员在「成员与权限」里授权。</div>`;
+  $("#bdg").innerHTML = `${们.length ? `<div class="k">${esc(String(d["条数"] != null ? d["条数"] : 们.length))} 条</div>` : ""}${表}
+    <div class="note">${md(d.note || "")}</div>
+    <div class="card">${表单}</div>`;
+  if (!能设) return;
+  $("#bdg-go").onclick = async () => {
+    const fb = $("#bdg-fb");
+    const 上限文 = ($("#bdg-limit").value || "").trim();
+    // 空就送 null,让后端那句「上限必填,想不限就别建这一行」原话显示出来,不在前端另写一份口径
+    const 体 = { 范围: $("#bdg-scope").value, 周期: $("#bdg-period").value,
+      上限: 上限文 === "" ? null : Number(上限文), 币种: ($("#bdg-cur").value || "").trim() };
+    $("#bdg-go").disabled = true;
+    fb.innerHTML = `<div class="k">提交中…</div>`;
+    try {
+      const r = await 请求(`${P()}/budgets`, { method: "POST", body: JSON.stringify(体) });
+      await 画预算块();
+      $("#bdg-fb").innerHTML = `<div class="note"><b>${r["新建了吗"] === false ? "改了上限" : "已建"} ${esc(r.id || "")}</b> · ${esc(r["范围"] || "")} / ${esc(r["周期"] || "")}<br>${md(r.note || "")}</div>`;
+    } catch (e) {
+      $("#bdg-go").disabled = false;
+      const b = e.体 || {};
+      // 422 的 field_errors 是 {闸: [一条条的问题]};逐条列出来,每条自己带着 ** 所以过 md()
+      const 条 = Object.entries(b.field_errors || {}).map(([k, v]) =>
+        `<li><b>${esc(k)}</b>:${md(Array.isArray(v) ? v.join(";") : String(v))}</li>`).join("");
+      fb.innerHTML = `<div class="state err"><h3>${esc(b.code || "出错了")} · ${esc(e.message)}</h3>
+        ${条 ? `<ul>${条}</ul>` : ""}<p>${md(b.advice ? `**下一步:**${b.advice}` : "服务端没给建议")}</p></div>`;
+    }
+  };
 }
 
 /* ── 加资料(上传三步)─────────────────────────────────────────────
