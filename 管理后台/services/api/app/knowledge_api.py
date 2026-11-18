@@ -386,6 +386,118 @@ def 切片列表(project_id: str, kb_id: str,
     }
 
 
+@router.get(前缀 + "/knowledge-bases/{kb_id}/documents")
+def 文档列表(project_id: str, kb_id: str,
+         me: 身份 = Depends(要权限("查看有权配置")),
+         limit: int = Query(30, ge=1, le=200),
+         offset: int = Query(0, ge=0)):
+    """这个知识库的文档 —— **列表**。只读。11-18 体检补的:
+    知识库列表每行有「文档数」,而**没有任何地方能看见那几篇是什么** ——
+    `POST /documents/{id}/versions`、`/split` 这些文档级操作只能靠 curl 拿 id。
+
+    ## ⚠️ 权限和切片列表**同一个** where 片段
+
+    一篇文档的名字(`source_info.path`)本身就是信息:
+    > 一个「检索过滤了、切片列表也过滤了」的系统,和一个「文档列表没过滤」的,
+    > **在那次检索上长得一模一样** —— 而那个人翻文档列表就知道库里有哪几份资料。
+    所以这里也用 `语料可见.where片段()`,别名 `d` / `kb` 和切片列表一致。
+
+    ## ⚠️ 「片段数」给的是**最新那一版**的
+
+    `chunks` 绑的是 `document_version_id`,不是文档。一篇改过三版的文档,
+    三版的片段都在库里(为了能翻回历史),**而索引只收最新版**。
+    这里按文档给「版本数」+「最新版本的片段数」,不给「全部版本片段数」——
+    后者和知识库页上那个 `片段数` 同义,放在文档这一行只会让人以为那是能检索到的数。
+
+    ## ⚠️ 停用 / 没版本的文档**照样列出来**,显式标
+
+    切片列表把 `disabled_at is not null` 的过滤掉了(它们不进索引,和检索一致);
+    文档列表不过滤 —— 一篇停用的文档**在库里**,人要能看见它并知道为什么检索不到。
+    > 一篇「停用了」的文档和一篇「不存在」的,在切片列表上长得一模一样。
+    """
+    limit = _直调默认(limit, 30)       # 见 `_直调默认`:直接调用时默认值是 Query 对象
+    offset = _直调默认(offset, 0)
+    权限, 权限参 = KV.where片段(这个人的角色们=[me.role], 知识库别名="kb")
+    参 = {"p": project_id, "k": kb_id, "n": limit, "off": offset, **权限参}
+    with 连接() as c:
+        kb = c.execute(text("""select id, name from knowledge_bases
+                              where project_id=:p and id=:k and archived_at is null"""),
+                       {"p": project_id, "k": kb_id}).mappings().first()
+        if not kb:
+            raise _错(404, "NOT_FOUND", "没有这个知识库", "回知识库列表重新进入")
+        # ⚠️ 同一段 where 给 count 和列表两条查询用 —— 两份 where 迟早分叉
+        # (知识库列表那条 `count(*) over ()` 的注释讲过这个病)
+        表 = """from documents d
+                join knowledge_bases kb on kb.project_id=d.project_id
+                                       and kb.id=d.knowledge_base_id"""
+        条件 = f"""where d.project_id=:p and d.knowledge_base_id=:k
+                  and d.archived_at is null
+                  and {权限}"""
+        总 = c.execute(text(f"select count(*) {表} {条件}"), 参).scalar()
+        # ⚠️ 最新版取 revision 最大且 `archived_at is null` 的那一版 —— 和切片列表 /
+        # 索引构建同一个口径。按 created_at 取的话拆文档那条路(同一事务里插两版)会漂。
+        rs = c.execute(text(f"""
+            select d.id, d.source_info, d.disabled_at, d.created_at,
+                   (select count(*) from document_versions dv
+                     where dv.project_id=d.project_id and dv.document_id=d.id
+                       and dv.archived_at is null) 版本数,
+                   lv.id 最新版本id, lv.revision 最新版次, lv.content_hash 最新版哈希,
+                   lv.created_at 最新版建于,
+                   (select count(*) from chunks ch
+                     where ch.project_id=d.project_id
+                       and ch.document_version_id=lv.id) 最新版片段数
+              {表}
+              left join lateral (
+                    select dv.id, dv.revision, dv.content_hash, dv.created_at
+                      from document_versions dv
+                     where dv.project_id=d.project_id and dv.document_id=d.id
+                       and dv.archived_at is null
+                     order by dv.revision desc limit 1) lv on true
+              {条件}
+             order by d.created_at desc, d.id
+             limit :n offset :off
+        """), 参).mappings().all()
+    出 = []
+    for r in rs:
+        si = r["source_info"] or {}
+        if not isinstance(si, dict):
+            si = {}
+        # 名字:界面上传记 `名字`,整批灌记 `path`,拆出来的两者都没有 → 退到「拆自 …」,再退到 id。
+        # ⚠️ 不猜「文件名」—— 四种来路四种键,猜错就是一列空白,而空白读起来像「这篇没名字」。
+        名字 = (si.get("名字") or si.get("path") or si.get("file_name")
+              or (f"拆自 {si['拆自文档']}" if si.get("拆自文档") else None) or r["id"])
+        来源 = si.get("来源") or (SP.派生自拆分 if si.get("存储") == SP.派生自拆分 else None) \
+            or ("界面上传" if si.get("upload_id") else "(没记来源)")
+        # `content_hash` 存的是 `sha256:…` 带算法前缀 —— 直接切前 12 位得到 `sha256:0ac24`,
+        # 五位十六进制在一页里撞车是常事。前缀去掉再切。
+        哈 = r["最新版哈希"] or ""
+        哈 = 哈.split(":", 1)[1] if ":" in 哈 else 哈
+        最新 = None if not r["最新版本id"] else {
+            "id": r["最新版本id"], "版次": r["最新版次"],
+            "哈希前12": 哈[:12] or None,
+            "建于": r["最新版建于"], "片段数": int(r["最新版片段数"] or 0)}
+        出.append({
+            "id": r["id"], "名字": 名字, "来源": 来源,
+            "版本数": int(r["版本数"] or 0), "最新版本": 最新,
+            "停用了吗": r["disabled_at"] is not None, "停用于": r["disabled_at"],
+            "建于": r["created_at"],
+            # ⚠️ 「为什么检索不到」按文档说清,别让人从 0 里猜
+            "怎么读": ("**停用了** —— 切片列表和索引都不收它" if r["disabled_at"] is not None
+                     else "**还没有版本** —— 先 POST /documents/{id}/versions 发一版" if not 最新
+                     else None),
+        })
+    return {
+        "知识库": dict(kb), "items": 出, "total": 总,
+        "limit": limit, "offset": offset,
+        "note": ("**片段绑的是文档版本,不是文档** —— 一篇文档改过几版,几版的片段都在库里"
+                 "(旧版本留着是为了能翻回历史,**但索引只收最新版**)。"
+                 "所以这里的「片段数」是**最新那一版**的;知识库页上那个「片段数」数的是全部版本。"
+                 "`total` 按你的角色过滤过 —— 和知识库页的「文档数」(不过滤)对不上时,差的那几篇是你看不到的。"
+                 "拆文档(把几段拆成独立文档以单独设权限)走接口 POST /documents/{id}/split,"
+                 "要带 Idempotency-Key 和要拆走的切片 ids —— 界面上还没有入口"),
+    }
+
+
 @router.get(前缀 + "/chunks/{chunk_id}")
 def 切片详情(project_id: str, chunk_id: str,
          me: 身份 = Depends(要权限("查看有权配置"))):

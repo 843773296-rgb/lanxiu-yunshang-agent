@@ -65,6 +65,13 @@ G, Y, R, D = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
     ("#/samples/",  "页_样本",       "datasets",         ""),
     ("#/kb/",       "页_索引构建",   "knowledge_bases",  "and archived_at is null"),
     ("#/chunks/",   "页_切片列表",   "knowledge_bases",  "and archived_at is null"),
+    # 文档列表(2026-11-18 体检补的):和切片列表一样按知识库 id 进
+    ("#/docs/",     "页_文档列表",   "knowledge_bases",  "and archived_at is null"),
+    # 召回测试带库 id 进(知识库页「去检索」那个按钮,11-18)—— 路由里有而这儿没登记,这条检查当场红;
+    # 它和 #/retrieval 是同一页,只是预选了那个库
+    ("#/retrieval/", "页_召回测试",  "knowledge_bases",  "and archived_at is null"),
+    # 工具选择策略详情(11-18 体检补的页):样例是两个项目各一条的那份策略
+    ("#/selection/", "页_工具选择策略详情", "tool_selection_policies", "and archived_at is null"),
     ("#/chunk/",    "页_切片详情",   "chunks",           ""),
     # 检索试跑详情(2026-10-08)。⚠️ 这一页**空库上没有样例 id** ——
     # 它的数据是跑一次检索实验室产生的,而 CI 的库里没人跑过。
