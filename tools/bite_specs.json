@@ -8936,12 +8936,17 @@
  },
  {
   "script": "backend/triage_trial_check.py",
-  "改坏": "工具服务不改读副本",
+  "改坏": "工具服务不改读副本(11-19 起有两层:改模块 DB + 连库层改道,两层都拆掉才算「不改读」)",
   "file": [
    {
     "path": "mcp/protocol.py",
     "old": "            m.DB = 副; n += 1",
     "new": "            n += 1"
+   },
+   {
+    "path": "mcp/protocol.py",
+    "old": "        _sq.connect = _连\n",
+    "new": ""
    }
   ],
   "预期红": "真起一个工具服务、给它副本:查客户拿到的是代号,并且留了「副本生效」凭证"
