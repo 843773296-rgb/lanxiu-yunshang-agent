@@ -212,7 +212,11 @@ async function 画顶栏() {
       "全局搜索和列表**只返回有权访问的对象**。要访问请让管理员在「成员与权限」里加你。").html;
     return false;
   }
-  if (!ps.some((p) => p.id === 项目)) 项目 = ps[0].id;
+  // 没记住项目(或记住的已不可见)时**优先澜绣云裳**,看不到它才退回列表第一个(用户 11-18 拍)。
+  // 原来直接取第一个 = 演示项目 A(假向量、只有 9 月拍板),用户在那儿做召回测试以为召回坏了。
+  // 人手动切过的照旧记住;演示项目留着(集成测试按名字找它)。
+  const 首选 = "project_lanxiu";
+  if (!ps.some((p) => p.id === 项目)) 项目 = (ps.find((p) => p.id === 首选) || ps[0]).id;
   localStorage.setItem("aimc.proj", 项目);
   $("#proj").innerHTML = ps.map((p) =>
     `<option value="${p.id}"${p.id === 项目 ? " selected" : ""}>${esc(p.name)}</option>`).join("");
