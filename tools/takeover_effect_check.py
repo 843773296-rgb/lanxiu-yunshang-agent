@@ -63,7 +63,7 @@ def 聊天站配置(plist=PLIST):
             env = plistlib.load(f).get("EnvironmentVariables") or {}
     except (OSError, plistlib.InvalidFileException):
         return None
-    return {k: env.get(k) for k in 键们}
+    return {**{k: env.get(k) for k in 键们}, "LANXIU_EVAL_NO_TAKEOVER": env.get("LANXIU_EVAL_NO_TAKEOVER")}
 
 
 def 后台开着的(cfg):
@@ -97,6 +97,9 @@ def 核对(cfg):
         return
     缺 = [k for k in 键们 if not (cfg or {}).get(k)]
     ck("三个都配了(没配 = 聊天站当全关,而管理后台上看不出来)", cfg is not None and not 缺, 缺 or "读不到 plist")
+    # 11-18 评测关接管的开关只许评测进程带:聊天站常驻带了,接管就悄悄全关,后台上照样显示「开着」
+    ck("聊天站常驻没带评测关接管的开关(LANXIU_EVAL_NO_TAKEOVER)",
+       not (cfg or {}).get("LANXIU_EVAL_NO_TAKEOVER"), (cfg or {}).get("LANXIU_EVAL_NO_TAKEOVER"))
     if cfg is None or 缺:
         return
     try:

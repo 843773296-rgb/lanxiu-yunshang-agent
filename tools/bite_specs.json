@@ -23492,5 +23492,29 @@
    }
   ],
   "预期红": "缺必填(422)不兜底也不交还"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "接管中() 里评测关接管那支删掉 —— 评测又会被接管、只回「已发起」(11-18 夜跑通话整理 0/24 的原样)。必须红在「评测进程里…接管当关」",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "    if 评测关接管():\n        return None\n",
+    "new": ""
+   }
+  ],
+  "预期红": "评测进程里(设了 LANXIU_EVAL_NO_TAKEOVER=1)接管当关"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "发起() 里评测关接管那支删掉 —— 评测照样往生产人工核对队列塞单。必须红在「评测进程里 start_workflow 不往管理后台发单」",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "    if 评测关接管():\n        # 评测里不往生产的人工核对队列塞单",
+    "new": "    if False:\n        # 评测里不往生产的人工核对队列塞单"
+   }
+  ],
+  "预期红": "评测进程里 start_workflow 不往管理后台发单"
  }
 ]

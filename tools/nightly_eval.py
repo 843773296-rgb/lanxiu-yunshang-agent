@@ -308,6 +308,8 @@ def _系统代理():
 def 评测环境():
     env = {k: v for k, v in os.environ.items() if k not in 按量计费的凭证}
     env.update(LANXIU_PROVIDER="claude", ANTHROPIC_MODEL="claude-haiku-4-5", PYTHONDONTWRITEBYTECODE="1")
+    # 评测关接管(用户 2026-11-18 拍「两条路分开考」)—— 不走共用收尾的那几套也要关,夜里不往生产核对队列塞单
+    env["LANXIU_EVAL_NO_TAKEOVER"] = "1"
     # ⚠️ 2026-10-17 查实夜跑 403 的根因:launchd 起的进程**没有代理环境变量**,而评测走的 SDK 那条路
     # 没代理就被拒(「403 Request not allowed」);白天在会话里跑,环境里带着代理,所以一直通。
     # 白天在 launchd 里复现过:同一个 SDK 调用,无代理 403、补上代理就通;命令行 claude -p 无代理也通 ——

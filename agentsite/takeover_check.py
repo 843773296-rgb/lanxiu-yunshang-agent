@@ -83,6 +83,26 @@ def main():
         guards.接管查询 = 原
     ck("默认查询口:模块出错时当没接管(返回 None,不抛)", 原("这个技能不存在-xyz") is None)
 
+    print("\n▸ ①½ 评测关接管(用户 2026-11-18 拍「两条路分开考」)")
+    原环境 = os.environ.get("LANXIU_EVAL_NO_TAKEOVER")
+    原清单, 原curl0 = tc.清单, tc._curl
+    叫过 = []
+    try:
+        tc.清单 = lambda 强制=False: {"call-notes": {"workflow_id": "wf_1", "名称": "录音跟进"}}
+        tc._curl = lambda *a, **k: (叫过.append(a), ("202", {"resource_id": "xr_假"}))[1]
+        os.environ.pop("LANXIU_EVAL_NO_TAKEOVER", None)
+        ck("对照:没设开关时 call-notes 照旧被接管", (tc.接管中("call-notes") or {}).get("workflow_id") == "wf_1")
+        os.environ["LANXIU_EVAL_NO_TAKEOVER"] = "1"
+        ck("评测进程里(设了 LANXIU_EVAL_NO_TAKEOVER=1)接管当关:技能照常走", tc.接管中("call-notes") is None,
+           tc.接管中("call-notes"))
+        ok, 回 = tc.发起("call-notes", "60000005", {"call_id": "TS-001", "customer_id": "C10000"}, "k-eval")
+        ck("评测进程里 start_workflow 不往管理后台发单(11-18 夜跑塞了 8 条待核对)",
+           not ok and not 叫过 and 回.get("交还") is True, (回, len(叫过)))
+    finally:
+        tc.清单, tc._curl = 原清单, 原curl0
+        if 原环境 is None: os.environ.pop("LANXIU_EVAL_NO_TAKEOVER", None)
+        else: os.environ["LANXIU_EVAL_NO_TAKEOVER"] = 原环境
+
     print("\n▸ ② 拉不到清单时的退路")
     旧环境 = {k: os.environ.get(k) for k in ("LANXIU_USAGE_URL", "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER")}
     旧落盘 = tc._落盘
