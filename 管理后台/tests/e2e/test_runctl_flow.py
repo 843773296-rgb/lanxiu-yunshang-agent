@@ -78,6 +78,7 @@ with 连接() as c:
                           and archived_at is null
                           and status in ('succeeded','failed','cancelled','expired','incomplete')
                           and ended_at < now() - interval '10 minutes'
+                          and resume_snapshot is null
                           order by created_at desc limit 1"""),
                     {"p": 项目}).scalar()
 if not rid:
