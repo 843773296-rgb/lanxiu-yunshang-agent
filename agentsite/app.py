@@ -300,6 +300,10 @@ class H(BaseHTTPRequestHandler):
             if p not in 免登录页:
                 html = _注入登录守卫(html)
             html = _注入版本(html)
+            # 标签页图标:用顶栏同一个 LOGO 常量(nav.py),页面自己写了 icon 的不覆盖(11-18 用户给 logo)
+            if 'rel="icon"' not in html and "</head>" in html:
+                import nav as _nav
+                html = html.replace("</head>", f'<link rel="icon" href="{_nav.LOGO}"></head>', 1)
             self._send(html.encode(), "text/html; charset=utf-8"); return
         if p == "/internal/loaded":
             # 给管理后台并排「目标版本 / 实际版本」(11-11):本机 + 内部凭证才收;只读进程缓存,不触发同步

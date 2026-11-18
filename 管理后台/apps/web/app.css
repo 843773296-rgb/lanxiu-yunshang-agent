@@ -21,6 +21,8 @@ code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
   display:flex;align-items:center;gap:16px;padding:0 16px;position:fixed;
   top:0;left:0;right:0;z-index:20}
 #top .brand{font-weight:600;font-size:15px;margin-right:8px}
+#top .brand{display:inline-flex;align-items:center;gap:8px}
+#top .brand-mk{width:24px;height:24px;border-radius:5px;object-fit:cover;display:block}
 #top select{height:32px;border:1px solid var(--line);border-radius:var(--radius);
   padding:0 8px;background:var(--card);color:var(--ink)}
 #top .grow{flex:1}
