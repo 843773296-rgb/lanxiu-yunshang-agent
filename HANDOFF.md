@@ -12,6 +12,14 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-18 21:4x · 体检四路审计齐了:45 条,22 条已修(两笔,未推)、12 条要拍板、11 条记录(Fable 5.1)
+
+- **报告**:`澜绣云裳agent-AI管理后台体检-20261118.md`(根目录,随下一笔推;发飞书产品文件夹)。拍板的 12 条在报告第四节,**没问用户**。
+- **第二笔修的**(见提交信息):/projects 带实际能做的、成功率 completed 也算、Prompt 筛选进 SQL、worker 写 started_at;前端 20 处(wfrun 深链崩、重试传 MouseEvent、核对页画工具参数、评测 ref、建索引按钮、收进知识库、召回多库、翻页、审计截断、依赖中文、kr field_errors、info_requested、工具详情键名、过期文案 ×5、字面星号 ×7、版本与发布按角色摆、Agent 试运行 90 秒)。
+- **未验证的预判**:① 后端四处改动只过 ast,**真服务没跑过**(8899 临时实例已停);② 建索引 / 收进知识库 / 新建知识库 三个新按钮只过了渲染,**没真点过**(接口形状按 knowledge_api 读的:documents 要 {upload_id,name},knowledge-bases 要 {name});③ e2e 三份直接跑被权限分类器拒了,全靠门禁里的 test-e2e-ci。
+- **下一步第一个动作**:fc 推完放锁(它 21:05 起 pre_push)→ 跑 `scratchpad/gate_batch12.sh`(并回 → kickstart aimc → e2e-ci → ship);红了看 e2e_ci_1118g.log。推完发飞书、告用户、拍板卡。
+- **判据**:只认「被包的命令退出码」;页面冒烟桩的 data-raw 豁免只认 `data-raw="原文"` 写在开标签里;`git stash list` 里两条 autostash 不是我的,别动。
+
 ### 🟡 11-18 20:5x · AI 管理后台全页体检(用户要「确定是否所有能力已可用」)+ 修「运行测试每次都排队」(Fable 5.1)
 
 - **体检方法**:page_smoke 的桩(scratchpad `smoke_dump.js`,加了 DUMP 把渲出的文字落盘)以 U001 + project_lanxiu 渲 39 个一级页;54 个列表接口逐个 curl;结果在 scratchpad `smoke_summary.txt` / `api_probe.txt` / `smoke/*.txt`。
