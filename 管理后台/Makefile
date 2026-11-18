@@ -325,7 +325,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	for h in '#/workbench' '#/studio' '#/integrations' '#/studio/all' '#/studio/workflow' '#/studio/agent' '#/studio/chat' '#/studio/app' \
 	         '#/integrations/models' '#/integrations/tools' '#/prompts' '#/glossaries' '#/entities' '#/routes' '#/intents' '#/runs' '#/opinions' '#/issues' '#/knowledge-revisions' '#/capabilities' '#/capability-board' '#/acceptance' '#/monitoring' '#/alerts' '#/workflows' '#/schedules' '#/uploads' \
 	         '#/kb' '#/retrieval' '#/rruns' '#/usage' '#/traces' '#/health' '#/tryout' \
-	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
+	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' '#/knobs' \
 	         '#/datasets' '#/training' '#/artifacts' '#/audit' '#/outputs' \
 	         $$(DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 	            ./.venv/bin/python tools/detail_page_hashes.py --只要hash); do \
@@ -360,7 +360,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	    echo "     跑 \`python3 tools/import_lanxiu_prompts.py\`(CI 里在「灌演示数据」那一步)"; \
 	    exit 1; fi; \
 	  rc=0; \
-	  for h in '#/prompts' '#/kb' '#/acceptance'; do \
+	  for h in '#/prompts' '#/kb' '#/acceptance' '#/knobs'; do \
 	    printf "  %-12s " "$$h"; \
 	    out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
 		node tests/e2e/page_smoke.js "$$h" 2>&1); \

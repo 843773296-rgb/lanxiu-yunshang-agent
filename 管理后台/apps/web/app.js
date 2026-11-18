@@ -140,6 +140,7 @@ const 导航 = [
   ["#/training", "训练任务", true, true],
   ["#/artifacts", "模型产物", true, true],
   ["grp", "设置"],
+  ["#/knobs", "澜绣旋钮与方案", true, true],
   ["#/members", "成员与权限", true, true],
   ["#/audit", "审计记录", true, true],
 ];
@@ -9772,6 +9773,214 @@ function 做_聊天上生产(号) {
   };
 }
 
+/* ── 澜绣旋钮与方案(11-18 体检:后端 lanxiu_api.py 五条接口全可用、前端零引用)────
+ *
+ * ⚠️ **这 6 个旋钮管的是澜绣 V3 怎么跑,不是后台自己的 Agent 配置**(接口 note 原话,页面上也明写)。
+ * ⚠️ **落点核对不过的旋钮要标「不可信」**:接口说明原话 —— 拖动它什么都不会变,而人会以为自己在调。
+ *   所以不过的那几行整行标 pill fail,不照常显示成可调。
+ * ⚠️ **方案是单向同步到文件的**:库是编辑面,V3 真读 .feynman/prompt_candidates/{号}.json。
+ *   建 / 改完**都没生效**,要跑 tools/export_knob_plans.py —— 接口返回的 note 原样显示出来,导出状态单独一栏。
+ * 写操作要的后端能力是「改筛选策略」(perms.py:editor / admin 是,approver 可授权)—— 不够的身份不摆表单,写一句为什么。
+ * 改草稿带 If-Match=draft_revision;409 提示刷新再改。422 的 field_errors 逐字段显示(这个后台的惯例)。 */
+const 旋钮动作 = {
+  async 建(体) {
+    return await 请求(`${P()}/knob-plans`, { method: "POST", body: JSON.stringify(体) });
+  },
+  async 改(号, 版, 体) {
+    return await 请求(`${P()}/knob-plans/${encodeURIComponent(号)}/draft`,
+      { method: "PATCH", headers: { "If-Match": String(版) }, body: JSON.stringify(体) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.旋钮动作 = 旋钮动作;
+
+function 旋钮_能改() {
+  return 我的角色 === "editor" || 我的角色 === "admin" || (能力 || []).includes("改筛选策略");
+}
+
+/* 一个旋钮一个输入框:枚举 → select 列 取值;开关 → checkbox;整数 → number 带上下限;字符串 / 工具子集 → 文本。
+ * 「不动」= 留空(枚举多一项「按默认」)—— 后端 校验() 本来就把等于默认的值丢掉,方案里只留真动过的。 */
+function 旋钮_输入(k, 值) {
+  const id = `kn-v-${k["名"]}`, 有 = 值 !== undefined && 值 !== null;
+  if (k["类型"] === "枚举") {
+    return `<select id="${esc(id)}" data-kn="${esc(k["名"])}"><option value="">按默认（${esc(k["默认"])}）</option>${
+      (k["取值"] || []).map((v) => `<option value="${esc(v)}"${有 && String(值) === String(v) ? " selected" : ""}>${esc(v)}</option>`).join("")}</select>`;
+  }
+  if (k["类型"] === "开关") {
+    const 勾 = 有 ? !!值 : !!k["默认"];
+    return `<label><input type="checkbox" id="${esc(id)}" data-kn="${esc(k["名"])}"${勾 ? " checked" : ""}> 开（默认 ${k["默认"] ? "开" : "关"}）</label>`;
+  }
+  if (k["类型"] === "整数") {
+    const [lo, hi] = k["取值"] || [];
+    return `<input type="number" id="${esc(id)}" data-kn="${esc(k["名"])}" min="${esc(lo)}" max="${esc(hi)}" step="1"
+      value="${有 ? esc(值) : ""}" placeholder="默认 ${esc(k["默认"])},留空不动" style="width:120px">`;
+  }
+  if (k["类型"] === "工具子集") {
+    return `<input id="${esc(id)}" data-kn="${esc(k["名"])}" value="${esc(Array.isArray(值) ? 值.join(", ") : (值 || ""))}"
+      placeholder="逗号分开的工具名;留空=全挂。只许收窄" style="width:min(420px,90%)">`;
+  }
+  return `<input id="${esc(id)}" data-kn="${esc(k["名"])}" value="${esc(有 ? 值 : "")}"
+    placeholder="${esc(k["默认"] == null ? "留空=按凭证走默认" : "默认 " + k["默认"])}" style="width:min(320px,90%)">`;
+}
+
+function 旋钮_读表单(旋钮表) {
+  const 旋 = {};
+  for (const k of 旋钮表) {
+    const el = $(`#kn-v-${k["名"]}`);
+    if (!el) continue;
+    if (k["类型"] === "开关") { 旋[k["名"]] = !!el.checked; continue; }
+    const v = String(el.value || "").trim();
+    if (!v) continue;
+    if (k["类型"] === "整数") 旋[k["名"]] = Number(v);
+    else if (k["类型"] === "工具子集") 旋[k["名"]] = v.split(/[,，\s]+/).filter(Boolean);
+    else 旋[k["名"]] = v;
+  }
+  return 旋;
+}
+
+function 页_旋钮表单(旋钮表, 预填) {
+  if (!旋钮_能改()) {
+    return `<div class="note">建 / 改方案要「改筛选策略」这条能力(编辑、管理员默认有,审核发布者要授权)——
+      你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆表单</b>:
+      摆一个填完被 403 的表单,只是把拒绝往后挪一步。</div>`;
+  }
+  const p = 预填 || {}, 旋 = p["旋钮"] || {}, 改 = !!p["方案号"];
+  return `<div class="state">
+    <h3>${改 ? `改方案「${esc(p["方案号"])}」的草稿` : "新建方案"}</h3>
+    <p class="k">${改
+      ? `带 If-Match=<code>${esc(p.draft_revision)}</code> 提交;别人先改了就会 409,刷新这一页再改。<b>改了之后导出状态会被清掉</b>(库和文件已经不一样了)`
+      : "方案号就是文件名(<code>.feynman/prompt_candidates/{号}.json</code>),不许带 / \\ 或 ..;「为什么」是下一个人判断这个实验还要不要留着的唯一线索"}</p>
+    <p><label>方案号<br><input id="kn-key" style="width:min(320px,90%)" value="${esc(p["方案号"] || "")}"${改 ? " readonly" : ""}></label>
+      <div class="k err" id="kn-fe-方案号"></div></p>
+    <p><label>为什么<br><textarea id="kn-why" rows="3" data-raw="原文" style="width:min(520px,95%)">${esc(p["为什么"] || "")}</textarea></label>
+      <div class="k err" id="kn-fe-为什么"></div></p>
+    <p><b>旋钮</b>(留空 / 按默认 = 不动;方案里只留真动过的)</p>
+    ${旋钮表.map((k) => `<p><label>${esc(k["中文"])} <code>${esc(k["名"])}</code><br>${旋钮_输入(k, 旋[k["名"]])}</label></p>`).join("")}
+    <div class="k err" id="kn-fe-旋钮"></div>
+    <p><button class="pri" id="kn-go">${改 ? "保存草稿" : "建方案"}</button>
+      ${改 ? `<button id="kn-cancel">取消</button>` : ""}</p>
+    <div class="k">${md("提交成功**也还没生效** —— 方案是单向同步到文件的,要跑 `python3 tools/export_knob_plans.py` 才写进 V3 真读的那份文件")}</div>
+  </div>`;
+}
+
+function 挂旋钮事件(d, 方案们) {
+  const 说 = (文, 坏) => { if ($("#kn-msg")) $("#kn-msg").innerHTML = 文
+    ? (坏 ? `<div class="state err"><p>${文}</p></div>` : `<div class="state"><p>${文}</p></div>`) : ""; };
+  const 清字段错 = () => ["方案号", "为什么", "旋钮"].forEach((f) => { if ($(`#kn-fe-${f}`)) $(`#kn-fe-${f}`).innerHTML = ""; });
+  // 422 的 field_errors 逐字段显示;对不上字段名的并进总提示里
+  const 报错 = (e) => {
+    const b = e.体 || {}, fe = b.field_errors || {}, 剩 = [];
+    清字段错();
+    for (const [f, v] of Object.entries(fe)) {
+      const 文 = (Array.isArray(v) ? v : [v]).map((x) => esc(typeof x === "string" ? x : JSON.stringify(x))).join(";");
+      if ($(`#kn-fe-${f}`) && ["方案号", "为什么", "旋钮"].includes(f)) $(`#kn-fe-${f}`).innerHTML = "⚠️ " + 文;
+      else 剩.push(`${esc(f)}:${文}`);
+    }
+    const 冲突 = e.码 === 409 ? "<br><b>这份草稿已经被改过,或方案号已经有了 —— 刷新这一页再改</b>" : "";
+    说(md(闸文(e)) + (剩.length ? "<br>" + 剩.join("<br>") : "") + 冲突, true);
+  };
+  document.querySelectorAll("[data-kn-edit]").forEach((b) => {
+    b.onclick = () => {
+      const 行 = 方案们.find((x) => x["方案号"] === b.dataset.knEdit);
+      if ($("#kn-form")) $("#kn-form").innerHTML = 页_旋钮表单(d.items, 行);
+      挂旋钮事件(d, 方案们);
+      if ($("#kn-form") && $("#kn-form").scrollIntoView) $("#kn-form").scrollIntoView();
+    };
+  });
+  if ($("#kn-cancel")) {
+    $("#kn-cancel").onclick = () => {
+      if ($("#kn-form")) $("#kn-form").innerHTML = 页_旋钮表单(d.items, null);
+      挂旋钮事件(d, 方案们);
+    };
+  }
+  if (!$("#kn-go")) return;
+  $("#kn-go").onclick = async () => {
+    const 号 = String(($("#kn-key") && $("#kn-key").value) || "").trim();
+    const 为什么 = String(($("#kn-why") && $("#kn-why").value) || "").trim();
+    const 旋 = 旋钮_读表单(d.items);
+    const 原 = 方案们.find((x) => x["方案号"] === 号);
+    const 改 = !!($("#kn-cancel")) && !!原;   // 有「取消」按钮 = 开的是改表单
+    $("#kn-go").disabled = true; 清字段错(); 说("提交中…");
+    try {
+      let r;
+      if (改) r = await 旋钮动作.改(号, 原.draft_revision, { 旋钮: 旋, 为什么 });
+      else r = await 旋钮动作.建({ 方案号: 号, 为什么, 旋钮: 旋 });
+      // 先重画、再写结果(11-08 UI 检查的教训:反过来结果刚出来就被刷掉)
+      await 页_旋钮与方案();
+      说(`${改 ? "草稿保存了" : "建好了"} <b>${esc(号)}</b>${r && r["校验说明"] && r["校验说明"].length
+        ? "<br>" + r["校验说明"].map((x) => "· " + md(x)).join("<br>") : ""}<br>${md(r && r.note || "")}`);
+    } catch (e) { 报错(e); $("#kn-go").disabled = false; }
+  };
+}
+
+async function 页_旋钮与方案() {
+  $("#main").innerHTML = `<div class="crumb">设置 / 澜绣旋钮与方案</div>
+    <div class="head"><div><h1>澜绣旋钮与方案</h1>
+      <div class="sub">${md(`这 6 个旋钮管的是**澜绣 V3**(\`agentsite/sdk.py\`)怎么跑,**不是后台自己的 Agent 配置**(那在「工作室」里)。
+        方案是**单向**同步到文件的:这里是编辑面,V3 真读的是方案文件 —— **建 / 改完都没生效,导出之后才算**。`)}</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/lanxiu-knobs`);
+    const 核 = d["落点核对"] || {}, 问题 = 核["问题"] || [];
+    // 落点核对的问题是按旋钮名报的:问题文本里出现了哪个旋钮名,那一行就是不可信
+    // knobs.落点核对() 的每条问题以「旋钮名:」开头;按前缀认,别按包含认(model 会被 model_name 那条顺手命中)
+    const 问题文 = (q) => String(typeof q === "string" ? q : JSON.stringify(q));
+    const 这条的问题 = (k) => 问题.filter((q) => 问题文(q).startsWith(k["名"] + ":") || 问题文(q).startsWith(k["名"] + "："));
+    const 不可信 = (k) => 核["过了吗"] === false && 这条的问题(k).length > 0;
+    const 取值文 = (k) => k["取值"] == null ? "—" : Array.isArray(k["取值"])
+      ? (k["类型"] === "整数" ? `${k["取值"][0]} – ${k["取值"][1]}` : k["取值"].map(String).join(" / ")) : String(k["取值"]);
+    const 值文 = (v) => v == null ? "（空 = 按默认）" : Array.isArray(v) ? v.join(", ") : String(v);
+    let 旋钮表html = `<h2>${(d.items || []).length} 个旋钮</h2>
+      <div class="note">${md(d.note || "")}<br><br>${md(d["⚠️落点核对是什么"] || "")}<br><br>${md(d["⚠️定义是现读的"] || "")}</div>
+      ${核["过了吗"] === false ? `<div class="note warn"><b>落点核对没过</b>(${问题.length} 条)—— 下面标「不可信」的那几行,调了不会有任何变化:<br>${
+        问题.map((q) => "· " + esc(问题文(q))).join("<br>")}</div>`
+        : `<div class="k">落点核对:过了 —— 每个旋钮声明的落点在那个文件里都搜得到</div>`}
+      <table><thead><tr><th>中文</th><th>名</th><th>类型</th><th>取值</th><th>默认</th><th>落点</th><th>说明</th></tr></thead><tbody>
+      ${(d.items || []).map((k) => { const 坏 = 不可信(k); return (坏 ? `<tr class="fail">` : `<tr>`) + `
+        <td><b>${esc(k["中文"])}</b>${坏 ? ` <span class="pill fail">不可信</span>` : ""}${k["松"] ? ` <span class="pill warn" title="关掉它跑出来的分数是消融实验,不是这一版的成绩">松</span>` : ""}</td>
+        <td><code>${esc(k["名"])}</code></td><td class="k">${esc(k["类型"])}</td>
+        <td class="k">${esc(取值文(k))}</td><td>${esc(值文(k["默认"]))}</td>
+        <td class="k"><code>${esc(k["落点"])}</code>${坏 ? `<div class="k">⚠️ ${这条的问题(k).map((q) => esc(问题文(q))).join(";")}</div>` : ""}</td>
+        <td class="k">${md(k["说明"] || "")}</td></tr>`; }).join("")}
+      </tbody></table>`;
+    let 方案们 = [], 方案note = "", 方案块;
+    try {
+      const pd = await 请求(`${P()}/knob-plans`);
+      方案们 = pd.items || []; 方案note = pd.note || "";
+      const 导出文 = (p) => {
+        if (!p["导出过吗"]) return `<span class="pill warn">还没导出,聊天站还没在用</span>`;
+        if (!p["方案文件在吗"]) return `<span class="pill fail">导出过,文件不见了</span>`;
+        if (p["文件还是导出那一份吗"] === false) return `<span class="pill fail">文件被手改过</span>`;
+        return `<span class="pill ok">已导出</span><div class="k">${时间(p["导出时间"])}</div>`;
+      };
+      方案块 = 方案们.length
+        ? `<table><thead><tr><th>方案号</th><th>为什么</th><th>负责人</th><th>状态</th><th>旋钮</th><th>导出状态</th><th>改</th></tr></thead><tbody>
+          ${方案们.map((p) => `<tr data-plan="${esc(p["方案号"])}">
+            <td><b>${esc(p["方案号"])}</b><div class="k">${esc(p.id)} · 草稿版 ${esc(p.draft_revision)}</div></td>
+            <td class="k">${md(p["为什么"] || "—")}</td>
+            <td class="k">${esc(p["负责人"] || "—")}</td><td class="k">${esc(p["状态"] || "—")}</td>
+            <td class="k">${Object.keys(p["旋钮"] || {}).length
+              ? Object.entries(p["旋钮"]).map(([k, v]) => `<code>${esc(k)}</code>=${esc(值文(v))}`).join("<br>")
+              : "（一个都没动 = 全按默认）"}</td>
+            <td>${导出文(p)}${p["⚠️文件被改过"] ? `<div class="k">${md(p["⚠️文件被改过"])}</div>` : ""}${p["⚠️文件不见了"] ? `<div class="k">${md(p["⚠️文件不见了"])}</div>` : ""}</td>
+            <td>${旋钮_能改() ? `<button data-kn-edit="${esc(p["方案号"])}">改</button>` : `<span class="k">要「改筛选策略」</span>`}</td></tr>`).join("")}
+          </tbody></table>`
+        : 状态("", "这个项目还没有方案",
+            "方案 = 一组旋钮取值 + 为什么。**连基线都没有就没法说「改了之后好了多少」** —— 先建一个「基线-默认」(什么都不动),再建要对比的那个。").html;
+    } catch (e) {
+      // 方案读不到不挡旋钮表;这一半单独显示错误块
+      方案块 = 错误块(e, 路由).html;
+    }
+    $("#list").innerHTML = 旋钮表html
+      + `<h2>方案（${方案们.length} 个）</h2>
+        <div class="note">${md(方案note || "方案是**单向**同步到文件的:库是编辑面,V3 真读的是方案文件。改完要跑 `python3 tools/export_knob_plans.py` 才生效")}<br>
+          <b>「还没导出」= 聊天站还没在用这个方案</b>;「已导出」也只说明文件是那一刻写的 —— 文件被手改过会单独标出来。</div>`
+      + 方案块
+      + `<div id="kn-msg"></div><div id="kn-form"></div>`;
+    if ($("#kn-form")) $("#kn-form").innerHTML = 页_旋钮表单(d.items || [], null);
+    挂旋钮事件(d, 方案们);
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
 async function 路由() {
   if (离开拦截()) return;
   if (!location.hash.startsWith("#/workflow/")) document.body.classList.remove("wf-full");   // 只有编排页是全屏
@@ -9842,6 +10051,7 @@ async function 路由() {
     if (h === "#/audit") return await 页_审计记录();
     if (h.startsWith("#/app/")) return await 页_应用详情(decodeURIComponent(h.slice(6)));
     if (h === "#/members") return await 页_成员与权限();
+    if (h === "#/knobs") return await 页_旋钮与方案();
     if (h === "#/datasets") return await 页_数据集();
     if (h.startsWith("#/samples/")) return await 页_样本(decodeURIComponent(h.slice(10)));
     if (h === "#/training") return await 页_训练任务();
