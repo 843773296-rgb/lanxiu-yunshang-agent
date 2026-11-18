@@ -240,6 +240,15 @@ def 取消一次(c, project_id, run_id, r, rev, *, 谁):
     c.execute(text("""update jobs set cancel_requested=true, updated_at=now()
                        where project_id=:p and target_ref->>'run_id'=:r
                          and status in ('排队中','执行中')"""), {"p": project_id, "r": run_id})
+    if 直接取消:
+        # 11-18:运行还没开跑就取消 → 它名下排队中的任务也收掉(排队中 → 取消请求中 → 已取消,照 job 状态机两步走);
+        # 不收的话 worker 因 cancel_requested 不领它,它就永远「排队中」—— 看着像没人干活
+        c.execute(text("""update jobs set status='取消请求中', cancel_requested=true, updated_at=now(), revision=revision+1
+                           where project_id=:p and target_ref->>'run_id'=:r and status='排队中'"""),
+                  {"p": project_id, "r": run_id})
+        c.execute(text("""update jobs set status='已取消', updated_at=now(), revision=revision+1
+                           where project_id=:p and target_ref->>'run_id'=:r and status='取消请求中' and lease_owner is null"""),
+                  {"p": project_id, "r": run_id})
     if 直接取消 and r["status"] == "waiting_approval":
         # **它挂着的核对待办一起关掉**(2026-10-24 真模型验证时撞到):运行取消了,
         # 待办列表上还挂着一条「待处理」—— 有人点进去批了,决定记下了,却什么都不会发生
