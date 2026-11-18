@@ -440,7 +440,7 @@ def agent详情(project_id: str, aid: str, me: 身份 = Depends(要权限("查�
         # 原来查项目里全部 connection_versions —— 演示项目 492 条,停用的 / Embedding 的全在里面,
         # 选中一条停用的,校验过、冻了版,真跑才报 MODEL_CONNECTION_DISABLED
         连接们 = [dict(r) for r in c.execute(text("""
-            select distinct on (mc.id) cv.id, cv.capabilities, mc.display_name
+            select distinct on (mc.id) cv.id, cv.capabilities, mc.display_name, mc.created_at as 连接建于
               from connection_versions cv
               join model_connections mc
                 on mc.project_id=cv.project_id and mc.id=cv.connection_id
@@ -448,7 +448,11 @@ def agent详情(project_id: str, aid: str, me: 身份 = Depends(要权限("查�
                and mc.archived_at is null
              order by mc.id, cv.created_at desc"""),
                           {"p": project_id}).mappings().all()]
-        连接们.sort(key=lambda r: (r["display_name"] or "", r["id"]))
+        # 最新建的排最前(和改之前「全部版本按建立时间倒序」的顺序一致):人刚建好、刚探过的那条就在手边;
+        # 11-18 第一版按名字排,e2e 的 Agent 测试取「第一条支持工具调用的」拿到了一条老 e2e 连接(端口早死了)→ http 000
+        连接们.sort(key=lambda r: (r.get("连接建于") or ""), reverse=True)
+        for r in 连接们:
+            r.pop("连接建于", None)
         cfg0 = (d["definition"] if d else None) or {}
         当前 = cfg0.get("connection_version_id")
         if 当前 and 当前 not in {r["id"] for r in 连接们}:

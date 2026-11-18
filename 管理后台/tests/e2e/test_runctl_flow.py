@@ -175,7 +175,10 @@ ck("而且把状态机允许的流转列出来", "states.py" in ((r or {}).get("
 print("▸ ⑦ 核实:**去查,不重做**")
 rev6 = 设状态(rid, "running")
 码, rc = 打("POST", f"{P}/execution-runs/{rid}/reconcile", 体={}, 键=f"rc{唯一}")
-ck("202 → reconciling", 码 == 202 and rc["status"] == "reconciling", rc.get("status"))
+# 11-18 起核实是**当场查完就送回去**(查的是桥请求回执),不再让运行挂在 reconciling 没人接:
+# 没检查点的(还在跑)回 running,有检查点的停成 paused;返回里带「核实结论」
+ck("202 → 核实完送回 running / paused,不再挂在 reconciling", 码 == 202 and rc["status"] in ("running", "paused"), rc.get("status"))
+ck("带「核实结论」(桥请求已执行 / 待执行 / 失败各几条)", "核实结论" in rc and "桥请求" in (rc.get("核实结论") or ""), rc.get("核实结论"))
 ck("note 点明「HTTP 超时不代表对方没做事」",
    "超时不代表" in (rc.get("note") or ""), rc.get("note"))
 ck("报了要核实几步", "要核实的步数" in rc, sorted(rc))
