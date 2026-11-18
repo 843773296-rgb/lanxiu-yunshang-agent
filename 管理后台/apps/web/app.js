@@ -5743,7 +5743,9 @@ function 挂运行控制(rid, d) {
           $("#rcmsg").innerHTML = `<div class="state"><p>
             <code>${esc(r.status || "")}</code>
             ${r["改了吗"] === false ? "（<b>没有改动</b>）" : ""}
-            ${md(r.note || r["说明"] || "")}</p></div>`;
+            ${r["核实结论"] ? `<br><b>核实结论</b>:${esc(r["核实结论"])}` : ""}
+            ${r.job_id ? `<br>已排任务 <code>${esc(r.job_id)}</code>,worker 从检查点接着跑` : ""}
+            <br>${md(r.note || r["说明"] || "")}</p></div>`;
         }
       } catch (e) {
         if ($("#rcmsg")) {

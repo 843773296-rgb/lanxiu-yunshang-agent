@@ -179,7 +179,14 @@ async def 继续(project_id: str, run_id: str, request: Request,
         新rev = _换状态(c, project_id, run_id, r, "queued", rev,
                      谁=me.user_id, 动作="resume",
                      额外={"pause_requested": False})
-    return {"id": run_id, "status": "queued", "revision": 新rev,
+        # 11-18:原来只把状态改成 queued、不插任务 —— worker 只从 jobs 表领活,这次运行永远「排队中」。
+        # 现在照 human_api / bridge_api 那条路走 run_resume.排恢复 插恢复任务(从检查点接着跑)
+        import run_resume as RR
+        job, 说 = RR.排恢复(c, project_id=project_id, run_id=run_id, 为什么="人工点「继续」", 谁=me.user_id, 已排回队列=True)
+        if not job:
+            raise _错(409, "RESUME_NO_CHECKPOINT", f"排不回去:{说}",
+                      "这次运行没有可接着跑的检查点(多半是还没开跑就暂停了)—— 取消它、重新发起一次")
+    return {"id": run_id, "status": "queued", "revision": 新rev, "job_id": job,
             "note": ("从同一检查点继续,**用量和循环计数保留**(没有重置)。"
                      "⚠️ 跑的仍然是启动时那一版定义 —— "
                      "**暂停期间更新的 Prompt 不会被静默装进来**:"
@@ -228,6 +235,11 @@ def 取消一次(c, project_id, run_id, r, rev, *, 谁):
     新rev = _换状态(c, project_id, run_id, r, 目标, rev,
                  谁=谁, 动作="cancel",
                  额外={"cancel_requested": True})
+    # 11-18:worker 的取消令牌读的是 jobs.cancel_requested(lease.续租 顺手读回),原来这里只改 execution_runs 那两列,
+    # 执行侧一个字都读不到 —— 正在跑的照跑到底。现在同步点亮这次运行名下还没结束的任务
+    c.execute(text("""update jobs set cancel_requested=true, updated_at=now()
+                       where project_id=:p and target_ref->>'run_id'=:r
+                         and status in ('排队中','执行中')"""), {"p": project_id, "r": run_id})
     if 直接取消 and r["status"] == "waiting_approval":
         # **它挂着的核对待办一起关掉**(2026-10-24 真模型验证时撞到):运行取消了,
         # 待办列表上还挂着一条「待处理」—— 有人点进去批了,决定记下了,却什么都不会发生
@@ -276,14 +288,29 @@ async def 核实外部状态(project_id: str, run_id: str, request: Request,
                "st": ["状态待核实", "reconciling", "incomplete"]}).mappings().all()
         新rev = _换状态(c, project_id, run_id, r, "reconciling",
                      int(r["revision"] or 0), 谁=me.user_id, 动作="reconcile")
-    return {"id": run_id, "status": "reconciling", "revision": 新rev,
+        # 11-18:原来到这儿就返回,运行停在 reconciling **没有任何人接手**(orphan_sweep 只收 running)。
+        # 这个后台能核实的「外部状态」就是桥请求的回执(bridge_calls:澜绣那边执行完回写),所以当场查:
+        桥 = c.execute(text("""select status, count(*) n from bridge_calls
+                             where project_id=:p and execution_run_id=:r group by status"""),
+                      {"p": project_id, "r": run_id}).mappings().all()
+        账 = {x["status"]: int(x["n"]) for x in 桥}
+        # 核完回去:有检查点的停成 paused(回执一到 bridge_api 会自动排恢复,或人点「继续」);没检查点的还在跑 → running
+        回到 = "paused" if r["resume_snapshot"] else "running"
+        中 = dict(r); 中["status"] = "reconciling"; 中["revision"] = 新rev
+        新rev = _换状态(c, project_id, run_id, 中, 回到, 新rev, 谁=me.user_id, 动作="reconcile.done",
+                     额外={"pause_requested": False})
+    核实结论 = (f"桥请求:已执行 {账.get('已执行', 0)}、待执行 {账.get('待执行', 0)}、执行失败 {账.get('执行失败', 0)}"
+            + (";没有任何桥请求 —— 这次运行没做过外部动作" if not 账 else ""))
+    return {"id": run_id, "status": 回到, "revision": 新rev,
+            "核实结论": 核实结论,
             "要核实的步数": len(待核),
             "要核实的步": [dict(x) for x in 待核],
             "note": ("**去查,不重做**(§17.1)。HTTP 超时不代表对方没做事 —— "
                      "超时之后重做一遍,可能就是第二次扣款。"
                      + ("⚠️ 这次运行**一步不确定的都没有** —— "
                         "那核实什么?这可能说明状态记漏了,值得看一眼"
-                        if not 待核 else ""))}
+                        if not 待核 else "")
+                     + f"。核完已送回「{回到}」" + ("(有检查点:回执一到自动接着跑,或点「继续」)" if 回到 == "paused" else "(还在跑)"))}
 
 
 @router.post(前缀 + "/execution-runs/{run_id}/steps/{step_id}/retry",

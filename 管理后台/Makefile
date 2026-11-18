@@ -1156,6 +1156,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 失败后按默认值继续(11-15):只读步骤才行、写数据的业务动作挡在检查配置 / 编译、那一步仍记失败"
 	@./.venv/bin/python tests/orchestration/test_failure_default.py
 	@echo ""
+	@echo "▸ 暂停检查点(11-18):节点边界读「要暂停吗」,停在还没跑的那一步、不多调模型;恢复从那一步接着跑;回调抛的异常原样出去"
+	@./.venv/bin/python tests/orchestration/test_pause_checkpoint.py
+	@echo ""
 	@echo "▸ 编辑器「上次运行」页签(11-15):只认这条流程这一步、权限同运行详情、原文里手机号只露后四位"
 	@./.venv/bin/python tests/orchestration/test_last_run.py
 	@echo ""

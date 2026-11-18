@@ -349,6 +349,22 @@ def _挂起(c, job, r, run_id, 定义, 结果, 记事):
     等 = 点["等待"]
     载 = 等["载荷"]
     第几次 = int(r["checkpoint_seq"] or 0) + 1
+    if 等["种类"] == "pause":
+        # 11-18:按暂停请求停在检查点。pause_requested → paused(状态机允许);pause_requested 归零,
+        # 点「继续」(runctl.resume → run_resume.排恢复)从 等["node_id"] 这一步接着跑
+        c.execute(text("""
+            update execution_runs
+               set status='paused', pause_requested=false,
+                   resume_snapshot=cast(:snap as jsonb), checkpoint_seq=:seq,
+                   current_step_id=:cur, usage_snapshot=cast(:us as jsonb),
+                   updated_at=now(), revision=revision+1
+             where project_id=:p and id=:i
+        """), {"seq": 第几次, "cur": 等["node_id"],
+               "snap": _j.dumps({**点, "定义": 定义}, ensure_ascii=False, default=str),
+               "us": _j.dumps(结果["用量"], ensure_ascii=False),
+               "p": job["project_id"], "i": run_id})
+        记事("run.paused", {"node_id": 等["node_id"], "说明": "按暂停请求在这一步之前停下;点「继续」从这一步接着跑,用量和循环计数保留"})
+        return {"run_id": run_id, "执行状态": "paused", "停在": 等["node_id"]}
     if 等["种类"] == "human":
         策 = 载.get("expires_at_policy") or {}
         小时 = 策.get("小时") if isinstance(策, dict) else None
@@ -964,6 +980,8 @@ def _跑一张工作流(c, job, 打点):
             for _k, _v in 改.items():
                 if _k not in 结果 and _k != "定稿":
                     结果[_k] = _v
+        elif 等.get("种类") == "pause":
+            结果 = None          # 暂停没有外部结果;runner 看到 pause 不注入,从那一步重新跑
         else:
             bc = c.execute(text("""select status, result_output, error_detail from bridge_calls
                                     where project_id=:p and execution_run_id=:r and node_id=:n
@@ -1091,7 +1109,8 @@ def _跑一张工作流(c, job, 打点):
     适配器们 = {"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档, "http_request": _http, "subworkflow": _subworkflow}
     结果 =RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器=适配器们,
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
-                    系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例)
+                    系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例,
+                    要暂停吗=打点.要暂停吗)          # 11-18:节点边界读暂停 / 取消令牌
     打点("执行完", {"状态": 结果["执行状态"]})
 
     for s in 结果["步骤"]:
@@ -1951,19 +1970,41 @@ def _跑一个agent(c, job, 打点):
 class _打点器:
     """每一步:写事件 + 续租 + 把取消令牌读回来。"""
     def __init__(self, c, job):
-        self.c, self.job, self.取消了, self.n = c, job, False, 0
+        self.c, self.job, self.取消了, self.暂停了, self.n = c, job, False, False, 0
+
+    def 刷新令牌(self, 阶段=None):
+        """续租 + 读回取消令牌;**顺手读这次运行自己的 pause_requested / cancel_requested**(11-18)。
+        原来只读 jobs.cancel_requested —— runctl 的暂停 / 取消写在 execution_runs 上,执行侧一个字都读不到。"""
+        好, 取消 = L.续租(self.c, self.job["project_id"], self.job["id"], 我是谁,
+                        阶段=阶段, 已处理=self.n)
+        if not 好:
+            # 租约不在我手上了 —— **立刻停手**,别再往下写
+            raise 干不了("LEASE_LOST", {"说明": "租约过期或被接手,停手不覆盖"})
+        self.取消了 = self.取消了 or 取消
+        t = self.job.get("target_ref")
+        rid = (t or {}).get("run_id") if isinstance(t, dict) else None
+        if rid:
+            行 = self.c.execute(text("""select pause_requested, cancel_requested from execution_runs
+                                       where project_id=:p and id=:i"""),
+                               {"p": self.job["project_id"], "i": rid}).first()
+            if 行:
+                self.暂停了 = bool(行[0])
+                if 行[1]:
+                    self.取消了 = True
+
+    def 要暂停吗(self):
+        """给 runner 在每个节点边界问的:先刷令牌;取消就在这儿抛(走 except 取消了 那条收尾),否则答要不要停。"""
+        self.刷新令牌()
+        if self.取消了:
+            raise 取消了()
+        return self.暂停了
 
     def __call__(self, kind, payload=None):
         self.n += 1
         EV.记一条(self.c, org=self.job["organization_id"], 项目=self.job["project_id"],
                  job_id=self.job["id"], kind=kind, payload=payload or {},
                  新id=_新("je"))
-        好, 取消 = L.续租(self.c, self.job["project_id"], self.job["id"], 我是谁,
-                        阶段=(payload or {}).get("阶段"), 已处理=self.n)
-        if not 好:
-            # 租约不在我手上了 —— **立刻停手**,别再往下写
-            raise 干不了("LEASE_LOST", {"说明": "租约过期或被接手,停手不覆盖"})
-        self.取消了 = 取消
+        self.刷新令牌(阶段=(payload or {}).get("阶段"))
 
 
 def 跑一轮(类型=None, 项目=None):
@@ -2028,6 +2069,17 @@ def 跑一轮(类型=None, 项目=None):
         with 事务() as c:
             EV.记一条(c, org=job["organization_id"], 项目=job["project_id"],
                      job_id=job["id"], kind="收到取消,停手", payload={}, 新id=_新("je"))
+            # 11-18:任务收成已取消的同时,把它名下的运行也收成 cancelled —— 原来运行停在 cancel_requested 永远不动
+            _t = job.get("target_ref")
+            _rid = (_t or {}).get("run_id") if isinstance(_t, dict) else None
+            if _rid:
+                c.execute(text("""update execution_runs
+                                     set status='cancelled', cancel_requested=true,
+                                         completion_reason=coalesce(completion_reason,'CANCELLED'),
+                                         ended_at=now(), updated_at=now(), revision=revision+1
+                                   where project_id=:p and id=:i
+                                     and status in ('running','cancel_requested','pause_requested','queued')"""),
+                          {"p": job["project_id"], "i": _rid})
             # 先进「取消请求中」再到「已取消」—— 状态机不许直接跳
             c.execute(text("""update jobs set status='取消请求中', updated_at=now(),
                               revision=revision+1

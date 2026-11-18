@@ -21,7 +21,7 @@ from sqlalchemy import text
 
 import outbox as OB
 
-挂起态 = ("waiting_approval", "waiting_external")
+挂起态 = ("waiting_approval", "waiting_external", "paused")   # 11-18:暂停也是挂起的一种,点「继续」从同一个检查点接着跑
 恢复任务类型 = {"workflow": "workflow_run", "agent": "agent_run"}   # 运行的 kind → 恢复交给哪个处理器
 
 
@@ -29,15 +29,18 @@ def _新id(前缀名):
     return f"{前缀名}_{uuid.uuid4().hex[:12]}"
 
 
-def 排恢复(c, *, project_id, run_id, 为什么, 谁):
+def 排恢复(c, *, project_id, run_id, 为什么, 谁, 已排回队列=False):
     """在调用方的事务里把一次挂起的运行排回队列。返回 job_id;不该排时返回 (None, 理由)。"""
     r = c.execute(text("""select organization_id, status, resume_snapshot, checkpoint_seq, kind
                             from execution_runs where project_id=:p and id=:i for update"""),
                   {"p": project_id, "i": run_id}).mappings().first()
     if not r:
         return None, "没有这次运行"
-    if r["status"] not in 挂起态:
+    # 已排回队列=True:调用方(runctl.继续)已经带 If-Match 把状态推成 queued、写了事件,这里只管插任务
+    if not 已排回队列 and r["status"] not in 挂起态:
         return None, f"这次运行现在是「{r['status']}」,不在挂起中 —— 不重复排"
+    if 已排回队列 and r["status"] != "queued":
+        return None, f"说好已排回队列,可它现在是「{r['status']}」—— 不插任务"
     快照 = r["resume_snapshot"] or {}
     停在 = 快照.get("从")
     if not 停在:
@@ -53,9 +56,10 @@ def 排恢复(c, *, project_id, run_id, 为什么, 谁):
     # 排给哪个处理器按运行的种类定(11-06)—— 原来写死 workflow_run:Agent 走桥挂起之后回执一到,
     # 恢复任务会交给跑工作流的处理器,它按工作流去读一份 Agent 的检查点
     类型 = 恢复任务类型.get(r["kind"], "workflow_run")
-    c.execute(text("""update execution_runs set status='queued', updated_at=now(),
-                             revision=revision+1
-                       where project_id=:p and id=:i"""), {"p": project_id, "i": run_id})
+    if not 已排回队列:
+        c.execute(text("""update execution_runs set status='queued', updated_at=now(),
+                                 revision=revision+1
+                           where project_id=:p and id=:i"""), {"p": project_id, "i": run_id})
     c.execute(text("""
         insert into jobs (id, organization_id, project_id, type, target_ref, status,
             attempts, max_attempts, snapshot_hash, idempotency_key,

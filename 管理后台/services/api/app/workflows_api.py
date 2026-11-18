@@ -2711,10 +2711,14 @@ def _控制动作们(当前):
         出.append({"动作": 名, "中文": 中文, "现在能吗": 能, "为什么不能": 为什么})
     # ⚠️ `reconcile` 单独列:它**不改状态**(只去问一次外部系统),
     # 所以只要不是终态就能做 —— 和上面三个的判据不是一回事。
+    # 11-18:原来写「不是终态就能」,而状态机只许 running / pause_requested / cancel_requested → reconciling;
+    # queued / paused / waiting_* 的运行页面摆了按钮,点了 409 BAD_TRANSITION。按状态机判,和上面三个一个口径
+    能核 = "reconciling" in 去的地方
     出.append({"动作": "reconcile", "中文": "核实外部状态",
-               "现在能吗": 当前 not in 机["终态"],
-               "为什么不能": (None if 当前 not in 机["终态"]
-                          else "已经是终态了,没有外部状态要核实")})
+               "现在能吗": 能核,
+               "为什么不能": (None if 能核
+                          else ("已经是终态了,没有外部状态要核实" if 当前 in 机["终态"]
+                                else f"状态机里「{当前}」走不到「reconciling」—— 它现在能去的是 {sorted(去的地方)}"))})
     return 出
 
 
