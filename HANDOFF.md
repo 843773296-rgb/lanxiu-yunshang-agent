@@ -12,6 +12,13 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-18 18:4x · 交接 —— Prompt 管理加简介 + README 介绍页链接,排在 eureka-fc 后面推(Opus 5.5)
+
+- **用户要**:Prompt 管理每段 system prompt 加简介,说清管哪个部分。d1b19245:导入脚本 `包一条()` 现拼「用途」(哪几个助手｜讲什么 / 类型 / 装了哪些工具才发 / 口径),不手写;列表页取第一行 70 字、悬停看全文。**进了内容哈希 → 127 条各出一版;共享库 aimc_dev 要在锁内重导,否则 lanxiu_prompt_sync_check 红**。
+- **README**:15e60233 顶部加产品介绍页链接(Pages 已上线 200,仓库 lanxiu-yunshang-intro)。
+- **在跑**:`scratchpad/gate_batch9.sh` —— 等锁空 → 并回主检出 → 锁内导入 + 同步检查 → e2e-ci → ship。状态 `gate_batch9.status`,只认「被包的命令退出码」。
+- **欠账**:评测稳定挂的「没把写动作交回给人」那道,eureka-fc 补了 TL05 未复跑;logo 登录后界面要用户看;介绍页 AI 生成图的商用条款没核。
+
 ### ✅ 11-18 15:52 · 已推 6df6695e —— logo 接进三个界面;e2e-ci 0、全量门禁 0、8770 已重启;锁已放并通知 eureka-fc 跑 13 道评测题(Opus 5.5)
 
 - **用户拍板(11-18)**:① 主检出 06:40 那份项目日志**已丢**(git checkout);② 飞书「重新授权」—— 查下来不用人点:make_log 原来调 `~/Desktop/chatgpt` 那份发布脚本(它的登录过期),**改成本仓库 tools/feishu_publish.py**、目标仍是通用文件夹 PJWW…(88abdbb4),实发一次成功并清了 1 份旧版;③ **允许无界面浏览器给本地静态页拍图,不点击、不登录、不联网**(已写进记忆 web-search-yes-browser-no)。
