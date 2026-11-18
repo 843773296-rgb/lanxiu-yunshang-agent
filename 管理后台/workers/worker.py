@@ -996,18 +996,21 @@ def _跑一张工作流(c, job, 打点):
         打点("从检查点恢复", {"从": 快照["从"], "等的是": 等.get("种类")})
 
     # 事件序号接着已有的往后排(恢复时这次运行已经有一批事件了)
-    事件序号 = [int(c.execute(text("""select coalesce(max(seq), 1) from run_events
-                                     where project_id=:p and execution_run_id=:r"""),
-                            {"p": job["project_id"], "r": run_id}).scalar() or 1)]
-
     def 记事(种类, 载荷):
-        事件序号[0] += 1
+        # 11-18:原来 seq 是进程里的计数器(开跑时读一次 max)。worker 改成节点边界提交之后,runctl 的暂停 / 取消会在中途
+        # 往同一次运行写 run_events(seq 用库里 max+1),两边各自算的 seq 撞车、各等对方提交 → **死锁**(e2e 抓到 DeadlockDetected,
+        # 任务崩了重跑,检查点落到了 start)。现在和 runctl 同一个顺序:先锁这次运行那一行,再从库里现算 seq —— 两边排队,谁都不会
+        # 既持着自己的事件行又等对方的运行行。锁在下一次节点边界提交时放开
+        c.execute(text("select 1 from execution_runs where project_id=:p and id=:r for update"),
+                  {"p": job["project_id"], "r": run_id})
         c.execute(text("""
             insert into run_events (id, organization_id, project_id, execution_run_id,
                 seq, event_type, payload, occurred_at, created_at, created_by)
-            values (:i,:o,:p,:r,:s,:k,:pl, now(), now(), :u)
+            values (:i,:o,:p,:r,
+                    coalesce((select max(seq)+1 from run_events where project_id=:p and execution_run_id=:r), 1),
+                    :k,:pl, now(), now(), :u)
         """), {"i": _新("re"), "o": job["organization_id"], "p": job["project_id"],
-               "r": run_id, "s": 事件序号[0], "k": 种类,
+               "r": run_id, "k": 种类,
                "pl": _j.dumps(载荷, ensure_ascii=False, default=str), "u": 我是谁})
 
     样例 = None
@@ -1686,18 +1689,21 @@ def _跑一个agent(c, job, 打点):
 
     账 = 表账本()
     # 事件序号接着已有的往后排(续跑时这次运行已经有一批事件了;和工作流那条同一个写法)
-    事件序号 = [int(c.execute(text("""select coalesce(max(seq), 1) from run_events
-                                     where project_id=:p and execution_run_id=:r"""),
-                            {"p": job["project_id"], "r": run_id}).scalar() or 1)]
-
     def 记事(种类, 载荷):
-        事件序号[0] += 1
+        # 11-18:原来 seq 是进程里的计数器(开跑时读一次 max)。worker 改成节点边界提交之后,runctl 的暂停 / 取消会在中途
+        # 往同一次运行写 run_events(seq 用库里 max+1),两边各自算的 seq 撞车、各等对方提交 → **死锁**(e2e 抓到 DeadlockDetected,
+        # 任务崩了重跑,检查点落到了 start)。现在和 runctl 同一个顺序:先锁这次运行那一行,再从库里现算 seq —— 两边排队,谁都不会
+        # 既持着自己的事件行又等对方的运行行。锁在下一次节点边界提交时放开
+        c.execute(text("select 1 from execution_runs where project_id=:p and id=:r for update"),
+                  {"p": job["project_id"], "r": run_id})
         c.execute(text("""
             insert into run_events (id, organization_id, project_id, execution_run_id,
                 seq, event_type, payload, occurred_at, created_at, created_by)
-            values (:i,:o,:p,:r,:s,:k,:pl, now(), now(), :u)
+            values (:i,:o,:p,:r,
+                    coalesce((select max(seq)+1 from run_events where project_id=:p and execution_run_id=:r), 1),
+                    :k,:pl, now(), now(), :u)
         """), {"i": _新("re"), "o": job["organization_id"], "p": job["project_id"],
-               "r": run_id, "s": 事件序号[0], "k": 种类,
+               "r": run_id, "k": 种类,
                "pl": _j.dumps(载荷, ensure_ascii=False, default=str), "u": 我是谁})
 
     # ── 这条入口跑真模型还是 mock(外部审阅 §5.4,第三条入口)───────────
