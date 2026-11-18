@@ -350,11 +350,17 @@ async function 页_prompt列表() {
       $("#tbl").innerHTML = s.html; s.挂(); return;
     }
     $("#tbl").innerHTML = `<table><thead><tr>
-        <th>标识</th><th>用途</th><th>标签</th>
+        <th>标识</th><th>用途(管哪部分)</th><th>标签</th>
         <th>最新保存版本</th><th>生产引用版本</th>
         <th>最近评测</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rs.map((r) => `
         <tr><td class="num">${esc(r.key)}</td>
-          <td>${esc((r.用途 || "").slice(0, 40)) || '<span style="color:var(--faint)">—</span>'}</td>
+          <td>${(() => {
+            // 从 prompts.py 导入的规矩,用途第一行是「哪几个助手｜这条讲什么」(导入脚本现拼),
+            // 只取第一行、放宽到 70 字 —— 原来截 40 字常把「讲什么」那半截掉;全文悬停看
+            const 全 = r.用途 || "", 首 = 全.split("\n")[0];
+            return 全 ? `<span title="${esc(全)}">${esc(首.length > 70 ? 首.slice(0, 70) + "…" : 首)}</span>`
+                      : '<span style="color:var(--faint)">—</span>';
+          })()}</td>
           <td>${(r.标签 || []).map((t) => `<span class="pill">${esc(t)}</span>`).join(" ") || "—"}</td>
           <td>${r.最新版本 != null ? `v${r.最新版本}` : '<span class="pill none">还没存过版本</span>'}</td>
           <td>${r.生产版本 != null ? `<span class="pill ok">v${r.生产版本}</span>`

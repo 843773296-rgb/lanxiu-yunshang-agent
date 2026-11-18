@@ -105,9 +105,71 @@ def 读铁律():
     return 全, 用它的, 漏
 
 
+# ── 简介:这段规矩管哪个部分(用户 11-18 要:「告诉我这段 system prompt 是管哪个部分的」)──
+# 列表页「用途」一栏原来 127 条全是空的 —— 导入只写了 system 正文,打开后台看到的是
+# 一串 TL53 / TK05 编号,不读正文分不出哪条管什么。
+#
+# ⚠️ **简介全部从已有的结构字段现拼,不手写 127 段。** 手写的简介和正文是两份东西,
+# 正文一改简介就漂(这仓库在「手写区被生成覆盖」「待办里的数字漂了」上栽过不止一次)。
+# 现拼的来源:正文开头那句加粗的话(112/127 条有)、哪些助手用它、范围、
+# 装了哪些工具才发(工具名翻成工具说明里那句加粗的中文)、它定的是哪件事的口径。
+# 拼进 messages["用途"] → 进内容哈希;同步检查(lanxiu_prompt_sync_check)调的是同一个
+# `包一条()`,所以「文件改了没重导」照样当场红,不会出现第二套算法。
+角色中文 = {"顾问": "门店顾问助手", "任务": "后台运营助手", "工坊": "工坊排产助手",
+          "版型": "版型助手", "财务": "财务助手"}
+_工具名 = None
+# needs 里有两个不是真工具名的记号:「写」= 挂了任意一个写工具,「图片」= 这一轮带了图
+_伪工具 = {"写": "任意一个会改数据的写工具", "图片": "用户发了图片"}
+
+
+def _工具中文(名):
+    """工具名 → 工具说明里第一段加粗的话(去掉「(写)」「(只读)」这类前缀)。读不到就原样给名字。"""
+    global _工具名
+    if _工具名 is None:
+        _工具名 = {}
+        try:
+            import re as _re
+            sys.path.insert(0, os.path.join(仓, "backend"))
+            import api as _api
+            for s in list(_api.SCHEMAS) + list(_api.SHOP_SCHEMAS) + list(_api.KB_SCHEMAS):
+                # 取说明的**第一小句**(不是第一段加粗:加粗常是「客户问多少钱时用这个」这类提醒)
+                d = (s.get("description") or "").replace("**", "")
+                d = _re.sub(r"^\s*[((][^))]{1,6}[))]\s*", "", d)      # 去掉「(写)」「(只读)」
+                话 = _re.split(r"[::。;;—((,,]", d, 1)[0].strip()
+                if 话:
+                    _工具名[s["name"]] = 话[:20]
+        except Exception:
+            pass               # 读不到工具表就用英文名 —— 简介少一点中文,不该挡住导入
+    if 名 in _伪工具:
+        return _伪工具[名]
+    话 = _工具名.get(名)
+    return f"{话}(`{名}`)" if 话 else f"`{名}`"
+
+
+def 简介(r, 角色们):
+    import re as _re
+    m = _re.match(r"\s*\*\*(.+?)\*\*", r.text)
+    讲的 = (m.group(1) if m else _re.split(r"[。\n]", r.text)[0]).strip()
+    if len(讲的) > 60:
+        讲的 = 讲的[:60] + "…"
+    谁 = "、".join(角色中文.get(x, x) for x in 角色们) or "(没有助手在用)"
+    行 = [f"{谁}｜{讲的}"]
+    if r.scope == "工具":
+        行.append("类型:工具用法说明 —— 跟着工具走,讲这个工具怎么用、返回的东西怎么读")
+    else:
+        行.append("类型:通用规矩" + ("" if r.needs else " —— 这些助手每次对话都带着"))
+    if r.needs:
+        行.append("只在助手装了这些工具时才发给模型:" + "、".join(_工具中文(t) for t in r.needs))
+    if r.avoid:
+        行.append("装了这些工具就不发(换了做法,说法要跟着换):" + "、".join(_工具中文(t) for t in r.avoid))
+    if r.管:
+        行.append("定的是这件事的口径:" + "、".join(r.管))
+    return "\n".join(行)
+
+
 def 包一条(r, 角色们):
     """一条 Rule → (messages, params)。"""
-    messages = {"system": r.text}
+    messages = {"system": r.text, "用途": 简介(r, 角色们)}
     params = {
         "铁律编号": r.id,
         # ⚠️ **`范围` 要保留。** `Rule` 的文档串专门解释过为什么分两种:
