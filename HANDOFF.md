@@ -23,6 +23,7 @@
 - **禁区**:prompts.py 一字不改(TL 归 eureka-fc);导入只在锁内跑;主检出不写未提交文件;**店长助手不出新版本、不切生产**(TL76 / TL05 是改措辞,eureka-fc 攒着问用户;若重导后 assistant_effect_check 红,先告诉它,别为转绿去切)。
 - **召回测试「没结果」(用户 18:5x 问)**:查实页面没坏 —— 流程走完、精排和生成都调了,生成答「证据不够」(正确拒答)。根因:① 知识库 kb_0ff23c4a90d1 只有 6 份文件(业务拍板 0924–0927 + 版型调研 + 一份测试上传),**没有差评处理资料**;② 索引 ib_44bd0b04cf8f 是 10-24 用 **emb-mock** 建的(假向量,相似度 0.05–0.1,等于随机),而真模型 bge-small-zh-v1.5 适配器和模型文件(`管理后台/.models/`)都在。**用户拍「两个都修 + 从现有规矩整理」**:写《差评处理规矩》(来源 TK13/TK14/TK16/TL98/TL103、rating-repair 技能、业务拍板 0927)进 `业务决策/` → 锁内 `管理后台/tools/ingest_lanxiu.py` 导入 → 用 bge 重建索引(POST index-builds 带 embedding模型id,或 `tools/seed_index.sh` 形状)→ 同一问题重测给用户看。关键词检索要等 bge 不够再出选型卡。
 - **⚠️ batch9 并回时漏了 eureka-fc 的 ca028d6f**(锁空那一刻 pull 没拿到),主检出 = 242b1a83 不含它 → ship 第一步「查已 rebase」会拒。e2e-ci 照跑(只改 管理后台,结论有效);ship 拒后:w1117 rebase 到 origin/main → 主检出 `git reset` 不行(别动别人的)→ 用 `git pull --ff-only` 前先确认主检出没有别人的提交,再并回、锁内重导规矩(TL05 变了)、ship。
+- **下一批 `scratchpad/gate_batch10.sh`**(等 batch9 结束再起):主检出比远端多出的 4 笔按主题核过是我的 → `git reset --keep w1117` → 锁内 ingest_lanxiu + import_lanxiu_prompts + 两条同步检查 → ship(e2e-ci 不重跑:管理后台代码和 batch9 那次一样)。**推完要喊 eureka-fc**:用户已拍 TL76 + TL05 店长助手出版切生产,它等规矩池导好再出版。之后我派 bge 索引重建 + 召回重测,不用 8770。
 - **作废的结果**:工具中文名「取第一段加粗」那版预览(kb_bom 显示成「客户问多少钱时用这个」)作废。
 - **悬而未决**:店长助手要不要带 TL76 / TL05 出新版本,eureka-fc 问用户,不归我问;介绍页 AI 图商用条款要不要查,没问用户。
 - **下一步第一个动作**:b7auqut56 完成后读 `scratchpad/gate_batch9.status`;全绿 → 告诉用户去 8801 Prompt 管理页刷新看简介、告诉 eureka-fc 锁已放;红 → 看 import_1118.log / e2e_ci_1118c.log / ship_1118d.log。
