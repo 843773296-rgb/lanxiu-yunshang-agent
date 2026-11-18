@@ -262,6 +262,8 @@ setTimeout(() => {
     "#/apps": { 接口: "/applications", 列表: "应用" },
     "#/conns": { 接口: "/model-connections", 列表: "连接" },
     "#/members": { 接口: "/memberships", 列表: "成员", 身份: "工号" },
+    // 澜绣旋钮与方案(11-18):方案表按 方案号 对账;演示项目里没有方案,走空列表那一档(要有状态块)
+    "#/knobs": { 接口: "/knob-plans", 列表: "items", 身份: "方案号" },
     "#/datasets": { 接口: "/datasets", 列表: "数据集" },
     "#/artifacts": { 接口: "/model-artifacts", 列表: "产物" },
     // ⚠️ 这个列表字段叫 `任务` 不是 `items` —— 我第一版猜了 `items`,
