@@ -125,6 +125,10 @@ if __name__ == "__main__":
         sp = os.environ.get("CLAUDE_SCRATCHPAD") or tempfile.gettempdir()
         os.makedirs(sp, exist_ok=True)
         dst = os.path.join(sp, "澜绣云裳agent-项目日志.md")
-        open(dst, "w", encoding="utf-8").write(md)   # md 已含手记
-        subprocess.run(["python3", os.path.expanduser(
-            "~/Desktop/chatgpt/tools/feishu_publish.py"), dst])
+        open(dst, "w", encoding="utf-8").write(md)
+        # 用本仓库自己的发布脚本(11-18 改):原来调的是另一个项目 ~/Desktop/chatgpt 里那份,
+        # 它的登录缓存过期后每天 06:40 都卡在「等待授权超时」,而本仓库这份的登录一直有效。
+        # 目标文件夹沿用原来那份的默认(通用文件夹),项目日志不是产品文档,不进产品文件夹。
+        env = dict(os.environ)
+        env.setdefault("FEISHU_FOLDER", "PJWWffc04lhlBJd7uYIcmWYWnde")
+        subprocess.run(["python3", os.path.join(ROOT, "tools", "feishu_publish.py"), dst], env=env)
