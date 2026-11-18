@@ -23255,7 +23255,7 @@
  },
  {
   "script": "agentsite/skills_check.py",
-  "改坏": "把审查结论里一个还装在目录里的技能(analytics-reporting,可借鉴方法)改判成「不适用」—— 目录没动、结论变了,归档就该补搬;没守着的话旧版安装脚本一跑或者谁拷回一个,就又回到 9 月的「全拿」",
+  "改坏": "把审查结论里一个还装在目录里的技能(analytics-reporting,可借鉴方法)改判成「不适用」—— 目录没动、结论变了,归档就该补搬;没守着的话旧版安装脚本一跑或者谁拷回一个,就又回到 9 月的「全拿」。前置:副本里没装第三方技能(worktree / CI 都没有)时先造一个 analytics-reporting 目录 —— 不造的话这条只在主检出咬得动,别的检出报「改坏了却没红」(11-18 worktree 的 pre_push 实测)",
   "file": [
    {
     "path": "agentsite/third_party_review.json",
@@ -23263,7 +23263,10 @@
     "new": " \"analytics-reporting\": {\n  \"分类\": \"不适用\",\n"
    }
   ],
-  "预期红": "审查判不适用的还装在目录里"
+  "预期红": "审查判不适用的还装在目录里",
+  "前置": [
+   "python3 -c \"import os; d='agentsite/.claude/skills/analytics-reporting'; os.makedirs(d, exist_ok=True); p=os.path.join(d, 'SKILL.md'); os.path.exists(p) or open(p, 'w').write('---\\nname: analytics-reporting\\ndescription: 第三方技能夹具(咬合前置,只在副本里建)\\n---\\n')\""
+  ]
  },
  {
   "script": "backend/workorder_check.py",

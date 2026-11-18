@@ -145,7 +145,14 @@ def 该软链的():
     if os.path.isdir(静):
         out += [os.path.join("backend", "static", n) for n in sorted(os.listdir(静))
                 if os.path.isdir(os.path.join(静, n))]
-    return [p for p in out if os.path.isdir(os.path.join(ROOT, p))]
+    # 轮转出来的旧执行记录(`.feynman/spans.jsonl.1`,64 MB)—— **只读,软链**(11-18 改,原来是整份不带)。
+    # 原来那条「全仓库没有代码读 .jsonl.1」10-29 核过时成立,11-13 起 `agent/spans_check.py` 会读它:
+    # 轮转那一刻正在长的那棵树被劈成两半,根在 .1 里,要拼回去验。副本里没有 .1 → 那棵树「根有 0 个」→
+    # spans_check 的 8 条咬合全报「对照就是红的」(11-18 11:34 轮转后 pre_push 实测)。
+    # 软链安全:往 .1 写的只有轮转那一下 `os.replace(p, p + ".1")`,它换掉的是副本里的链本身,碰不到真文件。
+    out.append(os.path.join(".feynman", "spans.jsonl.1"))
+    return [p for p in out if os.path.isdir(os.path.join(ROOT, p))
+            or (p.endswith(".jsonl.1") and os.path.isfile(os.path.join(ROOT, p)))]
 
 
 def _忽略(软链):
@@ -161,7 +168,7 @@ def _忽略(软链):
                                 # ⚠️ 这一条和下面那个模型目录的处理**刻意不同**:
                                 # 没人读的整份不带,只读的走软链 —— 分开它们的是
                                 # 「有没有代码会去读它」,不是大小。
-                                "spans.jsonl.1",
+                                # (spans.jsonl.1 11-18 起改走软链,见 `该软链的`)
                                 # 夜跑留在本地的未压缩滚动日志(`agent/nightly/agentsite__evals__funnel.jsonl`,
                                 # 11-18 03:54 涨到 123 MB,副本 403 MB > 400 MB,第五轮全量重放 61 个脚本全部拒跑)——
                                 # 它 gitignore、只有 nightly_eval 读它去压 .gz(不在门禁里跑);eval_env_check 用的是自己造的临时文件。
@@ -202,6 +209,8 @@ def _拷实外指的软链(dst, 软链):
             真 = os.path.realpath(p)
             if 真 == os.path.realpath(dst) or 真.startswith(os.path.realpath(dst) + os.sep):
                 continue                            # 指到副本内部,随它
+            if os.path.relpath(p, dst) in 软链:   # 声明过的只读软链(目录,或 11-18 起的 spans.jsonl.1 这个文件)
+                continue
             if os.path.isdir(真):
                 if os.path.relpath(p, dst) in 软链: continue
                 raise SystemExit(f"❌ 副本里有一条没登记的目录软链指着外面:"
@@ -750,7 +759,7 @@ def 自测():
             print(f"  ❌ 这些大目录没软链成,是整份拷进来的:{少}"); 坏 += 1
         else:
             print(f"  ✅ {len(软链)} 个大目录是软链({', '.join(软链)})")
-        瞎 = [p for p in 软链 if not os.path.isdir(os.path.join(dst, p))]
+        瞎 = [p for p in 软链 if not os.path.exists(os.path.join(dst, p))]
         if 瞎:
             print(f"  ❌ 软链建了但读不到(断链):{瞎} —— 路径在、内容不在,比没有更糟"); 坏 += 1
         else:

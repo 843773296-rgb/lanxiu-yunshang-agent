@@ -84,10 +84,16 @@ def main():
     ck("默认查询口:模块出错时当没接管(返回 None,不抛)", 原("这个技能不存在-xyz") is None)
 
     print("\n▸ ①½ 评测关接管(用户 2026-11-18 拍「两条路分开考」)")
-    原环境 = os.environ.get("LANXIU_EVAL_NO_TAKEOVER")
-    原清单, 原curl0 = tc.清单, tc._curl
+    原环境 = {k: os.environ.get(k) for k in ("LANXIU_EVAL_NO_TAKEOVER", "LANXIU_USAGE_URL",
+                                             "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER")}
+    原清单, 原curl0, 原兜底0 = tc.清单, tc._curl, tc._兜底文件
     叫过 = []
     try:
+        # 地址配齐:不配的话「删掉评测那支」的攻击会落进「没配地址 → 兜底」,同样回交还、不调 curl,
+        # 判据看不出破坏(11-18 咬合重放实测),还会把兜底写进真文件
+        os.environ.update(LANXIU_USAGE_URL="http://127.0.0.1:9", LANXIU_BRIDGE_PROJECT="project_x",
+                          LANXIU_USAGE_USER="U001")
+        tc._兜底文件 = os.path.join(tempfile.mkdtemp(), "fallback-eval.json")
         tc.清单 = lambda 强制=False: {"call-notes": {"workflow_id": "wf_1", "名称": "录音跟进"}}
         tc._curl = lambda *a, **k: (叫过.append(a), ("202", {"resource_id": "xr_假"}))[1]
         os.environ.pop("LANXIU_EVAL_NO_TAKEOVER", None)
@@ -99,9 +105,10 @@ def main():
         ck("评测进程里 start_workflow 不往管理后台发单(11-18 夜跑塞了 8 条待核对)",
            not ok and not 叫过 and 回.get("交还") is True, (回, len(叫过)))
     finally:
-        tc.清单, tc._curl = 原清单, 原curl0
-        if 原环境 is None: os.environ.pop("LANXIU_EVAL_NO_TAKEOVER", None)
-        else: os.environ["LANXIU_EVAL_NO_TAKEOVER"] = 原环境
+        tc.清单, tc._curl, tc._兜底文件 = 原清单, 原curl0, 原兜底0
+        for k, v in 原环境.items():
+            if v is None: os.environ.pop(k, None)
+            else: os.environ[k] = v
 
     print("\n▸ ② 拉不到清单时的退路")
     旧环境 = {k: os.environ.get(k) for k in ("LANXIU_USAGE_URL", "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER")}

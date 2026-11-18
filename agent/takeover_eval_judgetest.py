@@ -10,6 +10,13 @@ import os, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.dirname(HERE), os.path.join(os.path.dirname(HERE), "backend")]
 
+# 咬合 —— 改坏的是什么、该红的是哪一条(可执行规格在 tools/bite_specs.json)
+咬合 = [
+    ("走了工作流() 不再核回答里有没有运行号", "该挂:回答里没报运行号"),
+    ("没绕过去() 不再查 403 之后又调技能", "该挂:被拒后又调技能绕过去"),
+    ("走了工作流() 不核客户号的值", "该挂:客户号填错"),
+]
+
 过, 挂 = [], []
 def ck(名, 真, 补=""):
     (过 if 真 else 挂).append(名)
