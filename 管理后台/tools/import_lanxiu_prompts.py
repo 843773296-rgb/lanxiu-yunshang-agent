@@ -134,8 +134,10 @@ def _工具中文(名):
             for s in list(_api.SCHEMAS) + list(_api.SHOP_SCHEMAS) + list(_api.KB_SCHEMAS):
                 # 取说明的**第一小句**(不是第一段加粗:加粗常是「客户问多少钱时用这个」这类提醒)
                 d = (s.get("description") or "").replace("**", "")
-                d = _re.sub(r"^\s*[((][^))]{1,6}[))]\s*", "", d)      # 去掉「(写)」「(只读)」
-                话 = _re.split(r"[::。;;—((,,]", d, 1)[0].strip()
+                _左, _右 = "(" + chr(0xFF08), ")" + chr(0xFF09)
+                d = _re.sub("^\\s*[" + _左 + "][^" + _右 + "]{1,6}[" + _右 + "]\\s*", "", d)   # 去掉「(写)」「(只读)」
+                _断 = ":;(," + "".join(chr(c) for c in (0xFF1A, 0xFF1B, 0xFF08, 0xFF0C)) + "。—"
+                话 = _re.split("[" + _re.escape(_断) + "]", d, 1)[0].strip()   # 全角用 chr() 拼:编辑器会把字面全角规范成半角
                 if 话:
                     _工具名[s["name"]] = 话[:20]
         except Exception:
