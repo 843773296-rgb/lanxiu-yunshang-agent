@@ -263,9 +263,12 @@ async function 页_工作台() {
       const 值 = c.未知
         ? `<div class="n unknown">未知</div>`
         : `<div class="n">${esc(c.值)}</div>`;
+      // 「失败任务」>0 要能点过去(11-18):说明里写着「去任务中心看」,而卡上没有任何入口
+      const 去看 = c.名 === "失败任务" && !c.未知 && Number(c.值) > 0
+        ? `<div class="k"><a href="#/runs">去运行记录看 →</a></div>` : "";
       return `<div class="card kpi">
         <div class="k">${esc(c.名)}</div>${值}
-        ${c.说明 ? `<div class="why">${md(c.说明)}</div>` : ""}
+        ${c.说明 ? `<div class="why">${md(c.说明)}</div>` : ""}${去看}
         <div class="meta">
           ${c.分母 ? `分母:${esc(c.分母)}<br>` : ""}
           ${esc(c.时间范围)} · 环境 ${esc(c.环境)}<br>
@@ -955,7 +958,7 @@ async function 页_实体识别详情(sid) {
       }
       $("#s-tout").innerHTML = `<div class="note">${句}</div>`
         + (段们.length ? `<table><thead><tr><th>片段</th><th>类别</th><th>哪本词典</th><th>去哪</th></tr></thead><tbody>${段们.map((x) => `
-            <tr><td>${esc(x.片段)}</td><td>${esc(x.类别)}</td><td>${esc(x.词典 || (x.类别 === "术语" || x.类别 === "通称" ? "术语表" : ""))}</td><td>${esc(x.去向 || "")}</td></tr>`).join("")}</tbody></table>`
+            <tr><td>${esc(x.片段)}</td><td>${esc(x.类别)}</td><td>${esc(x.词典 || (x.类别 === "术语" || x.类别 === "通称" ? "术语表" : ""))}</td><td class="k">由查询路由决定 → 去<a href="#/routes">「查询路由」</a>试</td></tr>`).join("")}</tbody></table>`
           : `<div class="state" style="padding:12px">这句话没认出任何名字或术语。</div>`)
         + ((r.没试到的词典 || []).length ? `<div class="note warn">${(r.没试到的词典 || []).map((x) => `「${esc(x.名称)}」没试到:${esc(x.说明)}`).join("<br>")}</div>` : "")
         + `<label class="f">模型会收到</label><pre class="io">${esc(r.模型会收到 || "(什么都不收到 —— 这句话没有要带的术语或提示)")}</pre>`;
@@ -4435,18 +4438,25 @@ function 回复气泡(d) {
     + `</div>`;
 }
 /* 业务结果(10-26,方案 §8.2):先说「这次结果能不能用、差什么、下一步干什么」,执行状态退到小字 */
-function 业务结果块(d) {
-  const r = d["业务结果"]; if (!r) return `<div><b>${esc(d["执行状态中文"])}</b></div>`;
+function 业务结果块(d, 带等待 = true) {
+  // 等人 / 等澜绣的运行要给出口(11-18):接口的「在等什么」带 待办 / 桥请求,原来运行详情页只写「运行中」,人不知道去哪处理。
+  // 画布上的运行卡自己画这一段(带步骤名),传 带等待=false 免得写两遍
+  const 等 = (带等待 && d["在等什么"]) || {};
+  const 等块 = (等["待办"]
+    ? `<div class="k"><a href="#/human/${encodeURIComponent(等["待办"])}">去处理这条待办 →</a>${等["截止"] ? ` <span class="k">截止 ${时间(等["截止"])},到点没人处理这次运行就结束</span>` : ""}</div>` : "")
+    + (等["桥请求"]
+      ? `<div class="k">等澜绣执行${等["工具"] ? `「${esc(等["工具"])}」` : ""}并回执:桥请求 <code>${esc(等["桥请求"])}</code>${等["排于"] ? ` · 排于 ${时间(等["排于"])}` : ""}${等["截止"] ? ` · 截止 ${时间(等["截止"])}` : ""}</div>` : "");
+  const r = d["业务结果"]; if (!r) return `<div><b>${esc(d["执行状态中文"])}</b>${等块}</div>`;
   const 色 = { "已完成": "ok", "已完成,需补充资料": "warn", "没做完": "warn", "失败": "err", "进行中": "" }[r["结论"]] || "";
   const 步名 = r["哪一步"] ? (节点(r["哪一步"]) ? 业务名(节点(r["哪一步"])) : r["哪一步"]) : "";
   return `<div class="bizres" data-res="${色}">${r["跑法"] === "连接测试" ? '<span class="pill">连接测试</span> ' : ""}<b>${esc(r["结论"])}</b>${步名 ? ` · 卡在「${esc(步名)}」` : ""}
-    ${r["说明"] ? `<div>${md(r["说明"])}</div>` : ""}${r["下一步"] ? `<div class="k">下一步:${md(r["下一步"])}</div>` : ""}
+    ${r["说明"] ? `<div>${md(r["说明"])}</div>` : ""}${r["下一步"] ? `<div class="k">下一步:${md(r["下一步"])}</div>` : ""}${等块}
     <div class="k">执行状态:${esc(d["执行状态中文"])}${d["停止原因"] ? ` <code>${esc(d["停止原因"])}</code>` : ""}</div></div>`;
 }
 function 运行卡(d, rid) {
   const 等 = d["在等什么"];
   const 步 = (d["步骤"] || []).length;      // 每一步的列表在「追踪」页(测试追踪);这里只看有没有开始跑
-  return `${业务结果块(d)}
+  return `${业务结果块(d, false)}
     ${回复气泡(d)}
     ${等 ? (等["种类"] === "human"
         ? `<div class="note">停在「${esc(业务名(节点(等["步骤"]) || {}))}」等人工核对。
@@ -5887,7 +5897,9 @@ function 画_agent正文() {
           ${g["可选连接"].map((c) => `<option value="${esc(c.id)}"
             ${cfg.connection_version_id === c.id ? "selected" : ""}>
             ${esc(c["名称"])} · 原生工具调用:${c["原生工具调用"] ? "支持" : "没声明"}
-            · ${esc(c["模式"] || "?")}</option>`).join("")}
+            · ${esc(c["模式"] || "?")}${c["不在名单里"] ? ` · ${esc(c["不在名单里"])}` : ""}</option>`).join("")}
+          ${cfg.connection_version_id && !g["可选连接"].some((c) => c.id === cfg.connection_version_id)
+            ? `<option value="${esc(cfg.connection_version_id)}" selected>(当前选的已经查不到了)</option>` : ""}
         </select></div>
       <div class="note">这一栏显示的是<b>探测回来的能力</b>,不是模型叫什么名字。
         规格附录 D.2:<b>不按模型家族名字推断兼容</b> —— 能不能按契约调工具是按型号来的。
@@ -7176,7 +7188,8 @@ async function 页_单条试跑() {
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let ps;
-  try { ps = await 请求(`${P()}/prompts?limit=50`); }
+  // 接口上限 100,就装满 100;total 为 null 判不了有没有截断,所以下面照实写「只列前 100 条」
+  try { ps = await 请求(`${P()}/prompts?limit=100`); }
   catch (e) { const s = 错误块(e, 页_单条试跑); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
   if (!(ps.items || []).length) {
     $("#main").innerHTML = 头 + 状态("", "这个项目还没有 Prompt",
@@ -7188,6 +7201,7 @@ async function 页_单条试跑() {
       <label class="f">选一条 Prompt</label>
       <select id="pp">${ps.items.map((p) =>
         `<option value="${esc(p.id)}">${esc(p.name || p.key || p.id)}</option>`).join("")}</select>
+      <div class="k">只列前 100 条,更多去 <a href="#/prompts">Prompt 管理</a> 搜</div>
       <label class="f">变量(JSON)</label>
       <textarea id="vv" rows="4">{}</textarea>
       <button class="pri" id="go">试跑一次</button>
@@ -7230,7 +7244,7 @@ async function 页_单条试跑() {
  * 这里读的是管理后台自己的 `traces` / `spans` —— 而那两张表
  * 2026-09-28 之前基本是空的,是精排记账和 A1 上报让它们有了真内容。 */
 async function 页_调用链(页 = 1) {
-  const 头 = `<div class="crumb">运行记录</div>
+  const 头 = `<div class="crumb">日志与监测</div>
     <div class="head"><div><h1>调用链</h1>
       <div class="sub">${md(`每一次运行的调用树。**看得到 trace 不等于看得到原文。**`)}</div>
     </div></div>`;
@@ -7337,7 +7351,7 @@ async function 页_调用树(tid) {
 const _产出状态色 = { "正常": "ok", "已打回待执行": "warn", "已执行": "", "执行失败": "fail" };
 let _产出筛 = { 类型: "", 状态: "" };
 async function 页_产出监督() {
-  const 头 = `<div class="crumb">评测与监督</div>
+  const 头 = `<div class="crumb">日志与监测</div>
     <div class="head"><div><h1>产出监督</h1>
       <div class="sub">${md(`门店助手写出来的**日报 / 周报 / 月报**和上新时给导购的**建议**,每一份都在这里:`
         + `用了哪些规矩、照着什么数据、哪个模型、写出了什么。不满意就**打回** ——`
@@ -7456,7 +7470,7 @@ async function 页_产出详情(id) {
  * 能拿到的只有「人采纳了没有」—— 而采纳率高也可能是因为人懒得改。
  * 这一页最重要的事是把这个区别写在脸上。 */
 async function 页_智能体健康() {
-  const 头 = `<div class="crumb">评测中心</div>
+  const 头 = `<div class="crumb">日志与监测</div>
     <div class="head"><div><h1>智能体健康</h1>
       <div class="sub">${md(`上线之后**没有标准答案** —— 能拿到的是采纳率,而它不是质量分。`)}</div>
     </div></div>`;
@@ -8919,6 +8933,15 @@ const 连接动作 = {
       `${P()}/model-connections/${encodeURIComponent(cid)}/probe`,
       { method: "POST", headers: { "Idempotency-Key": 新键() } });
   },
+  // 停用 / 启用都要 If-Match(列表里每条的 revision)—— 两个人同时操作,后到的不许静默覆盖
+  async 停用(cid, rev) {
+    return await 请求(`${P()}/model-connections/${encodeURIComponent(cid)}/archive`,
+      { method: "POST", headers: { "If-Match": String(rev) } });
+  },
+  async 启用(cid, rev) {
+    return await 请求(`${P()}/model-connections/${encodeURIComponent(cid)}/unarchive`,
+      { method: "POST", headers: { "If-Match": String(rev) } });
+  },
 };
 if (typeof globalThis !== "undefined") globalThis.连接动作 = 连接动作;
 
@@ -8957,6 +8980,7 @@ function 页_连接表单(d) {
     <p><button class="pri" id="c-go">建这条连接</button></p></div>`;
 }
 
+let _连接含停用 = false;     // 「显示已停用的」开关;默认不列,演示项目里 e2e 停用的有几百条会淹掉真在用的
 async function 页_模型与连接() {
   $("#main").innerHTML = `<div class="crumb">设置 / 模型与连接</div>
     <div class="head"><div><h1>模型与连接</h1>
@@ -8964,19 +8988,31 @@ async function 页_模型与连接() {
         也不做截断:截到前几个字,那几个字仍然是原文。</div></div></div>
     <div id="list"><div class="state">加载中…</div></div>`;
   try {
-    const d = await 请求(`${P()}/model-connections`);
+    const d = await 请求(`${P()}/model-connections${_连接含停用 ? "?含停用=true" : ""}`);
+    const 停用开关 = d["停用的条数"] || _连接含停用
+      ? `<div class="k" style="margin:6px 0"><label><input type="checkbox" id="c-arch" ${_连接含停用 ? "checked" : ""}>
+          显示已停用的(${esc(d["停用的条数"] ?? "?")} 条)—— 要「启用」得先看得见它</label></div>` : "";
     if (!d["连接"].length) {
       $("#list").innerHTML = 状态("", "还没有模型连接",
         "**用途要分开**(生成 / Embedding / 重排 / 微调推理)—— 共用一条的话,"
-        + "换生成模型会顺手把 Embedding 也换掉,而已经建好的索引会全部不可比。").html;
+        + "换生成模型会顺手把 Embedding 也换掉,而已经建好的索引会全部不可比。").html
+        + 停用开关 + `<div id="msg2"></div>` + 页_连接表单(d);
+      挂连接事件(d);
       return;
     }
-    $("#list").innerHTML = `<table><thead><tr><th>用途</th><th>名字</th>
+    // 停用 / 启用(11-18):admin 才摆按钮;按钮带这一行的 revision,点的时候放进 If-Match
+    const 停启 = (r) => 我的角色 !== "admin" ? ""
+      : r["状态"] === "active"
+        ? `<button data-arch="${esc(r.id)}" data-rev="${esc(r.revision)}" class="k">停用</button>`
+        : r["状态"] === "archived"
+          ? `<button data-unarch="${esc(r.id)}" data-rev="${esc(r.revision)}" class="k">启用</button>` : "";
+    $("#list").innerHTML = 停用开关 + `<table><thead><tr><th>用途</th><th>名字</th>
       <th>适配器</th><th>密钥</th><th>探过 capabilities 吗</th><th>状态</th>
       </tr></thead><tbody>`
       + d["连接"].map((r) => {
         const v = (r["配置版本"] || [])[0] || {};
         const k = v["密钥"] || {};
+        const 停了 = r["状态"] === "archived";
         return `<tr><td><b>${esc(r["用途中文"] || r["用途"])}</b></td>
           <td>${esc(r["名字"] || "—")}</td><td class="k">${esc(r["适配器"])}</td>
           <td>${k["配了吗"]
@@ -8984,9 +9020,9 @@ async function 页_模型与连接() {
             : `<span class="pill warn">没配</span>`}</td>
           <td>${v["探过吗"] ? `<span class="pill">探过了</span>`
             : `<span class="pill warn">还没探过</span>`}</td>
-          <td class="k">${esc(r["状态"])}
-            ${我的角色 === "admin"
-              ? `<br><button data-probe="${esc(r.id)}" class="k">探一下</button>` : ""}
+          <td class="k">${停了 ? `<span class="pill warn">已停用</span>${r["停用于"] ? ` <span class="k">${时间(r["停用于"])}</span>` : ""}` : esc(r["状态"])}
+            ${我的角色 === "admin" && !停了
+              ? `<br><button data-probe="${esc(r.id)}" class="k">探一下</button> ` : "<br>"}${停启(r)}
           </td></tr>`; }).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}<br>
         ⚠️ <b>「没探过」不等于「支持一切」</b> —— 不探的话,不支持的参数会在
@@ -9007,6 +9043,31 @@ function 报2(文, 坏) {
 function 挂连接事件(d) {
   document.querySelectorAll("[data-fill]").forEach((b) => {
     b.onclick = () => { if ($("#c-ad")) $("#c-ad").value = b.dataset.fill; };
+  });
+  if ($("#c-arch")) $("#c-arch").onchange = async (e) => { _连接含停用 = Boolean(e.target.checked); await 页_模型与连接(); };
+  // 停用 / 启用:点前问一句(停用的后果要先说清:每一跑都会失败,已发布版本也一样),带 If-Match,409 让人刷新
+  document.querySelectorAll("[data-arch],[data-unarch]").forEach((b) => {
+    b.onclick = async () => {
+      const 停 = b.hasAttribute("data-arch"), cid = 停 ? b.dataset.arch : b.dataset.unarch;
+      const 行 = (d["连接"] || []).find((x) => x.id === cid) || {};
+      const 名 = `${行["名字"] || cid}(${行["用途中文"] || 行["用途"] || "?"})`;
+      const 行吗 = await 问一句(停 ? "停用这条连接?" : "启用这条连接?", md(停
+        ? `**${名}** 停用后:发到生产会被闸拦;**凡用到它的每一跑都会报 MODEL_CONNECTION_DISABLED** —— 已发布的版本不会自动下线,也一样失败。已建好的知识索引不受影响。`
+        : `**${名}** 启用后,发生产那道闸和 worker 从这一刻起认它是在用的。同用途下已经有别的在用的连接会被拦住(409)。`),
+        { 确定: 停 ? "停用" : "启用" });
+      if (!行吗) return;
+      b.disabled = true; 报2(停 ? "停用中…" : "启用中…");
+      try {
+        const r = await (停 ? 连接动作.停用(cid, b.dataset.rev) : 连接动作.启用(cid, b.dataset.rev));
+        await 页_模型与连接();
+        报2(`${停 ? "已停用" : "已启用"} \`${cid}\`${r && r.note ? ":" + r.note : ""}`);
+      } catch (e) {
+        const code = (e.体 || {}).code;
+        报2((e.码 === 409 && (code === "REVISION_CONFLICT" || code === "IF_MATCH_REQUIRED")
+          ? "**这条连接刚被别人改过,刷新页面再试。** " : "") + 闸文(e), true);
+        b.disabled = false;
+      }
+    };
   });
   document.querySelectorAll("[data-probe]").forEach((b) => {
     b.onclick = async () => {
