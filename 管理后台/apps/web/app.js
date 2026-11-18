@@ -9557,7 +9557,7 @@ async function 页_模型与连接() {
         也不做截断:截到前几个字,那几个字仍然是原文。</div></div></div>
     <div id="list"><div class="state">加载中…</div></div>`;
   try {
-    const d = await 请求(`${P()}/model-connections${_连接含停用 ? "?含停用=true" : ""}`);
+    const d = await 请求(`${P()}/model-connections${_连接含停用 ? "?include_archived=true" : ""}`);
     const 停用开关 = d["停用的条数"] || _连接含停用
       ? `<div class="k" style="margin:6px 0"><label><input type="checkbox" id="c-arch" ${_连接含停用 ? "checked" : ""}>
           显示已停用的(${esc(d["停用的条数"] ?? "?")} 条)—— 要「启用」得先看得见它</label></div>` : "";

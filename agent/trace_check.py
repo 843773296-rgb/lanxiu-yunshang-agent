@@ -48,6 +48,9 @@ SKIP = (".git", ".venv", "__pycache__", "node_modules")
          "这个文件自己不发模型请求,工作流 Agent 步骤的真调用走 worker `_agent` → `runtime/真模型.对话一轮`,那里接了记录仪(11-06)。"),
     "管理后台/tests/e2e/test_agent_approval_flow.py":
         ("同一个本地假 Anthropic 接口(照搬 test_agent_bridge_flow 的夹具):`…/v1/messages` 是夹具字符串,不是调用点(11-06)。"),
+    "管理后台/tests/e2e/test_runctl_exec_flow.py":
+        ("11-18 运行控制接执行侧的 e2e:自己起一个**每次睡 4 秒**的本机假 Messages 接口,专门造出「正在跑」的窗口好去点暂停 / 取消;"
+         "`…/v1/messages` 是夹具字符串,不是调用点 —— 这个文件自己不发模型请求,真调用走 worker → `runtime/真模型.py`,那里接了记录仪。"),
     "管理后台/services/api/app/runtime/HTTP请求.py":
         ("工作流「HTTP 请求」节点的发送口(11-16):用 curl + 连接里的凭据定位符往**白名单里的业务接口**发 GET / HEAD,"
          "**不是调模型** —— 没有 token、没有模型花费可记;它的耗时 / 状态码 / 执行模式记在 run_steps 和运行记录里"

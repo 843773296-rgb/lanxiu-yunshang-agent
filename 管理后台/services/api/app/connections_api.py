@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """模型与连接(规格 §17.4-5)。
 
-    GET  /model-connections              连接列表(**secret_ref 只给形状**;`?含停用=true` 连停用的一起列)
+    GET  /model-connections              连接列表(**secret_ref 只给形状**;`?include_archived=true` 连停用的一起列)
     POST /model-connections              建连接(**只收 secret_ref,不收明文**)
     POST /model-connections/{id}/probe   探测(**落 capabilities**)
     POST /model-connections/{id}/archive     停用(If-Match: revision)
@@ -119,11 +119,11 @@ def _引用形状(secret_ref):
 
 
 @router.get(前缀 + "/model-connections")
-def 连接列表(project_id: str, 含停用: bool = False,
+def 连接列表(project_id: str, include_archived: bool = False,
          me: 身份 = Depends(要权限("查看有权配置"))):
     """列表。**`secret_ref` 只给形状,不给内容。**
 
-    默认只列没停用的;`?含停用=true` 把停用(archived)的也列出来 —— 要「启用」它得先看得见它。
+    默认只列没停用的;`?include_archived=true` 把停用(archived)的也列出来 —— 要「启用」它得先看得见它。
     ⚠️ 不默认全列:演示项目里 e2e 测试建完就停用,停用的有几百条,会把真在用的那几条淹掉。
     停用的条数无论如何都报出来(`停用的条数`),界面上据此摆「显示已停用的」开关。"""
     with 连接() as c:
@@ -135,7 +135,7 @@ def 连接列表(project_id: str, 含停用: bool = False,
               from model_connections mc
               left join connection_versions cv
                 on cv.project_id = mc.project_id and cv.connection_id = mc.id
-             where mc.project_id=:p {"" if 含停用 else "and mc.archived_at is null"}
+             where mc.project_id=:p {"" if include_archived else "and mc.archived_at is null"}
              order by mc.created_at, cv.created_at"""),
             {"p": project_id}).mappings()]
         停用的条数 = c.execute(text("""select count(*) from model_connections
@@ -198,7 +198,7 @@ def 连接列表(project_id: str, 含停用: bool = False,
             {"p": project_id}) if r[0]})
     族 = AD.找("ModelProvider")
     return {"条数": len(出), "连接": 出,
-            "含停用": bool(含停用), "停用的条数": int(停用的条数),
+            "含停用": bool(include_archived), "停用的条数": int(停用的条数),
             "可选用途": [{"值": u, "中文": CN.用途中文.get(u, u),
                        "这个项目占了吗": u in 占了的,
                        "占着的那几条": 占了的.get(u),

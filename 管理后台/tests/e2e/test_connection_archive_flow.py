@@ -11,7 +11,7 @@
 ## 守的几条
 
   · 不带 If-Match → 409 IF_MATCH_REQUIRED;错的 → 409 REVISION_CONFLICT;对的 → 200 status=archived
-  · 列表默认不列停用的,`?含停用=true` 才列(要「启用」它得先看得见它)
+  · 列表默认不列停用的,`?include_archived=true` 才列(要「启用」它得先看得见它)
   · 重复停用 → 不改、照实说(改了吗=False)
   · 启用时同用途已有别的 active → 409 PURPOSE_TAKEN(和建连接那道闸同一个口径:用途不并存两条在用的)
   · 审计里有 model_connection.archive
@@ -70,7 +70,7 @@ from db import 连接                     # noqa: E402
 
 
 def 列表(含停用=False):
-    s, b = 打("GET", P + "/model-connections" + ("?含停用=true" if 含停用 else ""))
+    s, b = 打("GET", P + "/model-connections" + ("?include_archived=true" if 含停用 else ""))
     return s, {x["id"]: x for x in (b or {}).get("连接", [])}, b
 
 
@@ -121,7 +121,7 @@ def main():
        aid not in 默认 and (体默认 or {}).get("停用的条数", 0) >= 1 and (体默认 or {}).get("含停用") is False,
        {"在不在": aid in 默认, "停用的条数": (体默认 or {}).get("停用的条数")})
     s, 含, 体含 = 列表(含停用=True)
-    ck("`?含停用=true` 列出 A,状态 archived、带「停用于」时间",
+    ck("`?include_archived=true` 列出 A,状态 archived、带「停用于」时间",
        aid in 含 and 含[aid]["状态"] == "archived" and bool(含[aid].get("停用于")),
        {k: 含.get(aid, {}).get(k) for k in ("状态", "停用于")})
 

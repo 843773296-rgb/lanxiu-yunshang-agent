@@ -112,8 +112,8 @@ def main():
        len(生成的) >= 2, [x["id"] for x in 生成的])
     if len(生成的) < 2:
         print("  ⛔ 前提不成立,后面的断言会连带红 —— 这不叫通过")
-    # 停用的那几条:列表默认不列,`?含停用=true` 才列 —— 拿一条停用的当「已停用」的点名对象
-    c, 全 = 打("GET", P + "/model-connections?含停用=true", 谁="U001")
+    # 停用的那几条:列表默认不列,`?include_archived=true` 才列 —— 拿一条停用的当「已停用」的点名对象
+    c, 全 = 打("GET", P + "/model-connections?include_archived=true", 谁="U001")
     停用的 = [x for x in (全 or {}).get("连接", []) if x.get("用途") == "generate" and x.get("状态") == "archived"]
 
     c, 草们 = 打("GET", P + "/prompts")

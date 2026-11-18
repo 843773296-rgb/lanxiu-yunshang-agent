@@ -252,7 +252,7 @@ P = f"{基址}/api/v1/projects/{项目}"
     "POST /model-connections/{id}/unarchive": dict(
         取id=("/model-connections", "连接[0].id"),
         读="/model-connections", 字段="连接[0].revision", 项目="project_demo_a",
-        说明="同上,「启用」按钮;停用的那几条要带 ?含停用=true 才列,但 revision 字段同一处"),
+        说明="同上,「启用」按钮;停用的那几条要带 ?include_archived=true 才列,但 revision 字段同一处"),
     "POST /chat-handoffs/{id}/resolve": dict(
         取id=("/chat-handoffs", "items[0].id"),
         读="/chat-handoffs/{id}", 字段="revision", 项目="project_demo_a",
