@@ -20,9 +20,9 @@
 
 1. ✅ 体检 45 条中 22 条修掉(7e7d5863 / f79f31c2),报告 4a775439 已发飞书
 2. ✅ 子代理第一批四路合进 w1117(95224f50 Prompt 变量编辑;b6c3beb5 评测发起取消 + datasets 版本们;92a78c82 旋钮方案页;122279a4 连接停用/Agent 连接下拉/失败任务卡/待办链接/面包屑/试跑 100 条/实体去哪列/冒烟管理员轮,两处冲突手解)。合并后 16 页 U001 + 5 页 U002 冒烟全绿。**全部只过渲染没真点过**(子代理只许 GET)
-3. ⬜ batch12 推(e2e-ci 会真打新后端)
-4. ⬜ 暂停 / 取消 / 继续接执行侧(我自己做):runner.跑一张图 加「要暂停吗」回调 → 节点边界返回 paused 检查点;worker `_打点器` 读 execution_runs.pause_requested/cancel_requested;_挂起 支持 paused;runctl.cancel 同步 jobs.cancel_requested;runctl.resume 改调 run_resume.排恢复(挂起态加 paused);worker `except 取消了` 把 execution_runs 收成 cancelled;reconcile 待定
-5. ⬜ 子代理第二批(22:3x 已派):工具连接+工具组页 / 用量预算块 / 数据集页 + PATCH /datasets / 工具选择策略页 + 训练部署标灰
+3. 🟡 batch12 在跑(22:11 起 e2e-ci,22:4x 还在 test_cross_project_read;并回的是 a9eea982,不含下面 4–6 的新东西)
+4. ✅ 暂停 / 取消 / 继续 / 核实接执行侧(2bbb922e,未推):runner 要暂停吗 回调 + pause 检查点;worker 刷新令牌读 execution_runs 两个标记、取消收成 cancelled、_挂起 支持 paused;runctl 取消同步 jobs.cancel_requested、继续真排任务、核实查桥请求回执后送回 paused/running;离线测试 test_pause_checkpoint 14/14、make test-orchestration 全绿。**worker 那一半没真跑过**。原计划:runner.跑一张图 加「要暂停吗」回调 → 节点边界返回 paused 检查点;worker `_打点器` 读 execution_runs.pause_requested/cancel_requested;_挂起 支持 paused;runctl.cancel 同步 jobs.cancel_requested;runctl.resume 改调 run_resume.排恢复(挂起态加 paused);worker `except 取消了` 把 execution_runs 收成 cancelled;reconcile 待定
+5. 🟡 子代理第二批:✅ 用量预算块(42c78bf3,合 07474e2a;预算接口 GET 也要 admin,非 admin 看 403 态);✅ 工具选择策略页 + 训练/部署标灰(91a6f4e4,合 5f33b6d3);⬜ 工具连接+工具组页、数据集页 还在跑。合并后 7 页冒烟绿。子代理都说两条棘轮(css_class_check 30>29、md_render_check 50>32)**在合并前就红**,不在 e2e-ci 里;ship 的全量门禁会不会跑它们看日志
 6. ⬜ 第二批合并 + 推;10:00 夜间汇总发飞书、刷交接、删提醒
 - 旋钮页子代理提到两条棘轮 css_class_check 30>29、md_render_check 37>32 **在 ff8e39a4 上就红**(fc 推得上去说明不在门禁里,可能只在 make test)。看 ship 日志再说
 
