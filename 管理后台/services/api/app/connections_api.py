@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 """模型与连接(规格 §17.4-5)。
 
-    GET  /model-connections              连接列表(**secret_ref 只给形状**)
+    GET  /model-connections              连接列表(**secret_ref 只给形状**;`?含停用=true` 连停用的一起列)
     POST /model-connections              建连接(**只收 secret_ref,不收明文**)
     POST /model-connections/{id}/probe   探测(**落 capabilities**)
+    POST /model-connections/{id}/archive     停用(If-Match: revision)
+    POST /model-connections/{id}/unarchive   启用(If-Match: revision;同用途已有在用的 → 409 PURPOSE_TAKEN)
 
 ## 为什么这一组排在这儿做
 
@@ -117,20 +119,28 @@ def _引用形状(secret_ref):
 
 
 @router.get(前缀 + "/model-connections")
-def 连接列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置"))):
-    """列表。**`secret_ref` 只给形状,不给内容。**"""
+def 连接列表(project_id: str, 含停用: bool = False,
+         me: 身份 = Depends(要权限("查看有权配置"))):
+    """列表。**`secret_ref` 只给形状,不给内容。**
+
+    默认只列没停用的;`?含停用=true` 把停用(archived)的也列出来 —— 要「启用」它得先看得见它。
+    ⚠️ 不默认全列:演示项目里 e2e 测试建完就停用,停用的有几百条,会把真在用的那几条淹掉。
+    停用的条数无论如何都报出来(`停用的条数`),界面上据此摆「显示已停用的」开关。"""
     with 连接() as c:
-        行 = [dict(r) for r in c.execute(text("""
+        行 = [dict(r) for r in c.execute(text(f"""
             select mc.id, mc.purpose, mc.adapter, mc.display_name, mc.status,
-                   mc.revision, mc.created_at,
+                   mc.revision, mc.created_at, mc.archived_at,
                    cv.id as ver_id, cv.endpoint, cv.secret_ref, cv.capabilities,
                    cv.config_hash
               from model_connections mc
               left join connection_versions cv
                 on cv.project_id = mc.project_id and cv.connection_id = mc.id
-             where mc.project_id=:p and mc.archived_at is null
+             where mc.project_id=:p {"" if 含停用 else "and mc.archived_at is null"}
              order by mc.created_at, cv.created_at"""),
             {"p": project_id}).mappings()]
+        停用的条数 = c.execute(text("""select count(*) from model_connections
+                                     where project_id=:p and archived_at is not null"""),
+                           {"p": project_id}).scalar() or 0
     按连接 = {}
     for r in 行:
         d = 按连接.setdefault(r["id"], {
@@ -138,6 +148,7 @@ def 连接列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
             "用途中文": CN.用途中文.get(r["purpose"], "?"),
             "适配器": r["adapter"], "名字": r["display_name"],
             "状态": r["status"], "revision": r["revision"], "配置版本": [],
+            "停用于": r["archived_at"].isoformat() if r["archived_at"] else None,
         })
         if r["ver_id"]:
             d["配置版本"].append({
@@ -148,7 +159,9 @@ def 连接列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                 "配置哈希": r["config_hash"],
             })
     出 = list(按连接.values())
-    没探的 = [f'{d["id"]}/{v["id"]}' for d in 出 for v in d["配置版本"] if not v["探过吗"]]
+    # 「没探过」只盯在用的 —— 停用的连接探不探都不会被谁拿去跑
+    没探的 = [f'{d["id"]}/{v["id"]}' for d in 出 if d["状态"] == "active"
+           for v in d["配置版本"] if not v["探过吗"]]
     # ── 表单要填的那两样,**由接口给,不让前端硬编** ────────────────────
     # ⚠️ 2026-09-29 补的。在这之前这条接口只给「已有哪些连接」,
     # 而建连接的表单要填**用途**和**适配器** —— 前端只能自己硬编一份清单。
@@ -185,6 +198,7 @@ def 连接列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
             {"p": project_id}) if r[0]})
     族 = AD.找("ModelProvider")
     return {"条数": len(出), "连接": 出,
+            "含停用": bool(含停用), "停用的条数": int(停用的条数),
             "可选用途": [{"值": u, "中文": CN.用途中文.get(u, u),
                        "这个项目占了吗": u in 占了的,
                        "占着的那几条": 占了的.get(u),
@@ -297,6 +311,110 @@ async def 建连接(project_id: str, request: Request,
                      "一个说不清的 400。"
                      "⚠️ `config_hash` **不含密钥** —— 换密钥不算换配置,"
                      "而把密钥混进哈希会让哈希本身变成一条侧信道")}
+
+
+# ── 停用 / 启用(11-18 补)────────────────────────────────────────────
+#
+# 在这之前**没有任何接口能停用一条连接**:建连接那道闸的建议写着「先把那条停用或归档」,
+# 而那件事只能靠直接写库(e2e 测试就是这么干的)。
+# 停用 = `status='archived' + archived_at=now()`,和 e2e / 发生产那道闸 / worker 认的是同一个口径:
+#   · 发生产:workflows_api.这一版停用的连接 → release.可以发布吗 把「用到停用连接」的版本拦下
+#   · 真跑:worker 每一跑都读父行 status,不是 active 就 MODEL_CONNECTION_DISABLED
+#     (工作流的模型步 / Agent 步 / 后台 Agent Loop 三处)—— **已发布的版本不会被自动下线,
+#     但凡用到这条连接的每一跑都会失败**。所以 note 里不许写「已发布版本不受影响」,那不是真的
+#   · 知识索引:知识层(knowledge/)不读 model_connections,已建好的索引不受影响
+# 乐观锁照 runctl._换状态 的写法:不带 If-Match → 409 IF_MATCH_REQUIRED,对不上 → 409 REVISION_CONFLICT。
+# 父行上有触发器 trg_model_connections_不可原地改(迁移 8d5f0b2e6a31),放过的列正是
+# status / archived_at / updated_at / revision —— 这里只碰这四列。
+
+停用后果 = ("停用后:**发到生产会被闸拦**(用到它的版本不够发);**worker 真跑会报 MODEL_CONNECTION_DISABLED** —— "
+          "已发布的版本不会自动下线,但凡用到这条连接的每一跑都会失败。"
+          "已建好的知识索引不受影响(知识层不读连接状态)。想恢复就「启用」,前提是同用途下没有别的在用的连接")
+
+
+def _要IfMatch(if_match, 动作):
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match",
+                  f"把列表里这条连接的 revision 放进 If-Match 头 —— 「{动作}」是**两个人同时操作,后到的不许静默覆盖**的那种动作")
+    try:
+        return int(str(if_match).strip('"'))
+    except ValueError:
+        raise _错(409, "IF_MATCH_REQUIRED", "If-Match 不是一个 revision 数字",
+                  "列表接口每条连接都给了 `revision`,原样放进 If-Match 头")
+
+
+def _锁连接(c, project_id, cid):
+    r = c.execute(text("""select id, purpose, display_name, status, revision, archived_at
+                            from model_connections where project_id=:p and id=:i for update"""),
+                  {"p": project_id, "i": cid}).mappings().first()
+    if not r:
+        raise _错(404, "NOT_FOUND", f"没有连接 {cid}", "回列表重新进入")
+    return dict(r)
+
+
+def _换连接状态(c, project_id, 行, 新状态, 给的rev):
+    """带乐观锁的父行状态流转。只碰触发器放过的四列。"""
+    if int(给的rev) != int(行["revision"] or 0):
+        raise _错(409, "REVISION_CONFLICT",
+                  f"这条连接已经被改过了(你拿到 {给的rev},现在 {行['revision']})",
+                  f"**另一个人已经操作过了**,当前状态「{行['status']}」。刷新再决定 —— 不要用旧 revision 覆盖")
+    新rev = int(行["revision"] or 0) + 1
+    n = c.execute(text("""update model_connections
+                             set status=:st, updated_at=now(), revision=:rev,
+                                 archived_at = case when :ar then now() else null end
+                           where project_id=:p and id=:i and revision=:old"""),
+                  {"st": 新状态, "rev": 新rev, "ar": 新状态 == "archived",
+                   "p": project_id, "i": 行["id"], "old": 行["revision"]}).rowcount
+    if n == 0:
+        raise _错(409, "REVISION_CONFLICT", "刚刚有人改了这条连接",
+                  "并发:拿到行之后、写之前被人改了。刷新再试")
+    return 新rev
+
+
+@router.post(前缀 + "/model-connections/{cid}/archive")
+def 停用连接(project_id: str, cid: str,
+         if_match: str = Header(default=None, alias="If-Match"),
+         me: 身份 = Depends(要权限("配置密钥与预算"))):
+    """停用一条连接。要 `If-Match: <revision>`。已经停用的再点一次:什么都不改,照实说。"""
+    rev = _要IfMatch(if_match, "停用")
+    with 事务() as c:
+        行 = _锁连接(c, project_id, cid)
+        if 行["status"] == "archived":
+            return {"id": cid, "status": "archived", "revision": 行["revision"], "改了吗": False,
+                    "note": "已经是停用状态 —— 重复请求不改变什么"}
+        新rev = _换连接状态(c, project_id, 行, "archived", rev)
+        _审计(c, me, "model_connection.archive",
+              {"connection_id": cid, "用途": 行["purpose"], "从": 行["status"], "到": "archived"})
+    return {"id": cid, "status": "archived", "revision": 新rev, "改了吗": True, "note": 停用后果}
+
+
+@router.post(前缀 + "/model-connections/{cid}/unarchive")
+def 启用连接(project_id: str, cid: str,
+         if_match: str = Header(default=None, alias="If-Match"),
+         me: 身份 = Depends(要权限("配置密钥与预算"))):
+    """启用一条停用的连接。要 `If-Match: <revision>`;**同用途下已有别的 active 连接 → 409 PURPOSE_TAKEN**
+    (和建连接那道闸同一个口径:用途不共用、也不并存两条在用的)。"""
+    rev = _要IfMatch(if_match, "启用")
+    with 事务() as c:
+        行 = _锁连接(c, project_id, cid)
+        if 行["status"] == "active" and not 行["archived_at"]:
+            return {"id": cid, "status": "active", "revision": 行["revision"], "改了吗": False,
+                    "note": "已经在用了 —— 重复请求不改变什么"}
+        撞 = c.execute(text("""select id from model_connections
+                             where project_id=:p and purpose=:u and status='active'
+                               and archived_at is null and id<>:i limit 1"""),
+                       {"p": project_id, "u": 行["purpose"], "i": cid}).scalar()
+        if 撞:
+            raise _错(409, "PURPOSE_TAKEN",
+                      f"用途「{CN.用途中文.get(行['purpose'], 行['purpose'])}」上已经有一条在用的连接({撞})",
+                      "先把那条停用。**用途不共用一条连接,也不并存两条在用的** —— "
+                      "两条都在用时,工作流 / Agent 选哪条由人手点,而发生产那道闸只看「有没有停用的」,分不出该用哪条")
+        新rev = _换连接状态(c, project_id, 行, "active", rev)
+        _审计(c, me, "model_connection.unarchive",
+              {"connection_id": cid, "用途": 行["purpose"], "从": 行["status"], "到": "active"})
+    return {"id": cid, "status": "active", "revision": 新rev, "改了吗": True,
+            "note": ("已启用:发生产那道闸和 worker 从这一刻起认它是在用的。"
+                     "⚠️ 停用期间它的 capabilities 没变,**不用重探**;但停用前没探过的,照旧「没探过」")}
 
 
 def 判工具调用(码, 回包):
