@@ -323,7 +323,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	@echo "▸ 页面冒烟(一级页 + 详情页)"
 	@rc=0; \
 	for h in '#/workbench' '#/studio' '#/integrations' '#/studio/all' '#/studio/workflow' '#/studio/agent' '#/studio/chat' '#/studio/app' \
-	         '#/integrations/models' '#/integrations/tools' '#/prompts' '#/glossaries' '#/entities' '#/routes' '#/intents' '#/runs' '#/opinions' '#/issues' '#/knowledge-revisions' '#/capabilities' '#/capability-board' '#/acceptance' '#/monitoring' '#/alerts' '#/workflows' '#/schedules' '#/uploads' \
+	         '#/integrations/models' '#/integrations/tools' '#/integrations/groups' '#/integrations/conns' '#/prompts' '#/glossaries' '#/entities' '#/routes' '#/intents' '#/runs' '#/opinions' '#/issues' '#/knowledge-revisions' '#/capabilities' '#/capability-board' '#/acceptance' '#/monitoring' '#/alerts' '#/workflows' '#/schedules' '#/uploads' \
 	         '#/kb' '#/retrieval' '#/rruns' '#/usage' '#/traces' '#/health' '#/tryout' \
 	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' '#/knobs' \
 	         '#/datasets' '#/training' '#/artifacts' '#/audit' '#/outputs' \
@@ -361,7 +361,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	    exit 1; fi; \
 	  rc=0; \
 	  for h in '#/prompts' '#/kb' '#/acceptance' '#/knobs' \
-	           '#/members' '#/audit' '#/integrations/tools' '#/retrieval' '#/human' '#/runs' '#/outputs' '#/usage'; do \
+	           '#/members' '#/audit' '#/integrations/tools' '#/integrations/groups' '#/integrations/conns' '#/retrieval' '#/human' '#/runs' '#/outputs' '#/usage'; do \
 	    printf "  %-12s " "$$h"; \
 	    out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
 		node tests/e2e/page_smoke.js "$$h" 2>&1); \
