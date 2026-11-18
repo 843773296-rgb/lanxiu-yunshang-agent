@@ -89,6 +89,8 @@ export const ENDPOINTS = [
   { method: "GET", path: "/model-connections", summary: "模型连接列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/model-connections", summary: "建模型连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/model-connections/{id}/probe", summary: "探测连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/model-connections/{id}/archive", summary: "停用模型连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/model-connections/{id}/unarchive", summary: "启用模型连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "GET", path: "/prompts", summary: "Prompt 列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/prompts", summary: "建 Prompt", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/prompts/{id}/draft", summary: "改草稿", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
@@ -150,6 +152,7 @@ export const ENDPOINTS = [
   { method: "POST", path: "/knowledge-queries", summary: "chat 问一次知识库", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/datasets", summary: "数据集列表", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/datasets", summary: "建数据集", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/datasets/{id}", summary: "改数据集(补脱敏声明 / 改用途)", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "GET", path: "/datasets/{id}/samples", summary: "样本列表(每条带自己的 revision)", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/datasets/{id}/samples/{sample_id}", summary: "改样本", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/datasets/{id}/versions", summary: "冻结数据集", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -365,4 +368,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 277 条接口 · 24 条异步 · 32 条要幂等键 · 40 条要 If-Match */
+/** 共 280 条接口 · 24 条异步 · 32 条要幂等键 · 43 条要 If-Match */
