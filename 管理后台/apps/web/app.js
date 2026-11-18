@@ -82,7 +82,9 @@ function 状态(kind, 标题, 说明, 动作) {
   const 按 = 动作 ? `<button class="pri" id="st-act">${esc(动作.文)}</button>` : "";
   const html = `<div class="state ${kind === "err" ? "err" : ""}">
     <h3>${esc(标题)}</h3><p>${md(说明)}</p>${按}</div>`;
-  return { html, 挂: () => { if (动作) $("#st-act").onclick = 动作.做; } };
+  // 11-18:原来写 `onclick = 动作.做`,点击事件会被当成第一个参数传进去 —— 页函数第一个参数是页码的那几页
+  // (运行记录 / 调用链 / 评测…)重试时请求 `?page=[object MouseEvent]`,后端 422,**重试永远失败且报的是另一个错**
+  return { html, 挂: () => { if (动作) $("#st-act").onclick = () => 动作.做(); } };
 }
 function 错误块(e, 重试) {
   const b = e.体 || {};
@@ -226,7 +228,9 @@ async function 画顶栏() {
     location.hash = "#/workbench"; 路由();
   };
   const me = ps.find((p) => p.id === 项目);
-  能力 = (me && me.special_grants) || [];
+  // 11-18:原来只拿 special_grants —— 那只是专项授权,不是能力;管理员默认有的能力一条都不在里面,
+  // 产出监督「打回」对管理员不摆。接口现在给「实际能做的」(按角色 + 专项授权现算),老接口没有时退回专项授权
+  能力 = (me && (me["实际能做的"] || me.special_grants)) || [];
   我的角色 = (me && me.role) || "";
   $("#whoami").textContent = `${我} · ${(me && me.role) || "?"}`;
   return true;
@@ -333,9 +337,11 @@ async function 页_prompt列表() {
     </div>
     <div id="tbl"><div class="state">加载中…</div></div>`;
   $("#main").innerHTML = 头;
+  let 游标 = null;                       // 11-18 接上翻页:服务端一直给 next_cursor,按钮原来点了只提示「还没接」
   const 画 = async () => {
     const q = $("#f-q").value.trim(), pr = $("#f-prod").value;
     let u = `${P()}/prompts?limit=20`;
+    if (游标) u += `&cursor=${encodeURIComponent(游标)}`;
     if (q) u += `&q=${encodeURIComponent(q)}`;
     if (pr !== "") u += `&被生产引用=${pr === "1" ? "true" : "false"}`;
     let d;
@@ -376,9 +382,10 @@ async function 页_prompt列表() {
       </tbody></table>
       <div class="pager">
         <span>共 ${d.total == null ? "未知条(没做全量计数 —— <b>不编一个数</b>)" : d.total + " 条"}</span>
-        <div class="right">${d.next_cursor ? `<button id="more">下一页</button>` : ""}</div>
+        <div class="right">${游标 ? `<button id="first">回第一页</button> ` : ""}${d.next_cursor ? `<button id="more">下一页</button>` : ""}</div>
       </div>`;
-    if (d.next_cursor) $("#more").onclick = () => 提示("还不能翻页", "翻页还没接 —— 服务端已经给了游标,前端还没用上。");
+    if (d.next_cursor) $("#more").onclick = () => { 游标 = d.next_cursor; 画(); };
+    if (游标 && $("#first")) $("#first").onclick = () => { 游标 = null; 画(); };
   };
   const 新建 = async () => {
     const key = await 问一句("新建 Prompt", "给它一个稳定标识:项目内唯一,建好之后不随意改。", { 输入: "比如 customer_needs_extract", 确定: "新建", 必填: true });
@@ -394,9 +401,9 @@ async function 页_prompt列表() {
     }
   };
   $("#np").onclick = 新建;
-  $("#f-q").oninput = (() => { let t; return () => { clearTimeout(t); t = setTimeout(画, 300); }; })();
-  $("#f-prod").onchange = 画;
-  $("#f-reset").onclick = () => { $("#f-q").value = ""; $("#f-prod").value = ""; 画(); };
+  $("#f-q").oninput = (() => { let t; return () => { clearTimeout(t); t = setTimeout(() => { 游标 = null; 画(); }, 300); }; })();
+  $("#f-prod").onchange = () => { 游标 = null; 画(); };
+  $("#f-reset").onclick = () => { $("#f-q").value = ""; $("#f-prod").value = ""; 游标 = null; 画(); };
   await 画();
 }
 
@@ -1707,7 +1714,7 @@ async function 页_知识修订清单(筛 = "") {
       await 请求(`${P()}/knowledge-revisions`, { method: "POST", body: JSON.stringify({
         知识文件: $("#kr-file").value, 段: $("#kr-sec").value, 原来写的: $("#kr-cur").value, 改成: $("#kr-new").value, 依据: $("#kr-why").value }) });
       页_知识修订清单(筛);
-    } catch (e) { $("#kr-msg").textContent = (e.field_errors ? Object.entries(e.field_errors).map(([k, v]) => `${k}:${v}`).join(";") : "") || String(e.message || e); }
+    } catch (e) { const fe = (e.体 || {}).field_errors; $("#kr-msg").textContent = (fe ? Object.entries(fe).map(([k, v]) => `${k}:${v}`).join(";") : "") || String(e.message || e); }
   };
 }
 
@@ -1737,7 +1744,7 @@ async function 页_知识修订详情(id) {
         if (a === "已合并") await 请求(`${P()}/knowledge-revisions/${encodeURIComponent(id)}/merged`, { method: "POST", body: "{}" });
         else await 请求(`${P()}/knowledge-revisions/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify({ 决定: a, 说明 }) });
         页_知识修订详情(id);
-      } catch (e) { $("#kr-act-why").textContent = (e.field_errors ? Object.entries(e.field_errors).map(([k, v]) => `${k}:${v}`).join(";") : "") || String(e.message || e); }
+      } catch (e) { const fe = (e.体 || {}).field_errors; $("#kr-act-why").textContent = (fe ? Object.entries(fe).map(([k, v]) => `${k}:${v}`).join(";") : "") || String(e.message || e); }
     };
   });
 }
@@ -2429,7 +2436,7 @@ async function 页_改进看板() {
     <div class="k">${esc(d.note || "")}</div>`;
 }
 
-/* ── 运行记录(占位:列表已有接口,详情页还没做)────────────────── */
+/* ── 运行记录(10-25 起是聊天站 trace 列表,点进调用树;原「占位」注释过期)────── */
 async function 页_运行记录(页 = 1) {
   // 证据中心第四个工作包(10-25):原来是占位页。现在列**聊天站**推过来的每一轮(entry_kind=聊天站),
   // 点进去是同一个调用树页 —— 原文看不看得到由那边的字段权限管(查看敏感输入),这一页不另判
@@ -4488,7 +4495,9 @@ function 回复气泡(d) {
 function 业务结果块(d) {
   const r = d["业务结果"]; if (!r) return `<div><b>${esc(d["执行状态中文"])}</b></div>`;
   const 色 = { "已完成": "ok", "已完成,需补充资料": "warn", "没做完": "warn", "失败": "err", "进行中": "" }[r["结论"]] || "";
-  const 步名 = r["哪一步"] ? (节点(r["哪一步"]) ? 业务名(节点(r["哪一步"])) : r["哪一步"]) : "";
+  // 11-18:从人工待办 / 定时页深链进来时没有 图态(没经编辑器),节点() 直接 TypeError 整页崩 —— 42 条失败运行全中。有图才翻业务名
+  const 有图 = typeof 图态 !== "undefined" && 图态 && 图态.定义 && Array.isArray(图态.定义.nodes);
+  const 步名 = r["哪一步"] ? ((有图 && 节点(r["哪一步"])) ? 业务名(节点(r["哪一步"])) : r["哪一步"]) : "";
   return `<div class="bizres" data-res="${色}">${r["跑法"] === "连接测试" ? '<span class="pill">连接测试</span> ' : ""}<b>${esc(r["结论"])}</b>${步名 ? ` · 卡在「${esc(步名)}」` : ""}
     ${r["说明"] ? `<div>${md(r["说明"])}</div>` : ""}${r["下一步"] ? `<div class="k">下一步:${md(r["下一步"])}</div>` : ""}
     <div class="k">执行状态:${esc(d["执行状态中文"])}${d["停止原因"] ? ` <code>${esc(d["停止原因"])}</code>` : ""}</div></div>`;
@@ -4584,12 +4593,12 @@ async function 画_版本() {
       : `<span class="pill warn">等生产审核</span>`;
     const 要审 = 审 && !审["生产能发吗"];
     return `<tr data-vrow="${esc(v.id)}"><td><span class="pill">${esc(v["版本"])}</span>${v["名称"] ? ` <b>${esc(v["名称"])}</b>` : ""}${在.map((e) => ` <span class="pill ok">${环境中文[e]}在跑</span>`).join("")}</td>
-      <td>${esc(v["变更说明"] || "")}</td><td class="k">${时间(v["冻结于"])}<div>${esc(v["冻结人"] || "")}</div></td>
+      <td data-raw="原文">${esc(v["变更说明"] || "")}</td><td class="k">${时间(v["冻结于"])}<div>${esc(v["冻结人"] || "")}</div></td>
       <td>${生产态}</td>
-      <td class="relacts">${v.id ? ["test", "staging", "production"].map((e) =>
+      <td class="relacts">${!(我的角色 === "approver" ||我的角色 === "admin") ? `<span class="k">发布 / 审核要「生产审核/发布/回滚」这条能力(approver 或 admin),你是 ${esc(我的角色 || "?")}</span>` : `${v.id ? ["test", "staging", "production"].map((e) =>
           `<button data-pub="${esc(v.id)}" data-env="${e}" ${在.includes(e) ? "disabled" : ""}>发到${环境中文[e]}</button>`).join(" ") : ""}
         ${要审 ? `<div class="k">生产要先审核这一版:<button data-rv="${esc(审["清单id"])}" data-ok="1">审核通过</button>
-          <button data-rv="${esc(审["清单id"])}" data-ok="0">驳回</button></div>` : ""}
+          <button data-rv="${esc(审["清单id"])}" data-ok="0">驳回</button></div>` : ""}`}
         ${v.id ? `<button data-vview="${esc(v.id)}">只读查看</button>
           <button data-vname="${esc(v.id)}">${v["名称"] ? "改名字" : "起名字"}</button>
           <button class="danger" data-vdel="${esc(v.id)}" ${在.length ? `disabled title="${esc(在.map((e) => 环境中文[e]).join("、"))}正在跑这一版,不能删"` : ""}>删除</button>` : ""}</td></tr>`;
@@ -4883,7 +4892,7 @@ function 画_设置() {
       : '<button id="st-tk" data-on="1">现在交给 harness · 打开接管</button>'}</div>
     <div class="k"><b>默认交给 harness</b>:聊天站用技能自己判断怎么做,不受固定步骤束缚。打开接管:聊天站碰到这件事,
       改为发起这条工作流<b>生产环境里的那一版</b>(要先在「版本与发布」里发布到生产),回给用户运行进度和核对入口。同一个技能同时只能被一条工作流接管。</div>
-    <h4>什么时候运行</h4><div>手动(在「测试」或接口里发起),或者打开聊天接管后由聊天站发起。<span class="k">定时触发还没做 —— 不摆一个选了没反应的选项。</span></div>
+    <h4>什么时候运行</h4><div>手动(在「测试」或接口里发起),或者打开聊天接管后由聊天站发起。<span class="k">定时:频率在「搭建」里开始节点的「定时触发器」上定,开关在「版本与发布」页;到点由 worker 以设定的身份发起生产那一版。</span></div>
     <h4>运行上限</h4><div>每次最多调模型 8 次(发起时带的默认值)。<span class="k">超过就停、记「没完整完成」,不会无限调。</span></div>
     <h4>人工核对的截止</h4><div>每个核对步骤自己设(搭建 → 人工核对 → 设置)。到点没人处理,这次运行结束、记「已过期」。</div></div>`;
   画_日志策略();
@@ -5908,7 +5917,7 @@ function 報状态(报, 脏) {
 function 只跑一次(fn) { let 忙 = false; return async (...a) => { if (忙) return; 忙 = true; try { return await fn(...a); } finally { 忙 = false; } }; }
 // 函数声明会提升,所以在这里重新绑定就生效(工作流试运行 / 智能体试运行)
 做_试运行 = 只跑一次(做_试运行); 做_跑agent = 只跑一次(做_跑agent);
-const _英转中 = { pending: "待处理", approved: "已批准", rejected: "已驳回", expired: "已过期", cancelled: "已取消",
+const _英转中 = { pending: "待处理", approved: "已批准", rejected: "已驳回", expired: "已过期", cancelled: "已取消", info_requested: "待补充",
   running: "运行中", queued: "排队中", succeeded: "成功", failed: "失败", ok: "成功", denied: "被拒",
   test: "测试", staging: "预发", production: "生产", development: "开发" };
 function 字段(标, 键, 值, 说明, 多行) {
@@ -6154,8 +6163,8 @@ async function 做_跑agent() {
       body: JSON.stringify({ agent_id: agent态.aid, 输入 }),
     });
     agent态.Tab = "调试"; 画_agent();
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 600));
+    for (let i = 0; i < 60; i++) {                       // 11-18:原来 20×600ms 只等 12 秒,真模型多轮常超过;现在 90 秒
+      await new Promise((r) => setTimeout(r, 1500));
       let r;
       try { r = await 请求(`${P()}/execution-runs/${encodeURIComponent(d.resource_id)}`); }
       catch (e) { continue; }
@@ -6315,7 +6324,7 @@ async function 画工具详情(tid) {
     const 新版 = 版本们[0] || null;
     const 看得到原文 = 能力.includes("查看敏感输入/独立测试答案");
     const JSON块 = (o) => o
-      ? `<pre style="margin:4px 0;padding:6px 8px;background:#f7f8fa;
+      ? `<pre data-raw="原文" style="margin:4px 0;padding:6px 8px;background:#f7f8fa;
            border-left:3px solid var(--faint);font-size:11.5px;
            overflow:auto;max-height:200px">${esc(
              JSON.stringify(o, null, 1))}</pre>`
@@ -6518,15 +6527,11 @@ async function 画工具详情(tid) {
             <span class="k">—— <b>「被引用」和「真被加载过」是两件事</b>：
               前者是配置，后者是这个工具<b>真的进过模型输入</b></span></td></tr>
       </tbody></table>
-      ${d["⚠️答不出的"] ? `<div class="note warn">⚠️ <b>这一页答不出一件事</b>：
-        ${md(d["⚠️答不出的"])}</div>` : ""}
+      ${(d["⚠️在生产上吗怎么算的"] || d["⚠️答不出的"]) ? `<div class="note warn">⚠️ <b>「在生产上吗」是怎么算的</b>：
+        ${md(d["⚠️在生产上吗怎么算的"] || d["⚠️答不出的"])}</div>` : ""}
       ${配套区}
-      <div class="note"><b>规格 §8.2 那七个页签，这里做了六个</b>。
-        <b>还没做的一个</b>：模型说明那一页（要
-        <code>别名 / 适用场景 / 任务示例</code> 三个字段，
-        <b>契约里现在没有它们</b> —— 加字段要先定「旧版本那几列为空读成什么」）。
-        <br>⚠️ <b>没摆空壳子是有意的</b>：空页签让人以为「这里没东西」，
-        而真相是「这里还没做」。</div>`;
+      <div class="note"><b>规格 §8.2 那七个页签都在了</b>（模型说明那一页 11-14 补的：别名 / 适用不适用 / 任务示例）。
+        <b>还没做的</b>：「添加配套」「检查依赖」两个按钮 —— 配套关系现在只能在冻结工具组版本时给，而工具组页面还没有。</div>`;
     // ── 规格 §8.2「版本与差异」:**哈希不同只说明改了,不说明改了什么** ──
     //
     // 这一页的价值不是「告诉你两版不一样」—— 内容哈希已经告诉你了。
@@ -6600,7 +6605,7 @@ async function 画工具详情(tid) {
       <h2>草稿</h2>
       <table><tbody>
         <tr><td class="k">用途</td><td>${能改
-          ? `<input id="d-purpose" style="width:min(420px,90%)"
+          ? `<input id="d-purpose" data-raw="原文" style="width:min(420px,90%)"
               value="${esc(草["用途"] || "")}">`
           : esc(草["用途"] || "—")}</td></tr>
         <tr><td class="k">读写类型</td><td>${能改
@@ -6624,7 +6629,7 @@ async function 画工具详情(tid) {
           <b>这些不在草稿里</b>（草稿管的是名字/用途/风险级别/适配器），
           每次冻结都要重新给 —— 因为<b>它们是版本的内容，不是工具的属性</b>。</div>
         <p><label>给模型的说明（<b>必填</b>）<br>
-          <textarea id="f-desc" rows="2" style="width:min(520px,95%)"
+          <textarea id="f-desc" rows="2" style="width:min(520px,95%)" data-raw="原文"
             >${esc(草["用途"] || "")}</textarea></label>
           <br><span class="k">没有它，模型只能靠工具名猜</span></p>
         <p><label>入参 schema（<b>必填</b>，JSON）<br>
@@ -6947,8 +6952,12 @@ function 画_核对页(hid, d, 头) {
       ${影["运行"] ? ` · 来自运行 <a href="#/wfrun/${encodeURIComponent(影["运行"])}">${esc(影["运行"])}</a>` : ""}
       ${请.expires_at ? ` · 截止 ${esc(String(请.expires_at).slice(0, 16).replace("T", " "))}(到点没人处理,这次运行结束、不写任何东西)` : ""}</div>
     <div class="two">
-      <div class="card"><h3>原文</h3><pre class="io">${esc(材["原文"] || "(没有原文)")}</pre>
-        <div class="k">手机号已打码。核对就是对着这里看:摘要里每一条,原文里找得到客户亲口说的吗?</div></div>
+      ${材["工具"] ? `<div class="card"><h3>Agent 要执行的写操作</h3>
+        <div>工具 <b>${esc(材["工具"])}</b></div>
+        <pre class="io" data-raw="原文">${esc(JSON.stringify(材["参数"] ?? {}, null, 2))}</pre>
+        <div class="k">${esc(材["说明"] || "")} 批准 = 允许它按上面的参数真写进系统;看不清对谁写什么就驳回。</div></div>`
+      : `<div class="card"><h3>原文</h3><pre class="io">${esc(材["原文"] || "(没有原文)")}</pre>
+        <div class="k">手机号已打码。核对就是对着这里看:摘要里每一条,原文里找得到客户亲口说的吗?</div></div>`}
       <div class="card"><h3>AI 整理的摘要</h3><div>${esc(材["摘要"] || "")}</div>
         ${待.length ? `<h4>待确认项</h4><ul>${待.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
         ${d["你能处理吗"] ? `
@@ -7100,9 +7109,9 @@ async function 页_评测中心() {
       <th>候选</th><th>基线</th><th>状态</th><th class="num">题</th>
       <th>数据集版本</th><th>判据</th><th>能当结论吗</th></tr></thead><tbody>`
     + d.items.map((r) => `<tr>
-        <td><b>${esc((r.candidate_ref || {})["名"] || r.id)}</b>
+        <td><b>${esc((r.candidate_ref || {})["名"] || (r.candidate_ref || {})["ref"] || r.id)}</b>
           <div class="k">${esc(r.id)}</div></td>
-        <td>${r["有基线吗"] ? esc((r.baseline_ref || {})["名"] || "有")
+        <td>${r["有基线吗"] ? esc((r.baseline_ref || {})["名"] || (r.baseline_ref || {})["ref"] || "有")
                             : `<span class="pill fail">没有基线</span>`}</td>
         <td>${esc(r.status || "—")}<div class="k">${esc(r.executor_code || "")}</div>
           ${r.executor_code === "后台派发" ? `<button data-evp="${esc(r.id)}">看进度</button>` : ""}</td>
@@ -7160,7 +7169,7 @@ async function 页_实验对比() {
     return;
   }
   const 选 = (id) => d.items.map((r) =>
-    `<option value="${esc(r.id)}">${esc((r.candidate_ref || {})["名"] || r.id)}</option>`).join("");
+    `<option value="${esc(r.id)}">${esc((r.candidate_ref || {})["名"] || (r.candidate_ref || {})["ref"] || r.id)} · ${esc(r.id)}</option>`).join("");
   $("#main").innerHTML = 头 + `
     <div class="card">
       <label class="f">甲</label><select id="ea">${选()}</select>
@@ -7182,7 +7191,7 @@ async function 页_实验对比() {
           <p>${md(r["为什么"])}</p><p>${md(r.note || "")}</p></div>`;
         return;
       }
-      const 名 = (x) => esc((x.candidate_ref || {})["名"] || x.id);
+      const 名 = (x) => esc((x.candidate_ref || {})["名"] || (x.candidate_ref || {})["ref"] || x.id);   // 外部登记的评测写的是 ref 不是 名(11-18)
       const 维 = new Set();
       Object.values(r["分数"]).forEach((m) => Object.keys(m).forEach((k) => 维.add(k)));
       res.innerHTML = `<div class="note">${md("**" + r["为什么"] + "**")}</div>
@@ -7767,6 +7776,35 @@ async function 走三步() {
       说(`　<b>已校验 —— 现在才算文件引用</b>。哈希 <code>`
          + esc(String(c.content_hash).slice(0, 26)) + `…</code>,`
          + `切出 ${(c["校验详情"] || {})["细节"]?.["块数"]} 块`);
+      // 11-18:原来到这儿就停了 —— 文件校验过了,却没有任何按钮把它收进知识库(接口 POST /knowledge-bases/{kb}/documents 早就有)
+      let kbs = { items: [] };
+      try { kbs = await 请求(`${P()}/knowledge-bases`); } catch (e2) { /* 读不到就只提示 */ }
+      if (kbs.items.length) {
+        说(`　收进哪个知识库:<select id="up-kb">${kbs.items.map((k) => `<option value="${esc(k.id)}">${esc(k.name)}</option>`).join("")}</select>
+            <button class="pri" id="up-ingest">收进知识库</button> <span class="k" id="up-msg"></span>`);
+        const bt = $("#up-ingest");
+        if (bt) bt.onclick = async () => {
+          bt.disabled = true;
+          try {
+            const r = await 请求(`${P()}/knowledge-bases/${encodeURIComponent($("#up-kb").value)}/documents`,
+                                { method: "POST", body: JSON.stringify({ upload_id: a.id, name: f.name }) });
+            $("#up-msg").innerHTML = `收进去了:文档 <code>${esc(r.document_id || r.id || "")}</code>${r["版本"] || r.version_id ? ` · 版本 ${esc(r["版本"] || r.version_id)}` : ""}。`
+              + `<a href="#/kb/${encodeURIComponent($("#up-kb").value)}">去建一次索引</a>(不建索引,检索还查不到它)`;
+          } catch (e3) { const bb = e3.体 || {}; $("#up-msg").innerHTML = `<b style="color:var(--fail)">${esc(bb.message || e3.message)}</b> ${md(bb.advice || "")}`; bt.disabled = false; }
+        };
+      } else {
+        说(`　这个项目还没有知识库:<input id="up-kbname" placeholder="知识库名字" style="width:200px"> <button class="pri" id="up-newkb">新建知识库并收进去</button> <span class="k" id="up-msg"></span>`);
+        const nb = $("#up-newkb");
+        if (nb) nb.onclick = async () => {
+          const 名 = ($("#up-kbname").value || "").trim(); if (!名) { $("#up-msg").textContent = "先给知识库起个名字"; return; }
+          nb.disabled = true;
+          try {
+            const k = await 请求(`${P()}/knowledge-bases`, { method: "POST", body: JSON.stringify({ name: 名 }) });
+            const r = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(k.id)}/documents`, { method: "POST", body: JSON.stringify({ upload_id: a.id, name: f.name }) });
+            $("#up-msg").innerHTML = `建了「${esc(名)}」并收进去了(文档 <code>${esc(r.document_id || r.id || "")}</code>)。<a href="#/kb/${encodeURIComponent(k.id)}">去建一次索引</a>`;
+          } catch (e3) { const bb = e3.体 || {}; $("#up-msg").innerHTML = `<b style="color:var(--fail)">${esc(bb.message || e3.message)}</b> ${md(bb.advice || "")}`; nb.disabled = false; }
+        };
+      }
     } else {
       const 详 = c["校验详情"] || {};
       说(`　<b>校验没过</b>(而请求本身是成功的 —— 一个坏文件不是一次失败的请求):`);
@@ -7794,9 +7832,9 @@ async function 页_知识库() {
     // ⚠️ 这段话原来写着「导入资料的接口还没做」。**做完了就要改** ——
     // 一句过期的说明比没有说明糟:它会让人不去试那条已经能用的路。
     const s0 = 状态("", "这个项目还没有知识库",
-      "先去「加资料」把文件传上来(**传完还要过服务端校验才算能用**)。\n\n"
-      + "现有语料是 `tools/ingest_lanxiu.py` 直接灌的(澜绣的业务拍板记录);"
-      + "**把上传变成文档版本、再建索引**那几条接口还没做(M2)。",
+      "先去「加资料」把文件传上来(**传完还要过服务端校验才算能用**),校验通过后那一页有「收进知识库」;"
+      + "收进来再到知识库的「看索引」里点「建一次索引」。\n\n"
+      + "现有语料也可以用 `tools/ingest_lanxiu.py` 整批灌(澜绣的业务拍板记录就是这么进的)。",
       { 文: "去加资料", 做: () => { location.hash = "#/uploads"; } });
     $("#main").innerHTML = 头 + s0.html; s0.挂();
     return;
@@ -7838,7 +7876,7 @@ async function 页_知识库() {
     };
   });
   $("#main").querySelectorAll("[data-try]").forEach((b) => {
-    b.onclick = () => { location.hash = "#/retrieval"; };
+    b.onclick = () => { location.hash = "#/retrieval/" + encodeURIComponent(b.dataset.try); };   // 带上库 id,到了那页就选这个库的索引
   });
 }
 
@@ -8027,14 +8065,41 @@ async function 页_索引构建(kbId) {
   const 头2 = `<div class="crumb"><a href="#/kb">知识库</a> · ${esc(d["知识库"].name)}</div>
     <div class="head"><div><h1>索引构建</h1>
       <div class="sub">每次构建的状态、模型、成员数、输入指纹。</div></div></div>`;
+  const 建索引卡 = (模型们) => `<div class="card" id="ib-card"><div class="body">
+      <div style="font-weight:600;margin-bottom:6px">建一次索引</div>
+      <label class="f">Embedding 模型</label>
+      <select id="ib-model">${模型们.map((m) => `<option value="${esc(m)}">${esc(m)}${/mock/i.test(m) ? "(mock,相似度是假的)" : ""}</option>`).join("")}</select>
+      <div style="margin-top:8px"><button class="pri" id="ib-go">建一次索引</button> <span class="k" id="ib-msg"></span></div>
+      <div class="k">${md("会把这个知识库**最新版**的全部片段重新算向量;输入没变会续做、变了新建(§19.3)。真模型要 worker 本机跑,几百片约一两分钟。")}</div>
+    </div></div>`;
+  // 11-18:原来空态写「建索引的接口还没做」—— 接口(POST index-builds)和 worker 的 index_build 早就有了,页面一直没入口,
+  // 只能 curl。现在两种态都摆「建一次索引」,派完用 等任务 等到终态再重画。
+  const 已用模型 = [...new Set(d.items.map((r) => r.embedding_model_id).filter(Boolean))];
+  const 模型们 = [...new Set([...已用模型, "bge-small-zh-v1.5", "emb-mock"])];
+  const 挂建索引 = () => {
+    const b = $("#ib-go"); if (!b) return;
+    b.onclick = async () => {
+      b.disabled = true; $("#ib-msg").textContent = "派任务…";
+      try {
+        const r = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(kbId)}/index-builds`, {
+          method: "POST", headers: { "Idempotency-Key": (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()) },
+          body: JSON.stringify({ embedding模型id: $("#ib-model").value }),
+        });
+        $("#ib-msg").textContent = `任务 ${r.job_id} · ${r.status}${r["怎么办"] ? " · " + r["怎么办"] : ""}`;
+        const j = await 等任务(r.job_id, (x, 秒) => { $("#ib-msg").textContent = `任务 ${r.job_id} · ${x.status} · 等了 ${秒} 秒`; }, 300000);
+        $("#ib-msg").textContent = `任务 ${r.job_id} · ${j.status}` + (j["error_code"] ? ` · ${j["error_code"]}:${((j["error_detail"] || {})["为什么"]) || ""}` : "");
+        if (j["是终态吗"]) setTimeout(() => 页_索引构建(kbId), 1200);
+      } catch (e) { const bb = e.体 || {}; $("#ib-msg").innerHTML = `<b style="color:var(--fail)">${esc(bb.message || e.message)}</b> ${md(bb.advice || "")}`; }
+      b.disabled = false;
+    };
+  };
   if (!d.items.length) {
     $("#main").innerHTML = 头2 + 状态("", "还没建过索引",
-      "建索引的接口(`POST /knowledge-bases/{id}/index-builds`)**还没做** —— "
-      + "现在是直接派 `index_build` 任务建的。\n\n"
-      + "⚠️ 没有索引时检索返回空,**而那和「知识库里没有」长得一样**。").html;
+      "没有索引时检索返回空,**而那和「知识库里没有」长得一样**。在下面建一次。").html + 建索引卡(模型们);
+    挂建索引();
     return;
   }
-  $("#main").innerHTML = 头2 + `<table><thead><tr>
+  $("#main").innerHTML = 头2 + 建索引卡(模型们) + `<table><thead><tr>
       <th>构建</th><th>状态</th><th>模型</th><th class="num">成员</th>
       <th>输入指纹</th></tr></thead><tbody>`
     + d.items.map((r) => `<tr>
@@ -8051,6 +8116,7 @@ async function 页_索引构建(kbId) {
          产出一半旧边界一半新边界的索引,而它**不报错**,只是答得怪(§19.3)。
          <br>⚠️ 指纹那一栏写「没记」的是这个字段加上之前建的 ——
          它们会被强制重建,**因为「没记」不等于「一样」**。`)}</div>`;
+  挂建索引();
 }
 
 /* ── 召回测试(10-27,照 Dify「召回测试」一页;用户 10-26 拍「检索实验室 + 检索试跑记录合成一页」)──
@@ -8066,7 +8132,7 @@ async function 页_索引构建(kbId) {
 let 召回态 = { 索引: null, 精排: true, 生成: false, 页: 0, 只看要分析的: false };
 const 召回字数上限 = 200;
 
-async function 页_召回测试() {
+async function 页_召回测试(指定kb) {
   const 头 = `<div class="crumb">知识与 RAG</div>
     <div class="head"><div><h1>召回测试</h1>
       <div class="sub">根据给定的查询文本测试知识的召回效果。</div></div></div>`;
@@ -8083,12 +8149,18 @@ async function 页_召回测试() {
     const b = $("#st-act"); if (b) b.onclick = () => { location.hash = "#/kb"; };
     return;
   }
-  let builds = { items: [] };
-  try { builds = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(可用[0].id)}/index-builds`); }
-  catch (e) { /* 下面会显示「没有可用索引」 */ }
-  const 就绪 = builds.items.filter((x) => x.status === "已就绪");
+  // 11-18:原来只取 可用[0] 这一个库的索引 —— 真库有两个能检索的库,第二个的索引在页面上选不到,
+  // 而 /knowledge-bases 按 updated_at 排、两个都是 null,谁是「第一个」都不确定。现在每个库的就绪索引都列,带库名。
+  const 就绪 = [];
+  for (const kb of 可用) {
+    try {
+      const b = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(kb.id)}/index-builds`);
+      b.items.filter((x) => x.status === "已就绪").forEach((x) => 就绪.push(Object.assign({ 库名: kb.name, 库id: kb.id }, x)));
+    } catch (e) { /* 这个库读不到索引就不列它 */ }
+  }
+  if (指定kb) { const 首 = 就绪.find((x) => x.库id === 指定kb); if (首) 召回态.索引 = 首.id; }
   if (!就绪.find((x) => x.id === 召回态.索引)) 召回态.索引 = 就绪[0] ? 就绪[0].id : null;
-  const 方式名 = () => `${召回态.精排 ? "向量 + Claude 精排" : "只走向量"}${召回态.生成 ? " · 生成答案" : ""}`;
+  const 方式名 = () => { const 当 = 就绪.find((x) => x.id === 召回态.索引); return `${当 ? 当.库名 + " · " : ""}${召回态.精排 ? "向量 + Claude 精排" : "只走向量"}${召回态.生成 ? " · 生成答案" : ""}`; };
   $("#main").innerHTML = 头 + `<div class="hit2">
       <div>
         <div class="card"><div class="body">
@@ -8141,7 +8213,7 @@ function 召回设置(就绪, 存后) {
       <div class="mb">
         <div class="k">只影响这一次测试,不改知识库的设置。</div>
         <label class="f">索引</label>
-        <select id="hs-ib">${就绪.map((x) => `<option value="${esc(x.id)}" ${x.id === 召回态.索引 ? "selected" : ""}>${esc(x.id)} · ${esc(x.embedding_model_id || "")}${x["是mock吗"] ? "(mock)" : ""}</option>`).join("")}</select>
+        <select id="hs-ib">${就绪.map((x) => `<option value="${esc(x.id)}" ${x.id === 召回态.索引 ? "selected" : ""}>${esc(x.库名 || "")} · ${esc(x.id)} · ${esc(x.embedding_model_id || "")}${x["是mock吗"] ? "(mock)" : ""}</option>`).join("")}</select>
         <label class="f">检索方式</label>
         <label class="tpl"><input type="checkbox" id="hs-rr" ${召回态.精排 ? "checked" : ""}> <b>Claude 精排</b>
           <div class="k">每次测试真调一次 Claude。去掉就只走向量 —— 那个排序不可靠:实测一个表格头排到过第 1 名,真答案第 2。</div></label>
@@ -8459,7 +8531,7 @@ async function 页_试跑详情(rid) {
           ${esc(d["来源"])} · ${esc(d["谁跑的"] || "")} ·
           知识库 ${esc(d["知识库"] || "—")}</div></div></div>
       <div class="card"><div class="body">
-        <div class="k">这一次好不好用?(5 档,点数字)</div>
+        <div class="k">这一次好不好用?(5 档;评分在聊天站的回答气泡下打,这里只看)</div>
         ${评分块(行)}
         ${评["谁评的"] ? `<div class="k">${esc(评["谁评的"])} 评于
            ${esc(String(评["什么时候评的"] || "").slice(0, 19))}</div>` : ""}
@@ -8546,7 +8618,12 @@ async function 页_审计记录() {
           <td>${r["结果"] === "ok" ? `<span class="pill" title="ok">成功</span>`
                 : `<span class="pill warn" title="${esc(r["结果"] || "")}">${esc(_英转中[r["结果"]] || r["结果"] || "—")}</span>`}</td>
           <td class="k" data-raw="原文">${esc((r["为什么"] || "—").slice(0, 70))}</td></tr>`).join("")
-        + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
+        + `</tbody></table>`
+        + (() => {   // 11-18:后端默认只给 200 条、不给总数;分布之和远大于 200 时原来一个字不提
+          const 总 = (d["这个范围里的动作分布"] || []).reduce((n, x) => n + (x["次数"] || 0), 0);
+          return 总 > d["记录"].length ? `<div class="note warn">只列了最近 ${d["记录"].length} 条;这个范围(${esc(d["时间范围"] || "最近 30 天")})里按分布算共 ${总} 条 —— 要看别的,按动作筛。</div>` : "";
+        })()
+        + `<div class="note">${md(d.note || "")}</div>`;
     } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
   };
   await 拉("");
@@ -8608,6 +8685,7 @@ async function 页_应用与发布() {
  *   · 模态框会**挡住自动化**(冒烟一点它就卡住),而这一页正是要被冒烟打的。
  */
 const 依赖中文 = {
+  workflow_version_id: "工作流版本",       // 11-18 补:澜绣两个应用都是工作流流水线,原来这一项不在表里,对照表六行全显示「没挑」
   prompt_version_id: "Prompt 版本",
   connection_version_id: "模型连接版本",
   index_build_id: "知识索引构建",
@@ -9756,7 +9834,7 @@ function 画_聊天编排() {
         ${c["实体识别版本"] && !(g["可选实体识别"] || []).some((v) => v.id === c["实体识别版本"]) ? `<option value="${esc(c["实体识别版本"])}" selected>(当前选的不在列表里)</option>` : ""}</select>
       <div class="note">每一轮先把这句话里的客户名、员工名、着装人名认出来占位,剩下的字才去找术语 —— 免得「宋锦书」被当成面料。换实体识别版本 = 出一版新的聊天助手、上生产才生效。
         ${(g["可选实体识别"] || []).length ? "" : "这个项目还没有冻结的实体识别版本 —— 先去「实体识别」冻一版。"}</div></div>
-    <div class="card"><h4>意图识别</h4><select id="c-intent"><option value="">不做意图分类</option>${(g["可选意图"] || []).map((v) => `<option value="${esc(v.id)}"${v.id === c["意图版本"] ? " selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["本数"])} 个意图</option>`).join("")}</select>
+    <div class="card"><h4>意图识别</h4><select id="c-intent"><option value="">不做意图分类</option>${c["意图版本"] && !(g["可选意图"] || []).some((v) => v.id === c["意图版本"]) ? `<option value="${esc(c["意图版本"])}" selected>(当前选的不在列表里)</option>` : ""}${(g["可选意图"] || []).map((v) => `<option value="${esc(v.id)}"${v.id === c["意图版本"] ? " selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["本数"])} 个意图</option>`).join("")}</select>
       <div class="note">每轮先判一次店长想干什么(多一次最便宜档的模型调用)。换版本 = 出一版新的聊天助手、上生产才生效。</div></div>
     <div class="card"><h4>查询路由</h4><select id="c-route"><option value="">全走默认路由</option>${(g["可选路由"] || []).map((v) =>
         `<option value="${esc(v.id)}"${v.id === c["路由版本"] ? " selected" : ""}>${esc(v["名称"])} · ${esc(v["版本"])} · ${esc(v["本数"])} 条规则</option>`).join("")}
@@ -9909,6 +9987,7 @@ async function 路由() {
     if (h.startsWith("#/chunk/")) return await 页_切片详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));
     if (h === "#/retrieval") return await 页_召回测试();
+    if (h.startsWith("#/retrieval/")) return await 页_召回测试(decodeURIComponent(h.slice(12)));
     // ⚠️ 带参的写在前面(`#/rrun/` 比 `#/rruns` 长,但两者第 7 个字符不同,
     // 不会互相吃掉)—— 顺序照 `#/chunks/` 那段的理由。
     if (h.startsWith("#/rrun/")) return await 页_试跑详情(decodeURIComponent(h.slice(7)));

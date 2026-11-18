@@ -2653,7 +2653,7 @@ def 运行列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
              where project_id=:p
                and (cast(:w as text) is null
                     or definition_ref->>'id' = cast(:w as text))
-             order by started_at desc, id desc limit :n offset :o
+             order by coalesce(started_at, created_at) desc, id desc limit :n offset :o   -- 11-18:老运行 started_at 为空,只按它排等于没排
         """), {"p": project_id, "w": workflow_id, "n": limit, "o": (page - 1) * limit}).mappings().all()
         # 10-28:总数原来是另一句 count、**没带 workflow_id 筛选** —— 一条工作流的「日志」页报的是整个项目的运行数
     出 = []

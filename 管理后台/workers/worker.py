@@ -543,7 +543,9 @@ def _跑一张工作流(c, job, 打点):
                        "现在": 计划["逻辑哈希"][:26],
                        "怎么办": "重新发起一次运行 —— 旧的这次保留,它记的是受理时那一版"})
 
-    c.execute(text("""update execution_runs set status='running', updated_at=now()
+    # 11-18:原来不写 started_at,运行记录页「开始」整列空、运行历史的「x 分钟前」是空串,列表按 started_at 排等于没排
+    c.execute(text("""update execution_runs set status='running', updated_at=now(),
+                             started_at=coalesce(started_at, now())
                       where project_id=:p and id=:i"""),
               {"p": job["project_id"], "i": run_id})
     打点("开始执行", {"节点数": len(计划["节点"])})

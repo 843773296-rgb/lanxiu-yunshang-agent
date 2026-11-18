@@ -308,7 +308,20 @@ def 项目们(x_dev_user: str = Header(default=None, alias="X-Dev-User")):
              order by p.name
         """), {"u": x_dev_user}).mappings().all()
     # **全局搜索/列表只返回有权访问的对象**(§4)
-    return _列表([dict(r) for r in rows], total=len(rows))
+    # 11-18 补「实际能做的」:页面原来把 special_grants 当成能力(app.js 的 `能力`),
+    # 而专项授权只是能力的一小部分 —— 管理员默认有的「改训练样本」不在里面,于是产出监督的「打回」
+    # 对管理员不摆、对拿了专项授权的编辑才摆。按角色 + 专项授权**现算**,和成员页同一个判法(perms.判)。
+    import perms as _PM
+    出 = []
+    for r in rows:
+        d = dict(r)
+        专 = d.get("special_grants") or []
+        if isinstance(专, str):
+            try: 专 = json.loads(专)
+            except Exception: 专 = []
+        d["实际能做的"] = sorted(k for k in _PM.能力们 if _PM.判(k, d["role"], 专)[0])
+        出.append(d)
+    return _列表(出, total=len(出))
 
 
 # ── 工作台(§6)────────────────────────────────────────────────────
@@ -325,7 +338,8 @@ def 工作台(project_id: str, me: 身份 = Depends(要权限("查看有权配�
         q = lambda s, **kw: c.execute(text(s), dict(p=project_id, e=环境,
                                                     h=范围小时, **kw)).mappings()
         请求 = q("""select count(*) n,
-                          count(*) filter (where end_reason='ok') ok
+                          -- 聊天站上报(runs_api 导入)写的是 completed,早期写 ok;只认 ok 时真库 677 次请求 0.0%(11-18 查实)
+                          count(*) filter (where end_reason in ('ok','completed')) ok
                      from traces
                     where project_id=:p and environment=:e
                       and started_at > now() - (:h || ' hours')::interval""").first()
@@ -374,7 +388,7 @@ def 工作台(project_id: str, me: 身份 = Depends(要权限("查看有权配�
         卡("费用未覆盖数量", 费用["未覆盖"] or 0, None,
           "**这些条目的钱是未知,不是 0** —— 外部账单有延迟",
           数据来源="usage_ledger 表"),
-        卡("失败任务", 任务["失败"] or 0, None, "去任务中心看卡在哪一步",
+        卡("失败任务", 任务["失败"] or 0, None, "去「运行记录」看卡在哪一步(没有单独的任务中心页)",
           数据来源="jobs 表"),
         卡("待审核发布", 待审["n"] or 0, None, "发布要审核才能切生产指针",
           数据来源="release_manifests 表"),
@@ -400,6 +414,14 @@ def prompt列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     if cursor:
         where.append("(d.updated_at, d.id) < (:cu_t, :cu_i)")
         参["cu_t"], 参["cu_i"] = cursor.split("|", 1)
+    if 被生产引用 is not None:
+        # 11-18:原来在 limit 之后用 Python 过滤 —— 第一页 20 条全未上线时,「只看已上线」显示成「没有」,
+        # 哪怕后面页有。筛选要进 SQL,和下面「生产版本」那个子查询穿的是同一条路(环境指针 → 发布清单 → 版本)。
+        where.append(("exists" if 被生产引用 else "not exists") + """ (
+            select 1 from environment_bindings eb
+              join release_manifests rm on rm.project_id=eb.project_id and rm.id=eb.release_manifest_id
+              join prompt_versions pv on pv.project_id=rm.project_id and pv.id=rm.prompt_version_id
+             where eb.project_id=d.project_id and eb.environment='production' and pv.key=d.key)""")
     with 连接() as c:
         rows = c.execute(text(f"""
             select d.id, d.key, d.revision, d.updated_at, d.created_by,
@@ -436,8 +458,6 @@ def prompt列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         d["生产版本显示"] = d["生产版本"] if d["生产版本"] is not None else "未上线"
         d["评测状态"] = "尚未评测" if not d["评测次数"] else f"{d['评测次数']} 次"
         出.append(d)
-    if 被生产引用 is not None:
-        出 = [x for x in 出 if (x["生产版本"] is not None) == 被生产引用]
     下一页 = (f"{rows[-1]['updated_at'].isoformat()}|{rows[-1]['id']}"
              if 有更多 and rows else None)
     # **total 给 None**:没做 count(*) 就别编一个数。§19.1 明确允许 null
