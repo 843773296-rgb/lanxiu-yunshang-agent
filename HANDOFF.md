@@ -12,7 +12,7 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
-### 🟡 11-18 15:xx · 交接 —— logo 接进三个界面(未推);用户拍了三件;待推一批要先跑 e2e-ci(Opus 5.5)
+### ✅ 11-18 15:52 · 已推 6df6695e —— logo 接进三个界面;e2e-ci 0、全量门禁 0、8770 已重启;锁已放并通知 eureka-fc 跑 13 道评测题(Opus 5.5)
 
 - **用户拍板(11-18)**:① 主检出 06:40 那份项目日志**已丢**(git checkout);② 飞书「重新授权」—— 查下来不用人点:make_log 原来调 `~/Desktop/chatgpt` 那份发布脚本(它的登录过期),**改成本仓库 tools/feishu_publish.py**、目标仍是通用文件夹 PJWW…(88abdbb4),实发一次成功并清了 1 份旧版;③ **允许无界面浏览器给本地静态页拍图,不点击、不登录、不联网**(已写进记忆 web-search-yes-browser-no)。
   - 拍法坑:headless 最小视口 500,要 390 就套 390 宽 iframe;**`sips -c` 是居中裁**,要么 iframe 加 margin-left:55px 再裁,要么别用它 —— 我因此误报过一次「介绍页左偏」,已向 c2 认错。
