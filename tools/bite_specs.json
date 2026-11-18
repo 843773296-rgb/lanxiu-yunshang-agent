@@ -23555,5 +23555,17 @@
    }
   ],
   "预期红": "该挂:客户号填错"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "夜跑压完 .gz 之后不删原样日志(用户 11-18 拍压完就删)—— 123 MB 那份又会每晚留在本地",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "                os.remove(原)\n",
+    "new": "                pass\n"
+   }
+  ],
+  "预期红": "压完原样的运行日志删了(核过一字不差才删);不进库的 withheld 原样留着"
  }
 ]

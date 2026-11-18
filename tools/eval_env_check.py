@@ -20,6 +20,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad, n = [], 0
 
 咬合 = [
+    ("夜跑压完不删原样日志(删那行去掉)", "压完原样的运行日志删了(核过一字不差才删);不进库的 withheld 原样留着"),
     ("夜跑把 75 也算成判红", "夜跑:退出码 75 → 部分没验成(环境),和判红分开"),
     ("管理后台在也把 kb_rag 的题记成环境", "tool_eval:只有管理后台不在、又用到 kb_rag 的题才记成环境没验成"),
     ("残留的 PID 文件也当成在跑", "PID 文件:进程活着 → 在用;文件在但进程早没了(崩了留下的)→ 不算;没文件 → 不算"),
@@ -112,6 +113,11 @@ with tempfile.TemporaryDirectory(prefix="nightly-chk-") as 假根:
     ck("夜跑入库清单:评测结果 + 压缩过的运行日志;原样的日志、扣下的答案原文(withheld)、别的文件都不进",
        单 == ["agent/nightly/agent__x-eval-results.jsonl", "agent/nightly/agentsite__evals__funnel.jsonl.gz"], 单)
     ck("压缩包解开和原日志一字不差,而且比原文件小", 第一次 and gzip.decompress(第一次) == 日志 and len(第一次) < len(日志) // 5)
+    # 用户 11-18 拍「压完就删原样」:进库那份删掉,不进库的(withheld)不碰
+    ck("压完原样的运行日志删了(核过一字不差才删);不进库的 withheld 原样留着",
+       not os.path.exists(os.path.join(夜目录, "agentsite__evals__funnel.jsonl"))
+       and os.path.exists(os.path.join(夜目录, "agentsite__evals__withheld.jsonl")),
+       sorted(os.listdir(夜目录)))
     # 看包头,不比两次输出:两次压缩落在同一秒里时,带着时间戳也会一样 —— 那样判据量不到它要守的东西
     ck("压缩包头不记时间戳、不记文件名(内容没变就是同一串字节 —— 不然每晚白多一次改动)",
        第一次[3:8] == b"\0\0\0\0\0" and open(压, "rb").read() == 第一次, 第一次[:10])

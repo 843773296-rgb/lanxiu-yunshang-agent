@@ -475,6 +475,11 @@ def 入库清单(根):
             数据 = f.read()
         with open(原 + ".gz", "wb") as 出, gzip.GzipFile(filename="", mode="wb", fileobj=出, mtime=0, compresslevel=9) as z:
             z.write(数据)
+        # 压完删原样(用户 2026-11-18 拍):原样那份没人读、第二晚就被覆盖,11-18 涨到 123 MB 撑爆过咬合副本上限。
+        # **先解开核一遍一字不差再删** —— 压坏了还删,那一晚的日志就真没了
+        with open(原 + ".gz", "rb") as f:
+            if gzip.decompress(f.read()) == 数据:
+                os.remove(原)
     return sorted(os.path.relpath(f, 根) for f in
                   glob.glob(os.path.join(夜目录, "agent__*-results.jsonl"))
                   + glob.glob(os.path.join(夜目录, "agentsite__evals__*.jsonl.gz")))
