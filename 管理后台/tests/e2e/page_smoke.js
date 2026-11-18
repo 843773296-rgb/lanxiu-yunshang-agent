@@ -256,6 +256,9 @@ setTimeout(() => {
     "#/knowledge-revisions": { 接口: "/knowledge-revisions", 列表: "items" },
     "#/integrations/models": { 接口: "/model-connections", 列表: "连接" },
     "#/integrations/tools": { 接口: "/tools", 列表: "items" },
+    // 工具组 / 工具连接(11-18 体检补的两页):澜绣项目里工具连接是空的,走空列表那一档(要有状态块)
+    "#/integrations/groups": { 接口: "/tool-groups", 列表: "items" },
+    "#/integrations/conns": { 接口: "/capability-connections", 列表: "连接" },
     "#/agents": { 接口: "/agents", 列表: "items" },
     "#/tools": { 接口: "/tools", 列表: "items" },
     "#/human": { 接口: "/human-requests", 列表: "items" },

@@ -159,7 +159,10 @@ const 工作室类型 = [["all", "全部", (pg) => 页_工作室("all", pg)], ["
   ["agent", "Agent", (pg) => 页_工作室("agent", pg)],
   ["completion", "文本生成", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
   ["app", "应用与发布", () => 页_应用与发布()]];
-const 集成类型 = [["models", "模型供应商", () => 页_模型与连接()], ["tools", "工具", () => 页_工具目录()]];
+// 11-18 体检:工具组 / 工具连接两页原来**只有接口没有页面**(HTTP 请求节点提示「去工具连接登记」而那一页不存在;
+// 工具详情说「配套只能在冻结工具组版本时给」而没有任何页面能冻结)。页签参数走 页_分页签 的第二段(#/integrations/groups/{gid} = 组详情)
+const 集成类型 = [["models", "模型供应商", () => 页_模型与连接()], ["tools", "工具", () => 页_工具目录()],
+  ["groups", "工具组", (gid) => 页_工具组(gid)], ["conns", "工具连接", () => 页_工具连接()]];
 const 旧地址跳 = { "#/workflows": "#/studio/workflow", "#/agents": "#/studio/agent", "#/apps": "#/studio/app",
   "#/conns": "#/integrations/models", "#/tools": "#/integrations/tools",
   "#/studio": "#/studio/all", "#/integrations": "#/integrations/models" };
@@ -3577,7 +3580,8 @@ function 资源选择器(种类, 当前, 项们, 选了, 空话) {
     return `<div class="note">暂时读取不到${esc(种类)}列表,<b>已保留当前选择</b>${当前 ? `(<code>${esc(当前)}</code>)` : ""} —— 不是「原来那个不存在了」。
       <button data-k="${挂控件(async () => { await 重取资源(); 重画(); return false; })}">重试</button></div>`;
   }
-  if (!项们.length) return `<div class="note">${esc(空话)}</div>`;
+  // 空话可以给 {html}(11-18:HTTP 请求节点那句要带一个到「工具连接」页的链接);纯字串照旧转义
+  if (!项们.length) return `<div class="note">${空话 && 空话.html ? 空话.html : esc(空话)}</div>`;
   const 词 = (g.资源搜 || {})[种类] || "";
   const 中 = 项们.filter((x) => !词 || `${x.名}${x.说}${x.版 || ""}${x.标}`.includes(词));
   const 现 = 项们.find((x) => x.id === 当前);
@@ -3746,7 +3750,7 @@ function 表_设置(n) {
           // 鉴权方式(11-16,workflow-resources 带回;老连接 / 老接口没有就不显示):选的时候就知道这条连接带不带凭据
           标: (x["状态"] === "active" ? "可用" : `状态:${x["状态"] || "未知"}`) + ` · ${x["适配器"] || ""}` + (x["鉴权方式"] ? ` · 鉴权:${x["鉴权方式"]}` : "") })),
           (id) => { c.connection_id = id || undefined; delete c.endpoint_index; 重画(); },
-          "这个项目还没有登记工具连接 —— 请平台管理员在「工具连接」里登记一条(填允许访问的地址和凭据引用)。")
+          { html: `这个项目还没有登记工具连接 —— 请平台管理员在<a href="#/integrations/conns" target="_blank">集成 / 工具连接</a>里登记一条(填允许访问的地址和凭据引用),登记完回来重新打开这个节点。` })
       + `<div class="note">只许访问这条连接<b>登记过的地址</b>;解析到内网、跟着跳转去别处、超过 15 秒或 1 MB 都会被拦下 —— 一个字节都不会发到白名单外。</div>`;
     if (k && (k["允许的端点"] || []).length > 1) {
       体 += `<label class="f">用白名单里的哪一条地址</label>`
@@ -6477,7 +6481,7 @@ async function 画工具详情(tid) {
         混起来的话，一个「可选但有配套」的工具会被当成必需的，
         <b>于是预算在它身上先花掉</b> —— 而那不是它该占的位置。
         <br>⚠️ <b>「添加配套」「检查依赖」两个按钮还没做</b> ——
-        配套关系现在只能在<b>冻结工具组版本</b>时给（那里有成环检查）。</div>`;
+        配套关系在<a href="#/integrations/groups">集成 / 工具组</a>里<b>冻结工具组版本</b>时给（那里有成环检查）。</div>`;
     // ── 规格 §8.2「模型说明」页签(2026-10-03)─────────────────────
     //
     // ⚠️⚠️ **三态从接口拿(`模型说明填了吗`),不在这里自己判。**
@@ -6641,7 +6645,7 @@ async function 画工具详情(tid) {
         ${md(d["⚠️在生产上吗怎么算的"] || d["⚠️答不出的"])}</div>` : ""}
       ${配套区}
       <div class="note"><b>规格 §8.2 那七个页签都在了</b>（模型说明那一页 11-14 补的：别名 / 适用不适用 / 任务示例）。
-        <b>还没做的</b>：「添加配套」「检查依赖」两个按钮 —— <b>缺的是</b>从这一页直接把配套关系落到工具组版本上的入口，现在要去<a href="#/integrations/groups">工具组</a>页冻结版本时给。</div>`;
+        <b>还没做的</b>：「添加配套」「检查依赖」两个按钮 —— <b>缺的是</b>从这一页直接把配套关系落到工具组版本上的入口；配套关系现在在<a href="#/integrations/groups">集成 / 工具组</a>里冻结版本时给（11-18 起有这一页了）。</div>`;
     // ── 规格 §8.2「版本与差异」:**哈希不同只说明改了,不说明改了什么** ──
     //
     // 这一页的价值不是「告诉你两版不一样」—— 内容哈希已经告诉你了。
@@ -9555,6 +9559,331 @@ function 挂连接事件(d) {
       报2(`建好了 \`${esc(r.id || "")}\` —— **下一步是探一次 capabilities**:`
         + `不探的话「没探过」会在发布那一刻把它挡住`);
     } catch (e) { 报2(闸文(e), true); $("#c-go").disabled = false; }
+  };
+}
+
+/* ── 工具连接(capability_connections)──────────────────────────────────
+ *
+ * 11-18 体检:HTTP 请求节点提示「请平台管理员在「工具连接」里登记一条」,**而这一页不存在**,
+ * 澜绣项目 `工具连接 = []`,HTTP 节点在页面上永远配不出来。接口在 tools_api(GET 列表 / POST 建)。
+ * ⚠️ 和模型连接同口径:**只收密钥引用,表单上没有明文密钥框** —— 服务端那条「名字像凭据而且给了值就拒」的闸也在。
+ * ⚠️ 鉴权只收「方式 + 头名」,密钥本身仍走引用;提示语里不写凭据类英文词(进 422 响应会被泄密检查判成 500)。 */
+const 工具连接动作 = {
+  async 建(体) {
+    return await 请求(`${P()}/capability-connections`, { method: "POST", body: JSON.stringify(体) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.工具连接动作 = 工具连接动作;
+
+/* 422 的 field_errors 逐字段显示(工具连接 / 工具组两页共用)。后端这两处把问题装在 `闸` 这一个键下、一条一条写;
+ * 别的键(名称 / 用途 / 成员)也按同样的形状列 —— 只显示 message 等于把最有用的部分丢了 */
+function 字段错块(e) {
+  const b = e.体 || {}, fe = b.field_errors || {};
+  const 条 = Object.entries(fe).map(([k, v]) => (Array.isArray(v) ? v : [v])
+    .map((x) => `<li><b>${esc(k)}</b>:${md(String(x))}</li>`).join("")).join("");
+  return `<div class="state err"><h3>${esc(b.code || "出错了")} · ${esc(e.message)}</h3>
+    ${条 ? `<ul>${条}</ul>` : ""}<p>${b.advice ? md("**下一步:**" + b.advice) : "服务端没给建议 —— 这本身是个契约问题"}</p></div>`;
+}
+
+function 页_工具连接表单(d) {
+  const 能配 = 我的角色 === "admin";    // 后端 要权限("配置密钥与预算"):只有 admin 默认有
+  if (!能配) {
+    return `<div class="note"><b>登记工具连接要「配置密钥与预算」这条能力</b>(和建模型连接同一条)——
+      你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆表单</b>:
+      摆一个填完被 403 的表单,只是把拒绝往后挪一步。</div>`;
+  }
+  const 已用 = [...new Set((d["连接"] || []).map((x) => x["适配器"]).filter(Boolean))];
+  const 快捷 = [...new Set(["http", "MCP", ...已用])]
+    .map((a) => `<button data-ccfill="${esc(a)}" class="k">${esc(a)}</button>`).join(" ");
+  return `<div class="state">
+    <h3>登记一条工具连接</h3>
+    <p class="k">HTTP 请求节点只能打到这里登记过的地址 —— <b>允许的端点是一张白名单</b>,一行一条。</p>
+    <p><label>名字<br><input id="cc-nm" style="width:min(320px,90%)" placeholder="比如:门店 MCP / 天气接口"></label></p>
+    <p><label>适配器<br><input id="cc-ad" style="width:min(320px,90%)" placeholder="http"></label><br>
+      <span class="k">HTTP 请求节点用 <code>http</code>;常用的:</span>${快捷}</p>
+    <p><label>允许的端点(白名单,一行一条完整地址)<br>
+      <textarea id="cc-ep" rows="3" style="width:min(520px,90%)" placeholder="https://api.example.com/v1"></textarea></label></p>
+    <p><label>鉴权方式<br><select id="cc-au">
+      <option value="无">无(公开接口,不带凭据)</option>
+      <option value="令牌">令牌(标准的持有者令牌头)</option>
+      <option value="自定义头">自定义头(下面填头名)</option></select></label>
+      <label style="margin-left:12px">头名(只配「自定义头」)<br>
+      <input id="cc-hd" style="width:min(240px,90%)" placeholder="x-api-key 这类,小写"></label></p>
+    <p><label>密钥<b>引用</b>(不是密钥本身)<br>
+      <input id="cc-sr" style="width:min(420px,90%)" placeholder="keychain://xxx / env://XXX / vault://path / ref:xxx"></label></p>
+    <p class="k">⚠️ <b>这里只收引用,没有明文密钥的输入框</b> ——
+      明文一旦进过请求体,它就已经进过日志、进过 APM、可能进过错误上报;<b>换个字段名重发也救不回来那一次</b>。</p>
+    <p><button class="pri" id="cc-go">登记这条连接</button></p></div>`;
+}
+
+async function 页_工具连接() {
+  $("#main").innerHTML = `<div class="crumb">集成 / 工具连接</div>
+    <div class="head"><div><h1>工具连接</h1>
+      <div class="sub"><b>密钥只给形状,不给内容</b> —— 工作流里的 HTTP 请求节点只能选这里登记过的连接,
+        地址只能是它白名单里的一条。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/capability-connections`);
+    const 连 = d["连接"] || [];
+    const 尾 = `<div class="note">${md(d.note || "")}</div><div id="ccmsg"></div>` + 页_工具连接表单(d);
+    if (!连.length) {
+      $("#list").innerHTML = 状态("", "还没有工具连接",
+        "工作流「搭建」里的 **HTTP 请求节点**要先在这里登记一条连接才配得出来:填允许访问的地址白名单和凭据引用。"
+        + "登记要「配置密钥与预算」这条能力(admin)。").html + 尾;
+      挂工具连接事件(d);
+      return;
+    }
+    const 鉴文 = (a) => { a = a || {}; return esc(a["方式"] || "无") + (a["头名"] ? ` · <code>${esc(a["头名"])}</code>` : ""); };
+    $("#list").innerHTML = `<table><thead><tr><th>名字</th><th>适配器</th><th>允许的端点</th>
+      <th>密钥</th><th>鉴权</th><th>发现到的能力</th><th>状态</th><th>负责人</th><th>上次健康检查</th>
+      </tr></thead><tbody>`
+      + 连.map((r) => {
+        const k = r["密钥"] || {}, 能 = r["发现到的能力"];
+        return `<tr><td><b>${esc(r["名字"] || "—")}</b><br><code class="k">${esc(r.id)}</code></td>
+          <td class="k">${esc(r["适配器"] || "—")}</td>
+          <td>${(r["允许的端点"] || []).length ? (r["允许的端点"] || []).map((u) => `<code>${esc(u)}</code>`).join("<br>") : `<span class="k">—</span>`}</td>
+          <td>${k["配了吗"] ? `<span class="pill">${esc(k["存在哪"])}·${esc(k["长度"])} 字</span>` : `<span class="pill warn">没配</span>`}</td>
+          <td class="k">${鉴文(r["鉴权"])}</td>
+          <td class="k">${能 == null ? "还没发现过" : Array.isArray(能) ? `${能.length} 项` : "有"}</td>
+          <td>${r["状态"] === "active" ? `<span class="pill">在用</span>` : `<span class="pill warn">${esc(r["状态"] || "?")}</span>`}</td>
+          <td class="k">${esc(r["负责人"] || "—")}</td>
+          <td class="k">${r["上次健康检查"] ? 时间(r["上次健康检查"]) : "没查过"}</td></tr>`; }).join("")
+      + `</tbody></table>` + 尾;
+    挂工具连接事件(d);
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+function 挂工具连接事件(d) {
+  document.querySelectorAll("[data-ccfill]").forEach((b) => {
+    b.onclick = () => { if ($("#cc-ad")) $("#cc-ad").value = b.dataset.ccfill; };
+  });
+  if (!$("#cc-go")) return;
+  const 报 = (html) => { if ($("#ccmsg")) $("#ccmsg").innerHTML = html; };
+  $("#cc-go").onclick = async () => {
+    const 方式 = $("#cc-au").value, 头名 = ($("#cc-hd").value || "").trim();
+    const 体 = {
+      名字: ($("#cc-nm").value || "").trim(),
+      适配器: ($("#cc-ad").value || "").trim(),
+      允许的端点: ($("#cc-ep").value || "").split(/\n/).map((x) => x.trim()).filter(Boolean),
+      鉴权: 方式 === "自定义头" ? { 方式, 头名 } : { 方式 },
+      secret_ref: ($("#cc-sr").value || "").trim(),
+    };
+    $("#cc-go").disabled = true; 报(`<div class="state"><p>登记中…</p></div>`);
+    try {
+      const r = await 工具连接动作.建(体);
+      await 页_工具连接();   // 先重画再写结果,不然结果刚出来就被刷掉
+      报(`<div class="state"><p>登记好了 <code>${esc(r.id || "")}</code> —— 现在去工作流「搭建」里的 HTTP 请求节点就能选到它。${md(r.note ? " " + r.note : "")}</p></div>`);
+    } catch (e) { 报(字段错块(e)); $("#cc-go").disabled = false; }
+  };
+}
+
+/* ── 工具组(tool_groups)─────────────────────────────────────────────────
+ *
+ * 11-18 体检:工具详情页说「配套关系只能在冻结工具组版本时给」,而**没有任何页面能冻结工具组版本**。
+ * 接口在 toolgroups_api:GET 列表 / POST 建组(要「改编排草稿」)/ GET 详情 / PATCH 草稿(If-Match 认 draft_revision,缺了 409)
+ * / POST 版本(冻结,三道校验在服务端:模型眼里同名 / 配套成环 / 成员版本还在不在;**不要 Idempotency-Key**,接口不读它)。
+ * ⚠️ 成员要的是 tool_version_id,而工具详情接口**不给版本 id**(只给 v1 / v2 这种号)——
+ *    这里从 workflow-resources 的 `工具` 取(每个在用工具的最新版本 id + 名字),所以成员只能选到**最新版本**;
+ *    版本历史里的老 id 认不出名字时原样显示 id,不猜。 */
+const 工具组动作 = {
+  async 建(体) { return await 请求(`${P()}/tool-groups`, { method: "POST", body: JSON.stringify(体) }); },
+  async 改草稿(gid, rev, 体) {
+    return await 请求(`${P()}/tool-groups/${encodeURIComponent(gid)}/draft`,
+      { method: "PATCH", headers: { "If-Match": String(rev) }, body: JSON.stringify(体) });
+  },
+  async 冻结(gid, 体) {
+    return await 请求(`${P()}/tool-groups/${encodeURIComponent(gid)}/versions`, { method: "POST", body: JSON.stringify(体) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.工具组动作 = 工具组动作;
+const 能改工具组 = () => 我的角色 === "editor" || 我的角色 === "admin";   // 后端 要权限("改编排草稿")
+
+async function 页_工具组(gid) {
+  if (gid) return await 页_工具组详情(decodeURIComponent(gid));
+  $("#main").innerHTML = `<div class="crumb">集成 / 工具组</div>
+    <div class="head"><div><h1>工具组</h1>
+      <div class="sub"><b>组只是一份搭配,不是一份授权</b> —— Agent 绑了某个组版本,执行权仍要过工具网关的实时查验。
+        组决定的是「这一轮给模型看哪些」。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/tool-groups`);
+    const 表单 = 能改工具组()
+      ? `<div class="state"><h3>新建一个组</h3>
+          <p class="k">建完是一份<b>没有版本的草稿</b> —— 成员和配套关系在详情页「冻结一版」时给;没有版本的组 Agent 引用不了。</p>
+          <p><label>名称<br><input id="tg-nm" style="width:min(320px,90%)" placeholder="说得出用途的名字"></label></p>
+          <p><label>用途(必填 —— 说不出用途的组,下次没人知道该不该往里加工具)<br>
+            <textarea id="tg-pu" rows="2" style="width:min(520px,90%)"></textarea></label></p>
+          <p><button class="pri" id="tg-go">建这个组</button></p></div>`
+      : `<div class="note"><b>建组 / 改草稿 / 冻结版本要「改编排草稿」这条能力</b>(editor 或 admin)——
+          你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆表单</b>。</div>`;
+    const 尾 = `<div class="note">${md(d.note || "")}</div><div id="tgmsg"></div>` + 表单;
+    if (!(d.items || []).length) {
+      $("#list").innerHTML = 状态("", "还没有工具组",
+        "工具组是给 Agent 的一份**稳定搭配**(哪些工具一起给、谁必不可少、谁配套谁)。"
+        + "建一个组、再在详情页冻结一版,Agent 才引用得了。").html + 尾;
+      挂工具组事件();
+      return;
+    }
+    $("#list").innerHTML = `<table><thead><tr><th>名称</th><th>用途</th><th>负责人</th><th>状态</th><th>版本数</th><th>草稿修订</th>
+      </tr></thead><tbody>`
+      + d.items.map((r) => `<tr>
+        <td><a href="#/integrations/groups/${encodeURIComponent(r.id)}"><b>${esc(r["名称"] || r.id)}</b></a><br><code class="k">${esc(r.id)}</code></td>
+        <td data-raw="原文">${esc(r["用途"] || "—")}</td>
+        <td class="k">${esc(r["负责人"] || "—")}</td>
+        <td class="k">${esc(r["状态"] || "—")}</td>
+        <td>${r["版本数"] ? `<span class="pill">${esc(r["版本数"])} 版</span>` : `<span class="pill warn">还没冻结版本</span>`}</td>
+        <td class="k">${esc(r["draft_revision"])}</td></tr>`).join("")
+      + `</tbody></table><div class="note"><b>点组名进详情</b>:看成员、配套关系、版本历史;改草稿、冻结一版都在那里。</div>` + 尾;
+    挂工具组事件();
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+function 挂工具组事件() {
+  if (!$("#tg-go")) return;
+  $("#tg-go").onclick = async () => {
+    const 体 = { 名称: ($("#tg-nm").value || "").trim(), 用途: ($("#tg-pu").value || "").trim() };
+    $("#tg-go").disabled = true;
+    if ($("#tgmsg")) $("#tgmsg").innerHTML = `<div class="state"><p>建组中…</p></div>`;
+    try {
+      const r = await 工具组动作.建(体);
+      location.hash = `#/integrations/groups/${encodeURIComponent(r.id)}`;   // 建完直奔详情:下一步(冻结一版)在那儿
+    } catch (e) { if ($("#tgmsg")) $("#tgmsg").innerHTML = 字段错块(e); $("#tg-go").disabled = false; }
+  };
+}
+
+// 冻结表单的在编状态:成员列表 + 配套关系(页内重画时保留;换组时清掉)
+let 组冻结态 = { gid: null, 成员: [], 配套: {}, 说明: "" };
+
+async function 页_工具组详情(gid) {
+  $("#main").innerHTML = `<div class="crumb">集成 / <a href="#/integrations/groups">工具组</a> / 详情</div>
+    <div class="head"><div><h1 id="tgt">工具组</h1>
+      <div class="sub"><b>版本是不可变的</b> —— 冻结之后再发现问题,只能出一个新版本;改草稿改不动已经冻结的版本。</div></div></div>
+    <div id="tgdmsg"></div>
+    <div id="tgdbody"><div class="state">加载中…</div></div>`;
+  if (组冻结态.gid !== gid) 组冻结态 = { gid, 成员: [], 配套: {}, 说明: "" };
+  await 画工具组详情(gid);
+}
+
+async function 画工具组详情(gid) {
+  try {
+    // 工具名字表从 workflow-resources 来(它给每个在用工具的最新版本 id);拉不到就只显示 id,不把这一页整个变成错误
+    const [d, 资] = await Promise.all([
+      请求(`${P()}/tool-groups/${encodeURIComponent(gid)}`),
+      请求(`${P()}/workflow-resources`).catch(() => null),
+    ]);
+    $("#tgt").textContent = d["名称"] || gid;
+    const 工具们 = (资 && 资["工具"]) || [];
+    const 名表 = {}; 工具们.forEach((t) => { 名表[t["版本id"]] = t; });
+    const 名 = (vid) => { const t = 名表[vid]; return t ? `<b>${esc(t["名"])}</b> <code class="k">${esc(vid)}</code>` : `<code>${esc(vid)}</code> <span class="k">(不在当前可选工具里:历史版本 / 已停用 / 已归档)</span>`; };
+    const 草 = d["草稿"] || {}, 版本们 = d["版本历史"] || [], 能改 = 能改工具组();
+    // ── 草稿 ──
+    const 草稿区 = `<h2>草稿 <span class="k">draft_revision ${esc(d.draft_revision)} · revision ${esc(d.revision)}</span></h2>
+      ${能改 ? `<div class="state"><p><label>名称<br><input id="tgd-nm" style="width:min(320px,90%)" value="${esc(d["名称"] || "")}"></label></p>
+          <p><label>用途<br><textarea id="tgd-pu" rows="2" style="width:min(520px,90%)" data-raw="原文">${esc(草["用途"] || "")}</textarea></label></p>
+          <p><label>负责人<br><input id="tgd-ow" style="width:min(200px,90%)" value="${esc(草["负责人"] || "")}"></label></p>
+          <p><button class="pri" id="tgd-save" data-rev="${esc(d.draft_revision)}">保存草稿</button>
+            <span class="k">带 If-Match = ${esc(d.draft_revision)};别人先改了会报 409,刷新再改。<b>已经冻结的版本一个字不动。</b></span></p></div>`
+        : `<table><tbody><tr><td class="k">用途</td><td data-raw="原文">${esc(草["用途"] || "—")}</td></tr>
+            <tr><td class="k">负责人</td><td>${esc(草["负责人"] || "—")}</td></tr>
+            <tr><td class="k">状态</td><td>${esc(d["状态"] || "—")}</td></tr></tbody></table>
+          <div class="note">改草稿 / 冻结版本要「改编排草稿」这条能力(editor 或 admin)—— 你现在是 <b>${esc(我的角色 || "?")}</b>,所以这里不摆表单。</div>`}`;
+    // ── 版本历史 ──
+    const 版本区 = `<h2>版本历史 <span class="k">${版本们.length} 版</span></h2>` + (!版本们.length
+      ? `<div class="state"><h3>还没有冻结过版本</h3><p>没有版本的组 Agent 引用不了 —— 在下面「冻结一版」里挑成员、给配套关系,服务端过三道校验就冻成 v1。</p></div>`
+      : 版本们.map((v) => {
+        const 配 = v["配套关系"] || {};
+        return `<details ${v === 版本们[0] ? "open" : ""}><summary><b>${esc(v["版本"])}</b> · ${esc(v["成员数"])} 个成员,${esc(v["必不可少的"])} 个必不可少
+            · ${v["冻结时间"] ? 时间(v["冻结时间"]) : "—"} · ${esc(v["冻结的人"] || "—")}
+            ${v["变更说明"] ? `· <span class="k" data-raw="原文">${esc(v["变更说明"])}</span>` : ""}</summary>
+          <table><thead><tr><th>成员(工具版本)</th><th>加载角色</th><th>这一轮必须给它吗</th><th>给它就得一起给谁</th></tr></thead><tbody>
+          ${(v["成员"] || []).map((m) => { const o = typeof m === "string" ? { tool_version_id: m } : m; return `<tr>
+            <td>${名(o.tool_version_id)}</td><td class="k">${esc(o["加载角色"] || "候选")}</td>
+            <td>${o["必不可少吗"] ? `<span class="pill warn">必不可少</span> <span class="k">预算先放它</span>` : `<span class="pill">可选</span>`}</td>
+            <td class="k">${(配[o.tool_version_id] || []).length ? (配[o.tool_version_id] || []).map(名).join("<br>") : "—"}</td></tr>`; }).join("")}
+          </tbody></table><div class="k">内容哈希 <code>${esc(v["内容哈希"] || "—")}</code></div></details>`; }).join(""));
+    // ── 冻结一版 ──
+    const 态 = 组冻结态;
+    const 可选 = 工具们.filter((t) => !态.成员.some((m) => m.tool_version_id === t["版本id"]));
+    const 冻结区 = !能改 ? "" : `<h2>冻结一版</h2>
+      <div class="state"><p class="k">成员选的是每个工具的<b>最新版本</b>(接口只给最新的那个 id)。
+        「必不可少」= 这一轮必须给它(预算先放它);「配套」= 给它就得一起给谁 —— <b>两件事,别混</b>。
+        ${版本们.length ? `<button id="tgf-copy" class="k">从 ${esc(版本们[0]["版本"])} 带入成员和配套</button>` : ""}
+        ${!工具们.length ? `<br>⚠️ 这个项目里没有可选的在用工具(或工具列表拉不到)—— 没有成员冻不了版本。` : ""}</p>
+      ${态.成员.length ? `<table><thead><tr><th>成员</th><th>加载角色</th><th>必不可少</th><th>给它就得一起给谁</th><th></th></tr></thead><tbody>
+        ${态.成员.map((m, i) => `<tr><td>${名(m.tool_version_id)}</td>
+          <td><select data-tgrole="${i}"><option value="候选"${m["加载角色"] === "候选" ? " selected" : ""}>候选</option><option value="常驻"${m["加载角色"] === "常驻" ? " selected" : ""}>常驻</option></select></td>
+          <td><input type="checkbox" data-tgreq="${i}"${m["必不可少吗"] ? " checked" : ""}></td>
+          <td>${态.成员.length > 1 ? `<select multiple size="${Math.min(4, 态.成员.length - 1)}" data-tgcomp="${m.tool_version_id}">
+            ${态.成员.filter((x) => x.tool_version_id !== m.tool_version_id).map((x) => `<option value="${esc(x.tool_version_id)}"${(态.配套[m.tool_version_id] || []).includes(x.tool_version_id) ? " selected" : ""}>${esc((名表[x.tool_version_id] || {})["名"] || x.tool_version_id)}</option>`).join("")}
+            </select>` : `<span class="k">再加一个成员才有得配</span>`}</td>
+          <td><button data-tgdel="${i}" class="k">移出</button></td></tr>`).join("")}
+        </tbody></table>` : `<p class="k">还没挑成员。</p>`}
+      <p><label>加一个成员<br><select id="tgf-pick"><option value="">请选择工具(${可选.length} 个可选)</option>
+        ${可选.map((t) => `<option value="${esc(t["版本id"])}">${esc(t["名"])} · ${esc(t["读写"] || "")}${t["版本"] ? " · " + esc(t["版本"]) : ""}</option>`).join("")}</select>
+        <button id="tgf-add" class="k">加进来</button></label></p>
+      <p><label>变更说明(可不填)<br><input id="tgf-note" style="width:min(520px,90%)" value="${esc(态.说明)}" data-raw="原文"></label></p>
+      <p><button class="pri" id="tgf-go"${态.成员.length ? "" : " disabled"}>冻结成 v${版本们.length + 1}</button>
+        <span class="k">服务端三道校验:模型眼里同名 / 配套成环 / 成员版本还在不在 —— 被拦的话下面逐条列出</span></p></div>`;
+    $("#tgdbody").innerHTML = 草稿区 + 版本区 + 冻结区 + `<div class="note">${md(d.note || "")}</div>`;
+    挂工具组详情事件(gid, d, 版本们);
+  } catch (e) { const s = 错误块(e, () => 画工具组详情(gid)); $("#tgdbody").innerHTML = s.html; s.挂(); }
+}
+
+function 挂工具组详情事件(gid, d, 版本们) {
+  const 报 = (html) => { if ($("#tgdmsg")) $("#tgdmsg").innerHTML = html; };
+  const 态 = 组冻结态;
+  const 重画 = () => 画工具组详情(gid);
+  // 把表单上的即时改动收回状态(重画前),不然选了角色一重画就丢
+  const 收 = () => {
+    document.querySelectorAll("[data-tgrole]").forEach((s) => { 态.成员[Number(s.dataset.tgrole)]["加载角色"] = s.value; });
+    document.querySelectorAll("[data-tgreq]").forEach((c) => { 态.成员[Number(c.dataset.tgreq)]["必不可少吗"] = c.checked; });
+    document.querySelectorAll("[data-tgcomp]").forEach((s) => {
+      const v = [...s.selectedOptions].map((o) => o.value);
+      if (v.length) 态.配套[s.dataset.tgcomp] = v; else delete 态.配套[s.dataset.tgcomp];
+    });
+    if ($("#tgf-note")) 态.说明 = $("#tgf-note").value;
+  };
+  if ($("#tgd-save")) $("#tgd-save").onclick = async () => {
+    const 体 = { 名称: ($("#tgd-nm").value || "").trim(), 用途: ($("#tgd-pu").value || "").trim(), 负责人: ($("#tgd-ow").value || "").trim() };
+    $("#tgd-save").disabled = true; 报(`<div class="state"><p>保存中…</p></div>`);
+    try {
+      const r = await 工具组动作.改草稿(gid, $("#tgd-save").dataset.rev, 体);
+      await 重画();
+      报(`<div class="state"><p>草稿保存了,draft_revision 现在是 ${esc(r.draft_revision)}。${md(r.note ? " " + r.note : "")}</p></div>`);
+    } catch (e) {
+      const code = (e.体 || {}).code;
+      报((e.码 === 409 && (code === "REVISION_CONFLICT" || code === "IF_MATCH_REQUIRED")
+        ? `<div class="state err"><h3>这份草稿刚被别人改过</h3><p>${md(e.message)} —— 刷新页面拿新的 draft_revision 再改。</p></div>` : 字段错块(e)));
+      $("#tgd-save").disabled = false;
+    }
+  };
+  if ($("#tgf-copy")) $("#tgf-copy").onclick = async () => {
+    const v = 版本们[0];
+    态.成员 = (v["成员"] || []).map((m) => typeof m === "string" ? { tool_version_id: m, 加载角色: "候选", 必不可少吗: false }
+      : { tool_version_id: m.tool_version_id, 加载角色: m["加载角色"] || "候选", 必不可少吗: Boolean(m["必不可少吗"]) });
+    态.配套 = JSON.parse(JSON.stringify(v["配套关系"] || {}));
+    await 重画();
+  };
+  if ($("#tgf-add")) $("#tgf-add").onclick = async () => {
+    const vid = $("#tgf-pick").value; if (!vid) return;
+    收(); 态.成员.push({ tool_version_id: vid, 加载角色: "候选", 必不可少吗: false }); await 重画();
+  };
+  document.querySelectorAll("[data-tgdel]").forEach((b) => b.onclick = async () => {
+    收(); const [去] = 态.成员.splice(Number(b.dataset.tgdel), 1);
+    if (去) { delete 态.配套[去.tool_version_id]; Object.keys(态.配套).forEach((k) => { 态.配套[k] = 态.配套[k].filter((x) => x !== 去.tool_version_id); if (!态.配套[k].length) delete 态.配套[k]; }); }
+    await 重画();
+  });
+  if ($("#tgf-go")) $("#tgf-go").onclick = async () => {
+    收();
+    const 行吗 = await 问一句(`冻结成 v${版本们.length + 1}?`, md(`**${d["名称"] || gid}**:${态.成员.length} 个成员,${态.成员.filter((m) => m["必不可少吗"]).length} 个必不可少,${Object.keys(态.配套).length} 处配套。**冻结之后这一版不能改**,再发现问题只能出下一版。`), { 确定: "冻结" });
+    if (!行吗) return;
+    $("#tgf-go").disabled = true; 报(`<div class="state"><p>冻结中(服务端过三道校验)…</p></div>`);
+    try {
+      const r = await 工具组动作.冻结(gid, { 成员: 态.成员, 配套关系: 态.配套, 变更说明: 态.说明.trim() });
+      组冻结态 = { gid, 成员: [], 配套: {}, 说明: "" };
+      await 重画();
+      报(`<div class="state"><p>冻结了 <b>${esc(r["版本"])}</b>(${esc(r["成员数"])} 个成员)。${md(r.note || "")}</p></div>`);
+    } catch (e) { 报(字段错块(e)); if ($("#tgf-go")) $("#tgf-go").disabled = false; }
   };
 }
 
