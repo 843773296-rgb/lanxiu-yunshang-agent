@@ -433,7 +433,9 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py test_log_policy_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
           test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py \
-          test_orphan_sweep.py test_http_node_flow.py
+          test_orphan_sweep.py test_http_node_flow.py \
+          test_prompt_run_connection_flow.py test_connection_archive_flow.py test_dataset_patch_flow.py \
+          test_runctl_exec_flow.py test_eval_cancel_flow.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -643,6 +645,16 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (把「请求暂停」写成「已暂停」→ 界面显示已停而模型还在跑、钱还在花)"
 	@./.venv/bin/python tests/e2e/test_runctl_flow.py
 	@echo ""
+	@echo "▸ 运行控制**接执行侧**(11-18):接口写下的「请求」,Worker 真的读 —— 不改库,全走接口 + 真 Worker"
+	@echo "  (queued 取消 → Worker 不领;reconcile 只在状态机许的状态上能点;暂停→继续抓不到 running 窗口会明说没验)"
+	@./.venv/bin/python tests/e2e/test_runctl_exec_flow.py
+	@echo ""
+	@echo "▸ Prompt 调试运行绑模型连接(11-18):**没点名不替你挑**,点名了得是启用的那条;GET /jobs 带失败原因"
+	@./.venv/bin/python tests/e2e/test_prompt_run_connection_flow.py
+	@echo ""
+	@echo "▸ 评测取消(11-18):外部登记的没有可取消的运行;取消要写理由(不发起新派发 —— 要跑真模型花钱)"
+	@./.venv/bin/python tests/e2e/test_eval_cancel_flow.py
+	@echo ""
 	@echo "▸ 用量与上报链端到端(M3 + A1 接收端):**未知不是 0**、幂等不重复计费"
 	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
 	@./.venv/bin/python tests/e2e/test_usage_flow.py
@@ -678,6 +690,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (明文当场拒不是收下后忽略 / 错误不回显 / 列表只给形状 / 没探过的发生产被拦)"
 	@./.venv/bin/python tests/e2e/test_connections_flow.py
 	@echo ""
+	@echo "▸ 模型连接停用 / 启用(11-18 补的接口):乐观锁三连、默认列表不列停用的、同用途不并存两条在用的"
+	@echo "  (在这之前「先把那条停用」这句建议指着一个不存在的动作;自己建的连接跑完留在 archived 就是清理)"
+	@./.venv/bin/python tests/e2e/test_connection_archive_flow.py
+	@echo ""
 	@echo "▸ 应用与发布端到端(§17.4-9):**「哪一版在给用户跑」**"
 	@echo "  (清单全是确切版本 / 生产只认审过的 / 指针原子 / 回滚是新动作不是改历史)"
 	@./.venv/bin/python tests/e2e/test_release_flow.py
@@ -692,6 +708,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tools/seed_datasets.py > /dev/null
 	@./.venv/bin/python tools/seed_bridge_tools.py --项目 project_demo_a > /dev/null
 	@./.venv/bin/python tests/e2e/test_datasets_flow.py
+	@echo ""
+	@echo "▸ PATCH /datasets/{id}(11-18 补的洞):建好之后能**补脱敏声明**了 —— 原来「下一步是去声明」指着一个不存在的接口"
+	@echo "  (空数据集先被「没样本」那道闸拦住,「没声明」那句拿 seed 的「汉服工艺问答」验 —— 所以也排在 seed_datasets 之后)"
+	@./.venv/bin/python tests/e2e/test_dataset_patch_flow.py
 	@echo ""
 # ⚠️ **评测那一份必须排在数据集之后。** 它要一个**已冻结的数据集版本**,
 # 而冻结是 `test_datasets_flow` 干的 —— 和训练那一份同一条依赖。
@@ -950,6 +970,26 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_http_node_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_http_node_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_http_node_flow.log
+	@./.venv/bin/python tests/e2e/test_prompt_run_connection_flow.py > /tmp/prog-test_prompt_run_connection_flow.log 2>&1 \
+	  || { echo "  ❌ test_prompt_run_connection_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_prompt_run_connection_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_prompt_run_connection_flow.log
+	@./.venv/bin/python tests/e2e/test_connection_archive_flow.py > /tmp/prog-test_connection_archive_flow.log 2>&1 \
+	  || { echo "  ❌ test_connection_archive_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_connection_archive_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_connection_archive_flow.log
+	@./.venv/bin/python tests/e2e/test_dataset_patch_flow.py > /tmp/prog-test_dataset_patch_flow.log 2>&1 \
+	  || { echo "  ❌ test_dataset_patch_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_dataset_patch_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_dataset_patch_flow.log
+	@./.venv/bin/python tests/e2e/test_runctl_exec_flow.py > /tmp/prog-test_runctl_exec_flow.log 2>&1 \
+	  || { echo "  ❌ test_runctl_exec_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_runctl_exec_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_runctl_exec_flow.log
+	@./.venv/bin/python tests/e2e/test_eval_cancel_flow.py > /tmp/prog-test_eval_cancel_flow.log 2>&1 \
+	  || { echo "  ❌ test_eval_cancel_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_eval_cancel_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_eval_cancel_flow.log
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py > /tmp/prog-test_access_api_chat_live.log 2>&1 \
 	  || { echo "  ❌ test_access_api_chat_live 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_access_api_chat_live.log; exit 1; }
