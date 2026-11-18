@@ -436,13 +436,37 @@ def agent详情(project_id: str, aid: str, me: 身份 = Depends(要权限("查�
              order by version_no desc limit 20"""),
                        {"p": project_id, "i": aid}).mappings().all()
         目录 = _工具目录(c, project_id)
-        连接们 = c.execute(text("""
-            select cv.id, cv.capabilities, mc.display_name
+        # 下拉只列**能用的**(11-18):生成用途、在用、没停用,每条连接只取最新一个配置版本。
+        # 原来查项目里全部 connection_versions —— 演示项目 492 条,停用的 / Embedding 的全在里面,
+        # 选中一条停用的,校验过、冻了版,真跑才报 MODEL_CONNECTION_DISABLED
+        连接们 = [dict(r) for r in c.execute(text("""
+            select distinct on (mc.id) cv.id, cv.capabilities, mc.display_name
               from connection_versions cv
               join model_connections mc
                 on mc.project_id=cv.project_id and mc.id=cv.connection_id
-             where cv.project_id=:p order by cv.created_at"""),
-                          {"p": project_id}).mappings().all()
+             where cv.project_id=:p and mc.purpose='generate' and mc.status='active'
+               and mc.archived_at is null
+             order by mc.id, cv.created_at desc"""),
+                          {"p": project_id}).mappings().all()]
+        连接们.sort(key=lambda r: (r["display_name"] or "", r["id"]))
+        cfg0 = (d["definition"] if d else None) or {}
+        当前 = cfg0.get("connection_version_id")
+        if 当前 and 当前 not in {r["id"] for r in 连接们}:
+            # 当前配置里选的那条不在名单里(停用了 / 非生成用途 / 不是最新版本)—— **仍然列出来并标明**,
+            # 不然界面一保存就把它清成 null,而人只是改了别的字段
+            旧 = c.execute(text("""
+                select cv.id, cv.capabilities, mc.display_name, mc.status, mc.purpose, mc.archived_at
+                  from connection_versions cv
+                  join model_connections mc
+                    on mc.project_id=cv.project_id and mc.id=cv.connection_id
+                 where cv.project_id=:p and cv.id=:i"""), {"p": project_id, "i": 当前}).mappings().first()
+            if 旧:
+                旧 = dict(旧)
+                为什么 = ("已停用" if (旧["status"] != "active" or 旧["archived_at"])
+                       else f"非生成用途({旧['purpose']})" if 旧["purpose"] != "generate"
+                       else "不是这条连接的最新配置版本")
+                旧["不在名单里"] = f"(当前选的,{为什么})"
+                连接们.append(旧)
         import glossaries_api as _GA
         术语们 = _GA.可选术语版本(c, project_id)
     cfg = (d["definition"] if d else None) or {}
@@ -458,10 +482,11 @@ def agent详情(project_id: str, aid: str, me: 身份 = Depends(要权限("查�
                   "冻结于": v["created_at"].isoformat() if v["created_at"] else None,
                   "冻结人": v["created_by"]} for v in vs],
         "可选术语": 术语们,       # 「这个智能体用哪一版术语」的下拉框(11-06 深夜补)
-        "可选连接": [{"id": r["id"], "名称": r["display_name"],
+        "可选连接": [{"id": r["id"], "名称": r["display_name"] or r["id"],
                     "原生工具调用": bool((r["capabilities"] or {}).get("原生工具调用")),
                     "模式": (r["capabilities"] or {}).get("execution_mode"),
-                    "说明": (r["capabilities"] or {}).get("说明")}
+                    "说明": (r["capabilities"] or {}).get("说明"),
+                    "不在名单里": r.get("不在名单里")}
                    for r in 连接们],
         "可选工具": [{"id": k, "名称": v["名称"] if "名称" in v else v["name"],
                     "版本": f"v{v['version_no']}",
