@@ -3,6 +3,8 @@
 [![check](https://github.com/843773296-rgb/lanxiu-yunshang-agent/actions/workflows/check.yml/badge.svg)](https://github.com/843773296-rgb/lanxiu-yunshang-agent/actions/workflows/check.yml)
 &nbsp;当前版本 **v{{VERSION}}**(版本号只记在 [`VERSION`](VERSION),每一版改了什么见 [发布记录](澜绣云裳agent-发布记录.md))
 
+**先看一眼它是什么**:[产品介绍页](https://843773296-rgb.github.io/lanxiu-yunshang-intro/)(给不读代码的人看的:场景、谁在用、怎么工作、安全边界;源码在 [lanxiu-yunshang-intro](https://github.com/843773296-rgb/lanxiu-yunshang-intro))
+
 一家虚构的汉服定制品牌「澜绣云裳」的完整业务系统:
 **一个管理后台(数据的家)+ 一个 AI 运营平台(智能体在上面干活、人在上面签字)**。
 
