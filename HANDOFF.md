@@ -12,6 +12,13 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-18 13:4x · 交接(压缩前,第二份)—— 8770 已重启修好研判队列;介绍页新增 16 页的核对派给子助手在跑(Opus 5.5)
+
+- **8770 研判队列跑不动**:根因是常驻服务 com.lanxiu.agentsite 进程从 11-15 没换过(有人用 start.sh 的 nohup 另起,端口被占起不来,老进程一直在)。13:10 用 `launchctl kickstart -k gui/$(id -u)/com.lanxiu.agentsite` 重启,首页 302、四页 200、队列 19 条/16 条有草稿、详情 `/api/ops-detail?id=N` 0.07s。**以后重启 8770 一律 kickstart,别 nohup。** 「重新研判」(调模型+写库)没点。
+- **介绍页 c2 给的口径**(已发):工具 110(domains.py 多的 review_motif / motif_todo 不是注册工具,知识与工艺 15);守卫 6 = 开场注入/调用前/调用后/**调用失败**/交付前/压缩前;交付前检查 29。业务线只讲机制不抄数字(产品说明是 10-19 版)。
+- **在跑**:后台子助手核对 `~/Desktop/lanxiu-intro/澜绣云裳agent-产品介绍.md` 新增「三条业务线 → 安全与边界之前」;**结果出来按行号转给 c2**(c2 已推公开网页,提醒过它核完前别宣传)。
+- 其余同下一节(待推 2 笔 + 等用户拍两件 + README 链接)。
+
 ### 🟢 11-18 13:xx · 交接(压缩前)—— 介绍页交给新会话 eureka-c2 做;我这边待推 2 笔;锁归 eureka-fc(Opus 5.5)
 
 - **介绍页**:用户新开会话 **eureka-c2**(家目录起的)做澜绣云裳介绍页,项目目录 `~/Desktop/lanxiu-intro`(index.html / docs.html / 《澜绣云裳agent-产品介绍.md》已发飞书产品文件夹)。用户拍:真截图(用户自己截)、配色跟 workbuddy.ai、名称「澜绣云裳」、本地一份 + GitHub **独立仓库**开 Pages。
