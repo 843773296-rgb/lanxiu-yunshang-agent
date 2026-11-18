@@ -22,7 +22,10 @@ import subprocess
 import time
 
 _缓存秒 = 30
-_落盘 = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".takeover_last.json")
+# LANXIU_TAKEOVER_STATE_DIR(11-18):接管链路评测接假管理后台时把两份落盘指到临时目录 ——
+# 不指的话,假后台的清单会盖掉聊天站「最后一次拉成功」那份真的(连不上时聊天站就照假清单拦)。
+_状态目录 = os.environ.get("LANXIU_TAKEOVER_STATE_DIR") or os.path.dirname(os.path.abspath(__file__))
+_落盘 = os.path.join(_状态目录, ".takeover_last.json")
 _内存 = {"at": 0.0, "items": None}
 
 # ── 兜底(用户 2026-11-12 拍「技能兜底 + 把工作流配好」)──────────────────────
@@ -40,7 +43,7 @@ _内存 = {"at": 0.0, "items": None}
 #    所以兜底要**落盘**(两个进程共用这个文件),`接管中()` 读它:窗口内这个技能当没接管。
 # ⚠️ 窗口 15 分钟:够一轮对话用完,又不会让「工作流修好了」之后还在绕着它走太久。
 #    TAKEOVER_OFF 那条不走兜底 —— 它本来就是「交还」,清单重拉即可。
-_兜底文件 = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".takeover_fallback.json")
+_兜底文件 = os.path.join(_状态目录, ".takeover_fallback.json")
 兜底窗口秒 = 15 * 60
 
 

@@ -362,7 +362,7 @@ def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None, �
     # (mcp/protocol 那一段;评测进程不设,行为不变)。和上面同理要显式带过去,不指望继承
     # LANXIU_EVAL_NO_TAKEOVER(11-18):评测关接管,start_workflow 在服务进程里也得看得见,否则评测照样往生产发单
     for _k in ("LANXIU_USAGE_URL", "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER", "LANXIU_CONFIRM_STORE",
-               "LANXIU_EVAL_NO_TAKEOVER"):
+               "LANXIU_EVAL_NO_TAKEOVER", "LANXIU_TAKEOVER_STATE_DIR", "LANXIU_TAKEOVER_WAIT"):
         if os.environ.get(_k):
             env = {**env, _k: os.environ[_k]}
     if os.environ.get("LANXIU_DB"):
