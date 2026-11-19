@@ -12,6 +12,184 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### ⏱️ 12 小时长任务清单(11-18 22:00 → 11-19 10:00)· AI 管理后台修复夜(Fable 5.1)
+
+> 用户 21:5x 起:「开始 12 小时长时间工作,目标就是解决现在 ai 管理后台的问题,可以开多个 subagent」。每小时 :13 有 session 内提醒 **c258b450**(10:00 那轮写《澜绣云裳agent-夜间汇总-20261119.md》发飞书产品文件夹后 CronDelete)。
+> **拍板**(21:5x–22:2x):① 运行页暂停/取消/核实 **接执行侧**;② **模型训练先不做**(训练提交 / 产物部署按钮标灰写明);③ 补页面:Prompt 变量编辑 / 评测发起取消 / 旋钮方案页 / 连接停用 / **工具连接+工具组页 / 用量预算块 / 数据集页(新建冻结导出补脱敏) / 工具选择策略页**;④ e2e 残留 687 个假成员 **先不动**。
+> **守则**:只碰 管理后台/ 和根目录报告、交接;fc 今晚不占锁(它说的),0 点到夜跑结束不占锁、05:10 后再要;每批 = `scratchpad/gate_batch12.sh` 形状(主检出退回/拉到远端 → 并回 w1117 → kickstart aimc → 等 healthz 连续 4 次 200 → e2e-ci → ship);只认「被包的命令退出码」;子代理各自 worktree 分支(**从主检出 HEAD 切,不是 w1117**,所以叫它们先 merge w1117),交回后 `git merge` 进 w1117,冲突手解;**改 w1117 里的文件前先确认没有 batch 在 rebase 它**(21:27 栽过)。
+
+1. ✅ 体检 45 条中 22 条修掉(7e7d5863 / f79f31c2),报告 4a775439 已发飞书
+2. ✅ 子代理第一批四路合进 w1117(95224f50 Prompt 变量编辑;b6c3beb5 评测发起取消 + datasets 版本们;92a78c82 旋钮方案页;122279a4 连接停用/Agent 连接下拉/失败任务卡/待办链接/面包屑/试跑 100 条/实体去哪列/冒烟管理员轮,两处冲突手解)。合并后 16 页 U001 + 5 页 U002 冒烟全绿。**全部只过渲染没真点过**(子代理只许 GET)
+- 下午:fc 推了 cf643323(回答体检「压价没读话术打回」+ 夜跑小套看同一题连挂)→ 我把主检出 ff 过去、kickstart 8770 上线;fc 又推 c11af3b6(PRD 附录两条,纯文档),锁已放,fc 说今晚不再占锁。
+- **20:3x 用户问「债都还清了?」→ 拍「开始做吧」**:还体检欠账四件,b9c339e5(端到端七份测试收尾删自己加的临时成员 `tests/e2e/_清成员.py`,存量 775 个**按用户「残留先不动」不清** / 运行详情费用说明分演示和真模型 / 数据集页加「导出时包含 mock」勾选 / 新 `test_newpage_actions.js` 25 条,咬合两刀都红在点名那条)。批次 gate_batch13.sh 20:4x 起(scratchpad gate_batch13.status / e2e_ci_1119n.log / ship_1119n.log)。
+- **20:56 第一轮 e2e 红 1 条**(test_runctl_exec_flow:取消和 Worker 领任务撞同一瞬间,任务记成「已完成」)→ 查库时间线确认一步没跑 → 修 e6ed66f0(worker 进门见 cancelled 抛 取消了 → 任务「已取消」)→ 第二轮 e2e-ci 21:17 退出码 0、ship 21:39 rc=0 全量门禁 0,**已推 e6ed66f0**(b9c339e5 四件欠账 + e6ed66f0 worker 修法 + 之前的交接提交);aimc 已在批次里重启到这一版。门禁把影响面基线 394→395(我新文件里一段 ⚠️),已挪进 w1117 提交、主检出恢复干净。主检出另有 11-15 的空文件 `--自测.log`,不是我的,没动。
+- **22:3x fc 要跑 pre_push 推 b8b2591f(库路径单源,0 点前放锁)**:我已回「锁今晚不要了」。**今晚我不再跑门禁、不写共享库**;剩下三件欠账(日志采集策略加列 / 桥请求详情页 / 评测发起测试)明天做,先问 fc 锁窗口。w1117 本地 e2708b23(交接 + 影响面基线 395)未推,随下一笔业务提交带。`_清成员` 在整套里真跑了:6 份各删自己的、存量停在 775。
+- **23:2x fc 已推 e6ed66f0..e18167df、锁已放,到夜跑结束不再占锁**。fc 的门禁也把影响面基线顶到 395,fc 没提交(由我 e2708b23 带上,数一致不冲突)。w1117 已 rebase 到 e18167df,主检出干净(只剩那三个不 add 的滚动文件 + `--自测.log`)。0 点到夜跑结束我不占锁;明早 05:10 后再要锁推 e2708b23 + 下一件欠账。
+- **11-20 04:3x fc 夜跑完拿锁推两笔(说 05:10 前放)**。我趁空在 w1117 写完剩下三件欠账,**都只本地提交、没跑端到端**:
+  9c04d9cd 桥请求详情页(新接口 GET /bridge-calls/{id} 权限同列表、跨项目 404;前端 #/bridge/{id};运行页和原始日志能点过去;订单风险 e2e +5 条;顺手补登 test_newpage_actions 进 test-e2e / progress 两处,make contract 原来红在这)/
+  e0a826f3 评测「发起」页面测试(test_newpage_actions 第 ④ 组:外部登记、后台派发 422、真派 4 次运行再取消;**接口早有人测,原来那句「要真模型」不对**)/
+  94de01f0 日志策略加列 retention_policy_revision(迁移 dd289ffffc98;**第一次手编的迁移号和已有的重了,alembic 报 Cycle**)。
+  批次 scratchpad/gate_batch14.sh:等 05:10 + 锁空 → **锁里先 alembic upgrade(新列先落库)** → 并主检出 → kickstart aimc → e2e-ci → ship。日志 migrate_1120a / e2e_ci_1120a / ship_1120a。
+  **05:21 fc 放锁(已推 eecba3cc)**;批次第一轮红在迁移那步:没设 DATABASE_URL,迁移脚本拒跑(库没动,alembic_version 仍 b7c1d2e3f4a5)→ 脚本里显式给 aimc_dev,05:2x 第二轮起。
+  **05:22 迁移已落库**(alembic_version → dd289ffffc98,共享库已有 retention_policy_revision;老代码不读它,无害)。批次随后停在「主检出有不在 w1117 里的提交」:a7053ba4 夜跑自动提交(04:28,fc 的,没推)。**不替 fc 推**,已问 fc 怎么处理;回复前主检出不动、锁已放。下一步:fc 推了它 → 重跑 gate_batch14.sh(迁移那步再跑是空操作)。
+  **05:3x 更新**:fc 请我把夜跑那笔一起带上 → w1117 重排成 origin/main(eecba3cc)→ bf7f6792(夜跑,内容与 a7053ba4 逐字核过)→ 我的四笔;主检出 reset --keep 回 eecba3cc;**第三轮批次在跑**(status 文件看「第三轮」之后)。
+  · 未验证:三件欠账的新测试(订单风险 +5、test_newpage_actions ④ 组、日志策略 +2)**一次都没真跑过**,第三轮 e2e-ci 是第一次;红了先看是测试写错(字段名 / 表名我改过两次)还是代码错
+  · 判据:桥详情权限同列表(运行评测)、不按状态筛;日志策略改用自己的版本号、**存策略不再顶项目 revision**;夜跑提交是 fc 明确请我带的(只含 agent/nightly + 当晚报告)
+  · fc 更正:夜跑 .gz 变小是 fc 11-18「压完就删」的回归(头版本历史 32.7 万行 → 2 万行,旧版在 git 历史里),**fc 自己修、单独推,占锁前喊我** —— 不是我的活,别碰
+  · 禁区照旧:不推别人的提交(这次夜跑那笔是对方点名请求的例外)、主检出不留未提交改动、迁移要显式 DATABASE_URL=aimc_dev
+  · 下一步第一个动作:看 scratchpad/gate_batch14.status;绿了 → 告 fc 放锁、远端应到 ae3c2410 之后;红了 → 看 e2e_ci_1120a.log 里 ❌ 那条
+  · **05:5x 第四轮**:test_newpage_actions 39/0 绿(87948309 修了候选按 ->>'ref' 查 / 桩随机键非 UUID / 删直改运行状态的兜底);红在 **test_exec_mode_flow ③**(NO_MODEL_CONNECTION,期望 MODEL_/SECRET_ 族)—— 第三轮同代码绿、锁里单跑绿,旧交接(11-09 前)记过本机常驻 8801 上它「有时红」、没查根因。日志留在 e2e_ci_1120a_第四轮.log;**06:0x 第五轮在跑,再红就查根因,不许当绿推**
+  · **06:44 已推 eecba3cc..c9d4a74e,锁已放、已告 fc**(第六轮:e2e-ci 06:24 退出码 0、页面冒烟 #/bridge/ 跑通、ship 全量门禁 0)。
+    内容:fc 夜跑 bf7f6792(fc 点名请带)/ 桥请求详情页 / 评测发起页面测试 + 修三处 / 日志策略自己的版本号(迁移 dd289ffffc98 已落库)/
+    test_exec_mode_flow 竞态根因修复(c9d4a74e:先 POST 再塞连接,忙的 Worker 0.05 秒轮询抢先领走 → NO_MODEL_CONNECTION;改成只在「排队中且没人领」时塞,被抢重交,第六轮一次塞上)。
+    主检出另有项目日志.md 改动 = 06:40 定时任务生成的,不是我的,没动。fc 接下来要拿锁修「夜跑 gz 被当晚覆盖」(它的回归,它自己修)。
+    **三件不用拍板的欠账到此清完。**
+  · 悬而未决:用户那三件(假成员存量 / 登录后界面 / 介绍页图片条款)
+  ~~性能问题:后台派发下拉取 1400 多个详情~~ **11-20 07:0x 查实不存在**:1439 个有版本的工作流里 1434 个已归档,列表不列归档 → 实际约 10 个请求。写了个新接口又撤了,没提交。
+- **压缩前六项(20:5x)**:
+  · 未验证:七份测试接了 `_清成员` 只 py_compile 过 + 演示项目单测删一条,**整套 e2e-ci 里还没真跑**(批次在跑,看 e2e_ci_1119n.log 里有没有「🧹 收尾删了」行);费用说明 / mock 勾选只过 node --check,没在浏览器看
+  · 判据:只止血不清存量(用户拍「残留先不动」);按「本进程登记的工号」删、不按 E2E 前缀删(防并发测试互删);旋钮测试要先把 draft_revision 推到 2,否则 If-Match 写死 1 测不出
+  · 作废:旋钮测试第一版(revision 恰好是 1 的那版)咬合没红,已改
+  · 禁区:同前(不碰 fc 的文件;0 点后不占锁;三个运行态文件不 add;e2e-ci 只在 gate_lock 里跑)
+  · 下一步第一个动作:批次通知来 → 读 gate_batch13.status;rc=0 → 交接记推送号、告诉用户;红 → 看是哪条、是不是我的改动
+  · 悬而未决:775 假成员清不清(要问用户,别自己清)
+- **还欠着(下一批,不用拍板)**:日志采集策略拿项目 revision 当乐观锁(要加一列)/ 桥请求没有详情页、运行页链不过去 / 评测「发起」要跑真模型没进测试。**要用户的**:登录后界面亲眼看、介绍页 AI 图商用条款、687→775 假成员存量清不清。
+- 12:1x ✅ **第七轮推上去了**:ship 被包的命令退出码 0,远端 f7f0c864(产品说明 4.8 + Hook 六个、待办→运行互链、面包屑对齐、夜间汇总终版、数字豁免 + README)。今晚这一摊全部落地,没有未推的业务提交
+- 11:4x 第七轮第二次:e2e-ci 绿,全量只红 1 条 = 8770 页面冒烟 triage-board「0 个节点」—— 上一次同一条是绿的、我没碰 agentsite,单跑 3/3 绿,判抖动;**直接在主检出重跑 ship**(后台 b6rd02s0q,日志 scratchpad/ship_1119b.log)。第一次红的两条(4.8 数字豁免 + README)已修 f7f0c864
+- 10:1x **12 小时长任务收尾**:夜间汇总终版已发飞书、每小时提醒已关(CronDelete c258b450)。剩第七轮推送在跑
+- 10:11 fc 已推 ae21e1b9(4 笔;锁内 order_eval 3/3,真库 ordr 前后都是 26039 行,不再写真库)。**第七轮起跑**(后台 b9f2onru8:并回 → 重启 aimc → e2e-ci → ship),13 笔:产品说明 4.8 + Hook 六个、待办互链、面包屑、夜间汇总终版。完成读 gate_batch12.status 的「ship 完」行
+- 09:35 自检:fc 还没推上去(远端仍 4044579a,锁被 09:30 起的咬合重放占着,应是 fc 的 pre_push);我本地 13 笔未推(文档 + 互链 + 面包屑)。夜间汇总已更新成终版发飞书 https://aqvi2xbk5kd.feishu.cn/docx/ItjndmZUqoGAzox9NJacUivmn50 。10:00 轮只剩 CronDelete;第七轮推送等 fc 喊
+- 09:0x 介绍页会话(c2)请核「项目方法」七页:已只读核完逐条回它(4 处要改:技能顺序、口令是哈希且管理后台无登录、面料工期其实有向量检索、费用倍数 24–135;研判单价 0.5 元偏高约 3 倍)。不归我改
+3. ✅ **08:42 推上去了**:全量门禁 被包的命令退出码 0,远端 4044579a(昨晚 67 笔 + fc 的⑦修法)。已告 fc 放锁让它先推。**下一批(第七轮)排 fc 后面**(fc 08:4x 起 pre_push 3 笔,推完锁内单跑 order_eval 约 15 分验真库行数不变,跑完喊我;我说了不急):产品说明 4.8 + Hook 六个、待办→运行互链 + 面包屑对齐(要跑 e2e-ci)
+   旧:08:31:咬合重放完,pre_push 08:20 起锁内全量门禁,约 08:50 出结果(后台任务 b0fcqv67f 完成即读 status)。用户 08:3x 换模型为 Opus 5.5,提交署名跟着换
+   **第六轮(07:08 起,67 笔,含 fc 受欢迎⑦修法 4044579a):e2e-ci 07:28 全绿(退出码 0),ship 全量门禁在跑(07:32 起咬合重放)**;06:40 那轮全量红 4 条已全修(4d1f8db0 中文参数名 + trace 白名单;0655f280 recall 登记;fc 的⑦)。推完:告 fc 放锁、远端应到 4044579a 之后。**赶不上这一批的 → 下一批(第七轮)**:产品说明 4.8(d7c02821 / 84f48175)、待办→运行互链 + 30 页面包屑对齐侧栏分组(子代理 2846e5a3 已并入,node --check 过、30 页冒烟全绿;桥请求没详情页所以没链,记着)。第七轮要跑 e2e-ci(改了 app.js)
+   - 07:50 自检:第四轮 e2e(23:20)只红 1 份:新测试 test_runctl_exec_flow 抓到真 bug —— worker 节点边界提交后,runctl 中途写 run_events,两边 seq 各算各的撞车 → **DeadlockDetected**,任务崩了重跑,检查点落到 start,恢复后模型多调两次。修法 34d874ae:两个 记事 都先 for update 运行行、seq 从库里 max+1(和 runctl 同一个锁顺序)。**第五轮 e2e(23:37–23:49):所有端到端全绿(含 test_runctl_exec_flow 暂停→继续、test_orchestration 88 条),只红 ifmatch_reachable_check「三条新乐观锁接口没登记 revision 从哪来」—— 已登记(下一笔),检查本地绿。** 23:52 不再起新一轮(0 点夜跑要锁);**05:17 一次性提醒 83ece95a 会跑完整 batch12(e2e + ship 推)**。第三轮红 2 条(22:56):Agent 跑 http 000 **根因找到了**:可选连接的顺序变了,e2e 取「第一条支持工具调用的」拿到别的测试留下的本机假接口(e2e 本地假接口 ×2,端口早死,status 仍 active —— 残留连接也该清);测试改成按 模式=mock 点名。test_runctl ④「继续」→ 现在 409 RESUME_NO_CHECKPOINT(夹具 paused 没检查点),测试改;⑩「重试新建的步骤删干净了 5」是并发污染:它借「最新一条运行」改库,和子代理的真运行撞了 → 改成只借终态 + 结束超 10 分钟的。**第四轮 23:2x 起只跑 e2e-ci(ONLY_E2E=1),ship 留 05:10 后。** 并远端的方式改了:w1117 上全是合并提交,rebase(含 --rebase-merges)重放会撞我手解过的冲突,23:19 又栽一次 → 改成 `git merge origin/main`(pre_push 只看 HEAD 含不含 origin/main)。fc 推了 863af6f3(PRD 两条),今晚不再占锁。
+   - **e2e 子代理(a87b7b49,合 1e720567)抓到的大问题**:worker 把整次运行裹在一个事务里,running 不提交、API 的 pause/cancel 被行锁挡 → **我接的暂停 / 取消在真运行上点不出来**。已改(cb 下一笔):运行类任务节点边界提交。**没在真库跑过**。
+   - 残留:demo_a 两条「e2e 本地假接口」active 生成连接、库里一条被夹具写回 queued 的 succeeded 运行(xr_8fdb2648df12)—— 要清但是共享库写,明早再说。
+   第三轮 22:44 起(并回 5c940b0f,32 笔)。第二轮红 2 条:Agent 跑 http 000 **不是瞬断** —— 可选连接按名字排后 e2e 取「第一条支持工具调用的」拿到老 e2e 连接(端口死了),改回最新建的排最前;test_runctl 等 reconciling,核实今晚改成当场送回 running/paused,测试跟着改。第二轮 22:29 起(并回 f63afb53,27 笔,含 1–6 全部;aimc 已重启跑新代码;e2e-ci 约 22:45 完 → ship 约 23:1x 推;fc 排在后面推 1 笔文档,23:30 后它就不推了)。第一次 e2e-ci 红 3 条(22:23):加资料引了接口没有的「版本」字段、工具详情脚注测试认旧词、Agent 跑 http 000(模型调用网络瞬断,同时段别的 agent_run 都完成)—— 前两条已修(含测试一起改),第三条当瞬断重跑。**下一次 batch12 并回的是全部 1–6**
+4. ✅ 暂停 / 取消 / 继续 / 核实接执行侧(2bbb922e,未推):runner 要暂停吗 回调 + pause 检查点;worker 刷新令牌读 execution_runs 两个标记、取消收成 cancelled、_挂起 支持 paused;runctl 取消同步 jobs.cancel_requested、继续真排任务、核实查桥请求回执后送回 paused/running;离线测试 test_pause_checkpoint 14/14、make test-orchestration 全绿。**worker 那一半没真跑过**。原计划:runner.跑一张图 加「要暂停吗」回调 → 节点边界返回 paused 检查点;worker `_打点器` 读 execution_runs.pause_requested/cancel_requested;_挂起 支持 paused;runctl.cancel 同步 jobs.cancel_requested;runctl.resume 改调 run_resume.排恢复(挂起态加 paused);worker `except 取消了` 把 execution_runs 收成 cancelled;reconcile 待定
+5. ✅ 子代理第二批全合入:用量预算块(42c78bf3)、工具选择策略页 + 训练/部署标灰(91a6f4e4)、工具连接+工具组页(a8ac8f06,Makefile/app.js 两处冲突手解)、数据集页新建/冻结/导出/补脱敏 + PATCH /datasets(57da1278);PATCH /datasets 和连接 archive/unarchive 补进 contract/endpoints.py 并重生成 openapi/ts。合并后 datasets / groups / conns / tool 详情 / 搭建 页冒烟绿。原记录:✅ 用量预算块(42c78bf3,合 07474e2a;预算接口 GET 也要 admin,非 admin 看 403 态);✅ 工具选择策略页 + 训练/部署标灰(91a6f4e4,合 5f33b6d3);⬜ 工具连接+工具组页、数据集页 还在跑。合并后 7 页冒烟绿。子代理都说两条棘轮(css_class_check 30>29、md_render_check 50>32)**在合并前就红**,不在 e2e-ci 里;ship 的全量门禁会不会跑它们看日志
+- 07:4x 产品说明新增 4.8「Agent Loop 和 RAG」(子代理 d7c02821 已并进 w1117;RAG 参数全部从代码核:切片 ≤600 字 / BGE-small-zh 本地 512 维 / 种子配置 候选 20・取 8・预算 4000 token / Claude haiku 重排 / 只实现 vector;正式索引那版的值在库里没核)。顺手把 4.5 标题 Hook「五个」改「六个」(guards 实挂 6 事件,4.2 早已写 6)。已发飞书。**e2e-ci 07:28 全绿(退出码 0),ship 在跑**
+- 07:2x 用户:「没事干的话把产品文档重新优化下,把 loop / RAG 说清楚」→ 派子代理改《澜绣云裳agent-产品说明.md》(Agent Loop 与 RAG 两节,面向不读代码的 PM,事实从代码现读),README 要用 make_readme 重生成,发飞书产品文件夹;交回后合进 w1117 随下一批推
+- 07:1x fc 来信:它那次红在 triage_trial_check 咬合,已补(de27aaa4);**07:08 用户当面确认后它已删真库 15 张评测单 + 19 订单行 + 120 业绩分成,备份在它 worktree .wip-glossary/db-backup/lanxiu-删评测单前-20261119-070801.db**。我的 batch12 07:08 起(e2e-ci 中),门禁若有数 C10002 的检查行数会变,心里有数
+- 07:1x 上一轮 batch 停在「主检出有别人的未提交改动」= 06:40 daily-log 又生成的项目日志(照用户 11-18 拍的丢掉 git checkout);fc 07:07 放锁但远端没动(它那笔没推成?已问)→ 我 cherry-pick 它的受欢迎⑦修法 4b3356d6 进 w1117(本地 popularity_check 绿),**完整 batch12 再起**。推完喊 fc
+- 07:0x 用户拍板:**15 张评测单删、先备份整库(归 fc 执行)**;残留只清两条死端口连接(我用 archive 接口停了 mc_e2e_4fd2fe59 / mc_e2e_bf6cbf17,demo_a),假成员和那条运行照旧不动。夜间汇总 392f6091 已发飞书 https://aqvi2xbk5kd.feishu.cn/docx/RL4BdswXPojXVUx1wipcEejFn0c
+- 07:2x 再刷一次(内容同下,无新变化;后台任务 buutsx9c9 仍在等 fc 放锁)
+- 07:1x **压缩前交接(六项)**:
+  · 下一步第一个动作:后台任务 buutsx9c9(gate_batch12.sh 完整)在等 fc 放锁;它完成的通知到了就读 `scratchpad/gate_batch12.status` —— 推成功(远端 = 我的 HEAD)→ 告 fc「锁已放」、清单 3 打 ✅;红了看 ship_1118h.log / e2e_ci_1118g.log 的 ❌ 行
+  · 未验证的预判:① 并进 fc 的 3 笔后 popularity ⑦ 会绿(它说单跑 12 条全过);② nightly_check 加登记后本地绿,门禁里应同样;③ worker 节点边界提交 + 死锁修法只过了 e2e(23:37 那轮 test_runctl_exec_flow 暂停→继续全过),真人在页面上点暂停还没人试过
+  · 判据:只认「被包的命令退出码」;Agent 跑 http 000 不再当瞬断(前两次都是真因);页面冒烟桩 options:[] 已在仓库里
+  · 作废:「主检出有不在 w1117 里的提交就停」那条判据对夜跑自动提交会误停 → 已改成把 main 并进 w1117;rebase w1117(含 --rebase-merges)作废,只用 merge
+  · 禁区:tools/nightly_eval.py 只改 fc 点名的那一行;真库 15 张评测单(C10002)不删,等用户拍;e2e 残留(687 假成员、2 条死端口连接、1 条被写回 queued 的运行)不动,等拍
+  · 悬而未决:15 张评测单删不删;残留清不清;10:00 夜间汇总 + 拍板卡(含这两条 + 夜跑 order/talk/tool/growth 退步归评测线);CronDelete c258b450、83ece95a 已自删
+- 07:0x fc 查明:popularity ⑦ 是检查自己算歪(拿 round 4 位的合并率复核),修在它分支 4b3356d6;recall 登记要加在**我**分支(第三张夜报只在 ac60476c 里),它口述我代登(tools/nightly_eval.py 连续失败已知,这是 fc 点名让我改的)。**fc 先推(07:0x 起 pre_push 约 30 分),我 merge 远端后跑完整 batch12**
+- 06:40 **ship 全量门禁红 4 条**:我的两条已修(4d1f8db0:连接列表 ?含停用 → ?include_archived(url_ascii_check);test_runctl_exec_flow 的本机假模型接口登进 trace_check 白名单)。另两条归 fc:夜跑清单「recall_eval 连 3 晚 0 分没登记」(fc 的 fb8c6640 修判分器,登记那条问它)、popularity_check ⑦「苎麻被判成突出没越过两倍噪声」(疑真库 15 张评测单顶出来的,待确认)。已问 fc,它先推我再并
+- 06:36 自检:**e2e-ci 05:51 全绿(退出码 0)**,ship 在跑(pre_push 06:20 起拿锁,前面是咬合重放),等推完
+- 05:3x 第一次红在 test_runctl_flow:借到一条带检查点的老运行,「继续」真排回去了(202)而④要验 409 → 夹具再加 resume_snapshot is null(22fb4f79),**05:3x 重跑完整 batch12**
+- 05:17 **完整 batch12 起跑**(e2e-ci → ship 推;约 06:0x 完)。推完:告 fc 放锁、更新清单 3 为 ✅
+- 04:4x fc 来信(**要进夜间汇总 + 拍板卡**):order_eval 连 4 晚退步的根 = 评测切副本漏了懒加载写口(api_order.open_order 函数体里才 import order_write,第一次调用连的是真库),**真库 ordr 多了 15 张评测单(C10002,11-18 01:33–02:17,id …244322–336,待确认)**;fc 修在连库层 1e3df33b,排我后面推;那 15 张删不删要用户拍。我这边管理后台用的是 PG aimc_dev,不同根
+- 04:35 自检:nightly-eval-ok 已更新到 11-19 04:26,锁空;按守则等 05:10 世界平移后再要锁,05:17 提醒直接跑完整 batch12(上一轮状态文件里 e2e 退出码 2 是登记检查那条,已修 578347ba,不用再单跑)
+- 04:3x fc 来信:夜跑 04:27 结束,**自动提交 ac60476c 落在主检出**(脚本不替别人推);我把主检出的 main 并进 w1117(不然 batch 的「主检出有不在 w1117 里的提交」会停)。fc 本地 1 笔 fb8c6640(召回判分器两处冤枉)排我后面,**推完要喊它**。夜跑点名:order_eval 连续 4 晚退步、talk / tool / growth 连续 6 晚判红 —— 写进夜间汇总,归评测那条线
+- 03:36 自检:同 00:36(锁空、夜跑未写 ok —— 上一次是 11-18 03:54,今夜的大概也在 03:5x 落;远端没动、无待合并)
+- 02:36 自检:同 00:36(锁空、夜跑未写 ok、远端没动、无待合并)
+- 01:36 自检:同 00:36(锁空、夜跑未写 ok、远端没动、无待合并)
+- 00:36 自检:锁空、夜跑还没写 nightly-eval-ok(上一次 11-18 03:54),按守则不碰锁;没有待合并的分支;w1117 领先远端 46 笔等 05:17 推。下一步第一个动作 = 05:17 提醒来了看 nightly-eval-ok 比 11-19 00:00 新且锁空 → 跑完整 gate_batch12.sh
+6. ⬜ 推完之后:① ✅ 子代理 a979bd 的 5 份 e2e(prompt-runs 绑连接 22 条 / 连接停用 25 / PATCH datasets 25 / 运行取消暂停 12+⏸1 / 评测取消 11+⏸1)已合入并登记 E2E_CI;暂停→继续那条等 worker 事务边界改完才能验(prompt-runs 绑连接 / 连接停用 / PATCH datasets / 运行取消暂停 / 评测取消),交回后合入、登记 E2E_CI、再推一批;② ✅ runctl 取消队列中运行顺手收任务(64fbcbe0,下一批推);③ 小项:✅ Agent 调试默认输入按 schema 造 + 费用说明分 live/mock(59c0e133);✅ viewer「看进度」(评测子代理已按角色摆);✅ 知识库文档列表页 + GET /knowledge-bases/{kb}/documents(014dc93a,合 260e14a0;顺手登记 #/retrieval/ #/selection/ 进 detail_page_hashes、md_render 钉到 63;**在下一批推**);⬜ 日志策略 If-Match 用 projects.revision(要加列,留着);④ 10:00 夜间汇总发飞书、刷交接、CronDelete c258b450
+- **未验证的预判**:暂停 / 取消的 worker 那一半没在真库上跑过(e2e 子代理会试抓 running 窗口);子代理们的写操作(建连接 / 建组 / 冻结 / PATCH 数据集 / 建方案 / 发起评测)全只过了代码审读和渲染,e2e-ci 现有测试覆盖不到新按钮的 POST,靠 a979bd 补的测试
+- **判据**:只认「被包的命令退出码」;Agent 跑 http 000 那种瞬断红不算代码红,同时段别的 agent_run 都完成就重跑
+- 旋钮页子代理提到两条棘轮 css_class_check 30>29、md_render_check 37>32 **在 ff8e39a4 上就红**(fc 推得上去说明不在门禁里,可能只在 make test)。看 ship 日志再说
+
+### 🟡 11-18 21:5x · 用户拍了体检四件;batch12 在跑(Fable 5.1)
+
+- **用户 21:5x 拍板**(报告第四节那 12 条里的 4 件):① 运行页「暂停 / 取消 / 核实」**接执行侧**(worker 每步检查点读运行状态,pause_requested→paused、cancel_requested→cancelled;reconcile 也要有人接);② 训练任务 / 模型产物部署**接执行器**(真跑训练和部署 —— 要先问清 GPU / 部署目标,这一条我还没问细节);③ 补页面:**Prompt 变量编辑、评测中心发起 + 取消、澜绣旋钮与方案页、模型连接停用**(四个都选了);④ e2e 残留 687 个假成员 **先不动**。
+- **没拍的 8 条**(报告第四节 #3 微调三页 / #8 工具组等 / #9 预算 / #10 待办链接 / #11 实体去哪列 等)留着。
+- **batch12**:第一次停在我自己的判据(主检出落后远端被当成「有别人的提交」),改成「HEAD 是 origin/main 祖先就 pull --ff-only」后重跑;状态看 `scratchpad/gate_batch12.status`。
+- **接下来的顺序**(推完才动):先做 ③ 里半天级的两件(Prompt 变量编辑、评测发起/取消),再 ① 暂停取消接执行侧(改 workers/worker.py + runctl.py:runctl 置标记时同步 jobs.cancel_requested;worker 检查点读 execution_runs.pause_requested),然后 旋钮方案页、连接停用;② 训练/部署执行器**最后**,动手前要问用户 GPU 在哪、部署到哪。
+
+### 🟡 11-18 21:4x · 体检四路审计齐了:45 条,22 条已修(两笔,未推)、12 条要拍板、11 条记录(Fable 5.1)
+
+- **报告**:`澜绣云裳agent-AI管理后台体检-20261118.md`(根目录,随下一笔推;发飞书产品文件夹)。拍板的 12 条在报告第四节,**没问用户**。
+- **第二笔修的**(见提交信息):/projects 带实际能做的、成功率 completed 也算、Prompt 筛选进 SQL、worker 写 started_at;前端 20 处(wfrun 深链崩、重试传 MouseEvent、核对页画工具参数、评测 ref、建索引按钮、收进知识库、召回多库、翻页、审计截断、依赖中文、kr field_errors、info_requested、工具详情键名、过期文案 ×5、字面星号 ×7、版本与发布按角色摆、Agent 试运行 90 秒)。
+- **未验证的预判**:① 后端四处改动只过 ast,**真服务没跑过**(8899 临时实例已停);② 建索引 / 收进知识库 / 新建知识库 三个新按钮只过了渲染,**没真点过**(接口形状按 knowledge_api 读的:documents 要 {upload_id,name},knowledge-bases 要 {name});③ e2e 三份直接跑被权限分类器拒了,全靠门禁里的 test-e2e-ci。
+- **下一步第一个动作**:fc 推完放锁(它 21:05 起 pre_push)→ 跑 `scratchpad/gate_batch12.sh`(并回 → kickstart aimc → e2e-ci → ship);红了看 e2e_ci_1118g.log。推完发飞书、告用户、拍板卡。
+- **判据**:只认「被包的命令退出码」;页面冒烟桩的 data-raw 豁免只认 `data-raw="原文"` 写在开标签里;`git stash list` 里两条 autostash 不是我的,别动。
+
+### 🟡 11-18 20:5x · AI 管理后台全页体检(用户要「确定是否所有能力已可用」)+ 修「运行测试每次都排队」(Fable 5.1)
+
+- **体检方法**:page_smoke 的桩(scratchpad `smoke_dump.js`,加了 DUMP 把渲出的文字落盘)以 U001 + project_lanxiu 渲 39 个一级页;54 个列表接口逐个 curl;结果在 scratchpad `smoke_summary.txt` / `api_probe.txt` / `smoke/*.txt`。
+- **查实的坏**(都已在工作树改,**未提交**):
+  ① Prompt「运行测试」/「单条试跑」:页面派完任务**只查一次**状态 → 永远显示排队;且 POST /prompt-runs 的快照里**从来没有** model_connection_id,真跑模式(launchd 的 aimc 是 MODEL_ADAPTER=anthropic)下 worker 每次 NO_MODEL_CONNECTION(库里 61 条这样失败的,用户 U002 在 demo_a 的 4 次都是)。修:main.py `_定调试连接`(点名优先;项目唯一启用生成连接默认用;零/多条不猜,信封写明会失败)+ 快照/幂等摘要带连接 + GET /jobs 露 error_code/detail;app.js 顶层 `画模型连接` / `等任务`(2 秒轮询最多 2 分钟)/ `运行结果html`,两页共用。
+  ② 成员与权限:管理员打开整页「出错了」—— 接口 `可授权的能力` 是按角色的 dict,页面当数组 `.map`;CI 冒烟用 U002 非管理员所以没红过。修:`授权框html(d, 角色, 已有)`,换角色跟着变。
+  ③ 审计页管理员那支在**桩**里抛(`sel.options` 桩没有),浏览器没事 → page_smoke.js 的 造() 加 `options: []`;审计「对象/为什么」、工具目录「用途」是原文带 `**` → data-raw="原文"。
+- **未验证的预判**:① 后端改动只过了 ast,**没对真服务跑过**(8801 跑的是主检出旧代码)—— 下一步起临时实例 8899(worktree 代码、aimc_dev、MODEL_ADAPTER=anthropic)真跑一次 pr_tl05 看 job 成功,再跑 test_api_flow / test_exec_mode_flow / test_prompt_snapshot_flow(AIMC_BASE=8899);② 并回主检出后 **aimc 要 kickstart**(API 进程不重载)再跑 e2e-ci。
+- **体检里不是 bug 的**:空数据页(Agent 0 / 能力档案 0 / 问题单 0 / 知识修订 0 / 产出 0 / 定时 0 / 训练 0 / 产物 0)、上线验收 0/10 未签、健康页无人工判读(8770 没接 POST /feedback)、「定时触发还没做」「Agent 线上(生产)还没接」是明写的未实现。
+- **数据卫生(待拍)**:project_lanxiu 有 689 个成员,687 个是 e2e 残留(E2EOP 292 / E2EAK 232 / E2EHO 47 / E2EIS 36 / E2ECP 35 / E2EIV 34),来自默认打 project_lanxiu 的那十几份 e2e(test_access_api_flow 等);审计里 access_key.issue 991、application.create 234 同源。e2e-ci 每跑一次再加。要么测试收尾清自己建的,要么改打 e2e 专用项目;残留清理是共享库写,要锁 + 告 fc。**没问用户,没动。**
+- **锁**:batch11(默认项目 fbaa7fbb)ship 在跑;推完 eureka-fc 要锁跑接管评测 25 分钟,之后才轮到这批(管理后台改了 → 先 kickstart aimc → e2e-ci → ship)。
+
+### ✅ 11-18 20:0x · 已推 a0d89c9d —— Prompt 简介 / README 介绍页链接 / 差评汇编进知识库 / 召回测试修好(Opus 5.5)
+
+- 全量门禁退出码 0(中途红过一次:导入脚本里的全角标点被编辑器改成半角,charset_fullwidth_check 41→42;改用 chr() 拼,回 41)。e2e-ci 0 在 batch9 那次(管理后台代码相同)。
+- 8770 已 kickstart(带上 eureka-fc 的 TL05/TL76 新措辞;店长助手不用出版,正文由 assemble 从代码挑)。
+- **召回测试**:用户当时在「演示项目 A」(mock 向量、只有 9 月拍板)—— 真项目是 project_lanxiu(bge)。差评汇编导进 project_lanxiu 的「澜绣业务拍板」库,索引 ib_fa01e1d19643(bge)已就绪;重测前 4 片全是汇编、分数 9/8/7/6,生成「够答」、引 8 条。演示项目没动(集成测试按名字找它)。eureka-fc 导了领域知识库并重建 ib_40d12a6b1bad。
+- 介绍页图片:c2 已给 12 张 jpg 写回 XMP「AI 生成」标识(27754ff),商用授权那条结了。
+- **悬而未决**:演示项目 A 默认被选中会让人误以为召回坏了 —— 要不要把默认项目改成澜绣云裳,没问用户。
+
+### 🟡 11-18 18:4x · 交接 —— Prompt 管理加简介 + README 介绍页链接,排在 eureka-fc 后面推(Opus 5.5)
+
+- **用户要**:Prompt 管理每段 system prompt 加简介,说清管哪个部分。d1b19245:导入脚本 `包一条()` 现拼「用途」(哪几个助手｜讲什么 / 类型 / 装了哪些工具才发 / 口径),不手写;列表页取第一行 70 字、悬停看全文。**进了内容哈希 → 127 条各出一版;共享库 aimc_dev 要在锁内重导,否则 lanxiu_prompt_sync_check 红**。
+- **README**:15e60233 顶部加产品介绍页链接(Pages 已上线 200,仓库 lanxiu-yunshang-intro)。
+- **在跑**:`scratchpad/gate_batch9.sh` —— 等锁空 → 并回主检出 → 锁内导入 + 同步检查 → e2e-ci → ship。状态 `gate_batch9.status`,只认「被包的命令退出码」。
+- **欠账**:评测稳定挂的「没把写动作交回给人」那道,eureka-fc 补了 TL05 未复跑;logo 登录后界面要用户看;介绍页 AI 生成图的商用条款没核。
+- **未验证的预判**:① 简介只在本地 `--看` 和脚本里预览过 6 条,**没在 8801 页面上看过**(要导入后用户刷新看);② e2e-ci 的 Prompt 页测试会不会断言「用途」一栏旧样子 —— 没查,等 e2e-ci 结果;③ 导入会把 eureka-fc 已提交未导入的 TL 改动一起导(已告诉它)。
+- **判据**:工具中文名取说明**第一小句**,不取第一段加粗(加粗是「客户问多少钱时用这个」类提醒,试过作废);「写」「图片」是 needs 里的记号不是工具,单独翻。
+- **禁区**:prompts.py 一字不改(TL 归 eureka-fc);导入只在锁内跑;主检出不写未提交文件;**店长助手不出新版本、不切生产**(TL76 / TL05 是改措辞,eureka-fc 攒着问用户;若重导后 assistant_effect_check 红,先告诉它,别为转绿去切)。
+- **召回测试「没结果」(用户 18:5x 问)**:查实页面没坏 —— 流程走完、精排和生成都调了,生成答「证据不够」(正确拒答)。根因:① 知识库 kb_0ff23c4a90d1 只有 6 份文件(业务拍板 0924–0927 + 版型调研 + 一份测试上传),**没有差评处理资料**;② 索引 ib_44bd0b04cf8f 是 10-24 用 **emb-mock** 建的(假向量,相似度 0.05–0.1,等于随机),而真模型 bge-small-zh-v1.5 适配器和模型文件(`管理后台/.models/`)都在。**用户拍「两个都修 + 从现有规矩整理」**:写《差评处理规矩》(来源 TK13/TK14/TK16/TL98/TL103、rating-repair 技能、业务拍板 0927)进 `业务决策/` → 锁内 `管理后台/tools/ingest_lanxiu.py` 导入 → 用 bge 重建索引(POST index-builds 带 embedding模型id,或 `tools/seed_index.sh` 形状)→ 同一问题重测给用户看。关键词检索要等 bge 不够再出选型卡。
+- **⚠️ batch9 并回时漏了 eureka-fc 的 ca028d6f**(锁空那一刻 pull 没拿到),主检出 = 242b1a83 不含它 → ship 第一步「查已 rebase」会拒。e2e-ci 照跑(只改 管理后台,结论有效);ship 拒后:w1117 rebase 到 origin/main → 主检出 `git reset` 不行(别动别人的)→ 用 `git pull --ff-only` 前先确认主检出没有别人的提交,再并回、锁内重导规矩(TL05 变了)、ship。
+- **下一批 `scratchpad/gate_batch10.sh`**(等 batch9 结束再起):主检出比远端多出的 4 笔按主题核过是我的 → `git reset --keep w1117` → 锁内 ingest_lanxiu + import_lanxiu_prompts + 两条同步检查 → ship(e2e-ci 不重跑:管理后台代码和 batch9 那次一样)。**推完要喊 eureka-fc**:用户已拍 TL76 + TL05 店长助手出版切生产,它等规矩池导好再出版。之后我派 bge 索引重建 + 召回重测,不用 8770。
+- **作废的结果**:工具中文名「取第一段加粗」那版预览(kb_bom 显示成「客户问多少钱时用这个」)作废。
+- **悬而未决**:店长助手要不要带 TL76 / TL05 出新版本,eureka-fc 问用户,不归我问;介绍页 AI 图商用条款要不要查,没问用户。
+- **下一步第一个动作**:b7auqut56 完成后读 `scratchpad/gate_batch9.status`;全绿 → 告诉用户去 8801 Prompt 管理页刷新看简介、告诉 eureka-fc 锁已放;红 → 看 import_1118.log / e2e_ci_1118c.log / ship_1118d.log。
+
+### ✅ 11-18 15:52 · 已推 6df6695e —— logo 接进三个界面;e2e-ci 0、全量门禁 0、8770 已重启;锁已放并通知 eureka-fc 跑 13 道评测题(Opus 5.5)
+
+- **用户拍板(11-18)**:① 主检出 06:40 那份项目日志**已丢**(git checkout);② 飞书「重新授权」—— 查下来不用人点:make_log 原来调 `~/Desktop/chatgpt` 那份发布脚本(它的登录过期),**改成本仓库 tools/feishu_publish.py**、目标仍是通用文件夹 PJWW…(88abdbb4),实发一次成功并清了 1 份旧版;③ **允许无界面浏览器给本地静态页拍图,不点击、不登录、不联网**(已写进记忆 web-search-yes-browser-no)。
+  - 拍法坑:headless 最小视口 500,要 390 就套 390 宽 iframe;**`sips -c` 是居中裁**,要么 iframe 加 margin-left:55px 再裁,要么别用它 —— 我因此误报过一次「介绍页左偏」,已向 c2 认错。
+- **logo**:用户给 `~/Desktop/1024px.png`(3072 方图,米驼底白字 LONSUEE),说所有界面直接用。5bbd4f13:原图缩 512 进 `docs/品牌/`;运营平台顶栏 + 每页标签图标走 nav.py 的 `LOGO` 内嵌常量(app.py 注入 icon);8760 首页 .mk 另内嵌一份;AI 管理后台放 `管理后台/apps/web/logo-96.jpg` 走 /static/。离线渲染三处页头看过、密钥扫描干净。**改了 管理后台/ → 推前必须 make test-e2e-ci;服务要重启才看得到(8770 用 kickstart)。**
+- **待推(工作树领先 origin/main)**:34839147 计数、88abdbb4 发布脚本、5bbd4f13 logo + 几笔交接。等 eureka-fc 推完(它说 pre_push 第三遍、约 15:0x 推;之后跑 13 道题、再改 tools/nightly_eval.py 入库清单 —— **那个文件别碰**;它还改了 tools/bite_run.py 让 spans.jsonl.1 走只读软链)。
+- **介绍页**:c2 已换 logo、手机版切换按钮改两行两列;我量过 390 宽全在屏内、无溢出;交互三样只读代码核过逻辑对,**真点击要用户自己点**(超出我的许可)。
+
+### 🟡 11-18 13:4x · 交接(压缩前,第二份)—— 8770 已重启修好研判队列;介绍页新增 16 页的核对派给子助手在跑(Opus 5.5)
+
+- **8770 研判队列跑不动**:根因是常驻服务 com.lanxiu.agentsite 进程从 11-15 没换过(有人用 start.sh 的 nohup 另起,端口被占起不来,老进程一直在)。13:10 用 `launchctl kickstart -k gui/$(id -u)/com.lanxiu.agentsite` 重启,首页 302、四页 200、队列 19 条/16 条有草稿、详情 `/api/ops-detail?id=N` 0.07s。**以后重启 8770 一律 kickstart,别 nohup。** 「重新研判」(调模型+写库)没点。
+- **介绍页 c2 给的口径**(已发):工具 110(domains.py 多的 review_motif / motif_todo 不是注册工具,知识与工艺 15);守卫 6 = 开场注入/调用前/调用后/**调用失败**/交付前/压缩前;交付前检查 29。业务线只讲机制不抄数字(产品说明是 10-19 版)。
+- **在跑**:后台子助手核对 `~/Desktop/lanxiu-intro/澜绣云裳agent-产品介绍.md` 新增「三条业务线 → 安全与边界之前」;**结果出来按行号转给 c2**(c2 已推公开网页,提醒过它核完前别宣传)。
+- 其余同下一节(待推 2 笔 + 等用户拍两件 + README 链接)。
+
+### 🟢 11-18 13:xx · 交接(压缩前)—— 介绍页交给新会话 eureka-c2 做;我这边待推 2 笔;锁归 eureka-fc(Opus 5.5)
+
+- **介绍页**:用户新开会话 **eureka-c2**(家目录起的)做澜绣云裳介绍页,项目目录 `~/Desktop/lanxiu-intro`(index.html / docs.html / 《澜绣云裳agent-产品介绍.md》已发飞书产品文件夹)。用户拍:真截图(用户自己截)、配色跟 workbuddy.ai、名称「澜绣云裳」、本地一份 + GitHub **独立仓库**开 Pages。
+  - 我给的:事实包 `~/Desktop/澜绣云裳agent-介绍页素材/事实包-20261118.md`(c2 复制了一份进它目录,之后以它那份为准);演示账号**只给了用户**(店长 60000001,公开演示口令),没发 c2。
+  - 我审了产品介绍,6 处要改已发 c2(时延「十几秒」无依据、「不会编」太绝对、「不会重复退款」→「一笔流水只能登记一次」、「家庭账户」不存在、凭据保证要按审计范围写、直调约 12 秒)。**已验:c2 全改了**(md + index + docs 里旧说法 0 处),飞书已重发。
+  - **下一步等 c2 找我**:用户看过本地版、GitHub 仓库建好后,我在主仓库 README(改 `tools/readme_head.md`,README 是生成的)加一行链接,走门禁推。
+- **待推**:34839147(项目日志计数改 git ls-files)+ 本交接。等 eureka-fc 喊(它推 3 笔 + 跑 15 道题,约 14:xx 完)再拿锁 ship。
+- **等用户拍**:主检出 06:40 那份项目日志丢不丢(我建议丢)、飞书授权要不要重登。
+- **禁区**:截图期间别动共享库;主检出工作区别写文件(交接门禁指的是主检出 HANDOFF,但我只改工作树这份,推了才同步)。
+
+### 🟢 11-18 12:0x · 交接 —— 第六轮已推(950add36 → 7061db03,全量门禁退出码 0);锁归 eureka-fc 约 2 小时(Opus 5.5)
+
+- **未推**:34839147 项目日志「Python 文件」改数版本库登记的(原 find 把 .claude/worktrees 算进去:真数 1177,日志写过 4342 / 5589)。
+- **来源**:launchd `com.lanxiu.daily-log` 每天 06:40 在**主检出**跑 make_log --publish → 主检出留一份未提交的项目日志,会让咬合重放「工作区不干净」拒跑(第六轮第一次就栽在这,备份→恢复→推→放回解决)。飞书发布每天「等待授权超时」(登录过期,需用户点授权)。**主检出那份 06:40 版仍未提交、数字是错的,丢不丢等用户拍。**
+- **eureka-fc 提醒**:评测共用收尾现在设 `LANXIU_EVAL_NO_TAKEOVER=1`,我跑评测时接管是关的,成绩单会印一句。
+- **eureka-fc 改了** api.py 里 call_opportunity 描述(返回带客户号),它的线。
+
+### 🟡 11-18 09:xx · 交接 —— 远端页面冒烟红在知识修订页「字面星号」,已修(4c472aaf),第六轮 e2e+ship 在主检出跑(Opus 5.5)
+
+- **起因**:eureka-fc 报 8534385b 的远端 admin-e2e 发布链那条过了,但页面冒烟换成红在 `#/knowledge-revisions`。CI 原文:清单页「原来写的 → 改成」格里两个单边 `**` 拼成一对。
+- **根因**:e2e 从真知识库摘句当「原来写的」(知识库 md 本身带 `**`),清单页截 40 字把一对截成单边。**不是要渲染成粗体** —— 这几个字段要逐字对回源文件。
+- **修法**:原句 / 改成 / 段名 / 改动文本标 `data-raw="原文"`(全站惯例,冒烟判据对它豁免)。用 CI 那段原文 + 判据正则验过:旧红、新不红、豁免不外溢。
+- **推送**:主检出并回 w1117(b0c59b9a 汇总交接、1a9b284f 日志脚本、4c472aaf 本修)→ 锁内 `make test-e2e-ci` → `ship.sh`。状态看 scratchpad `gate_batch6.status`(只认「被包的命令退出码」那行)。
+- **eureka-fc**:让出锁、在改「被接管技能评测两条路分开考」(只改评测脚本);**我推完放锁要喊它**,它再跑 15 道改过的题。
+
 ### 🌙 11-16 21:3x 用户开 12 小时夜间长任务(和并行会话合力)—— 计划见 .wip-glossary/night-plan-1116.md;第 23 轮在跑(拆分已 rebase 到 8e2c0c89,HEAD be3753a8)
 - **07:4x**:并行会话第五遍绿、**已推 86043ae0**(含我的 16fcfc9c / cd8eb81e),锁空。它这段不起门禁不写库,手上一笔文档等我三件做完。**现在轮到我**:① 找发版口发 v20 ② shrink13 rebase origin/main → pre_push → 推 → 提交号给用户和它 ③ rare-i ops 全量。
 - **07:1x 找发版口(未找到,接着找)**:v19 当时用的命令形如 `… --切 19 --加开 <工具>`(见提交 c904f9cc 的 HANDOFF 段),但 `git grep -- "--切"` 在 .py 里没命中 → 可能在 管理后台/ 下的脚本或 make 目标里;先查 `管理后台/` 和 Makefile 里的「切 / publish / 版本」,再看项目日志 11-14 TL84–88 发版那节(搜「v17」「v18」)。并行会话已同意:它放锁后到我推完 shrink13 这段不起门禁。
@@ -1836,40 +2014,32 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-19 23:28。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-20 11:27。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `rare-i` |
-| 最新提交 | e18167df · 2026-11-19 · 夜跑 PID 目录那条判据改判实际目录,不比源码字面 |
-| 代码量 | 1187 个 Python 文件 / 210883 行(不含 .venv) |
+| 分支 | `HEAD` |
+| 最新提交 | e0d161d8 · 2026-11-20 · 台账第八十二条单开 2.4.6 节、条数挪回 intent,intent 状态改「已否决」 |
+| 代码量 | 1188 个 Python 文件 / 210924 行(不含 .venv) |
 | 验收 | `./check.sh` 共 440 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
-?? .feynman/bite-all-20261016.log
-?? .feynman/nightly-eval.log
-?? ".feynman/\345\205\250\351\241\271\347\233\256\345\277\253\347\205\247-20261109.md"
-?? .wip-glossary/
-?? agent/oppo-eval-results.partial.jsonl
-?? backend/.auth_sessions.json.lock
-?? "docs/\344\272\244\346\216\245\345\275\222\346\241\243/HANDOFF-\345\275\222\346\241\243-2026-11-14\350\207\26311-15.md"
+UU HANDOFF.md
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_newpage_actions.js"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-e18167df 夜跑 PID 目录那条判据改判实际目录,不比源码字面
-68b001cd 库路径单源:评测切库 / 夜跑认真库那几处改走 dbpath.真库(),欠债 327 → 324
-e6ed66f0 Worker 领到已被取消的运行时,任务收成「已取消」而不是「已完成」
-b9c339e5 还体检欠账四件:端到端不再往真实项目里攒假成员 / 运行详情费用说明分演示和真模型 / 数据集导出能勾 mock / 三个新按钮补页面测试
-dfb2dd0d 交接:主干 c11af3b6,8770 已上线 fc 的回答体检新规
+e0d161d8 台账第八十二条单开 2.4.6 节、条数挪回 intent,intent 状态改「已否决」
+981dc5c0 日志到期清理:澜绣项目先不开,不再定期回问(用户 11-20 拍)
+70dce541 「复盘」归任务执行(用户 11-20 拍):经营报告技能不再截走「月度复盘」
+fa135101 夜跑运行日志 gz 拼回历史:11-20 那晚被当晚覆盖的部分从 git 里接回
+8134bdb4 夜跑入库:压缩运行日志时接上旧 gz 的历史 —— 11-18「压完就删」的回归
 ```
 <!--/AUTO-->
 ## 一句话在做什么
