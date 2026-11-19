@@ -33,7 +33,7 @@ const 引 = (s) => String(s).replace(/'/g, "''");
 const 尾 = Date.now().toString(16).slice(-6);
 
 const { ck, 组, 结束 } = 桩.计分(4);
-const 建了 = { 连接: null, 组: null, 方案: null, 评测们: [] };
+const 建了 = { 连接: null, 组: null, 方案: null };
 
 const 等 = async (条件, 毫秒 = 15000) => {
   const 起 = Date.now();
@@ -100,11 +100,8 @@ function 造题集() {
         sql(`delete from tool_groups where project_id='${项目}' and id='${引(建了.组)}'`);
       }
       if (建了.方案) sql(`delete from knob_plans where project_id='${项目}' and key='${引(建了.方案)}'`);
-      // 评测是只追加的历史,不删;派发那一条在 ④ 里已经取消掉(子运行跟着取消),这里只兜「中途挂了没取消」
-      for (const eid of 建了.评测们) {
-        sql(`update execution_runs set status='cancelled', finished_at=now() where project_id='${项目}' and status in ('queued','running')
-               and id in (select execution_run_id from evaluation_runs where project_id='${项目}' and evaluation_id='${引(eid)}')`);
-      }
+      // 评测是只追加的历史,不删。派发那一条在 ④ 里已经走接口取消;中途挂了没取消也不兜底改库 ——
+      // 派的是「开始 → 结束」不调模型,子运行自己跑完、worker 给评测收尾。直接改 execution_runs 的状态会绕开任务队列(11-20 试过,删了)
     } catch (e) { console.log("  ⚠️ 收尾没删干净:" + e.message); }
   };
   process.on("exit", 收尾);
@@ -223,9 +220,9 @@ function 造题集() {
     const 体4 = 登 && JSON.parse(登.体);
     ck("外部登记:体里四样齐、不带派发字段", 体4 && 体4["执行方式"] === "外部登记" && 体4["候选"] === `e2e 候选 ${尾}`
        && 体4["数据集版本"] === 集 && 体4["判据版本"] === "e2e-判据@1" && !("超时分钟" in 体4), 体4);
-    ck("带 Idempotency-Key(评测要花钱,超时重发不能再跑一遍)", 登 && /^[0-9a-f-]{36}$/.test(String(登.头["Idempotency-Key"] || "")), 登 && 登.头);
-    const 行6 = sql(`select id || '|' || baseline_ref from evaluations where project_id='${项目}' and candidate_ref='${引(`e2e 候选 ${尾}`)}'`);
-    if (行6) 建了.评测们.push(行6.split("|")[0]);
+    // 桩里的 crypto.randomUUID 是「k + 时间戳」,不是标准 UUID 格式 —— 只验「带了」;「每次不同」在下面派发那条验
+    ck("带 Idempotency-Key(评测要花钱,超时重发不能再跑一遍)", 登 && String(登.头["Idempotency-Key"] || "").length > 0, 登 && 登.头);
+    const 行6 = sql(`select id || '|' || (baseline_ref->>'ref') from evaluations where project_id='${项目}' and candidate_ref->>'ref' = '${引(`e2e 候选 ${尾}`)}'`);
     ck("服务端真建了这条外部登记(基线也存上了)", !!行6 && 行6.endsWith(`|e2e 基线 ${尾}`), 行6);
 
     // 后台派发:**不触发切换下拉**(见文件头),直接把方式和版本 id 写进去
@@ -247,9 +244,10 @@ function 造题集() {
     const 体6 = 派 && JSON.parse(派.体);
     ck("填齐:超时 / 费用上限发成数字,候选 / 基线是选中的工作流版本", 体6 && 体6["超时分钟"] === 30 && 体6["费用上限"] === 1
        && 体6["候选"] === 版.v2 && 体6["基线"] === 版.v1 && !("评审连接" in 体6), 体6);
-    const 号7 = sql(`select id from evaluations where project_id='${项目}' and dataset_version_id='${集}' and candidate_ref='${引(版.v2)}'`);
+    ck("每次提交换一个 Idempotency-Key(重发同一个键,服务端会当成同一次、不新建)",
+       派 && 登 && 派.头["Idempotency-Key"] && 派.头["Idempotency-Key"] !== 登.头["Idempotency-Key"], 派 && [登.头["Idempotency-Key"], 派.头["Idempotency-Key"]]);
+    const 号7 = sql(`select id from evaluations where project_id='${项目}' and dataset_version_id='${集}' and candidate_ref->>'ref' = '${引(版.v2)}'`);
     const 行7 = 号7 ? { id: 号7 } : null;
-    if (行7) 建了.评测们.push(行7.id);
     const 派次 = 行7 ? Number(sql(`select count(*) from evaluation_runs where project_id='${项目}' and evaluation_id='${引(行7.id)}'`)) : -1;
     ck("服务端真派了 2 题 × 2 边 × 1 轮 = 4 次运行", 派次 === 4, [号7, 派次]);
     const msg = 取("ev-msg").innerHTML;
