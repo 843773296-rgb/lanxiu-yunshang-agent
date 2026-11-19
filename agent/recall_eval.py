@@ -282,7 +282,22 @@ def main():
     import rounds
 
     def 一轮():
-        r = asyncio.run(sdk.run(角色, 题面, me=顾问, skills="own"))
+        # 调用本身抛了(11-18 / 11-20 夜跑都是「回合用完 12」:模型反复 ToolSearch 取 revive_list / churn_watch、
+        # 取回了却不调,36 秒耗光回合)→ 整套崩、一行不落盘,成绩单上只有「判红 0.6 分钟」。
+        # 照 ops_eval 的做法:调用失败重试一次;还失败就落一行「跑挂了」,**和答错分开写**,别让整套崩。
+        # 回合上限不抬:聊天站也是 12,评测要和产品同配置
+        r, 错 = None, None
+        for 第几次 in (1, 2):
+            try:
+                r = asyncio.run(sdk.run(角色, 题面, me=顾问, skills="own"))
+                break
+            except Exception as ex:
+                错 = ex
+                print(f"  ↻ 第 {第几次} 次调用本身失败:{type(ex).__name__}: {str(ex)[:120]}")
+        if r is None:
+            why = [f"跑挂了(调用本身失败,不是答错):{type(错).__name__}: {str(错)[:200]}"]
+            print("  ❌ " + why[0])
+            return [dict(case="RC01", passed=False, why=why, 技能=None, tools="", cost=0, text="", 跑挂了=True)]
         traj = r["trajectory"]
         技能 = next(((t.get("args") or {}).get("skill") for t in traj if t.get("tool") == "Skill"), None)
         事实 = 取事实(traj, 顾问, {_短名(x) for x in sdk._ROLE_TOOLS[角色]()})
