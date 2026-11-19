@@ -124,6 +124,17 @@ def main():
         ck("改成 告警比例 0.6 → 200,来源「已设置」", c_ == 200 and b["来源"] == "已设置" and b["策略"]["告警比例"] == 0.6, (c_, b))
         c_, b2 = 打("PUT", P + "/log-policy", 好, {"If-Match": rev})
         ck("拿旧 revision 再改 → 409(别人刚改过)", c_ == 409 and b2.get("code") == "REVISION_CONFLICT", (c_, b2))
+        # 策略有自己的版本号(11-20):原来借项目的 revision,改项目别的设置 → 策略页 409;改策略 → 项目设置页 409
+        with 库.begin() as c:
+            项目版前 = c.execute(text("select revision from projects where id=:p"), {"p": 项目}).scalar()
+            c.execute(text("update projects set revision=revision+1, updated_at=now() where id=:p"), {"p": 项目})  # 扮「有人改了项目别的设置」
+        新rev = str(b["revision"])
+        c_, b3 = 打("PUT", P + "/log-policy", dict(好, 告警比例=0.7), {"If-Match": 新rev})
+        ck("**项目别的设置被改过,策略照样能存**(不再借项目的 revision)", c_ == 200, (c_, b3))
+        with 库.connect() as c:
+            项目版后 = c.execute(text("select revision from projects where id=:p"), {"p": 项目}).scalar()
+        ck("**改策略不顶项目的 revision**(别人开着的项目设置页不会因此 409)", 项目版后 == 项目版前 + 1, (项目版前, 项目版后))
+        c_, b = 打("PUT", P + "/log-policy", 好, {"If-Match": str((b3 or {}).get("revision"))})   # 改回 0.6,下面验阈值
         with 库.connect() as c:
             阈 = c.execute(text("select threshold_value from alert_rules where project_id=:p and id=:i"), {"p": 项目, "i": 规}).scalar()
             审 = c.execute(text("select count(*) from audit_events where project_id=:p and action='改日志采集策略' and at > now() - interval '5 minutes'"),

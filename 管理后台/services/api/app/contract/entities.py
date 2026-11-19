@@ -82,8 +82,11 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       范围理由="组织自己就是最外层范围,没有更外的东西可以挂"),
     E("projects", "项目", 组织级, 可改,
       ["organization_id", "name", "owner", "status", "retention_policy",
-       "timezone", "budget", "allowed_providers", "data_egress_policy", "kind_code"],
+       "timezone", "budget", "allowed_providers", "data_egress_policy", "kind_code",
+       "retention_policy_revision"],
       ["项目必须属于一个组织",
+       "retention_policy_revision 是日志采集策略自己的乐观锁(11-20):原来借项目的 revision,"
+       "改项目别的设置会让策略页 409、改策略又会让项目设置页 409 —— 两件不相干的事互相打架",
        "kind_code 正式 / 演示 / 测试,必填没有默认值;跨项目读取隔离补好之前库里只许一个正式项目(触发器,用户 11-04 拍)",
        "改动涉及实际外发范围时要展示影响对象(§15.4)"],
       依赖=["organizations"], 范围理由="项目挂在组织下;它自己就是项目范围的定义者"),

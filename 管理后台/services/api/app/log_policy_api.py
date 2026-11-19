@@ -97,11 +97,13 @@ def 校验(体):
 
 
 def 取策略(c, project_id):
-    r = c.execute(text("select retention_policy, revision from projects where id=:p"), {"p": project_id}).mappings().first()
+    # 版本号用策略自己的那一列(11-20),不借项目的 revision —— 见 契约 projects 那条说明。老行迁移时补成 1
+    r = c.execute(text("select retention_policy, coalesce(retention_policy_revision, 1) rev from projects where id=:p"),
+                  {"p": project_id}).mappings().first()
     if not r:
         return None, None, None
     策, 来 = 解析(r["retention_policy"])
-    return 策, 来, r["revision"]
+    return 策, 来, r["rev"]
 
 
 def 用量(c, project_id):
@@ -225,14 +227,17 @@ async def 改策略(project_id: str, request: Request, if_match: str = Header(de
     if 坏:
         raise _错(422, "VALIDATION", "采集策略有项不对", "按提示改", field_errors=坏)
     with 事务() as c:
-        r = c.execute(text("select retention_policy, revision, organization_id from projects where id=:p for update"),
+        r = c.execute(text("""select retention_policy, coalesce(retention_policy_revision, 1) rev, organization_id
+                                from projects where id=:p for update"""),
                       {"p": project_id}).mappings().first()
         if not r:
             raise _错(404, "NOT_FOUND", "没有这个项目", "确认项目号")
-        if str(r["revision"]) != str(if_match).strip('"'):
-            raise _错(409, "REVISION_CONFLICT", "项目设置刚被改过", "刷新再改")
+        if str(r["rev"]) != str(if_match).strip('"'):
+            raise _错(409, "REVISION_CONFLICT", "日志采集策略刚被别人改过", "刷新再改")
         旧, _ = 解析(r["retention_policy"])
-        c.execute(text("""update projects set retention_policy=:v, revision=revision+1, updated_at=now()
+        # ⚠️ 只顶策略自己的版本号,**不顶项目的 revision** —— 顶了的话,别人正开着的项目设置页一保存就 409
+        c.execute(text("""update projects set retention_policy=:v,
+                                  retention_policy_revision=coalesce(retention_policy_revision, 1)+1, updated_at=now()
                            where id=:p"""), {"v": _json.dumps(策, ensure_ascii=False), "p": project_id})
         c.execute(text("""update alert_rules set threshold_value=:th, revision=revision+1, updated_at=now()
                            where project_id=:p and metric_code='日志用量占比' and owner='system' and archived_at is null"""),
@@ -242,7 +247,7 @@ async def 改策略(project_id: str, request: Request, if_match: str = Header(de
                           values (:i, :o, :p, :a, '改日志采集策略', :t, :e, now(), 'ok', null, now(), :a)"""),
                   {"i": f"aud_{_uuid.uuid4().hex[:12]}", "o": r["organization_id"], "p": project_id, "a": me.user_id,
                    "t": _json.dumps({"旧": 旧, "新": 策}, ensure_ascii=False), "e": _os.environ.get("APP_ENV", "development")})
-        rev = c.execute(text("select revision from projects where id=:p"), {"p": project_id}).scalar()
+        rev = c.execute(text("select retention_policy_revision from projects where id=:p"), {"p": project_id}).scalar()
         return _样子(c, project_id, 策, "已设置", rev)
 
 
