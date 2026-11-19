@@ -23608,5 +23608,29 @@
    }
   ],
   "预期红": "指到副本之后才 import 的写口(order_write)连到的是副本"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g30 不再看这一轮调没调 kb_read —— 读过话术的正确答案也被打回(打回就是死循环)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if _called(calls or [], \"kb_read\"):\n        return None\n    return ('顾客在谈价钱",
+    "new": "    return ('顾客在谈价钱"
+   }
+  ],
+  "预期红": "**反向** · 读过话术(这一轮调了 kb_read)→ 放过"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g30 不看规矩里装没装 TL60 —— 读不了话术的角色也被打回(死循环)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if 'kb_read(\"13\")' not in 规矩:\n        return None                      # 没装 TL60:这个角色读不了话术,这条不管\n",
+    "new": ""
+   }
+  ],
+  "预期红": "**反向** · 这个角色没装 TL60"
  }
 ]
