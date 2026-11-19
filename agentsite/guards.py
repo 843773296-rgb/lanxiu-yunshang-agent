@@ -1647,6 +1647,31 @@ def g29_price_ask_soft_promise(text, calls, prompt=""):
     return None
 
 
+def g30_sales_script_unread(text, calls, prompt="", 规矩=""):
+    """顾客在压价 / 要让价(这一问里有价钱话、折扣词或「不开票换价」),助手**没读话术就开口** → 打回去先读。
+
+    用户 2026-11-19 拍「加一道打回」。TL60 早写了「先 kb_read(\"13\") 再开口」,模型一半时候不照做:
+    话术评测 T13(不开票便宜点)/ T17(今天定有优惠逼单)近四晚,**调了 kb_read 的那几晚都过、没调的都挂** ——
+    漏的正是话术第一节「发票必须开、价格不动」、第六节「当天不追、存方案、第三天带新信息」。
+    祈使句治不了的,交给闸(g22 同一个道理)。
+
+    三个条件同时成立才响,每个都是结构:
+      ① 顾客这一问在谈钱 / 让价 —— 复用 g23 / g29 已有的 `钱话` / `折扣词` / `不开票换钱`,不另立词表
+      ② 这一轮发给模型的规矩里装着 TL60(手上有 kb_read 的角色才装)—— 没装的角色读不了话术,打回就是死循环
+      ③ 这一轮一次 kb_read 都没调
+    """
+    if not (prompt or "").strip() or not 规矩:
+        return None
+    if 'kb_read("13")' not in 规矩:
+        return None                      # 没装 TL60:这个角色读不了话术,这条不管
+    if not (re.search(钱话, prompt) or re.search(折扣词, prompt) or 不开票换钱.search(prompt)):
+        return None
+    if _called(calls or [], "kb_read"):
+        return None
+    return ('顾客在谈价钱 / 要让价,而这一轮没读话术 —— 先 kb_read("13") 取对应那一节'
+            "(压价、拿别家比、说再想想、拿开票换价都有),照思路用自己的话答;查不到对应的一节才自己组织语言(TL60)")
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
@@ -1655,7 +1680,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g19_account_state, g20_consent_version, g21_apply_as_done,
           g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical,
           g25_count_without_lookup, g26_wan_mismatch, g27_notfound_without_lookup, g28_scope_as_absence,
-          g29_price_ask_soft_promise]
+          g29_price_ask_soft_promise, g30_sales_script_unread]
 
 
 def check_answer(text, calls, prompt="", 带图=False, 规矩=""):
