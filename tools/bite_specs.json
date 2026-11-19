@@ -8936,12 +8936,17 @@
  },
  {
   "script": "backend/triage_trial_check.py",
-  "改坏": "工具服务不改读副本",
+  "改坏": "工具服务不改读副本(11-19 起有两层:改模块 DB + 连库层改道,两层都拆掉才算「不改读」)",
   "file": [
    {
     "path": "mcp/protocol.py",
     "old": "            m.DB = 副; n += 1",
     "new": "            n += 1"
+   },
+   {
+    "path": "mcp/protocol.py",
+    "old": "        _sq.connect = _连\n",
+    "new": ""
    }
   ],
   "预期红": "真起一个工具服务、给它副本:查客户拿到的是代号,并且留了「副本生效」凭证"
@@ -23579,5 +23584,29 @@
    }
   ],
   "预期红": "该挂:发起后又自己写了通话要点"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "「万」为单位的金额不认了 —— 11-19 夜跑「实付 6.3万」又会被判成编数",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "        算得出 |= {x for x in 疑 if x in 万 and re.search(re.escape(x) + r\"\\s*万\", text)}\n",
+    "new": ""
+   }
+  ],
+  "预期红": "真跑钉回:金额换成「万」写一位小数,不算编数"
+ },
+ {
+  "script": "tools/eval_copy_lazy_import_check.py",
+  "改坏": "指到副本() 里不装连库改道 —— 懒加载的写口第一次调用照旧写真库(11-19 夜跑下单评测连 4 晚「没开出单」的原样)",
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "        _sq.connect = _连\n",
+    "new": ""
+   }
+  ],
+  "预期红": "指到副本之后才 import 的写口(order_write)连到的是副本"
  }
 ]

@@ -29,6 +29,27 @@ def 指到副本():
     副 = (os.environ.get("LANXIU_DB") or "").strip()
     if not 副 or os.path.realpath(副) == _真库:
         return 0
+    # ⚠️ 2026-11-19 补:**工具函数体里懒加载的写口,第一次调用时还不在 sys.modules 里** ——
+    #   下面那遍扫描在工具执行**之前**跑,扫不到它;于是每个服务进程里第一次开单(order_write)写的是**真库**。
+    #   拆 api.py(11-16)把这类 import 挪进了函数体,下单评测从那以后连 4 晚「没开出单」(判分读副本、单落真库),
+    #   真库里多出 15 张评测单。所以在连库这一层兜:进程里任何人连真库的路径,一律改连副本(只在给了 LANXIU_DB 时)。
+    import sqlite3 as _sq
+    if not getattr(_sq.connect, "_改道到副本", None):
+        _原 = _sq.connect
+        def _连(database, *a, **k):
+            try:
+                路 = database.decode() if isinstance(database, bytes) else str(database)
+                if 路.startswith("file:"):
+                    纯 = 路[5:].split("?", 1)[0]
+                    if 纯 and os.path.realpath(纯) == _真库:
+                        database = "file:" + 副 + (("?" + 路.split("?", 1)[1]) if "?" in 路 else "")
+                elif 路 and 路 != ":memory:" and os.path.realpath(路) == _真库:
+                    database = 副
+            except Exception:
+                pass
+            return _原(database, *a, **k)
+        _连._改道到副本 = True
+        _sq.connect = _连
     n = 0
     for m in list(sys.modules.values()):
         db = getattr(m, "DB", None)
