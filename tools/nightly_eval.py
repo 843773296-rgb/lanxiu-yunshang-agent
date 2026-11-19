@@ -588,14 +588,17 @@ def 小套抖动(挪走们, 根=None):
     判不了(没有昨晚、读不出题号、套不小)一律 None —— **判不了不放宽**。"""
     根 = 根 or ROOT
     for 相对 in 挪走们:
-        if "(整个改写了)" in 相对:
-            continue
+        # 挪走夜跑的() 给整文件重写的那种加了后缀 —— 成长 / 召回这类每晚**整个改写**结果文件的套正是小套,
+        # 11-19 初版在这里 `continue` 跳过,于是 11-20 夜成长套「今晚挂 G01/G02、昨晚挂 G07」照旧判红(规则从没生效过)。
+        # 去掉后缀照常读;整个改写追加的那份可能带着旧晚的行,下面按(哪晚, 哪题)去重
+        相对 = 相对.replace("(整个改写了)", "")
         p = os.path.join(根, "agent", "nightly", 相对.replace(os.sep, "__"))
         try:
             行们 = [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
         except (OSError, ValueError):
             continue
         行们 = [x for x in 行们 if isinstance(x, dict) and "passed" in x and x.get("跑于")]
+        行们 = list({(x["跑于"], str(x.get("id") or x.get("case") or x.get("题"))): x for x in 行们}.values())
         晚们 = sorted({x["跑于"] for x in 行们})
         if len(晚们) < 2:
             continue
