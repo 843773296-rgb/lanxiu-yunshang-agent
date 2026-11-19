@@ -476,6 +476,13 @@ def 入库清单(根):
             continue
         with open(原, "rb") as f:
             数据 = f.read()
+        # ⚠️ 11-20 修:原样删掉之后下一晚从空开始,只压当晚那份就把 gz 里攒的历史覆盖了
+        # (funnel.gz 32.7 万行 → 2 万行)。所以先把旧 gz 解开接在前面,再一起压
+        if os.path.exists(原 + ".gz"):
+            with open(原 + ".gz", "rb") as f:
+                旧 = gzip.decompress(f.read())
+            if 旧 and not 数据.startswith(旧):     # 原样还在(老流程 / 今晚没删成)时它已含旧的,别重复接
+                数据 = 旧 + (b"" if 旧.endswith(b"\n") else b"\n") + 数据
         with open(原 + ".gz", "wb") as 出, gzip.GzipFile(filename="", mode="wb", fileobj=出, mtime=0, compresslevel=9) as z:
             z.write(数据)
         # 压完删原样(用户 2026-11-18 拍):原样那份没人读、第二晚就被覆盖,11-18 涨到 123 MB 撑爆过咬合副本上限。
