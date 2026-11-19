@@ -26,7 +26,10 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-真库 = os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
+sys.path.insert(0, os.path.join(ROOT, "backend"))
+os.environ.pop("LANXIU_DB", None)          # 先摘掉,下面取的才是真库路径(dbpath 认 LANXIU_DB 优先)
+from dbpath import 路径 as _库路径
+真库 = os.path.realpath(_库路径())
 
 # 咬合 —— 改坏的是什么、该红的是哪一条(可执行规格在 tools/bite_specs.json)
 咬合 = [
@@ -53,7 +56,7 @@ def 连到(db):
     with sqlite3.connect(db) as c:
         return [r[2] for r in c.execute("PRAGMA database_list")][0]
 out = {"order_write.DB": os.path.realpath(order_write.DB), "直连": os.path.realpath(连到(order_write.DB))}
-真 = os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
+真 = os.path.realpath(order_write.DB)
 out["uri"] = os.path.realpath(连到_uri := (lambda: [r[2] for r in sqlite3.connect("file:" + 真 + "?mode=ro", uri=True).execute("PRAGMA database_list")][0])())
 print(json.dumps(out, ensure_ascii=False))
 '''
@@ -90,7 +93,10 @@ def main():
     没, 错 = 跑({})
     ck("子进程跑得起来(没给 LANXIU_DB)", 没 is not None, 错)
     if 没:
-        ck("没给 LANXIU_DB 时照旧连真库(不改道)", 没["直连"] == 真库 and 没["uri"] == 真库, 没)
+        # 门禁里 sitecustomize 会把真库改道到门禁自己的副本(tools/gate_db),所以这里不要求「连到真库」,
+        # 只要求**没被这一层改到评测副本上**(11-19 第一次挂门禁时这样红过)
+        ck("没给 LANXIU_DB 时照旧连真库(不改道)", 没["直连"] != 副 and 没["uri"] != 副
+           and (没["直连"] == 真库 or "lanxiu-gate-db" in 没["直连"]), 没)
 
     print("=" * 80)
     if FAIL:
