@@ -96,7 +96,9 @@ _用 = 夜[夜.index("def 有人在用():"):夜.index("def 清单(")]
 ck("有人在用():不再按名字搜 bite_run;门禁只认真正以「bash ./check.sh」开头的进程",
    '"pgrep", "-f", "bite_run"' not in _用 and "活着(重放PID)" in _用 and "^(/bin/)?(ba)?sh" in _用)
 ck("PID 文件放在真库所在的目录(两个检出共用;.feynman 各有一份,放那里互相看不见)",
-   'PID目录 = os.path.dirname(os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db")))' in 夜)
+   # 11-19 起走 dbpath.真库()(不认 LANXIU_DB);判实际算出来的目录,不比源码字面
+   ne.PID目录 == os.path.dirname(os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db")))
+   and "os.path.realpath(_真库路径())" in 夜, ne.PID目录)
 _主 = 夜[夜.index("def main():"):夜.index("def _跑(")]
 ck("夜跑开跑写自己的 PID 文件,结束(含崩溃)在 finally 里删", "open(夜跑PID, \"w\")" in _主 and "finally:" in _主
    and "os.remove(夜跑PID)" in _主)
