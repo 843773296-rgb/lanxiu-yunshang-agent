@@ -35,6 +35,19 @@ router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
 状态们 = ("待执行", "已执行", "执行失败")
 
+# 列表和详情共用的派生列(只拼常量,不拼入参)。
+# 办事人(2026-10-24 账号绑定) —— 这次运行里**最后一个批准核对的人**,没核对过就是发起人;
+# 澜绣那边以他绑定的员工身份写台账。created_by 是 worker 进程号,不是人
+_派生列 = """coalesce((select d.actor from human_decisions d join human_requests h
+                               on h.project_id=d.project_id and h.id=d.human_request_id
+                              where h.project_id=bridge_calls.project_id
+                                and h.execution_run_id=bridge_calls.execution_run_id
+                                and d.decision='approved' order by d.at desc limit 1),
+                            (select x.principal from execution_runs x where x.project_id=bridge_calls.project_id
+                                and x.id=bridge_calls.execution_run_id)) 办事人,
+                   (select x.definition_ref->>'跑法' from execution_runs x where x.project_id=bridge_calls.project_id
+                       and x.id=bridge_calls.execution_run_id) 跑法"""
+
 
 @router.get(前缀 + "/bridge-calls")
 def 桥请求列表(project_id: str, me: 身份 = Depends(要权限("运行评测")),
@@ -46,21 +59,11 @@ def 桥请求列表(project_id: str, me: 身份 = Depends(要权限("运行评�
     # 跑法(10-26):集成验证的单,澜绣执行前要再核一次「是不是测试客户」—— 两边各守一道。
     # (这句注释原来写在 SQL 的 -- 注释里,冒号后面那几个字被 text() 当成了绑定参数,接口一调就 500 —— 体检当场抓到)
     with 连接() as c:
-        rs = c.execute(text("""
+        rs = c.execute(text(f"""
             select count(*) over () 全量, id, execution_run_id, node_id, tool_name,
                    arguments_snapshot, idempotency_key, status, result_output, error_detail,
                    created_at, acked_at, created_by,
-                   -- 办事人(2026-10-24 账号绑定) —— 这次运行里**最后一个批准核对的人**,没核对过就是发起人;
-                   -- 澜绣那边以他绑定的员工身份写台账。created_by 是 worker 进程号,不是人
-                   coalesce((select d.actor from human_decisions d join human_requests h
-                               on h.project_id=d.project_id and h.id=d.human_request_id
-                              where h.project_id=bridge_calls.project_id
-                                and h.execution_run_id=bridge_calls.execution_run_id
-                                and d.decision='approved' order by d.at desc limit 1),
-                            (select x.principal from execution_runs x where x.project_id=bridge_calls.project_id
-                                and x.id=bridge_calls.execution_run_id)) 办事人,
-                   (select x.definition_ref->>'跑法' from execution_runs x where x.project_id=bridge_calls.project_id
-                       and x.id=bridge_calls.execution_run_id) 跑法
+                   {_派生列}
               from bridge_calls
              where project_id=:p and status=:s
                and (cast(:r as text) is null or execution_run_id = cast(:r as text))
@@ -73,14 +76,49 @@ def 桥请求列表(project_id: str, me: 身份 = Depends(要权限("运行评�
         绑定 = {b["user_id"]: b["lanxiu_staff_code"] for b in c.execute(text(
             """select user_id, lanxiu_staff_code from staff_bindings
                 where project_id=:p and archived_at is null"""), {"p": project_id}).mappings()}
-    页 = [dict(id=r["id"], 运行=r["execution_run_id"], 步骤=r["node_id"], 工具=r["tool_name"],
-               参数=r["arguments_snapshot"] or {}, 幂等键=r["idempotency_key"], 状态=r["status"],
-               结果=r["result_output"], 失败=r["error_detail"], created_by=r["created_by"],
-               办事人=r["办事人"], 办事人澜绣工号=绑定.get(r["办事人"]), 跑法=r["跑法"] or "正常",
-               created_at=r["created_at"].isoformat(),
-               acked_at=r["acked_at"].isoformat() if r["acked_at"] else None) for r in rs]
+    页 = [_一张(r, 绑定) for r in rs]
     总 = int(rs[0]["全量"]) if rs else 0
     return {"items": 页, "next_cursor": None, "total": 总, "rows": 页, "总数": 总}
+
+
+def _一张(r, 绑定):
+    """列表和详情共用的一张单的形状 —— 两处各拼一份,迟早一处多一个字段、另一处没有。"""
+    return dict(id=r["id"], 运行=r["execution_run_id"], 步骤=r["node_id"], 工具=r["tool_name"],
+                参数=r["arguments_snapshot"] or {}, 幂等键=r["idempotency_key"], 状态=r["status"],
+                结果=r["result_output"], 失败=r["error_detail"], created_by=r["created_by"],
+                办事人=r["办事人"], 办事人澜绣工号=绑定.get(r["办事人"]), 跑法=r["跑法"] or "正常",
+                created_at=r["created_at"].isoformat(),
+                acked_at=r["acked_at"].isoformat() if r["acked_at"] else None)
+
+
+@router.get(前缀 + "/bridge-calls/{call_id}")
+def 桥请求详情(project_id: str, call_id: str, me: 身份 = Depends(要权限("运行评测"))):
+    """一张桥请求的详情(11-20,还体检欠账「桥请求没有详情页、运行页链不过去」)。
+
+    权限和列表**同一档**(运行评测)—— 参数里有转写原文、客户订单号,不因为「只是看一张」就放宽。
+    不按状态筛:待执行 / 已执行 / 执行失败都能看,运行被取消了的单也能看(列表的待执行只给还挂着的运行,
+    那是给澜绣拉活用的;人来查「当时发了什么、回了什么」要看得到全部)。
+    """
+    with 连接() as c:
+        r = c.execute(text(f"""
+            select id, execution_run_id, node_id, tool_name,
+                   arguments_snapshot, idempotency_key, status, result_output, error_detail,
+                   created_at, acked_at, created_by,
+                   {_派生列},
+                   (select x.status from execution_runs x where x.project_id=bridge_calls.project_id
+                       and x.id=bridge_calls.execution_run_id) 运行状态
+              from bridge_calls where project_id=:p and id=:i"""),
+                      {"p": project_id, "i": call_id}).mappings().first()
+        if not r:
+            # 别的项目的单也走这里 —— 404 不说「它在别的项目」,免得拿 id 探出别的项目有什么
+            raise _错(404, "NOT_FOUND", "这个项目里没有这张桥请求", "从运行详情页点进来,或者核对一下单号")
+        绑定 = {b["user_id"]: b["lanxiu_staff_code"] for b in c.execute(text(
+            """select user_id, lanxiu_staff_code from staff_bindings
+                where project_id=:p and archived_at is null"""), {"p": project_id}).mappings()}
+    d = _一张(r, 绑定)
+    d["运行状态"] = r["运行状态"]
+    d["还在等它吗"] = r["status"] == "待执行" and r["运行状态"] == "waiting_external"
+    return d
 
 
 @router.post(前缀 + "/bridge-calls/{call_id}/ack")

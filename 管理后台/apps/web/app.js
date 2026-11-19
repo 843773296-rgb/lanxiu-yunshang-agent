@@ -4602,7 +4602,7 @@ function 业务结果块(d, 带等待 = true) {
   const 等块 = (等["待办"]
     ? `<div class="k"><a href="#/human/${encodeURIComponent(等["待办"])}">去处理这条待办 →</a>${等["截止"] ? ` <span class="k">截止 ${时间(等["截止"])},到点没人处理这次运行就结束</span>` : ""}</div>` : "")
     + (等["桥请求"]
-      ? `<div class="k">等澜绣执行${等["工具"] ? `「${esc(等["工具"])}」` : ""}并回执:桥请求 <code>${esc(等["桥请求"])}</code>${等["排于"] ? ` · 排于 ${时间(等["排于"])}` : ""}${等["截止"] ? ` · 截止 ${时间(等["截止"])}` : ""}</div>` : "");
+      ? `<div class="k">等澜绣执行${等["工具"] ? `「${esc(等["工具"])}」` : ""}并回执:桥请求 <a href="#/bridge/${encodeURIComponent(等["桥请求"])}"><code>${esc(等["桥请求"])}</code></a>${等["排于"] ? ` · 排于 ${时间(等["排于"])}` : ""}${等["截止"] ? ` · 截止 ${时间(等["截止"])}` : ""}</div>` : "");
   const r = d["业务结果"]; if (!r) return `<div><b>${esc(d["执行状态中文"])}</b>${等块}</div>`;
   const 色 = { "已完成": "ok", "已完成,需补充资料": "warn", "没做完": "warn", "失败": "err", "进行中": "" }[r["结论"]] || "";
   // 11-18:从人工待办 / 定时页深链进来时没有 图态(没经编辑器),节点() 直接 TypeError 整页崩 —— 42 条失败运行全中。有图才翻业务名
@@ -5805,6 +5805,7 @@ async function 原始日志(rid, 筛 = {}, 运行 = null) {
           <div class="rlh"><span class="k">${时间(x["时间"])}</span> <b>${esc(x["来源"])}</b> <code>${esc(x["类型"])}</code>
             ${x["节点"] ? `<button class="lk" data-rlgo="${esc(x["节点"])}" title="到这一步">节点 ${esc(x["节点"])}</button>` : ""}
             ${x["尝试"] != null ? `<span class="k">第 ${esc(x["尝试"])} 次</span>` : ""}
+            ${x["来源"] === "桥请求" && x["主键"] ? `<a href="#/bridge/${encodeURIComponent(x["主键"])}">看这张桥请求 →</a>` : ""}
             <span class="k" title="来源表 + 主键;指纹是原件的 SHA-256 前 16 位,打码副本和原件指纹一样,可以对">${esc(x["来源表"])} · ${esc(x["主键"])} · ${esc(x["字节数"])} 字节 · 指纹 ${esc(x["指纹"])}</span>
             ${x["是打码副本"] ? `<span class="pill warn">打码副本</span>` : ""}
             ${x["载荷在外部存储"] ? `<span class="pill warn" title="这一条只带了引用,正文不在这里">载荷在外部存储:${esc(x["载荷在外部存储"])}</span>` : ""}</div>
@@ -5865,6 +5866,43 @@ async function 原始日志(rid, 筛 = {}, 运行 = null) {
 function 格式化日志(v) {
   if (!v || typeof v !== "object") return String(v ?? "");
   return Object.entries(v).map(([k, x]) => `${k}: ${typeof x === "object" && x !== null ? JSON.stringify(x) : x}`).join("\n");
+}
+
+/* 桥请求详情(11-20,还体检欠账「桥请求没有详情页、运行页链不过去」)。
+ * 运行停在「等澜绣执行」时,人要能看到:这张单发了什么参数、澜绣回了什么、运行还在不在等它。
+ * 只读 —— 回执是澜绣同步程序的事,页面上不给「手工回执」按钮(那会绕开澜绣那边的身份和台账)。 */
+async function 页_桥请求详情(cid) {
+  const 头 = `<div class="crumb">工作室 / <a href="#/studio/workflow">工作流</a> / 桥请求 ${esc(cid)}</div>
+    <div class="head"><div><h1>桥请求详情</h1><div class="sub">${esc(cid)}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/bridge-calls/${encodeURIComponent(cid)}`); }
+  catch (e) {
+    if (e.码 === 403) { $("#main").innerHTML = 头 + `<div class="state err"><h3>没有权限看桥请求</h3><p>${esc(e.message)}</p>
+      <p class="k">桥请求的参数里有转写原文和客户订单号,要「运行评测」权限才看得到。这是权限问题,不是这张单不存在。</p></div>`; return; }
+    const s = 错误块(e, () => 页_桥请求详情(cid)); $("#main").innerHTML = 头 + s.html; s.挂(); return;
+  }
+  const 色 = { "待执行": "warn", "已执行": "ok", "执行失败": "err" }[d["状态"]] || "";
+  const 等说 = d["还在等它吗"]
+    ? "运行停在这一步,等澜绣的同步程序拉走执行、回执;回执到了运行才接着走。"
+    : d["状态"] === "待执行"
+      ? `这张单还没回执,但运行已经不在等它了(运行现在是 ${esc(d["运行状态"] || "未知")}),澜绣不会再拉走它。`
+      : `澜绣已回执「${esc(d["状态"])}」${d["acked_at"] ? ` · ${时间(d["acked_at"])}` : ""}。`;
+  $("#main").innerHTML = 头 + `
+    <div class="card">
+      <div><span class="pill ${色}">${esc(d["状态"])}</span> 工具 <b>${esc(d["工具"])}</b> · 步骤 <code>${esc(d["步骤"])}</code>
+        ${d["跑法"] && d["跑法"] !== "正常" ? `<span class="pill warn">${esc(d["跑法"])}</span>` : ""}</div>
+      <div class="k">${等说}</div>
+      <div class="k">属于运行 <code>${esc(d["运行"])}</code> · <a href="#/wfrun/${encodeURIComponent(d["运行"])}">去看这次运行 →</a></div>
+      <div class="k">排于 ${时间(d["created_at"])} · 办事人 ${esc(d["办事人"] || "未知")}${d["办事人澜绣工号"] ? `(澜绣工号 ${esc(d["办事人澜绣工号"])})` : "(没绑澜绣工号)"}
+        · 幂等键 <code>${esc(d["幂等键"] || "")}</code></div>
+    </div>
+    <h2>发了什么</h2>
+    <pre data-raw="原文" class="io">${esc(JSON.stringify(d["参数"] || {}, null, 1))}</pre>
+    <h2>回了什么</h2>
+    ${d["状态"] === "已执行" ? `<pre data-raw="原文" class="io">${esc(JSON.stringify(d["结果"], null, 1))}</pre>`
+      : d["状态"] === "执行失败" ? `<div class="state err"><h3>澜绣执行失败</h3><pre class="io">${esc(JSON.stringify(d["失败"], null, 1))}</pre></div>`
+      : `<div class="k">还没有回执。</div>`}`;
 }
 
 async function 页_运行详情(rid) {
@@ -11511,6 +11549,7 @@ async function 路由() {
     if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));
+    if (h.startsWith("#/bridge/")) return await 页_桥请求详情(decodeURIComponent(h.slice(9)));
     if (h.startsWith("#/agent/")) return await 页_agent配置(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/chat/")) return await 页_聊天助手(decodeURIComponent(h.slice(7)));
     if (h.startsWith("#/tool/")) return await 页_工具详情(decodeURIComponent(h.slice(7)));

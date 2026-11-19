@@ -59,6 +59,9 @@ G, Y, R, D = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
     ("#/trace/",    "页_调用树",     "traces",           ""),
     ("#/workflow/", "页_画布",       "workflows",        ""),
     ("#/wfrun/",    "页_运行详情",   "execution_runs",   ""),
+    # 桥请求详情(11-20,运行页「等澜绣执行」那一行点进来)。样例来自 e2e-ci 里音频 / 订单风险 / 补货这几份
+    # 在演示项目留下的单 —— CI 上它们排在冒烟前面
+    ("#/bridge/",   "页_桥请求详情", "bridge_calls",     ""),
     ("#/agent/",    "页_agent配置",  "agents",           ""),
     ("#/tool/",     "页_工具详情",   "tool_definitions", ""),
     ("#/app/",      "页_应用详情",   "applications",     ""),

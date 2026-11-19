@@ -179,10 +179,23 @@ ck("店长确认后**先再取一次**(不直接派)", [x["工具"] for x in 单
 ck("**派的是「订单跟踪」,挂这一单,负责人 / 截止 / 内容都是店长填的**",
    派 and 派[0]["参数"] == {"type": "订单跟踪", "ref_id": 订单, "assignee": "60000003",
                             "end": "2026-12-31 18:00", "note": "去问工厂哪天能发"}, 派 and 派[0]["参数"])
+# 桥请求详情(11-20):运行页「等澜绣执行」那一行点进来看的就是这个接口
+c, 详 = 打("GET", P + f"/bridge-calls/{派[0]['id']}", "U004") if 派 else (0, {})
+ck("桥请求详情:回执前「还在等它」,参数和列表里那张一字不差",
+   c == 200 and 详.get("还在等它吗") is True and 详.get("状态") == "待执行" and 详.get("运行") == rid
+   and 详.get("参数") == 派[0]["参数"], (c, 详))
+c, _ = 打("GET", P + f"/bridge-calls/{派[0]['id']}", "U003") if 派 else (0, None)
+ck("桥请求详情:没有「运行评测」权限的查看者看不到(参数里有客户订单号)", c == 403, c)
+c, _ = 打("GET", f"/api/v1/projects/project_demo_b/bridge-calls/{派[0]['id']}", "U005") if 派 else (0, None)
+ck("桥请求详情:拿 A 项目的单号去 B 项目查 → 404,不说它在哪", c == 404, c)
 回执(rid, "assign_task", {"数据": {"ok": True}, "结果": "已派"})
 st, rr = 等到(rid, ("succeeded", "failed", "incomplete"))
 ck("运行成功,输出说派了", st == "succeeded" and "已派订单跟踪" in json.dumps((rr or {}).get("输出"), ensure_ascii=False),
    (st, (rr or {}).get("输出")))
+c, 详 = 打("GET", P + f"/bridge-calls/{派[0]['id']}", "U004") if 派 else (0, {})
+ck("桥请求详情:回执后看得到澜绣回了什么,不再「等它」",
+   c == 200 and 详.get("状态") == "已执行" and 详.get("结果") == {"数据": {"ok": True}, "结果": "已派"}
+   and 详.get("还在等它吗") is False, (c, 详))
 
 print("\n▸ ③ 核对期间这一单变了 → 不派")
 rid = 走到核对(wid, "需关注")
