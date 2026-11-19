@@ -25,3 +25,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def 路径():
     """业务后台 sqlite 的路径:环境变量 LANXIU_DB 优先(检查切副本用),否则 backend/lanxiu.db。"""
     return os.environ.get("LANXIU_DB") or os.path.join(HERE, "lanxiu.db")
+
+
+def 真库():
+    """真库的路径,**不认 LANXIU_DB**(2026-11-19 加)。
+
+    给那几处「本来就要认出哪个是真库」的地方用:评测切库时判「这一连接指的是不是真库、要不要改道」、
+    夜跑把 PID 文件放在真库旁边(两个检出共用那一份库)。这些地方要是走 `路径()`,
+    切了副本之后就认不出真库了 —— 所以单开一个口,而不是各自再拼一遍路径。"""
+    return os.path.join(HERE, "lanxiu.db")

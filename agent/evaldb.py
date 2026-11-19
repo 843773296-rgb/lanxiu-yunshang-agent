@@ -31,7 +31,8 @@ def 用副本(前缀="eval-", 先导入=()):
     for 名 in 先导入:
         importlib.import_module(名)
     import check_copy
-    真 = os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
+    from dbpath import 真库 as _真库路径
+    真 = os.path.realpath(_真库路径())
     副本 = check_copy.用副本(前缀=前缀)
     os.environ["LANXIU_DB"] = 副本
     # ⚠️ check_copy 只认叫 DB / DB_PATH 的模块变量,而评测自己读库用的变量叫 DBP(10 套都是)——

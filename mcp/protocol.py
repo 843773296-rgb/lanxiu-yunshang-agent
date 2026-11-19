@@ -21,7 +21,11 @@ import json, os, sys, traceback
 # 55 个文件各自写死了真库路径,一个个改不现实,也一定会漏;所以每次执行工具之前**再扫一遍** ——
 # 工具里懒加载的模块启动时还没有,漏掉它们读到的就是没遮蔽的顾客信息。
 # 生效了就在副本旁边留一行凭证:env 到没到这个进程「没有证据」的话,试跑那头拒绝认结果(和遮蔽台账同一个理由)。
-_真库 = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend", "lanxiu.db"))
+_后台 = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
+if _后台 not in map(os.path.normpath, sys.path):
+    sys.path.append(_后台)          # 追加不插队:各服务入口早已把 backend 放进来,这里只防单独 import
+from dbpath import 真库 as _真库路径
+_真库 = os.path.realpath(_真库路径())
 
 
 def 指到副本():
@@ -124,8 +128,7 @@ def 遮被判那笔押金(out):
     import refund_replay as _RR
     if 单 not in _出事于缓存:
         import sqlite3
-        db = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                          "backend", "lanxiu.db")
+        db = _真库路径()
         c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         try:
             _出事于缓存[单] = _RR.出事于(c, 单)

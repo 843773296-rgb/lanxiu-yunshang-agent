@@ -195,7 +195,10 @@ def 说(*a):
 # 白天 9 点多 bite_run 报「夜跑评测正在跑」拒跑。和「规则写进文档 → 文档匹配自己」同一个形状,第四次。
 # 现在照 `backend/.rebuilding` 那个现成范式:写 PID 文件、`os.kill(pid, 0)` 验活,残留的不算。
 # ⚠️ 文件放在**真库所在的目录**(两个检出共用那一份库;`.feynman/` 每个检出各有一份,放那里互相看不见)
-PID目录 = os.path.dirname(os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db")))
+if os.path.join(ROOT, "backend") not in sys.path:
+    sys.path.append(os.path.join(ROOT, "backend"))   # 追加不插队,免得遮住 tools/ 里同名模块
+from dbpath import 真库 as _真库路径
+PID目录 = os.path.dirname(os.path.realpath(_真库路径()))
 夜跑PID = os.path.join(PID目录, ".nightly-eval.pid")
 重放PID = os.path.join(PID目录, ".bite-run.pid")
 # ⚠️⚠️ **2026-11-10 加:全项目快照(`tools/snapshot_all_evals.py`)。**
