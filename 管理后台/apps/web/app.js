@@ -249,7 +249,7 @@ const P = () => `/api/v1/projects/${encodeURIComponent(项目)}`;
  * 每张卡要带**时间范围、分母、环境、数据来源、更新时间**。
  * **质量评分不能用 HTTP 成功率代替;没有评测覆盖显示「尚未评测」,不显示 0 分。** */
 async function 页_工作台() {
-  const 头 = `<div class="crumb">工作台</div>
+  const 头 = `<div class="crumb">主页</div>
     <div class="head"><div>
       <h1>工作台</h1>
       <div class="sub">${md(`先知道哪里需要处理。每张卡都写清它**算的是什么范围、分母是什么、数据从哪来** ——
@@ -331,7 +331,7 @@ async function 画_开关(根) {
 
 /* ── Prompt 列表(§8.1)─────────────────────────────────────────── */
 async function 页_prompt列表() {
-  const 头 = `<div class="crumb">Prompt 管理</div>
+  const 头 = `<div class="crumb">工作室 / Prompt 管理</div>
     <div class="head"><div>
       <h1>Prompt 管理</h1>
       <div class="sub">${md(`「最新保存版本」和「生产引用版本」**并排显示** ——
@@ -526,7 +526,7 @@ async function 页_prompt详情(pid) {
       <td>${esc(v.created_by || "")}</td></tr>`).join("");
 
   $("#main").innerHTML = `
-    <div class="crumb"><a href="#/prompts">Prompt 管理</a> / ${esc(草.key)}</div>
+    <div class="crumb">工作室 / <a href="#/prompts">Prompt 管理</a> / ${esc(草.key)}</div>
     <div class="head"><div>
       <h1>${esc(草.key)}</h1>
       <div class="sub">草稿 revision <code id="rev">${rev}</code>
@@ -811,7 +811,7 @@ async function 页_prompt详情(pid) {
  * 自己判就成了第二份规矩,而两份规矩不一致的表现是「页面说能冻、点了被拒」。
  * 「试一下」打的是 preview 接口,和运行时同一个函数;页面不自己匹配叫法。 */
 async function 页_术语列表() {
-  const 头 = `<div class="crumb">术语配置</div>
+  const 头 = `<div class="crumb">工作室 / 术语配置</div>
     <div class="head"><div>
       <h1>术语配置</h1>
       <div class="sub">${md(`把店里的叫法统一成一个标准词,写清它是什么意思;指标还要写清**怎么算**(分子 / 分母 / 时间)。
@@ -1433,7 +1433,7 @@ async function 页_术语详情(gid) {
   const 拆叫法 = (s) => [...new Set(String(s || "").split(/[,，、;；\n\r]+/).map((x) => x.trim()).filter(Boolean))];
 
   $("#main").innerHTML = `
-    <div class="crumb"><a href="#/glossaries">术语配置</a> / ${esc(d.key)}</div>
+    <div class="crumb">工作室 / <a href="#/glossaries">术语配置</a> / ${esc(d.key)}</div>
     <div class="head"><div>
       <h1>${esc(d.key)}</h1>
       <div class="sub">草稿 revision <code id="g-rev">${esc(rev)}</code> · <span id="g-vcount"></span>
@@ -1671,7 +1671,7 @@ async function 页_术语详情(gid) {
  * 算不出金额的单独数、费用写「至少」。页面只负责把同一个筛选同时作用到所有卡片上,不另算一遍。 */
 let 监测筛 = { 范围: "业务", 天: 7 };
 async function 页_监测() {
-  const 头 = `<div class="crumb">监测</div><div class="head"><div><h1>监测</h1>
+  const 头 = `<div class="crumb">日志与监测 / 监测</div><div class="head"><div><h1>监测</h1>
     <div class="sub">${md("按应用 / 环境 / 版本 / 入口看运行、办成和花费。**办成 = 跑完 + 每一处写入都拿到澜绣的回执**;等人核对的不算失败也不算成功;算不出的显示「—」,不显示 0。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   const q = Object.entries(监测筛).filter(([, v]) => v !== "" && v != null).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
@@ -1715,7 +1715,7 @@ async function 页_监测() {
  * 判定全在服务端(alert_rules.下一步)。建规则时**每一项都要填**:阈值和次数是产品配置,页面不替人填默认数。
  * 站内待办能跳回监测页看开单那一窗(同一组筛选)。外部通知这一版不做,页面上也不摆那个开关。 */
 async function 页_告警() {
-  const 头 = `<div class="crumb">告警</div><div class="head"><div><h1>告警</h1>
+  const 头 = `<div class="crumb">日志与监测 / 告警</div><div class="head"><div><h1>告警</h1>
     <div class="sub">${md("**连续 N 次越线才报、连续 M 次正常才自动恢复**;样本不够最小样本量的那一轮不算。每 5 分钟评估一次,只开站内待办(外部通知这一版不做)。阈值和次数都是你们定的产品配置,不是行业标准。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let 规, 单;
@@ -1774,7 +1774,7 @@ async function 页_告警() {
  * 动作按钮照接口给的「能做的动作」画,页面不另写一份流转规则(两份迟早分叉)。 */
 /* ── 知识修订申请(11-17,W28):谁都能提、只总部运营审、采纳生成带注记的改动文本、开发改 md 后标已合并 ── */
 async function 页_知识修订清单(筛 = "") {
-  const 头 = `<div class="crumb">知识修订</div>
+  const 头 = `<div class="crumb">日志与监测 / 知识修订</div>
     <div class="head"><div><h1>知识修订申请</h1>
       <div class="sub">${md("门店对 knowledge/*.md 里某一段口径提修订。**只总部运营审**(三家店各审会审出三个版本);审过不直接改文件 —— 生成一段带括号注记的改动文本,由开发改 md、过门禁,再标「已合并」。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -1821,7 +1821,7 @@ async function 页_知识修订清单(筛 = "") {
 }
 
 async function 页_知识修订详情(id) {
-  const 头 = `<div class="crumb"><a href="#/knowledge-revisions">知识修订</a> / ${esc(id)}</div>`;
+  const 头 = `<div class="crumb">日志与监测 / <a href="#/knowledge-revisions">知识修订</a> / ${esc(id)}</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/knowledge-revisions/${encodeURIComponent(id)}`); }
@@ -1852,7 +1852,7 @@ async function 页_知识修订详情(id) {
 }
 
 async function 页_意见受理(页 = 1, 筛 = "") {
-  const 头 = `<div class="crumb">意见受理</div>
+  const 头 = `<div class="crumb">日志与监测 / 意见受理</div>
     <div class="head"><div><h1>意见受理</h1>
       <div class="sub">${md("聊天站里提的意见。**分三级第一次处理**:紧急(影响业务办理)4 个工作小时、一般 2 个工作日、建议 7 天(工作时间跳过周末和法定假日),超时标红、告警页同时开一条待办。「有帮助」是提的人自己的感受,**不是准确率**。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -1881,7 +1881,7 @@ async function 页_意见受理(页 = 1, 筛 = "") {
 }
 
 async function 页_意见详情(id) {
-  const 头 = `<div class="crumb"><a href="#/opinions">意见受理</a> / ${esc(id)}</div>`;
+  const 头 = `<div class="crumb">日志与监测 / <a href="#/opinions">意见受理</a> / ${esc(id)}</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/opinions/${encodeURIComponent(id)}`); }
@@ -1971,7 +1971,7 @@ async function 页_意见详情(id) {
  * 11-12 改进验证与发布(PRD §4.3):验证通过 / 发布生效 / 关闭 的前置条件由接口查,页面只把它给的那句话写在按钮下面;
  * 「验证记录」「发布记录」两个字段画成下拉,选项是这张单上待验证 / 待生效的那几条。 */
 async function 页_问题单清单(页 = 1, 筛 = {}) {
-  const 头 = `<div class="crumb">问题单</div>
+  const 头 = `<div class="crumb">日志与监测 / 问题单</div>
     <div class="head"><div><h1>问题单</h1>
       <div class="sub">${md("要修的那件事。多条意见可以并进同一张单;**已解决只算「已验证关闭」**,已搁置不算。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -2014,7 +2014,7 @@ async function 页_问题单清单(页 = 1, 筛 = {}) {
 }
 
 async function 页_问题单详情(id) {
-  const 头 = `<div class="crumb"><a href="#/issues">问题单</a> / ${esc(id)}</div>`;
+  const 头 = `<div class="crumb">日志与监测 / <a href="#/issues">问题单</a> / ${esc(id)}</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/issues/${encodeURIComponent(id)}`); }
@@ -2165,7 +2165,7 @@ async function 页_问题单详情(id) {
  * 未开始 / 拿不到 / 进行中 / 不通过 一律不绿,而且每项底下照写接口给的那句话(里面写着「拿不到 ≠ 通过」)。
  * 十条场景和通过标准是接口种的(抄自 PRD 13.4),页面不另抄一份。 */
 async function 页_上线验收() {
-  const 头 = `<div class="crumb">上线验收</div>
+  const 头 = `<div class="crumb">日志与监测 / 上线验收</div>
     <div class="head"><div><h1>上线验收</h1>
       <div class="sub">${md("十条核心场景(产品需求文档 13.4)逐条验、店长逐条签字;顶上算「做完了没有」—— **三项都通过才算,拿不到数据的不算通过**。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -2268,7 +2268,7 @@ async function 页_上线验收() {
  * 三组评测、能不能当结论、实际采用回执全是接口现查的;页面照写它给的「还差什么 / 为什么」,**不按分数画过没过**。
  * 发布记录页只记、只核:没有「发布」「回滚」按钮去动生产 —— 真发布 / 真回滚在发布页做,这里记回滚前接口会核生产指针。 */
 async function 页_验证记录详情(id) {
-  const 头 = `<div class="crumb"><a href="#/issues">问题单</a> / 验证记录 ${esc(id)}</div>`;
+  const 头 = `<div class="crumb">日志与监测 / <a href="#/issues">问题单</a> / 验证记录 ${esc(id)}</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/issue-verifications/${encodeURIComponent(id)}`); }
@@ -2318,7 +2318,7 @@ async function 页_验证记录详情(id) {
 }
 
 async function 页_发布记录详情(id) {
-  const 头 = `<div class="crumb"><a href="#/issues">问题单</a> / 发布记录 ${esc(id)}</div>`;
+  const 头 = `<div class="crumb">日志与监测 / <a href="#/issues">问题单</a> / 发布记录 ${esc(id)}</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/issue-releases/${encodeURIComponent(id)}`); }
@@ -2386,7 +2386,7 @@ async function 页_发布记录详情(id) {
  * 页面不另抄一份。**没有任何「智能度」分数**:验过什么看「已验证范围」那句话。
  * 评测结果 / 样本数量 / 实际运行量是接口现查的,查不到它给「没有数据」—— 页面照抄那四个字,不把它画成 0。 */
 async function 页_能力档案清单(页 = 1, 筛 = "") {
-  const 头 = `<div class="crumb">能力档案</div>
+  const 头 = `<div class="crumb">日志与监测 / 能力档案</div>
     <div class="head"><div><h1>能力档案</h1>
       <div class="sub">${md("每项业务能力验过什么、靠哪些智能体 / 工作流 / Skill / 工具、还有多少问题没解决。**不打「智能度」分**。")}
         <a href="#/capability-board">看改进看板</a></div></div></div>`;
@@ -2426,7 +2426,7 @@ async function 页_能力档案清单(页 = 1, 筛 = "") {
 }
 
 async function 页_能力档案详情(id) {
-  const 头 = `<div class="crumb"><a href="#/capabilities">能力档案</a> / ${esc(id)}</div>`;
+  const 头 = `<div class="crumb">日志与监测 / <a href="#/capabilities">能力档案</a> / ${esc(id)}</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/capability-profiles/${encodeURIComponent(id)}`); }
@@ -2517,7 +2517,7 @@ async function 页_能力档案详情(id) {
 }
 
 async function 页_改进看板() {
-  const 头 = `<div class="crumb"><a href="#/capabilities">能力档案</a> / 改进看板</div>
+  const 头 = `<div class="crumb">日志与监测 / 改进看板</div>
     <div class="head"><div><h1>改进看板</h1>
       <div class="sub">${md("问题单按根因、能力、状态的数。**只出数和分母,不出结论、不排名、不打分**;行按固定顺序排,不按数量排。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -2542,7 +2542,7 @@ async function 页_改进看板() {
 async function 页_运行记录(页 = 1) {
   // 证据中心第四个工作包(10-25):原来是占位页。现在列**聊天站**推过来的每一轮(entry_kind=聊天站),
   // 点进去是同一个调用树页 —— 原文看不看得到由那边的字段权限管(查看敏感输入),这一页不另判
-  const 头 = `<div class="crumb">运行记录</div>
+  const 头 = `<div class="crumb">日志与监测 / 运行记录</div>
     <div class="head"><div><h1>运行记录</h1>
       <div class="sub">${md("聊天站每一轮实际调了哪些工具、传了什么、回了什么。**原文要「查看敏感输入」授权**,没有的只看到形状。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -2960,7 +2960,7 @@ function 画_画布() {
   document.body.classList.remove("wf-full");
   画_应用侧栏(g);
   $("#main").innerHTML = `
-    <div class="crumb"><a href="#/workflows">工作流</a> / ${esc(g.名称)}</div>
+    <div class="crumb">工作室 / <a href="#/studio/workflow">工作流</a> / ${esc(g.名称)}</div>
     <div class="head"><div><h1>${esc(g.名称)}</h1>
       <div class="sub"><span id="savest" role="status" aria-live="polite"></span>
         ${g.用途 ? ` · ${esc(g.用途)}` : ""}</div></div>
@@ -4837,7 +4837,7 @@ async function 画_定时块(wid) {
   if ($("#sc-off")) $("#sc-off").onclick = () => 存(false);
 }
 async function 页_定时() {
-  const 头 = `<div class="crumb">定时</div>
+  const 头 = `<div class="crumb">待办与定时 / 定时</div>
     <div class="head"><div><h1>定时</h1>
       <div class="sub">${md("哪些工作流会到点自动跑、下次什么时候、统计哪一段、最近一期怎样。**在每条工作流的「版本与发布」里设。**")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -5871,7 +5871,7 @@ async function 页_运行详情(rid) {
   const d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`);
   const 步 = d["步骤"] || [];
   $("#main").innerHTML = `
-    <div class="crumb"><a href="#/workflows">工作流</a> / 运行 ${esc(rid)}</div>
+    <div class="crumb">工作室 / <a href="#/studio/workflow">工作流</a> / 运行 ${esc(rid)}</div>
     <div class="head"><div><h1>运行详情</h1>
       <div class="sub">定义来源 <code data-raw="原文">${esc(JSON.stringify(d["定义来源"] || {}))}</code></div>
     </div>
@@ -5985,7 +5985,7 @@ function 画_agent() {
   const 报 = g["草稿"]["上次校验报告"];
   const tabs = ["行为", "工具与知识", "权限与限制", "调试", "版本"];
   $("#main").innerHTML = `
-    <div class="crumb"><a href="#/agents">智能体</a> / ${esc(g["名称"])}</div>
+    <div class="crumb">工作室 / <a href="#/studio/agent">Agent</a> / ${esc(g["名称"])}</div>
     <div class="head"><div><h1>${esc(g["名称"])}</h1>
       <div class="sub">草稿 r${g["草稿"]["revision"]}
         ${g.脏 ? `<span class="stale">有未保存的改动</span>` : ""}</div></div>
@@ -6404,8 +6404,8 @@ function 页_工具表单(d) {
 }
 
 async function 页_工具详情(tid) {
-  $("#main").innerHTML = `<div class="crumb">编排 /
-      <a href="#/tools">工具与能力</a> / 详情</div>
+  $("#main").innerHTML = `<div class="crumb">集成 /
+      <a href="#/integrations/tools">工具</a> / 详情</div>
     <div class="head"><div><h1 id="tt">工具</h1>
       <div class="sub"><b>草稿改不动已经冻结的版本</b> ——
         而引用这个工具的 Agent 认的是<b>版本</b>,不是草稿。</div></div></div>
@@ -6888,7 +6888,7 @@ function 业务后台标(x) {
 }
 
 async function 页_工具目录() {
-  $("#main").innerHTML = `<div class="crumb">编排 / 工具与能力</div>
+  $("#main").innerHTML = `<div class="crumb">集成 / 工具</div>
     <div class="head"><div><h1>工具目录</h1>
       <div class="sub"><b>未注册的工具名一律拒绝</b>(§9.4)——
         不能让模型凭一个名字临时发网络请求。</div></div></div>
@@ -6996,7 +6996,7 @@ function _mock标(是mock) {
  * 这两条把审批从一个流程变成一个**需要理解才能完成的动作**。
  * 做得「方便」在这里是错的。 */
 async function 页_人工待办() {
-  const 头 = `<div class="crumb">人工待办</div>
+  const 头 = `<div class="crumb">待办与定时 / 人工待办</div>
     <div class="head"><div><h1>人工待办</h1>
       <div class="sub">${md(`不可逆写入要人点头。**列表上没有批准按钮,这是有意的。**`)}</div>
     </div></div>`;
@@ -7081,6 +7081,9 @@ async function 开_聊天转人工(编号) {
  */
 function 画_核对页(hid, d, 头) {
   const 材 = d["核对材料"] || {}, 请 = d["请求"] || {}, 影 = d["影响对象"] || {};
+  // 待办 ↔ 运行互链(11-19,体检 #10):正源是 human_requests.execution_run_id(接口放在「请求」里),
+  // target_ref.运行 只有部分流程会带 —— 原来只认后者,不带的那些待办看不到自己是哪次运行停下来等的
+  const 跑 = 请.execution_run_id || 影["运行"];
   const 能改 = (d["允许编辑的字段"] || []).includes("定稿");
   // 定稿之外核对人能填的(10-24 录音的回电负责人 / 回电截止、10-25 订单风险的跟踪负责人 / 跟踪截止):
   // 负责人和时间由人填,不让模型猜;**全填了 = 要派,全空 = 不派**,只填一部分不提交。按字段名通用地画,不按流程写死
@@ -7088,7 +7091,7 @@ function 画_核对页(hid, d, 头) {
   const 待 = Array.isArray(材["待确认项"]) ? 材["待确认项"] : [];
   $("#main").innerHTML = 头 + `
     <div class="note">${材["客户"] ? `客户 <b>${esc(材["客户"])}</b>` : ""} ${材["通话"] ? ` · 通话 <b>${esc(材["通话"])}</b>` : ""}
-      ${影["运行"] ? ` · 来自运行 <a href="#/wfrun/${encodeURIComponent(影["运行"])}">${esc(影["运行"])}</a>` : ""}
+      ${跑 ? ` · 来自运行 <code>${esc(跑)}</code> <a href="#/wfrun/${encodeURIComponent(跑)}">去看这次运行 →</a>` : ""}
       ${请.expires_at ? ` · 截止 ${esc(String(请.expires_at).slice(0, 16).replace("T", " "))}(到点没人处理,这次运行结束、不写任何东西)` : ""}</div>
     <div class="two">
       ${材["工具"] ? `<div class="card"><h3>Agent 要执行的写操作</h3>
@@ -7146,7 +7149,7 @@ function 画_核对页(hid, d, 头) {
 }
 
 async function 页_待办详情(hid) {
-  const 头 = `<div class="crumb"><a href="#/human">人工待办</a> · 详情</div>
+  const 头 = `<div class="crumb">待办与定时 / <a href="#/human">人工待办</a> · 详情</div>
     <div class="head"><div><h1>待办详情</h1>
       <div class="sub">${esc(hid)}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -7156,7 +7159,10 @@ async function 页_待办详情(hid) {
   if (d["核对材料"]) return 画_核对页(hid, d, 头);
   const 证 = d["证据"] || {};
   const 工 = d["具体工具"];
+  // 待办 ↔ 运行互链(11-19,体检 #10):运行详情那边早就能跳到待办(在等什么.待办),这边原来回不去,只能去运行列表翻
+  const 跑 = (d["请求"] || {}).execution_run_id;
   $("#main").innerHTML = 头
+    + (跑 ? `<div class="k">这条待办是运行 <code>${esc(跑)}</code> 停下来等的 · <a href="#/wfrun/${encodeURIComponent(跑)}">去看这次运行 →</a></div>` : "")
     + `<div class="note">${md(d.note || "")}</div>
     <h2>要批准什么</h2>
     <div class="card">
@@ -7258,7 +7264,7 @@ async function 取工作流版本们() {
 
 async function 页_评测中心() {
   工作流版本缓存 = null;      // 换项目 / 刚冻结了新版本,重进这一页要看到
-  const 头 = `<div class="crumb">评测中心</div>
+  const 头 = `<div class="crumb">评测与训练 / 评测中心</div>
     <div class="head"><div><h1>回归验收</h1>
       <div class="sub">${md(`改完之后跑一遍,看有没有退步。**有分数 ≠ 能当结论。**`)}</div>
     </div><div><a href="#/compare"><button>实验对比</button></a></div></div>`;
@@ -7440,7 +7446,7 @@ function 挂评测表单() {
  * 这里**不显示分数** —— 并排两个不可比的数比不显示糟得多:
  * 读的人会算出一个差值,而那个差值可能全来自题目或评分方式。 */
 async function 页_实验对比() {
-  const 头 = `<div class="crumb"><a href="#/evals">评测中心</a> · 实验对比</div>
+  const 头 = `<div class="crumb">评测与训练 / 实验对比</div>
     <div class="head"><div><h1>实验对比</h1>
       <div class="sub">${md(`同一套题两个版本并排。**不可比时不给分数。**`)}</div>
     </div></div>`;
@@ -7514,7 +7520,7 @@ async function 页_实验对比() {
  * 页面要如实显示「排队中」,而不是转个圈假装在等结果:
  * 一个用假进度冒充执行的界面,在任务卡住时看起来完全正常。 */
 async function 页_单条试跑() {
-  const 头 = `<div class="crumb">Prompt 管理</div>
+  const 头 = `<div class="crumb">评测与训练 / 单条试跑</div>
     <div class="head"><div><h1>单条试跑</h1>
       <div class="sub">${md(`拿一条真输入试一次。**调试也花钱**,所以要过额度闸。`)}</div>
     </div></div>`;
@@ -7583,7 +7589,7 @@ async function 页_单条试跑() {
  * 这里读的是管理后台自己的 `traces` / `spans` —— 而那两张表
  * 2026-09-28 之前基本是空的,是精排记账和 A1 上报让它们有了真内容。 */
 async function 页_调用链(页 = 1) {
-  const 头 = `<div class="crumb">日志与监测</div>
+  const 头 = `<div class="crumb">日志与监测 / 调用链</div>
     <div class="head"><div><h1>调用链</h1>
       <div class="sub">${md(`每一次运行的调用树。**看得到 trace 不等于看得到原文。**`)}</div>
     </div></div>`;
@@ -7644,7 +7650,7 @@ function 画逐句核对(k, 脱) {
 }
 
 async function 页_调用树(tid) {
-  const 头 = `<div class="crumb"><a href="#/traces">调用链</a> · 调用树</div>
+  const 头 = `<div class="crumb">日志与监测 / <a href="#/traces">调用链</a> · 调用树</div>
     <div class="head"><div><h1>调用树</h1>
       <div class="sub">${esc(tid)}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -7690,7 +7696,7 @@ async function 页_调用树(tid) {
 const _产出状态色 = { "正常": "ok", "已打回待执行": "warn", "已执行": "", "执行失败": "fail" };
 let _产出筛 = { 类型: "", 状态: "" };
 async function 页_产出监督() {
-  const 头 = `<div class="crumb">日志与监测</div>
+  const 头 = `<div class="crumb">日志与监测 / 产出监督</div>
     <div class="head"><div><h1>产出监督</h1>
       <div class="sub">${md(`门店助手写出来的**日报 / 周报 / 月报**和上新时给导购的**建议**,每一份都在这里:`
         + `用了哪些规矩、照着什么数据、哪个模型、写出了什么。不满意就**打回** ——`
@@ -7741,7 +7747,7 @@ async function 页_产出监督() {
 }
 
 async function 页_产出详情(id) {
-  const 头 = `<div class="crumb"><a href="#/outputs">产出监督</a> · 详情</div>`;
+  const 头 = `<div class="crumb">日志与监测 / <a href="#/outputs">产出监督</a> · 详情</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/artifacts/${encodeURIComponent(id)}`); }
@@ -7809,7 +7815,7 @@ async function 页_产出详情(id) {
  * 能拿到的只有「人采纳了没有」—— 而采纳率高也可能是因为人懒得改。
  * 这一页最重要的事是把这个区别写在脸上。 */
 async function 页_智能体健康() {
-  const 头 = `<div class="crumb">日志与监测</div>
+  const 头 = `<div class="crumb">日志与监测 / 智能体健康</div>
     <div class="head"><div><h1>智能体健康</h1>
       <div class="sub">${md(`上线之后**没有标准答案** —— 能拿到的是采纳率,而它不是质量分。`)}</div>
     </div></div>`;
@@ -7879,7 +7885,7 @@ function _参考价(x) {
 }
 
 async function 页_用量与成本() {
-  const 头 = `<div class="crumb">用量与成本</div>
+  const 头 = `<div class="crumb">日志与监测 / 用量与成本</div>
     <div class="head"><div><h1>用量与成本</h1>
       <div class="sub">${md(`谁花的、花在哪次调用上。**未知显示「未知」,不显示 0。**`)}</div>
     </div></div>`;
@@ -8060,7 +8066,7 @@ const _上传状态色 = { "待上传": "", "已上传": "warn", "已校验": "o
                   "校验失败": "fail", "已放弃": "" };
 
 async function 页_加资料() {
-  const 头 = `<div class="crumb">知识与 RAG</div>
+  const 头 = `<div class="crumb">知识库 / 加资料</div>
     <div class="head"><div><h1>加资料</h1>
       <div class="sub">${md(`选文件 → 传 → **服务端校验**。只有「已校验」才算能用的文件引用(§17.1)。`)}</div>
     </div></div>`;
@@ -8185,7 +8191,7 @@ async function 走三步() {
 }
 
 async function 页_知识库() {
-  const 头 = `<div class="crumb">知识与 RAG</div>
+  const 头 = `<div class="crumb">知识库</div>
     <div class="head"><div><h1>知识库</h1>
       <div class="sub">${md(`资料、片段、索引。**有片段不等于能检索** —— 要有一个「已就绪」的索引。`)}</div>
     </div><div><a href="#/uploads"><button>加资料</button></a></div></div>`;
@@ -8581,7 +8587,7 @@ let 召回态 = { 索引: null, 精排: true, 生成: false, 页: 0, 只看要�
 const 召回字数上限 = 200;
 
 async function 页_召回测试(指定kb) {
-  const 头 = `<div class="crumb">知识与 RAG</div>
+  const 头 = `<div class="crumb">知识库 / 召回测试</div>
     <div class="head"><div><h1>召回测试</h1>
       <div class="sub">根据给定的查询文本测试知识的召回效果。</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
@@ -8963,7 +8969,7 @@ function 答案档标(档) {
 }
 
 async function 页_试跑详情(rid) {
-  const 头 = `<div class="crumb"><a href="#/retrieval">召回测试</a> / 记录详情</div>`;
+  const 头 = `<div class="crumb">知识库 / <a href="#/retrieval">召回测试</a> / 记录详情</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   const 拉 = async () => {
     let d;
@@ -9079,7 +9085,7 @@ async function 页_审计记录() {
 }
 
 async function 页_应用与发布() {
-  $("#main").innerHTML = `<div class="crumb">发布 / 应用</div>
+  $("#main").innerHTML = `<div class="crumb">工作室 / 应用与发布</div>
     <div class="head"><div><h1>应用与发布</h1>
       <div class="sub">这一页回答的是 <b>哪一版在给用户跑</b> ——
         不是「有哪些应用」。</div></div></div>
@@ -9218,8 +9224,8 @@ const 发布链动作 = {
 if (typeof globalThis !== "undefined") globalThis.发布链动作 = 发布链动作;
 
 async function 页_应用详情(aid) {
-  $("#main").innerHTML = `<div class="crumb">发布 / 应用 /
-      <a href="#/apps">列表</a></div>
+  $("#main").innerHTML = `<div class="crumb">工作室 /
+      <a href="#/studio/app">应用与发布</a> / 详情</div>
     <div class="head"><div><h1 id="t">应用</h1>
       <div class="sub">${md(`这一页能**做**发布那四步 ——
         出清单 / 审核 / 切指针 / 回滚。`)}</div></div></div>
@@ -9551,7 +9557,7 @@ function 页_连接表单(d) {
 
 let _连接含停用 = false;     // 「显示已停用的」开关;默认不列,演示项目里 e2e 停用的有几百条会淹掉真在用的
 async function 页_模型与连接() {
-  $("#main").innerHTML = `<div class="crumb">设置 / 模型与连接</div>
+  $("#main").innerHTML = `<div class="crumb">集成 / 模型供应商</div>
     <div class="head"><div><h1>模型与连接</h1>
       <div class="sub"><b>密钥只给形状,不给内容</b> ——
         也不做截断:截到前几个字,那几个字仍然是原文。</div></div></div>
@@ -10288,7 +10294,7 @@ if (typeof globalThis !== "undefined") globalThis.数据集动作 = 数据集动
 
 async function 页_数据集() {
   const 能改 = 数据集动作.能改();
-  $("#main").innerHTML = `<div class="crumb">微调 / 数据集</div>
+  $("#main").innerHTML = `<div class="crumb">评测与训练 / 数据集</div>
     <div class="head"><div><h1>数据集</h1>
       <div class="sub">这一页回答 <b>能不能导出、卡在哪</b> ——
         而「能导出吗」是<b>现算</b>的,不是存的字段(存的会漂)。</div></div>
@@ -10531,7 +10537,7 @@ const 样本动作 = {
 if (typeof globalThis !== "undefined") globalThis.样本动作 = 样本动作;
 
 async function 页_样本(dsid) {
-  $("#main").innerHTML = `<div class="crumb">评测 /
+  $("#main").innerHTML = `<div class="crumb">评测与训练 /
       <a href="#/datasets">数据集</a> / 样本</div>
     <div class="head"><div><h1>样本</h1>
       <div class="sub"><b>原文默认看不到</b> —— 样本是真实客户对话。
@@ -10632,7 +10638,7 @@ async function 画样本(dsid) {
 }
 
 async function 页_训练任务() {
-  $("#main").innerHTML = `<div class="crumb">微调 / 训练任务</div>
+  $("#main").innerHTML = `<div class="crumb">评测与训练 / 训练任务</div>
     <div class="head"><div><h1>训练任务</h1>
       <div class="sub"><b>训练目标和参数更新方式是两个维度</b> ——
         SFT/DPO 是目标,LoRA/全量是更新方式,不是三选一。</div></div></div>
@@ -10714,7 +10720,7 @@ function 挂产物事件() {
 }
 
 async function 页_模型产物() {
-  $("#main").innerHTML = `<div class="crumb">微调 / 模型产物</div>
+  $("#main").innerHTML = `<div class="crumb">评测与训练 / 模型产物</div>
     <div class="head"><div><h1>模型产物</h1>
       <div class="sub"><b>训练完成只代表得到产物</b> ——
         有产物 → 产物可用(校验过) → 在服务用户,是三件不同的事。</div></div></div>
