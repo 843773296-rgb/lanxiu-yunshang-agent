@@ -15,6 +15,8 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_opinions_flow as T  # noqa: E402  复用打接口和取内部凭证,不另写一份
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _清成员 as 成员  # noqa: E402  临时加的成员进程退出时删掉(11-19)
 
 项目 = os.environ.get("AIMC_PROJECT", T.项目)
 P = f"/api/v1/projects/{项目}"
@@ -71,7 +73,7 @@ def main():
         c, b = 打("GET", 详)
         ck("管理员看得到原话", c == 200 and 标 in str(b.get("question_note")) and b.get("原话看得到吗") is True, (c, b))
         rev = b.get("revision")
-        看不到 = "E2EHOV" + uuid.uuid4().hex[:4]   # 自己建一个 viewer:CI 新库里这个项目没有演示账号
+        看不到 = 成员.记(项目, "E2EHOV" + uuid.uuid4().hex[:4])   # 自己建一个 viewer:CI 新库里这个项目没有演示账号
         打("POST", P + "/memberships", {"工号": 看不到, "角色": "viewer"})
         c, b = 打("GET", 详, 谁=看不到)
         ck("没有受理权限的角色看不到原话", c == 200 and b.get("question_note") is None and b.get("原话看得到吗") is False, (c, b))

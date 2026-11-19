@@ -36,6 +36,8 @@ from collections import deque
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _改进证据 as 证  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _清成员 as 成员  # noqa: E402  临时加的成员进程退出时删掉(11-19)
 
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
 项目 = "project_lanxiu"
@@ -343,7 +345,7 @@ def main():
            not any(w in kk for kk in 键们 for w in ("排名", "名次", "得分", "分数", "智能度")), sorted(键们))
 
         print("\n▸ ⑩ 权限")
-        无权 = "E2ECPV" + uuid.uuid4().hex[:4]
+        无权 = 成员.记(项目, "E2ECPV" + uuid.uuid4().hex[:4])
         打("POST", P + "/memberships", {"工号": 无权, "角色": "viewer"})
         c, b = 建({"名字": f"{标} 无权"}, 谁=无权)
         ck("**查看者建档 → 403**", c == 403, (c, b))

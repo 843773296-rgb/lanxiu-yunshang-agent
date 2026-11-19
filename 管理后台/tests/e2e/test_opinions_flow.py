@@ -24,6 +24,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _清成员 as 成员  # noqa: E402  临时加的成员进程退出时删掉(11-19)
 
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
 项目 = "project_lanxiu"
@@ -317,7 +319,7 @@ def main():
         ck("「请求补充」不写说明 → 422", c == 422 and "说明" in 字段(b), (c, b))
         c, b = 动(s1["id"], "请求补充", "长" * 1001, rev=rev)
         ck("说明超过 1000 字 → 422 且带「怎么办」(11-04 前这里会崩成 500)", c == 422 and (b or {}).get("advice"), (c, b))
-        无权 = "E2EOPV" + uuid.uuid4().hex[:4]
+        无权 = 成员.记(项目, "E2EOPV" + uuid.uuid4().hex[:4])
         打("POST", P + "/memberships", {"工号": 无权, "角色": "viewer"})
         c, b = 动(s1["id"], "开始核实", rev=rev, 谁=无权)
         ck("**查看者没有「受理意见」→ 403**", c == 403, (c, b))
@@ -365,7 +367,7 @@ def main():
         ck("演示项目里有一条样例意见(重复跑不会多出来)", c == 201, (c, b))
 
         print("\n▸ ⑭ 期望结果 → 待复核样本(总部运营提)")
-        提人, 提人号, 没绑 = "E2EOPP" + uuid.uuid4().hex[:4], "E2EP" + uuid.uuid4().hex[:6], "E2EOPN" + uuid.uuid4().hex[:4]
+        提人, 提人号, 没绑 = 成员.记(项目, "E2EOPP" + uuid.uuid4().hex[:4]), "E2EP" + uuid.uuid4().hex[:6], 成员.记(项目, "E2EOPN" + uuid.uuid4().hex[:4])
         打("POST", P + "/memberships", {"工号": 提人, "角色": "annotator"})
         打("POST", P + "/memberships", {"工号": 没绑, "角色": "annotator"})
         c, b = 打("PUT", P + f"/staff-bindings/{提人}", {"澜绣工号": 提人号, "备注": "e2e 提样本"})

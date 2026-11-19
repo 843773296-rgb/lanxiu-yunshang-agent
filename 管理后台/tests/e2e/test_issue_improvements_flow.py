@@ -32,6 +32,8 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _改进证据 as 证  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _清成员 as 成员  # noqa: E402  临时加的成员进程退出时删掉(11-19)
 
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
 项目 = "project_lanxiu"
@@ -354,7 +356,7 @@ def main():
         ck("验证失败带验证记录 → 200,那条记录标成未通过(失败的实验留着)", c == 200 and 验(vx).get("状态") == "未通过", (c, b))
 
         print("\n▸ ⑨ 权限")
-        无权 = "E2EIVV" + uuid.uuid4().hex[:4]
+        无权 = 成员.记(项目, "E2EIVV" + uuid.uuid4().hex[:4])
         打("POST", P + "/memberships", {"工号": 无权, "角色": "viewer"})
         c, b = 打("POST", P + f"/issues/{x}/verifications", 证.验证记录体(复2, 回2, 保2, dv2), 谁=无权)
         ck("**查看者建验证记录 → 403**", c == 403, (c, b))

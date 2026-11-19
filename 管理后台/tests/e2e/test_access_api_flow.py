@@ -18,6 +18,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _清成员 as 成员  # noqa: E402  临时加的成员进程退出时删掉(11-19)
 
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
 # 澜绣正式项目:没设每日预算(demo_a 那条「每日预算 0」是 test_settings_flow 造的 —— 0 = 一分都不许花,密钥按规矩发不出来)
@@ -128,7 +130,7 @@ def main():
     wid = 建一条("e2e 访问API")
     ck("建了一条「开始 → 结束」工作流", bool(wid), wid)
     wid2 = 建一条("e2e 访问API·没上生产")
-    发人 = "E2EAK" + uuid.uuid4().hex[:4]
+    发人 = 成员.记(项目, "E2EAK" + uuid.uuid4().hex[:4])
     c, m = 打("POST", P + "/memberships", 体={"工号": 发人, "角色": "admin"})
     ck("建了一个管理员(专门用来发密钥,后面会被降级)", c in (200, 201), (c, m))
 
@@ -161,7 +163,7 @@ def main():
     print("\n▸ 发密钥:原文只这一次,库里只有哈希")
     c, b = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e"})
     ck("不填每天上限 → 拒(上限必填,「不限」不提供)", c == 422, (c, b))
-    编 = "E2EAKE" + uuid.uuid4().hex[:4]
+    编 = 成员.记(项目, "E2EAKE" + uuid.uuid4().hex[:4])
     打("POST", P + "/memberships", 体={"工号": 编, "角色": "editor"})
     c, b = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=编, 体={"名字": "e2e", "每天上限": 5, "有效期天数": 90})
     ck("编辑者发不了(要「配置密钥与预算」)", c == 403, (c, b))

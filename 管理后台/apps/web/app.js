@@ -5894,7 +5894,8 @@ async function 页_运行详情(rid) {
       <div class="card"><div class="kpi">${esc(JSON.stringify(d["用量"] || {}))}</div>
         <div class="k">用量</div>
         <div class="note" style="margin-top:6px">费用记成<b>「未知」不是 0</b> ——
-          mock 没有真实计价。</div></div>
+          ${d["模式"] === "mock" ? "演示模型没有真实计价。"
+            : "真模型这一次也记成未知:运行账本还没接供应商的计价,真花了多少要看供应商账单。"}</div></div>
     </div>
     <h3>步骤(${步.length}) <button id="rl-open">原始日志</button></h3>
     <div id="rawlog"></div>
@@ -10298,7 +10299,8 @@ async function 页_数据集() {
     <div class="head"><div><h1>数据集</h1>
       <div class="sub">这一页回答 <b>能不能导出、卡在哪</b> ——
         而「能导出吗」是<b>现算</b>的,不是存的字段(存的会漂)。</div></div>
-      <div class="acts">${能改 ? `<button class="pri" id="ds-new">新建数据集</button>`
+      <div class="acts">${能改 ? `<label class="k" title="mock 的产物不许计入真实训练 —— 只在自测导出流程时勾;不勾时遇到 mock 样本,服务端会拒并说明"><input type="checkbox" id="ds-mock"> 导出时包含演示(mock)样本</label>
+        <button class="pri" id="ds-new">新建数据集</button>`
         : `<span class="k">新建 / 冻结 / 导出 / 改声明要「改训练样本」这条能力(标注员、管理员默认有;编辑、训练操作员要专项授权),你是 ${esc(我的角色 || "?")}</span>`}</div></div>
     <div id="dsmsg"></div>
     <div id="list"><div class="state">加载中…</div></div>`;
@@ -10402,7 +10404,9 @@ async function 导出数据集(b) {
   b.disabled = true;
   数据集提示("导出中…(服务端要过八道闸)");
   try {
-    const { 文, 头 } = await 数据集动作.导出(dsid, false);
+    // 11-19:原来写死 false,后端的「要mock」开关页面上没处可开 —— 体检记录在案的那条
+    const 要mock = !!($("#ds-mock") && $("#ds-mock").checked);
+    const { 文, 头 } = await 数据集动作.导出(dsid, 要mock);
     const 条数 = (文 || "").split("\n").filter((x) => x.trim()).length;
     // ⚠️ 空文件按契约不该出现(一条不剩是 422)—— 真出现了就是后端的契约破了,明说,别画成「导出了 0 条」
     if (!条数) {

@@ -16,6 +16,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _清成员 as 成员  # noqa: E402  临时加的成员进程退出时删掉(11-19)
 
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
 项目 = "project_lanxiu"
@@ -64,7 +66,7 @@ def main():
     其他 = next((x for x in (l or {}).get("items", []) if x.get("id") != cid), None)
 
     print("\n▸ 后台这一半的闸(不依赖聊天站)")
-    无绑 = "E2EAKC" + uuid.uuid4().hex[:4]
+    无绑 = 成员.记(项目, "E2EAKC" + uuid.uuid4().hex[:4])
     打("POST", P + "/memberships", 体={"工号": 无绑, "角色": "admin"})
     c, k0 = 打("POST", P + f"/chat-assistants/{cid}/access-keys", 谁=无绑, 体={"名字": "e2e 没绑工号", "每天上限": 1, "有效期天数": 90})
     c, b = 问(cid, k0["原文"], "只回复两个字:正常")
