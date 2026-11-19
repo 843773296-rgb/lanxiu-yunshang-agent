@@ -130,14 +130,34 @@ def 建一个打不通的连接(探过=True):
     return cid
 
 
-def 提交(pid, 连接id=None):
-    with 事务() as c:
-        # 把连接 id 塞进快照 —— 真实链路里这是发布包给的,这里直接造
-        pass
+def 提交(pid, 连接id=None, 最多=5):
+    """提交一次运行;给了 连接id 就把它塞进任务快照(真实链路里这是发布包给的,这里直接造)。
+
+    ⚠️ **塞连接和 Worker 领任务是竞速**(11-20 查实):POST 一返回任务就已经在队列里,
+    常驻 Worker 刚干完活时每 0.05 秒捞一次 —— 整套 e2e 里它一直忙,常常抢在塞连接之前领走,
+    跑出 NO_MODEL_CONNECTION;单跑时 Worker 闲着、轮询放慢到秒级,所以单跑总是绿。
+    (旧交接里那句「本机有时红、没查根因」就是这个。)
+    所以塞的时候加条件「还在排队、没人领」—— 行锁把它和 Worker 的 for update skip locked 串行化:
+    塞上了就一定是 Worker 还没碰过;没塞上(被领走了)就等那次跑完、重交一次,并把重交了几次打出来。
+    """
+    for 第几次 in range(1, 最多 + 1):
+        s, r, run, 塞上了 = _提交一次(pid, 连接id)
+        if 塞上了 is not False:
+            if 第几次 > 1:
+                print(f"     (Worker 抢先领走了 {第几次 - 1} 次,第 {第几次} 次才塞上连接)")
+            return s, r, run
+        等结局(run, 秒=20)   # 被抢走的那次让它跑完,别留一条半截任务
+    print(f"     ⚠️ 连续 {最多} 次都被 Worker 抢先领走 —— 下面那条断言验的不是要验的东西")
+    return s, r, run
+
+
+def _提交一次(pid, 连接id):
+    """返回 (状态码, 回包, run id, 塞上了吗);没给连接 → 塞上了吗 = None。"""
     键 = uuid.uuid4().hex
     s, r = 打("POST", P + "/prompt-runs", {"prompt_id": pid, "变量": {}},
               头={"Idempotency-Key": 键})
     run = (r or {}).get("resource_id")
+    塞上了 = None
     if 连接id and run:
         with 事务() as c:
             # ⚠️ 下面用 `cast(... as text)` —— **不要写成参数后面直接跟两个冒号
@@ -171,9 +191,13 @@ def 提交(pid, 连接id=None):
                                      -- SNAPSHOT_TAMPERED 而走不到要验的那一步
                                      -- (「前面的闸先拦住」在这个项目里栽过三次)。
                                      snapshot_hash = null
-                               where project_id=:p and target_ref->>'run_id'=:s"""),
+                               where project_id=:p and target_ref->>'run_id'=:s
+                                 and status='排队中' and lease_owner is null"""),
                       {"cid": 连接id, "p": 项目, "s": run})
-    return s, r, run
+            塞上了 = c.execute(text("""select count(*) from jobs where project_id=:p and target_ref->>'run_id'=:s
+                                         and config_snapshot->>'model_connection_id' = :cid"""),
+                               {"cid": 连接id, "p": 项目, "s": run}).scalar() > 0
+    return s, r, run, 塞上了
 
 
 def 等结局(run, 秒=40):
