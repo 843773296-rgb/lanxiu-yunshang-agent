@@ -495,7 +495,12 @@ def _跑一张工作流(c, job, 打点):
                   {"p": job["project_id"], "i": run_id}).mappings().first()
     if not r:
         raise 干不了("RUN_NOT_FOUND", {"run_id": run_id})
-    if r["status"] in ("succeeded", "incomplete", "failed", "cancelled", "expired"):
+    if r["status"] == "cancelled":
+        # 11-19:领到任务时运行已经被取消(接口取消和 Worker 领任务撞在同一瞬间:任务先被领走、cancel_requested 后写进来)。
+        # 原来和别的终态一起走下面那行 return → 任务收成「已完成」,列表上一次被取消、一步没跑的运行显示成已完成。
+        # 抛 取消了 → 外层把任务收成「已取消」(运行那条 update 带 status 条件,已是 cancelled 不会再动)。e2e test_runctl_exec_flow 撞到过
+        raise 取消了()
+    if r["status"] in ("succeeded", "incomplete", "failed", "expired"):
         # **已经跑完了** —— 重复投递是正常故障场景,不重做
         return {"run_id": run_id, "已经是终态": r["status"]}
     if r["status"] in ("waiting_approval", "waiting_external"):
@@ -1503,7 +1508,9 @@ def _跑一个agent(c, job, 打点):
                   {"p": job["project_id"], "i": run_id}).mappings().first()
     if not r:
         raise 干不了("RUN_NOT_FOUND", {"run_id": run_id})
-    if r["status"] in ("succeeded", "incomplete", "failed", "cancelled", "expired"):
+    if r["status"] == "cancelled":
+        raise 取消了()          # 同 _跑一张工作流:领到时已被取消 → 任务收成已取消,不是已完成(11-19)
+    if r["status"] in ("succeeded", "incomplete", "failed", "expired"):
         return {"run_id": run_id, "已经是终态": r["status"]}
     # 断点续跑(11-06):调澜绣工具时挂起过、桥回执之后 run_resume.排恢复 把它排回来 —— 取回执,带着检查点接着跑
     恢复 = None
