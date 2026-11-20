@@ -40,7 +40,10 @@ function 取(sel) {
 global.document = {
   querySelector: 取,
   querySelectorAll: () => [],
-  body: { classList: { add() {}, remove() {}, contains: () => false } },
+  // 11-20:弹层(弹窗)走 getElementById("mask") + body.appendChild —— 真浏览器一定有;桩里没有的话,进编排页自动弹的
+  // 「这条流程怎么开始」在桩里抛、路由把 #main 盖成报错块,搭建页被报成「空壳」(浏览器里是好的)。和上面 `options` 那条同一个教训
+  getElementById: (id) => (id === "mask" ? null : 取(id)),
+  body: { classList: { add() {}, remove() {}, contains: () => false }, appendChild() {} },
   createElement: () => 造("new"),
   addEventListener() {},
 };
