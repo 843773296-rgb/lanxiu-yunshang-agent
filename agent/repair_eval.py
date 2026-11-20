@@ -175,7 +175,7 @@ def 准备(c, x):
     assert r.get("ok"), r
     c["修"] = r["返修单"]
     if 到:
-        rw.decide(dict(maintain_id=c["修"], liable="企业", plan="返修"), x["店长"])
+        rw.decide(dict(maintain_id=c["修"], liable="企业", plan="返修", fee_est=150), x["店长"])
         while sqlite3.connect(DBP).execute("SELECT status FROM maintain WHERE id=?", (c["修"],)).fetchone()[0] != 到:
             assert rw.advance(dict(maintain_id=c["修"]), x["顾问"]).get("ok")
     码 = ""
