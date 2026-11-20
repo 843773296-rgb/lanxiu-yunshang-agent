@@ -773,6 +773,12 @@ def g23_discount_promise(text, calls):
                 r"(向|跟|给|帮|替|和|往)[^,，。;；\n]{0,8}反映|反映(给|一下|上去|上来|到)",
                 text[max(0, m.start() - 10):m.end() + 4]):
             continue
+        # 放宽(用户 11-20 执行 tools/放宽补丁/返修费_问一下与话术闸.py):「问一下」后面紧跟冒号或「你 / 您」
+        # 是在**直接问对方**(「现在问一下:顾客同意付 300 块了吗?」),不是替顾客去问第三方;
+        # 前面四个字里有 去 / 帮 / 替 / 跟 / 向 / 给 的照旧拦(「我帮您问一下:能不能少点」)
+        if m.group(0) == "问一下" and re.match(r"\s*[:：你您]", text[m.end():m.end() + 2]) \
+                and not re.search(r"[去帮替跟向给]", text[max(0, m.start() - 4):m.start()]):
+            continue
         return ("答复里**把价格的事往后推了**(「" + m.group(0) + "」)—— 业务定的是"
                 "**不让价**,不是「让价这件事我去问问」。顾客听完会等一个回话,而回话只能是「不行」。"
                 "这时候该说的是:价格不能让,能让的是免首次改衣 / 送一次保养 / 免运费;"
@@ -1667,6 +1673,11 @@ def g30_sales_script_unread(text, calls, prompt="", 规矩=""):
     if not (re.search(钱话, prompt) or re.search(折扣词, prompt) or 不开票换钱.search(prompt)):
         return None
     if _called(calls or [], "kb_read"):
+        return None
+    # 放宽(用户 11-20 执行 tools/放宽补丁/返修费_问一下与话术闸.py):这一轮查的是返修 / 售后单,
+    # 问句里又没有折扣词、没拿开票换价 —— 那个金额是返修费,不是顾客在压价(11-20 夜跑返修 N03 被误扣)
+    if any(_called(calls or [], t) for t in ("get_maintain", "decide_repair", "create_repair", "get_aftersale")) \
+            and not (re.search(折扣词, prompt) or 不开票换钱.search(prompt)):
         return None
     return ('顾客在谈价钱 / 要让价,而这一轮没读话术 —— 先 kb_read("13") 取对应那一节'
             "(压价、拿别家比、说再想想、拿开票换价都有),照思路用自己的话答;查不到对应的一节才自己组织语言(TL60)")

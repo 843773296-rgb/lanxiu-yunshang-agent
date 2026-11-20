@@ -23680,5 +23680,29 @@
    }
   ],
   "预期红": "判给企业、没填预估成本 → 停在待确认(不按 0 元落店长权限)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g30 返修放宽那支不再看问句里有没有折扣词 / 不开票换价 —— 返修对话里拿开票换价也不用读话术了",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "            and not (re.search(折扣词, prompt) or 不开票换钱.search(prompt)):",
+    "new": "            and True:"
+   }
+  ],
+  "预期红": "查过返修单但拿不开票换价 → 照旧打回"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g23 第二层「问一下:」放宽不再看前面有没有 帮 / 替 / 去 —— 「我帮您问一下:能不能少点」被放过",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "                and not re.search(r\"[去帮替跟向给]\", text[max(0, m.start() - 4):m.start()]):",
+    "new": "                and True:"
+   }
+  ],
+  "预期红": "「我帮您问一下:能不能少点」是替顾客去问第三方"
  }
 ]
