@@ -159,7 +159,7 @@ else:
     ops.resolve(tid, "已采纳", 售后, 来源="场景回归")
     早 = ops.办结(tid, 修, 售后, 来源="场景回归")
     ck("② 返修还没做完时,研判办结不了(回执要那张维保单真完成)", 早.get("code") == "NO_RECEIPT", 早)
-    r = rw.decide({"maintain_id": 修, "liable": "企业", "plan": "返修"}, 店长2)
+    r = rw.decide({"maintain_id": 修, "liable": "企业", "plan": "返修", "fee_est": 150}, 店长2)
     ck("③ 店长判责之后只到待入库 —— 「判了」不等于「做了」", r.get("ok") and 状(修) == "待入库", (r.get("reason"), 状(修)))
     for _ in range(3):
         rw.advance({"maintain_id": 修}, 顾问2)
