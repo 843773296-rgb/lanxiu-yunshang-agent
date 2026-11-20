@@ -1733,132 +1733,6 @@
     ]
    }
   },
-  "非法_用了未实现的节点": {
-   "为什么": "§6.1 结尾:『阶段中未完成的节点标未实现,**不得摆空按钮冒充可用**』。让它能冻结、能发布,然后运行时才发现跑不了 —— 比现在拦住贵得多。(例子换过四回:有界循环 → 列表迭代 → 并行与汇总 → 子工作流,每一个后来都实现了;11-16 起用「代码执行」—— 它是盘点后明确先不做的,登记在契约里就是为了让这条拦得住)",
-   "期望阻断": [
-    "NODE_NOT_IMPLEMENTED"
-   ],
-   "图": {
-    "definition_schema_version": "1",
-    "kind": "workflow",
-    "output_schema": {
-     "type": "object",
-     "properties": {
-      "summary": {
-       "type": "string"
-      }
-     },
-     "required": [
-      "summary"
-     ],
-     "additionalProperties": false
-    },
-    "nodes": [
-     {
-      "id": "start",
-      "type": "start",
-      "config": {
-       "input_schema": {
-        "type": "object",
-        "properties": {
-         "article": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "article"
-        ]
-       }
-      }
-     },
-     {
-      "id": "lp",
-      "type": "code",
-      "config": {
-       "input_mapping": {
-        "文章": {
-         "source": "input",
-         "pointer": "/article"
-        }
-       },
-       "output_schema": {
-        "type": "object",
-        "properties": {
-         "text": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "text"
-        ]
-       }
-      }
-     },
-     {
-      "id": "sum",
-      "type": "llm",
-      "config": {
-       "connection_version_id": "cv1",
-       "prompt_version_id": "p1",
-       "output_schema": {
-        "type": "object",
-        "properties": {
-         "text": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "text"
-        ],
-        "additionalProperties": false
-       }
-      }
-     },
-     {
-      "id": "end",
-      "type": "end",
-      "config": {
-       "output_schema": {
-        "type": "object",
-        "properties": {
-         "summary": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "summary"
-        ],
-        "additionalProperties": false
-       },
-       "bindings": {
-        "summary": {
-         "source": "node",
-         "node_id": "sum",
-         "pointer": "/text"
-        }
-       }
-      }
-     }
-    ],
-    "edges": [
-     {
-      "source": "start",
-      "target": "lp",
-      "port": "success"
-     },
-     {
-      "source": "lp",
-      "target": "sum",
-      "port": "success"
-     },
-     {
-      "source": "sum",
-      "target": "end",
-      "port": "success"
-     }
-    ]
-   }
-  },
   "非法_节点上有没登记的配置字段": {
    "为什么": "§16.5:『所有节点 Schema 由版本化契约注册表声明,**不能接收任意自由字段**』。一个从来没被读过的配置项,和一个坏了的配置项,在界面上长得一模一样",
    "期望阻断": [
@@ -4648,6 +4522,132 @@
      },
      {
       "source": "sub",
+      "target": "end",
+      "port": "success"
+     }
+    ]
+   }
+  },
+  "非法_用了系统不认识的节点类型": {
+   "为什么": "§6.1 结尾:『阶段中未完成的节点标未实现,**不得摆空按钮冒充可用**』。例子换过五回:有界循环 → 列表迭代 → 并行与汇总 → 子工作流 → 代码执行,每一个后来都实现了(代码执行 11-20 夜做了最小版)—— 登记表里现在一个未实现的都没有,所以这张图改用**系统不认识的类型**(wasm_code),守的是同一道门:没做的 / 不认的都在检查配置这一步拦住,不能冻结、不能发布到运行时才发现跑不了。「未实现要标出来」那条规矩由 test_dsl_semantics 盯登记表",
+   "期望阻断": [
+    "NODE_UNKNOWN_TYPE"
+   ],
+   "图": {
+    "definition_schema_version": "1",
+    "kind": "workflow",
+    "output_schema": {
+     "type": "object",
+     "properties": {
+      "summary": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "summary"
+     ],
+     "additionalProperties": false
+    },
+    "nodes": [
+     {
+      "id": "start",
+      "type": "start",
+      "config": {
+       "input_schema": {
+        "type": "object",
+        "properties": {
+         "article": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "article"
+        ]
+       }
+      }
+     },
+     {
+      "id": "lp",
+      "type": "wasm_code",
+      "config": {
+       "input_mapping": {
+        "文章": {
+         "source": "input",
+         "pointer": "/article"
+        }
+       },
+       "output_schema": {
+        "type": "object",
+        "properties": {
+         "text": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "text"
+        ]
+       }
+      }
+     },
+     {
+      "id": "sum",
+      "type": "llm",
+      "config": {
+       "connection_version_id": "cv1",
+       "prompt_version_id": "p1",
+       "output_schema": {
+        "type": "object",
+        "properties": {
+         "text": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "text"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "id": "end",
+      "type": "end",
+      "config": {
+       "output_schema": {
+        "type": "object",
+        "properties": {
+         "summary": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "summary"
+        ],
+        "additionalProperties": false
+       },
+       "bindings": {
+        "summary": {
+         "source": "node",
+         "node_id": "sum",
+         "pointer": "/text"
+        }
+       }
+      }
+     }
+    ],
+    "edges": [
+     {
+      "source": "start",
+      "target": "lp",
+      "port": "success"
+     },
+     {
+      "source": "lp",
+      "target": "sum",
+      "port": "success"
+     },
+     {
+      "source": "sum",
       "target": "end",
       "port": "success"
      }
