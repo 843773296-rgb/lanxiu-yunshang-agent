@@ -297,6 +297,8 @@ export const ENDPOINTS = [
   { method: "GET", path: "/workflows/{id}/access-doc", summary: "这条工作流对外的接入文档(按生产那一版的 schema 现生成)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/access-keys/{id}/rotate", summary: "轮换:发一把绑同一对象的新钥,旧的再留 24 小时", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/apps/{id}/runs", summary: "对外:带访问密钥发起一次运行(跑生产那一版)", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/apps/{id}/webhook", summary: "对外:Webhook 触发(跑生产那一版,必须是 Webhook 开头)", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/apps/{id}/webhook/debug", summary: "对外:Webhook 调试地址(只跑草稿)", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/chat-assistants/{id}/access-keys", summary: "这个聊天助手的访问密钥", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/chat-assistants/{id}/access-keys", summary: "给聊天助手发一把访问密钥(原文只显示这一次)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/chat-assistants/{id}/messages", summary: "对外:带访问密钥问聊天助手一轮(写工具不挂)", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -370,4 +372,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 282 条接口 · 24 条异步 · 32 条要幂等键 · 43 条要 If-Match */
+/** 共 284 条接口 · 24 条异步 · 34 条要幂等键 · 43 条要 If-Match */

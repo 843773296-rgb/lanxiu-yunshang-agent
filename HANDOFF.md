@@ -44,7 +44,22 @@
     test_exec_mode_flow 竞态根因修复(c9d4a74e:先 POST 再塞连接,忙的 Worker 0.05 秒轮询抢先领走 → NO_MODEL_CONNECTION;改成只在「排队中且没人领」时塞,被抢重交,第六轮一次塞上)。
     主检出另有项目日志.md 改动 = 06:40 定时任务生成的,不是我的,没动。fc 接下来要拿锁修「夜跑 gz 被当晚覆盖」(它的回归,它自己修)。
     **三件不用拍板的欠账到此清完。**
-  · 悬而未决:用户那三件(假成员存量 / 登录后界面 / 介绍页图片条款)
+  · 🟢 **11-20 12:0x 用户拍「先做 Webhook」**(工作流二期 2-2,规格见《工作流整体与详细规划-照Dify-20261115》2-2 节,11-15 已拍完不用再问):
+    开始方式 = 用户输入 | 定时 | Webhook 三选一(多开始是 2-3,这次不做);URL 用访问 API 那套密钥鉴权(门店身份跑);调试 URL 只跑草稿;
+    配置检查拦「Webhook 开头的流程里写类动作前必须有人工介入」;验收:错密钥 401 不建运行 / 参数类型错 400 指出哪个 / 同幂等键 409。
+    参照实现:定时当开始 98632daf、访问 API(11-03)。
+    **设计(12:1x 定,子助手只读调研的结论)**:路径相对 管理后台/
+    ① 不新建表、不新加 DSL 键:start_mode 多一个值 "Webhook",参数表**复用 input_schema**(类型/必填);contract/dsl.py:132 不用动(start_mode 已登记)。
+    ② validator.py:382-406 可选值加 "Webhook";新检查 WEBHOOK_WRITE_NEEDS_HUMAN:Webhook 开头时每个 tool 节点读写≠read_only(查不到当写)→ dom[域][i]-{i} 里要有 type=="human",否则阻断(循环/子图沿 _祖先域 往外查;没给 工具读写 查询能力 → 进「跳过」不算过)。支配集 validator.py:213,读写查询 依赖存在.工具读写(workflows_api.py:80),fd5f223f 写法 validator.py:1040。
+    ③ open_api.py 加两条:POST /open/v1/apps/{aid}/webhook(生产版,要求生产版 Webhook 开头否则 409 WEBHOOK_NOT_START)、POST /open/v1/apps/{aid}/webhook/debug(跑 graph_drafts 草稿,来源 kind=graph_draft 发起="Webhook 调试")。复用 _认密钥/_过闸/幂等 409/_今天花了/_记一笔,身份=发密钥人(**规划写「门店身份」,但 access_keys 没有门店维度 —— 照访问 API 用发密钥人,已告诉用户**);请求体=扁平 JSON,按 input_schema 逐个核类型,错 → 400 WEBHOOK_PARAM_INVALID 指出参数名,不建运行;缺必填同 400。建运行 WF._受理运行(c,本人,p,定义,来源,输入,f"open:{kid}:{键}")。
+    ④ endpoints.py:933 附近加两行 A(...,对外=True,幂等=True,数据出境=True,审计=True) → make gen → make contract。
+    ⑤ 前端:wf_canvas.js:208-210 菜单开始项那条改文案;app.js:3859 开始方式下拉加 ["Webhook",…],分支画入参表(同用户输入那套)+ 只读显示两条 URL + 「去版本与发布页发密钥」提示。
+    **12:5x 状态**:全部写完,本地提交 0d55cd87(未推);离线自测 15 条绿、make contract 0。规划文档 2-2 补了进度段(未提交,随下一笔)。
+    e2e-ci 在 gate_lock 里排队(日志 scratchpad/e2e_ci_webhook.log,判绿只认「被包的命令退出码」),fc 先推返修 4 笔(哈希待它告诉)。
+    **下一步**:e2e 绿 → rebase 到 fc 新哈希 → 提交规划文档 → ./tools/ship.sh(先确认 agentsite/.venv 链接在、工作区只剩三件运行态);红 → 看日志里 test_webhook_flow 那段。
+    ⑥ e2e 新文件 tests/e2e/test_webhook_flow.py 仿 test_access_api_flow.py(外() 59 行 / 等跑完 72 / 收尾 86)+ test_audio_flow.py:486 定时化写法(冻结时同步顶层 input_schema);Makefile test-e2e 与 progress 两处登记;validator 纯逻辑自测放 tests/orchestration/ 同样登记。编辑器 wf_canvas.js:210 现标「暂不做」。改 管理后台/ 推前要 make test-e2e-ci(锁内);fc 在推返修判责(949ed25d),推前先喊它。
+  · ~~悬而未决:用户那三件~~ **11-20 11:4x 用户拍了两件**:775 个假成员存量「先不清」(只止血,别再提);介绍页 AI 配图「用户确认能商用,照旧用」(别再提、别换图)。只剩「登录后界面用户亲眼看」—— 那是用户自己的动作,不用再问。
+  · 11-20 11:2x 推 e0d161d8..39f475d1(fc 981dc5c0 拿旧备份盖掉的 11 节交接补回 + 注释更正)。前两轮没推出:①工作区有自动区刷新,拒跑 ②w1117 的 agentsite/.venv 链接不知被谁清了(fc 说不是它),崩 34 条 → 重建 `ln -s <主检出>/agentsite/.venv agentsite/.venv`。**跑 ship 前先确认两条 .venv 链接在**。
   ~~性能问题:后台派发下拉取 1400 多个详情~~ **11-20 07:0x 查实不存在**:1439 个有版本的工作流里 1434 个已归档,列表不列归档 → 实际约 10 个请求。写了个新接口又撤了,没提交。
 - **压缩前六项(20:5x)**:
   · 未验证:七份测试接了 `_清成员` 只 py_compile 过 + 演示项目单测删一条,**整套 e2e-ci 里还没真跑**(批次在跑,看 e2e_ci_1119n.log 里有没有「🧹 收尾删了」行);费用说明 / mock 勾选只过 node --check,没在浏览器看

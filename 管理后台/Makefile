@@ -429,7 +429,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_tool_modelcard_flow.py test_prompt_snapshot_flow.py \
           test_exec_mode_flow.py test_retrieval_runs_flow.py \
           test_raw_log_flow.py test_chat_assistant_flow.py \
-          test_access_api_flow.py test_opinions_flow.py test_issues_flow.py test_knowledge_revision_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
+          test_access_api_flow.py test_webhook_flow.py test_opinions_flow.py test_issues_flow.py test_knowledge_revision_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
           test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py test_log_policy_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
           test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py \
@@ -581,6 +581,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_raw_log_flow.py
 	@./.venv/bin/python tests/e2e/test_chat_assistant_flow.py
 	@./.venv/bin/python tests/e2e/test_access_api_flow.py
+	@./.venv/bin/python tests/e2e/test_webhook_flow.py
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py
 	@./.venv/bin/python tests/e2e/test_issues_flow.py
 	@./.venv/bin/python tests/e2e/test_knowledge_revision_flow.py
@@ -879,6 +880,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_access_api_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_access_api_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_access_api_flow.log
+	@./.venv/bin/python tests/e2e/test_webhook_flow.py > /tmp/prog-test_webhook_flow.log 2>&1 \
+	  || { echo "  ❌ test_webhook_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_webhook_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_webhook_flow.log
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py > /tmp/prog-test_opinions_flow.log 2>&1 \
 	  || { echo "  ❌ test_opinions_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_opinions_flow.log; exit 1; }
@@ -1200,6 +1205,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 失败后按默认值继续(11-15):只读步骤才行、写数据的业务动作挡在检查配置 / 编译、那一步仍记失败"
 	@./.venv/bin/python tests/orchestration/test_failure_default.py
+	@echo ""
+	@echo "▸ Webhook 当开始方式(11-20):写数据的业务动作前面每条路都要过人工介入(支配集),循环里的往外一层看"
+	@./.venv/bin/python tests/orchestration/test_webhook_start.py
 	@echo ""
 	@echo "▸ 暂停检查点(11-18):节点边界读「要暂停吗」,停在还没跑的那一步、不多调模型;恢复从那一步接着跑;回调抛的异常原样出去"
 	@./.venv/bin/python tests/orchestration/test_pause_checkpoint.py

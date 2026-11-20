@@ -412,6 +412,149 @@ async def 对外发起(aid: str, request: Request,
             "跑的版本": v["version_no"], "查结果": f"{对外}/runs/{回['resource_id']}"}
 
 
+# ── Webhook 触发(11-20,工作流二期 2-2;规格 11-15 已拍)────────────────────────────
+# 和上面「发起运行」的区别只有三处:① 请求体就是外部系统原样推过来的扁平 JSON(不包「输入」那一层),
+# 按开始节点的「使用者要提供什么」逐项核类型,不对 → 422 并点名是哪一项,**不建运行**(规划照 Dify 写的 400,而契约里「输入无效」只有 422 —— 用 400 会被错误体构造拒掉、崩成 500,11-20 e2e 栽过);
+# ② 生产那一版必须是 Webhook 开头(用户输入 / 定时开头的流程不许被外部系统这样叫起);
+# ③ 多一条调试地址,只跑草稿 —— 编排的人边改边让对方推一条试试,不用每改一次就发布。
+# 鉴权 / 限流 / 每天花费上限 / 幂等键全部沿用访问 API 那一套,身份同样是**发密钥的那个人**
+# (规划原写「以门店身份跑」,而访问密钥本来就没有门店这一层 —— 照现有的来,11-20 已告诉用户)。
+_类型判 = {"string": lambda v: isinstance(v, str),
+          "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+          "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+          "boolean": lambda v: isinstance(v, bool),
+          "array": lambda v: isinstance(v, list),
+          "object": lambda v: isinstance(v, dict)}
+_类型叫 = {"string": "文字", "integer": "整数", "number": "数字", "boolean": "是 / 否", "array": "列表", "object": "对象"}
+
+
+def 核Webhook参数(input_schema, 体):
+    """外部推来的体 → (交给流程的输入, 问题列表)。问题逐项点名;只收开始节点登记过的那几项(别的原样丢掉,
+    不让外部系统往流程里塞没声明的东西)。纯函数,自测直接打它。"""
+    s = input_schema or {}
+    props = s.get("properties") or {}
+    必填 = set(s.get("required") or [])
+    if not isinstance(体, dict):
+        return {}, ["请求体要是一个 JSON 对象,形如 {\"参数名\": 值}"]
+    问题, 输入 = [], {}
+    for 名, 定义 in props.items():
+        叫 = (定义 or {}).get("title") or 名
+        if 名 not in 体 or 体[名] is None:
+            if 名 in 必填:
+                问题.append(f"缺必填参数「{叫}」({名})")
+            continue
+        t = (定义 or {}).get("type")
+        判 = _类型判.get(t)
+        if 判 and not 判(体[名]):
+            问题.append(f"参数「{叫}」({名})要是{_类型叫.get(t, t)},收到的是 {type(体[名]).__name__}")
+            continue
+        输入[名] = 体[名]
+    return 输入, 问题
+
+
+def _Webhook开头(定义):
+    起 = WF._开始节点(定义)
+    return ((起 or {}).get("config") or {}).get("start_mode") == "Webhook"
+
+
+async def _Webhook受理(aid, request, authorization, idempotency_key, 调试):
+    接口 = "Webhook 调试" if 调试 else "Webhook"
+    r = None
+    try:
+        with 连接() as c:
+            r = _认密钥(c, authorization)
+            本人 = _过闸(c, r)
+            if r["application_id"] != aid:
+                raise _拒(403, "WRONG_APP", "应用不对", "这把访问密钥不是这个应用的", "一把密钥只能调它绑的那一个应用")
+        if not idempotency_key:
+            raise _拒(409, "IDEMPOTENCY_KEY_REQUIRED", "缺幂等键", "要带 Idempotency-Key",
+                      "每次新推送自己生成一个;超时重发时带同一个,就不会跑第二遍、也不会多花一次钱")
+        try:
+            体 = await request.json()
+        except ValueError:
+            体 = None
+        键 = f"open:{r['id']}:{idempotency_key}"[:200]
+        with 事务() as c:
+            w = c.execute(text("""select a.workflow_id from applications a
+                                   where a.project_id=:p and a.id=:a and a.archived_at is null"""),
+                          {"p": r["project_id"], "a": aid}).mappings().first()
+            if not w:
+                raise _拒(404, "NOT_FOUND", "没有这个应用", "这个应用不在了(可能已归档)", "找后台的人确认地址")
+            if 调试:
+                d = c.execute(text("select * from graph_drafts where project_id=:p and workflow_id=:i"),
+                              {"p": r["project_id"], "i": w["workflow_id"]}).mappings().first()
+                if not d:
+                    raise _拒(404, "NOT_FOUND", "没有草稿", "这条流程还没有草稿", "先在后台编排页存一次")
+                定义 = d["definition"] or {}
+                来源 = {"kind": "graph_draft", "id": w["workflow_id"], "draft_revision": d["revision"]}
+                版本号 = None
+            else:
+                生产 = WF._生产版本(c, r["project_id"], w["workflow_id"])
+                if not 生产:
+                    raise _拒(409, "NOT_IN_PRODUCTION", "没上生产", "这个应用还没有生产版本",
+                              "先在后台「版本与发布」发布到生产;改着的草稿用调试地址试")
+                v = c.execute(text("select * from workflow_versions where project_id=:p and id=:i"),
+                              {"p": r["project_id"], "i": 生产["版本id"]}).mappings().first()
+                定义 = WF._版本定义(v)
+                来源 = {"kind": "workflow_version", "id": w["workflow_id"], "version_id": 生产["版本id"],
+                        "version_no": v["version_no"], "环境": "production", "清单id": 生产["清单id"]}
+                版本号 = v["version_no"]
+            if not _Webhook开头(定义):
+                raise _拒(409, "WEBHOOK_NOT_START", "不是 Webhook 开头",
+                          f"这条流程{'的草稿' if 调试 else '在生产的那一版'}不是 Webhook 开头,不能这样叫起",
+                          "在编排页把「开始」的开始方式改成 Webhook" + ("" if 调试 else ",再发布到生产"))
+            起 = WF._开始节点(定义) or {}
+            输入, 问题 = 核Webhook参数((起.get("config") or {}).get("input_schema") or 定义.get("input_schema"), 体)
+            if 问题:
+                raise _拒(422, "WEBHOOK_PARAM_INVALID", "参数不对", ";".join(问题)[:500],
+                          "照后台编排页「开始」里登记的参数名和类型推送")
+            老 = c.execute(text("select target_ref from jobs where project_id=:p and idempotency_key=:k"),
+                          {"p": r["project_id"], "k": 键}).mappings().first()
+            if 老:
+                原 = c.execute(text("select input_snapshot from execution_runs where project_id=:p and idempotency_key=:k"),
+                              {"p": r["project_id"], "k": 键}).scalar()
+                if isinstance(原, str):
+                    原 = json.loads(原)
+                if 原 is not None and (原 or {}) != 输入:
+                    raise _拒(409, "IDEMPOTENCY_CONFLICT", "幂等键冲突",
+                              "这个幂等键之前用过,而那一次推来的参数和这次不一样",
+                              "新推送换一个新的幂等键;只有超时重发同一条时才带同一个")
+            else:
+                花了, 算不出 = _今天花了(c, r["project_id"], r["id"])
+                if 算不出:
+                    raise _拒(429, "COST_UNKNOWN", "超额", f"今天有 {算不出} 笔花费算不出金额(模型不在价目表里),上限没法判",
+                              "请后台的人把那个模型登记进价目表;在那之前这把密钥今天不再受理")
+                if 花了 >= Decimal(r["daily_cap_amount"]):
+                    raise _拒(429, "DAILY_CAP_REACHED", "超额",
+                              f"这把访问密钥今天已经花了 {花了:.4f} {r['currency']},到了上限 {r['daily_cap_amount']}",
+                              "明天(东八区零点)再调;要更大的额度找后台的人")
+            来源.update({"发起": 接口, "密钥id": r["id"], "密钥名": r["name"]})
+            回 = WF._受理运行(c, 本人, r["project_id"], 定义, 来源, 输入, 键)
+            重放 = str(回.get("note", "")).startswith("同一个幂等键")
+    except _拒 as e:
+        _记一笔(r, 接口, e.结果 or e.code, e.http, 说明=e.message)
+        raise _拒成错(e)
+    _记一笔(r, 接口, "重放" if 重放 else "受理", 202, 运行=回["resource_id"])
+    return {"运行编号": 回["resource_id"], "状态": "排队中" if not 重放 else "这是之前那一次(同一个幂等键,没跑第二遍)",
+            "跑的版本": 版本号 if 版本号 is not None else "草稿", "查结果": f"{对外}/runs/{回['resource_id']}"}
+
+
+@router.post(对外 + "/apps/{aid}/webhook", status_code=202)
+async def Webhook触发(aid: str, request: Request,
+                    authorization: str = Header(default=None),
+                    idempotency_key: str = Header(default=None, alias="Idempotency-Key")):
+    """外部系统推一条 → 跑这个应用**生产那一版**(必须是 Webhook 开头)。请求体就是参数本身 `{参数名: 值}`。"""
+    return await _Webhook受理(aid, request, authorization, idempotency_key, 调试=False)
+
+
+@router.post(对外 + "/apps/{aid}/webhook/debug", status_code=202)
+async def Webhook调试(aid: str, request: Request,
+                    authorization: str = Header(default=None),
+                    idempotency_key: str = Header(default=None, alias="Idempotency-Key")):
+    """同上,但跑**草稿** —— 编排时让对方推一条试试,不用先发布。"""
+    return await _Webhook受理(aid, request, authorization, idempotency_key, 调试=True)
+
+
 _对外状态 = {"queued": "排队中", "running": "在跑", "waiting_approval": "在等人核对",
             "waiting_external": "在等澜绣执行", "succeeded": "已完成", "failed": "失败",
             "cancelled": "已取消", "incomplete": "没做完", "cancel_requested": "取消请求中",

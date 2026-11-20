@@ -3858,13 +3858,18 @@ function 表_设置(n) {
     // 开始方式(11-16,台账第六十九条,照 Dify):用户输入 / 定时触发器,**二选一** —— 定时开头的流程没人在场填东西
     const 方式 = c.start_mode || "用户输入";
     体 += `<label class="f">开始方式</label>` + 下拉(方式, [["用户输入", "用户输入:有人在聊天里 / 后台里点,填好内容再跑(最常用)"],
-        ["定时", "定时触发器:到点自动跑生产那一版,不要人填"]], (el) => {
+        ["定时", "定时触发器:到点自动跑生产那一版,不要人填"],
+        ["Webhook", "Webhook:外部系统带访问密钥推一条过来就跑"]], (el) => {
       if (!el.value) return false;
       c.start_mode = el.value;
       if (el.value === "定时") { c.schedule_rule = c.schedule_rule || { 周期: "周", 周几: [0], 时刻: "08:00" }; c.input_schema = 定时输入表(); }
       else if (只有统计字段(c.input_schema)) c.input_schema = { type: "object", properties: {}, required: [] };
+      if (el.value !== "定时") delete c.schedule_rule;
       重画();
-    }, "请选择") + `<div class="k">一条流程<b>要么人点、要么定时</b>(二选一,照 Dify);两种都要就复制一条流程。</div>`;
+    }, "请选择") + `<div class="k">一条流程只选一种开始方式(照 Dify);几种都要就复制一条流程。</div>`;
+    if (方式 === "Webhook") 体 += `<div class="note">${md("外部系统推过来的 JSON 就是下面这张表里的参数(`{参数名: 值}`),类型不对会被拒并点名是哪一项。"
+      + "地址和密钥在「**访问 API**」页签:**调试地址只跑草稿**(边改边让对方推一条试),正式地址跑生产那一版。"
+      + "以发密钥的那个人的身份跑;**写数据的业务动作前面必须有「人工介入」**,让人核对后再写(检查配置会拦)。")}</div>`;
     if (方式 === "定时") {
       const r = c.schedule_rule = c.schedule_rule || { 周期: "周", 周几: [0], 时刻: "08:00" };
       体 += `<label class="f">多久跑一次</label>` + 下拉(r.周期 || "周", Object.entries(周期说法), (el) => {
@@ -5126,6 +5131,13 @@ async function 画_访问入口() {
 → 202 {"运行编号": "xr_…", "状态": "排队中", "查结果": "/open/v1/runs/xr_…"}</pre>
     <div class="k">限量:每把每分钟 30 次(<b>查结果也算一次</b>,轮询请隔几秒);每天花费到上限就拒(按价目表算的参考价,美元)。</div>
     <button id="ak-doc">接入文档(按生产那一版的字段生成)</button> <span class="k" id="ak-doc-why"></span>
+  </div>
+  <div class="card"><h3>Webhook(外部系统推一条就跑)</h3>
+    <div class="k">流程「开始」的开始方式选 <b>Webhook</b> 才收。请求体就是开始里登记的参数本身,用同一把访问密钥、同样要带幂等键。</div>
+    <pre>正式:POST ${esc(址.replace(/\/runs$/, "/webhook"))}   ← 跑生产那一版
+调试:POST ${esc(址.replace(/\/runs$/, "/webhook/debug"))}   ← 只跑草稿,改着就能试
+请求体:{"参数名": 值, …}
+→ 202 {"运行编号": "xr_…", "状态": "排队中"} ;参数类型不对 → 422,说明里点名是哪一项</pre>
   </div>
   <div class="card"><h3>密钥</h3>
     ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th>最后一次用</th><th>有效期至</th><th></th></tr>${行}</table>`

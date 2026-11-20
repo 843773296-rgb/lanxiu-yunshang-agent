@@ -386,9 +386,9 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
             continue
         c = n.get("config") or {}
         方式 = c.get("start_mode") or "用户输入"
-        if 方式 not in ("用户输入", "定时"):
+        if 方式 not in ("用户输入", "定时", "Webhook"):
             出.append(问(阻断, "START_MODE_UNKNOWN", f"「开始」的开始方式「{方式}」认不出",
-                       "在「开始」的「基本」里选「用户输入」或「定时触发器」", node_id=n["id"], field_path="config.start_mode"))
+                       "在「开始」的「基本」里选「用户输入」「定时触发器」或「Webhook」", node_id=n["id"], field_path="config.start_mode"))
             continue
         if 方式 != "定时":
             continue
@@ -999,10 +999,45 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                            f"在右侧「用到的数据」里加一项叫「{k}」并选来源,或者把模板里的这个名字删掉",
                            node_id=n.get("id"), field_path="config.template"))
 
+    _读写 = getattr(依赖存在, "工具读写", None) if 依赖存在 is not None else None
+
+    # ⑨½ Webhook 开头的流程:写数据的业务动作前面必须有人工介入(工作流二期 2-2,规划 11-15 拍)──
+    # Webhook 是外部系统按一把密钥叫起来的,没有人在场 —— 让它直接写数据,等于把写口交给了密钥持有方。
+    # 判「前面有人」用支配集:从开始到这一步的**每一条**路都必经一个人工介入才算;只在某一条分支上有人不算。
+    # 在循环 / 并行 / 子容器里的步骤,容器里没人就往外一层看「容器本身前面有没有人」。
+    if any(n.get("type") == "start" and (n.get("config") or {}).get("start_mode") == "Webhook" for n in 节点们):
+        def _前面有人(i):
+            当前 = i
+            while True:
+                域 = 属于.get(当前)
+                d = dom.get(域, {}).get(当前)
+                if d is None:
+                    return None          # 走不到的步骤由连线那一段报,这里不重复
+                if any((按id.get(m) or {}).get("type") == "human" for m in d - {当前}):
+                    return True
+                if 域 is None:
+                    return False
+                当前 = 域
+        for n in 节点们:
+            i = n.get("id")
+            if n.get("type") != "tool" or not i:
+                continue
+            if _读写 is None:
+                跳过.append("Webhook 开头的流程里业务动作是不是只读(这次没给查询能力)—— 这不算通过,是没查")
+                break
+            tv = (n.get("config") or {}).get("tool_version_id")
+            if (_读写(tv) if tv else None) == "read_only":
+                continue
+            if _前面有人(i) is False:
+                出.append(问(阻断, "WEBHOOK_WRITE_NEEDS_HUMAN",
+                           f"{_称(n)}会写数据(或者还查不到它的读写登记),而这条流程是 Webhook 叫起来的 —— 没有人在场,"
+                           "外部系统一调就直接写了",
+                           "在它前面加一个「人工介入」(每条走到它的路上都要经过),让人核对后再写;只是查数据就换成只读的业务动作",
+                           node_id=i))
+
     # ⑩ 失败后怎么办(工作流一期第二件,11-15;照 Dify「异常处理」)───────────────
     # 面板上选了一种失败后的走法,运行时必须真照着走 —— 选了「走失败线」却没接线、
     # 选了「按默认值继续」却没填默认值,运行时都会悄悄退回「整次运行失败」,而面板上看着已经配好了。
-    _读写 = getattr(依赖存在, "工具读写", None) if 依赖存在 is not None else None
     for n in 节点们:
         t, i = n.get("type"), n.get("id")
         cfg = n.get("config") or {}
