@@ -22,11 +22,20 @@
 2. ✅ 3-5(w1121 本地提交,待并进 w1117 推):**ELIF 原来就有**(branches 列表 + 加一路 / 上下移 / 第一个满足生效);**知识检索节点做通** —— 盘点发现它能加、标「已实现」,但没面板、worker 没适配器(ADAPTER_MISSING)。做了:workflow-resources 加「资料库」(带最新就绪索引 + 索引用的配置)「检索配置」;app.js retrieve 面板(选库顺手写 index_build_id;召回设置只读块;表_输入 固定「问题」;结果字段名);validator ⑤⅞ RETRIEVE_QUERY_MISSING / RETRIEVE_NO_READY_INDEX(顺手修 HTTP 段 node_id=i 是序号的老错);worker _retrieve(走 RT.检索,角色=发起人 memberships.role,精排跟配置 rerank,记账 + 记一次试跑 来源「工作流」,非 live / 连接测试 / 评测交空替身);受理时 retrieve 选了库算 live(同 HTTP)。测试:test_retrieve_node.py 8 条绿 / test_workflow_retrieve_panel.js 18 条绿 / test_retrieve_node_flow.py(**没真跑过**:主检出还是旧代码,① 就会红;随下一批 e2e-ci 第一次跑;真模型模式会调一次改写模型几分钱)。规划 3-5 进度段已写。
 3. ✅ Webhook 尾巴(w1121 本地提交):dsl start 配置加 webhook_query_schema / webhook_header_schema / webhook_response;validator 开始段加 WEBHOOK_PARAM_DUP / HEADER_TYPE / RESPONSE_STATUS(只许 200/202)/ RESPONSE_REF / RESPONSE_BAD + 非 Webhook 带了这些 → 警告 CONFIG_UNUSED;open_api 核Webhook三源(query 按类型转、header 不分大小写)+ 渲染Webhook返回(JSONResponse / PlainTextResponse,重放同形);app.js 开始面板 Webhook 分支加两张 字段表编辑 + 返回配置;访问 API 卡样例更新;**顺手**:白天加的 WEBHOOK_NOT_START / WEBHOOK_PARAM_INVALID 没登进 open_api.对外错误码,test_access_doc(只在 test-orchestration,不在门禁)一直红 → 补上。测试:test_webhook_start ⑧ 9 条(24 全绿);test_webhook_flow ⑧⑨(**没真跑过**,随下一批)。文档《澜绣云裳agent-接入Webhook怎么做-20261121.md》写好,**飞书还没发**(批次绿后发)。规划 2-2 进度段已补。
 4. ✅ 4-3 导出 / 导入(w1121 本地提交):新模块 services/api/app/workflow_backup.py(导出 / 引用表 / 解析;10 类引用字段和 validator.引用字段 同一张;按名+版本号精确找,不退回同名最新版);workflows_api 三条路由 GET /workflows/{wid}/export(?版本id=;数据出境 + 审计)/ POST /workflows/import(建新草稿)/ POST /workflows/{wid}/import(If-Match 覆盖草稿);endpoints.py 三条 A() → make gen(openapi.json / api.ts 已重生成)→ make contract 绿。前端:版本页每版「导出」+ 草稿行「导出草稿」(弹_导出备份 先说不含密钥)、创建应用弹窗「从备份导入…」、画布右键「从备份导入(覆盖当前草稿)」(弹_导入备份,FileReader 读 JSON)。测试:tests/e2e/test_workflow_export_import_flow.py(**没真跑过**,随下一批);Makefile 三处登记。规划 4-3 进度段写了(原文说的「现有的从其他工作流导入步骤」其实不存在)。
-5. 🔁 【0 点前批次】第一轮(gate_w2.sh,22:17 起)e2e-ci 22:30 退出码 2,只红在两份新测试;锁内单跑三轮修到全绿(知识检索 12 / 导出导入 23):① 默认身份抄了 http 那份的 U002,而 **U002 在 project_lanxiu 没成员记录**(workflow-resources 404)→ 两份改 U001;② 测试自己起的 worker 跑在工作树里,**工作树没有 管理后台/.models(本地 bge 向量模型,gitignore)** → 检索 ADAPTER_ERROR「模型文件不全」→ w1117 / w1121 都 `ln -s 主检出/管理后台/.models`(和 .venv 同理,**新工作树三条链接:管理后台/.venv、agentsite/.venv、管理后台/.models**);③ 空白模板的结束要返回 summary 没绑来源 → 冻不了版本,夹具绑到 article;④ **retrieval_runs.source 的 CHECK 只认 检索实验室 / chat** → 来源「工作流」第一次真跑撞 CheckViolation(记一次试跑 把原因带进节点输出才看见)→ 迁移 a3c7e1b2d4f6 + models.py,**22:4x 已锁内 upgrade 到共享库**(alembic current = a3c7e1b2d4f6),CI 新库跟迁移走。第二轮批次 gate_w3.sh(含第 6 项)接着起。
+5. 🔁 【0 点前批次】第一轮(gate_w2.sh,22:17 起)e2e-ci 22:30 退出码 2,只红在两份新测试;锁内单跑三轮修到全绿(知识检索 12 / 导出导入 23):① 默认身份抄了 http 那份的 U002,而 **U002 在 project_lanxiu 没成员记录**(workflow-resources 404)→ 两份改 U001;② 测试自己起的 worker 跑在工作树里,**工作树没有 管理后台/.models(本地 bge 向量模型,gitignore)** → 检索 ADAPTER_ERROR「模型文件不全」→ w1117 / w1121 都 `ln -s 主检出/管理后台/.models`(和 .venv 同理,**新工作树三条链接:管理后台/.venv、agentsite/.venv、管理后台/.models**);③ 空白模板的结束要返回 summary 没绑来源 → 冻不了版本,夹具绑到 article;④ **retrieval_runs.source 的 CHECK 只认 检索实验室 / chat** → 来源「工作流」第一次真跑撞 CheckViolation(记一次试跑 把原因带进节点输出才看见)→ 迁移 a3c7e1b2d4f6 + models.py,**22:4x 已锁内 upgrade 到共享库**(alembic current = a3c7e1b2d4f6),CI 新库跟迁移走。第二轮 gate_w3.sh(含第 6 项)22:39 起 → e2e-ci 22:52 退出码 2,只红 tools/ifmatch_reachable_check(新加的 POST /workflows/{id}/import 要 If-Match,没登记界面从哪拿 revision)→ 登记成和存草稿同一个 草稿.revision(aeb84722)。**第三轮 gate_w4.sh 22:54 起,含第 6、7 项**(日志 e2e_ci_w4 / ship_w4;status gate_w4.status)。e2e 里 test_human_form_flow / test_code_node_flow 第一次真跑。
 6. ✅ 4-1 后台一半(w1121 本地,待提交):dsl human 配置 += form_markdown / form_fields / actions / notify_connection_id,端口 += 分支;validator ⑤⅞⁺ HUMAN_ACTION_KEY / HUMAN_EDGE_NO_ACTION / HUMAN_ACTION_UNWIRED(警告)/ HUMAN_FIELD_KEY / HUMAN_FIELD_OPTIONS / HUMAN_FORM_REF(警告),引用字段 += notify_connection_id(validator / workflows_api 依赖表 / workflow_backup 三处);runner 挂起载荷 += 表单{说明(渲染 {{k}}),字段,按钮} / 通知连接 / 步骤名,allowed_fields 并字段名,恢复 (分支,决定) 优先;worker 建待办 payload_ref 带 __表单、_飞书通知(工具连接 + secretref.路径里的凭据 + 出网策略白名单/禁区 + curl,只记事件)、恢复 dec 查询放开按钮 id、结果 __action_id;human_api 决定认按钮 id(_表单按钮)、状态 approved、排恢复;前端 human 面板四块 + wf_graph 出口们/人工按钮改名/删人工按钮 + 结果字段名 + 画_表单待办。测试:test_human_form.py 19 条绿(validator + runner 挂起/恢复);test_human_form_flow.py(**没真跑过**,要等 aimc 上了这版)。规划 4-1 进度段写了接口形状(给聊天站那一半)。
 7. ✅ 3-4 代码执行最小版(w1121 本地,待提交):runtime/代码执行.py(沙箱配置 sandbox-exec allow-default + deny network/file-write/读 /Users/process-exec;RLIMIT_CPU + 墙钟;macOS 内存靠 0.1s 看 RSS;输出 64KB;核输出按 output_schema;沙箱可用() 没有就 CODE_SANDBOX_UNAVAILABLE 不退裸 exec);dsl code 已实现、配置 code/language/input_mapping/output_schema/sub_limits;validator 字段提示 code + 调 代码执行.配置问题;runner `if t == "code"` 内联;单步测试 加 code;workflows_api._代码节点只许管理员(存草稿 / 导入新 / 导入覆盖三处,非 admin 新增或改代码 → 403 CODE_NODE_ADMIN_ONLY);前端 步类型名 / 菜单(非 admin 置灰说明)/ 可加 / 默认配置 / 表_设置 code / 表_输入 input_mapping / 单测类型。测试:test_code_node.py 27 条绿(四攻击 + 写文件 / 起进程 / 吃内存 真打);test_code_node_flow.py(project_demo_a,U002 403 / U001 200 / 真跑 2+5=7;**没真跑过**);两处「只有代码执行未实现」的老断言改了(test_orchestration_flow:114、test_dsl_semantics:180)。规划 3-4 进度段写了 sandbox-exec 替 wasm、内存不是硬限制。
-8. 【05:10 后批次】6–7 e2e-ci + ship(等 fc 夜跑结束放锁;夜跑完它可能先推,等远端出现它说的提交号再 rebase)
-9. 《还债与收尾计划》里不用拍板的:先核第 17(目标 / 实际版本并排)、19(未做的按钮)、20(预约加三列)、21(追评写口)哪些已经做了,没做的按顺序做
+8. (并进第 5 项的第三轮了:6、7 都在 22:54 那批里;如果那批红了修完再起一轮,过了 0 点就等 05:10 夜跑结束)
+9. 🔎 《还债与收尾计划》第 17 / 19 / 20 / 21 核过(执行手册 412–416 行):**17 目标 / 实际版本并排 ✅(d3914443 11-11)、20 预约加三列 ✅(e2af62e6 11-14)、21 追评写口 ✅(77c78249 11-14 一次性链接)**;19 未做的按钮 🟡 只剩「标品签收告知」那组(归交付告知 W27);18 默认模型接聊天站 🟡 要先复测 5.5 登录态 + 动 agentsite/sdk.py(今晚不碰)。手册 425 行说真没动的只剩 W40②③④(智能体侧小债,fc 地界附近)和 W22 费用上限三个开关(拍板 13 已拍,backend/,1 人日)。今晚剩余时间看第 5 项批次结果决定要不要开 W22。 **W22 落点(23:0x 读出来的,没动手)**:管理后台 budgets 表 + settings_api 预算列表(ST.还能花多少 已算剩余)= 月上限那一半已有骨架;缺:默认 150 美元 / 月那一行(项目建好时不建 = 不限)、80% 站内告警(alerts_api)、agentsite/model_route.py:39 该升级吗 加「本月已用 ≥ 上限 → 不升」(要从管理后台拿本月用量,LANXIU_USAGE_URL 那条线)、夜跑「非必要评测」停(tools/nightly_eval.py 是 fc 的,这一刀要和它约)。整件 1 人日、跨三处,不适合压缩前临时开。
+
+- **压缩前六项(22:5x,第三轮批次 gate_w4.sh 跑着)**:
+  · 未验证:test_human_form_flow / test_code_node_flow 两份端到端**一次都没真跑过**,22:54 那轮是第一次;红了先看字段名(human_requests.payload_ref 是 text 列、run_steps.output_ref 可能是 JSON 文本)和 U001/U002 身份(project_demo_a 两人都在,project_lanxiu 只有 U001)。导出导入 / 知识检索 / Webhook⑧⑨ 已在锁内单跑或上一轮绿过。
+  · 判据:判绿只认 gate_w4.status 里「被包的命令退出码 0」两行(e2e-ci 一行、ship 一行);后台通知的 exit 0 不算。ship 绿 = 远端出现 aeb84722(或之后我的新提交)。
+  · 作废:gate_start / gate_w2 / gate_w3 三轮的红都已修完,不用再看它们的日志;「0 点前推 2–4」改成了一批推 2–7(第三轮)。
+  · 禁区:0 点到 05:10 不占锁不写共享库;不碰 fc 的文件(tools/nightly_eval.py、agentsite/guards.py 等那张表);w1117 只做 ff(`git merge --ff-only w1121`),代码都写在 w1121;ship 跑着时**不改 w1117 任何文件**;新工作树要链三条:管理后台/.venv、agentsite/.venv、管理后台/.models;不替 fc 推(它两笔本地提交等用户跑放宽补丁)。
+  · 下一步第一个动作:看 scratchpad/gate_w4.status —— 「ship 完 … rc=0 · 远端 <哈希>」→ 告 fc 放锁、把第 5 项打 ✅ 并记哈希;红了 → `grep ❌ scratchpad/e2e_ci_w4.log`,在 w1121 修、提交、`git -C w1117 merge --ff-only w1121`、复制 gate_w4.sh 成 gate_w5.sh(改 status / 日志名)再起;**过了 0 点就不起,等 05:10 后**。
+  · 悬而未决:① 聊天站那一半人工介入由谁接(没有会话管聊天站,早上问用户);② W22 费用上限要不要开(落点见第 9 项,1 人日跨三处,建议白天);③ 09:27 汇总要把「和规划不一样的地方」写全:知识检索原来是摆设、ELIF 本来就有、沙箱是 sandbox-exec 不是 wasm、内存不是硬限制、Webhook 参数错回 422、人工介入超时出口没做。
+
 10. 09:27 汇总《澜绣云裳agent-夜间汇总-20261121.md》发飞书,停
 
 ### ⏱️ 12 小时长任务清单(11-18 22:00 → 11-19 10:00)· AI 管理后台修复夜(Fable 5.1)
@@ -2059,13 +2068,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-20 21:35。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-20 22:57。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w1117` |
-| 最新提交 | ec24f88d · 2026-11-20 · 工作流二期 2-3「开始」页签与多开始(照 Dify):页签三项能点、点一种换开始方式,空白流程先放虚线占位 + 引导弹窗 |
-| 代码量 | 1191 个 Python 文件 / 210947 行(不含 .venv) |
+| 分支 | `w1121` |
+| 最新提交 | aeb84722 · 2026-11-20 · 导入覆盖草稿要 If-Match:登记界面从哪拿这个 revision(和存草稿同一个 草稿.revision)—— 第三轮 e2e-ci 红在 ifmatch_reachable_check |
+| 代码量 | 1201 个 Python 文件 / 210947 行(不含 .venv) |
 | 验收 | `./check.sh` 共 440 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
@@ -2073,21 +2082,19 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 
 ```
 M HANDOFF.md
- M agentsite/evals/funnel.jsonl
-?? .feynman/nightly-eval.log
 ?? agentsite/.venv
-?? backend/.auth_sessions.json.lock
+?? "\347\256\241\347\220\206\345\220\216\345\217\260/.models"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-ec24f88d 工作流二期 2-3「开始」页签与多开始(照 Dify):页签三项能点、点一种换开始方式,空白流程先放虚线占位 + 引导弹窗
-65aa99c6 工作流二期 Webhook 触发:外部系统带访问密钥推一条就跑,调试地址只跑草稿,写数据前必须过人工
-b1693209 返修评测 P03 准备:店长判企业承担带上成本 150(跟上 949ed25d 新口径,否则准备停在待确认、今晚 P03 白挂)
-68ca843e 场景检查:店长判企业承担时带上预估成本(跟上 949ed25d 的新口径)
-c46a80c2 报修口径自测:「没判责人」那条带上成本 0,别被新加的「企业承担要填成本」顺手挡住
+aeb84722 导入覆盖草稿要 If-Match:登记界面从哪拿这个 revision(和存草稿同一个 草稿.revision)—— 第三轮 e2e-ci 红在 ifmatch_reachable_check
+6b994054 代码执行最小版(三期 3-4):sandbox-exec 沙箱里跑 Python,只有管理员能加,四条真攻击全拦下
+aaf6baec 人工介入表单化 · 后台一半(四期 4-1):说明 / 字段 / 按钮各一个出口 / 飞书通知;召回记录来源加「工作流」(迁移)
+ad6c7b29 导出 / 导入整条流程(四期 4-3):我们自己的 JSON 备份,引用记名字 + 版本号,导入只建草稿、找不到的保留原值标红
+fd55bc33 Webhook 三个尾巴(二期 2-2):网址 / 请求头参数表、自定义返回内容、对接文档;顺手补登两条对外错误码
 ```
 <!--/AUTO-->
 ## 一句话在做什么
