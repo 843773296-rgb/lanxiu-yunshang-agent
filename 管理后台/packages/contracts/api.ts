@@ -221,6 +221,9 @@ export const ENDPOINTS = [
   { method: "PATCH", path: "/workflows/{id}", summary: "改工作流的名称 / 用途 / 负责人 / 对应技能 / 聊天接管(不碰定义)", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/workflows", summary: "建工作流", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflows/{id}", summary: "工作流详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/workflows/{id}/export", summary: "导出整条流程(我们自己的 JSON 备份;?版本id= 导冻结版,不给导草稿)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/workflows/import", summary: "从备份导入成一条新流程(只建草稿)", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/workflows/{id}/import", summary: "从备份导入覆盖当前草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "PATCH", path: "/workflows/{id}/draft", summary: "改图草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/workflows/{id}/validate", summary: "校验图", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflows/{id}/versions/{vid}", summary: "看一个冻结版本的图(只读)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -372,4 +375,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 284 条接口 · 24 条异步 · 34 条要幂等键 · 43 条要 If-Match */
+/** 共 287 条接口 · 24 条异步 · 34 条要幂等键 · 44 条要 If-Match */

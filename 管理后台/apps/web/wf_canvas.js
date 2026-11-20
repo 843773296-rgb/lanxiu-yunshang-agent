@@ -1065,6 +1065,7 @@ function 画布菜单(x, y) {
     改 ? ["tidy", "整理布局(Ctrl/⌘+O)"] : null,
     ["fit", "适应画布(Ctrl/⌘+1)"],
     ["export", "导出图片(SVG)"],
+    改 ? ["import", "从备份导入(覆盖当前草稿)"] : null,   // 11-20 四期 4-3,照 Dify 画布右键「导入 DSL」:先提示「当前草稿将被覆盖,请先导出备份」
     $("#trun") ? ["run", "试运行(Alt+R)"] : null,
   ].filter(Boolean);
   m.innerHTML = 项.map(([k, t]) => `<button role="menuitem" data-ci="${k}">${esc(t)}</button>`).join("");
@@ -1082,6 +1083,7 @@ function 画布菜单(x, y) {
       if (k === "tidy") 整理布局();
       if (k === "fit") 适应画布();
       if (k === "export") 导出图片();
+      if (k === "import") 弹_导入备份({ 覆盖: true });
       if (k === "run") $("#trun")?.click();
     };
   });

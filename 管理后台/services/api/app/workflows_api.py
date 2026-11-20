@@ -1702,6 +1702,82 @@ async def 建工作流(project_id: str, request: Request,
             "note": "草稿建好了。**还没校验、没冻结版本、和生产没有任何关系。**"}
 
 
+@router.post(前缀 + "/workflows/import", status_code=201)
+async def 导入工作流(project_id: str, request: Request, me: 身份 = Depends(要权限("改编排草稿"))):
+    """从备份导入成一条**新**流程(四期 4-3,11-20):只建草稿,不发布、不动生产。
+    入参 `{名称?, 用途?, 备份}`;返回 `{id, revision, 未找到, 改写了}`。引用按(类型, 名, 版本)在本项目里找,找不到保留原值并列出来。"""
+    import workflow_backup as WB
+    体 = await request.json()
+    备份 = 体.get("备份")
+    with 事务() as c:
+        try:
+            定义, 布局, 未找到, 改写了 = WB.解析(c, project_id, 备份)
+        except WB.备份不对 as e:
+            raise _错(422, "BACKUP_INVALID", e.为什么, e.怎么办, field_errors={"备份": e.为什么})
+        来源 = (备份.get("来源") or {})
+        名 = (体.get("名称") or "").strip() or f"{来源.get('工作流') or '导入的流程'}(导入)"
+        DS.同步顶层结构(定义)
+        wid, did = _新id("wf"), _新id("gd")
+        c.execute(text("""
+            insert into workflows (id, organization_id, project_id, name, purpose, owner, tags, draft_revision, validation_status, status,
+                takeover_skill_name, chat_takeover_enabled, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:n,:pu,:ow,:tg,1,'没校验过','草稿', null, false, now(), :u, now(), 1)
+        """), {"i": wid, "o": me.org_id, "p": project_id, "n": 名, "pu": (体.get("用途") or 来源.get("用途")),
+               "ow": me.user_id, "tg": json.dumps(["导入"], ensure_ascii=False), "u": me.user_id})
+        c.execute(text("""
+            insert into graph_drafts (id, organization_id, project_id, workflow_id, definition, layout, validation_report, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:w,:d,:l,null, now(), :u, now(), 1)
+        """), {"i": did, "o": me.org_id, "p": project_id, "w": wid, "d": json.dumps(定义, ensure_ascii=False),
+               "l": json.dumps(布局, ensure_ascii=False), "u": me.user_id})
+        _审计(c, me, "workflow.import", {"workflow_id": wid, "来源": 来源, "未找到": len(未找到), "改写了": len(改写了)})
+    return {"id": wid, "revision": 1, "未找到": 未找到, "改写了": 改写了,
+            "note": "只建了草稿:没校验、没冻结版本、和生产没有任何关系。" + (f"**{len(未找到)} 处引用在这个项目里找不到**,原值保留着,检查配置会标红,去面板里重新选" if 未找到 else "引用都在本项目里找到了")}
+
+
+@router.post(前缀 + "/workflows/{wid}/import")
+async def 导入覆盖草稿(project_id: str, wid: str, request: Request,
+                 if_match: str = Header(default=None, alias="If-Match"),
+                 me: 身份 = Depends(要权限("改编排草稿"))):
+    """从备份导入**覆盖当前草稿**(照 Dify 画布右键「导入 DSL」→「当前草稿将被覆盖,请先导出备份」)。**要 If-Match**(草稿 revision)。"""
+    import workflow_backup as WB
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match", "把草稿的 revision 放进 If-Match 头再提交 —— 覆盖草稿这种事,后到的不许悄悄盖掉别人刚存的")
+    体 = await request.json()
+    with 事务() as c:
+        d = c.execute(text("select revision from graph_drafts where project_id=:p and workflow_id=:i for update"), {"p": project_id, "i": wid}).mappings().first()
+        if not d:
+            raise _错(404, "NOT_FOUND", "没有这条工作流的草稿", "回列表重新进入")
+        if str(if_match).strip('"') != str(d["revision"]):
+            raise _错(409, "REVISION_CONFLICT", f"草稿已经被改过了(你拿到的是 {if_match},现在是 {d['revision']})",
+                      "刷新看一眼别人改了什么再决定;**不要直接覆盖**", field_errors={"revision": f"当前 {d['revision']}"})
+        try:
+            定义, 布局, 未找到, 改写了 = WB.解析(c, project_id, 体.get("备份"))
+        except WB.备份不对 as e:
+            raise _错(422, "BACKUP_INVALID", e.为什么, e.怎么办, field_errors={"备份": e.为什么})
+        DS.同步顶层结构(定义)
+        新版 = int(d["revision"]) + 1
+        c.execute(text("""update graph_drafts set definition=:d, layout=:l, revision=:r, validation_report=null, updated_at=now()
+                          where project_id=:p and workflow_id=:i"""),
+                  {"d": json.dumps(定义, ensure_ascii=False), "l": json.dumps(布局, ensure_ascii=False), "r": 新版, "p": project_id, "i": wid})
+        c.execute(text("update workflows set draft_revision=:r, updated_at=now(), validation_status='改过之后没再校验' where project_id=:p and id=:i"),
+                  {"r": 新版, "p": project_id, "i": wid})
+        _审计(c, me, "workflow.import_overwrite", {"workflow_id": wid, "来源": (体.get("备份") or {}).get("来源"), "未找到": len(未找到), "改写了": len(改写了)})
+    return {"revision": 新版, "未找到": 未找到, "改写了": 改写了, "校验状态": "改过之后没再校验",
+            "note": "当前草稿已被备份里的内容替换(冻结版本和生产不受影响)。" + (f"**{len(未找到)} 处引用找不到**,检查配置会标红" if 未找到 else "")}
+
+
+@router.get(前缀 + "/workflows/{wid}/export")
+def 导出工作流(project_id: str, wid: str, 版本id: str = Query(None), me: 身份 = Depends(要权限("查看有权配置"))):
+    """导出整条流程成我们自己的 JSON 备份(四期 4-3):`?版本id=` 导那个冻结版,不给导当前草稿。**不含任何密钥 / 凭据值**;交出系统的东西逐次记审计。"""
+    import workflow_backup as WB
+    with 事务() as c:
+        备 = WB.导出(c, project_id, wid, 版本id)
+        if not 备:
+            raise _错(404, "NOT_FOUND", "没有这条工作流 / 这个版本", "回「版本与发布」重新选")
+        _审计(c, me, "workflow.export", {"workflow_id": wid, "版本": 备["来源"].get("版本"), "引用数": len(备["引用"])})
+    return 备
+
+
 @router.get(前缀 + "/workflows/{wid}")
 def 工作流详情(project_id: str, wid: str,
             me: 身份 = Depends(要权限("查看有权配置"))):

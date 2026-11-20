@@ -2875,8 +2875,10 @@ async function 弹_新建工作流() {
     ${(t.items || []).map(卡).join("")}
     <div class="note">模板<b>只预填草稿</b>:不调模型、不绑生产环境。标「待配置」的也能建,
       建完在「搭建」里补上缺的那几项。</div>
-    <div class="acts"><button class="pri" id="nw-ok">创建</button> <button id="nw-no">取消</button></div>`);
+    <div class="acts"><button class="pri" id="nw-ok">创建</button> <button id="nw-no">取消</button>
+      <button id="nw-import" title="用「版本与发布」页导出的 JSON 备份建一条新流程(只建草稿)">从备份导入…</button></div>`);
   $("#nw-no").onclick = 关弹层;
+  $("#nw-import").onclick = () => 弹_导入备份({ 覆盖: false });
   $("#nw-ok").onclick = async () => {
     const 名 = $("#nw-n").value.trim();
     if (!名) { $("#nw-n").focus(); return; }
@@ -4774,6 +4776,7 @@ async function 画_版本() {
         ${要审 ? `<div class="k">生产要先审核这一版:<button data-rv="${esc(审["清单id"])}" data-ok="1">审核通过</button>
           <button data-rv="${esc(审["清单id"])}" data-ok="0">驳回</button></div>` : ""}`}
         ${v.id ? `<button data-vview="${esc(v.id)}">只读查看</button>
+          <button data-vexp="${esc(v.id)}" title="导出这一版成我们自己的 JSON 备份(不含密钥)">导出</button>
           <button data-vname="${esc(v.id)}">${v["名称"] ? "改名字" : "起名字"}</button>
           <button class="danger" data-vdel="${esc(v.id)}" ${在.length ? `disabled title="${esc(在.map((e) => 环境中文[e]).join("、"))}正在跑这一版,不能删"` : ""}>删除</button>` : ""}</td></tr>`;
   }).join("");
@@ -4781,7 +4784,7 @@ async function 画_版本() {
   const 草稿行 = `<tr class="draftrow"><td><span class="pill warn">当前草稿</span></td>
       <td class="k">在「搭建」里改的就是它;生成候选版本之后才会出现在下面</td>
       <td class="k">${g.revision != null ? `r${esc(String(g.revision))}` : ""}<div>${esc(g.保存态 || "")}</div></td><td></td>
-      <td><a href="#/workflow/${encodeURIComponent(wid)}/${encodeURIComponent("搭建")}">去搭建</a></td></tr>`;
+      <td><a href="#/workflow/${encodeURIComponent(wid)}/${encodeURIComponent("搭建")}">去搭建</a> <button id="vexp-draft" title="导出当前草稿成我们自己的 JSON 备份(不含密钥)">导出草稿</button></td></tr>`;
   $("#tabbody").innerHTML = `<div class="cards">${卡}</div>`
     + (g.版本们.length ? `<table><thead><tr><th>版本</th><th>变更说明</th><th>生成</th><th>生产审核</th><th>发布</th></tr></thead><tbody>${草稿行}${行}</tbody></table>`
       : `<table><tbody>${草稿行}</tbody></table><div class="k">还没生成过候选版本。</div>`)
@@ -4793,6 +4796,8 @@ async function 画_版本() {
   $("#pb").onclick = 弹_准备发布;
   画_定时块(wid);
   document.querySelectorAll("[data-vview]").forEach((b) => { b.onclick = () => 看冻结版本(b.dataset.vview); });
+  document.querySelectorAll("[data-vexp]").forEach((b) => { b.onclick = () => 弹_导出备份(b.dataset.vexp); });
+  if ($("#vexp-draft")) $("#vexp-draft").onclick = () => 弹_导出备份(null);
   document.querySelectorAll("[data-vname]").forEach((b) => { b.onclick = () => 弹_版本起名(b.dataset.vname); });
   document.querySelectorAll("[data-vdel]").forEach((b) => { b.onclick = () => 做_删版本(b.dataset.vdel); });
   document.querySelectorAll("[data-pub]").forEach((b) => { b.onclick = () => 做_发布工作流(b.dataset.pub, b.dataset.env, 各环境); });
@@ -4801,6 +4806,62 @@ async function 画_版本() {
     if (b.dataset.ok === "1" && !(await 问一句("审核通过这一版?", "通过后,有发布权限的人就能把这一版发到生产。", { 确定: "审核通过" }))) return;
     做_审核发布(b.dataset.rv, b.dataset.ok === "1"); }; });
 }
+/* ── 导出 / 导入整条流程(四期 4-3,11-20 夜;用户 11-15 拍「导出 + 导入都做」)────────────────
+ * 我们自己的 JSON,不和 Dify 互导。导出前照 Dify 问一句「不含密钥」;导入只建草稿(新流程)或覆盖当前草稿(先提示「请先导出备份」)。
+ * 引用的模型 / 处理要求 / 业务动作 / 资料库 / 连接服务端按名字和版本号在本项目里找;找不到的保留原值,检查配置会标红 */
+function 弹_导出备份(vid) {
+  const g = 图态, v = vid ? (g.版本们.find((x) => x.id === vid) || {}) : null;
+  const 叫 = v ? `${v["版本"]}${v["名称"] ? "(" + v["名称"] + ")" : ""}` : "当前草稿";
+  弹层(`导出${esc(叫)}`, `
+    <p>会下载一份 JSON:步骤、连线、布局,以及用到的模型 / 处理要求 / 业务动作 / 资料库 / 连接的<b>名字和版本号</b>。</p>
+    <p class="k"><b>不含任何密钥 / 凭据值</b>(照 Dify:导出前说清)。导到别的项目时,引用按名字找,找不到的会标红让人重选。</p>
+    <div class="acts"><button class="pri" id="ex-ok">导出</button> <button id="ex-no">取消</button></div>`);
+  $("#ex-no").onclick = 关弹层;
+  $("#ex-ok").onclick = async () => {
+    try {
+      const 备 = await 请求(`${P()}/workflows/${encodeURIComponent(g.wid)}/export${vid ? "?版本id=" + encodeURIComponent(vid) : ""}`);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(备, null, 1)], { type: "application/json" }));
+      a.download = `工作流备份-${(g.名称 || g.wid).replace(/[\\/:*?"<>|]/g, "_")}-${v ? v["版本"] : "草稿"}.json`; a.click();
+      关弹层();
+      const 缺 = (备["引用"] || []).filter((r) => r["找不到"]);
+      轻提示(`已导出${叫}:${(备["引用"] || []).length} 处引用` + (缺.length ? `,其中 ${缺.length} 处在本项目里已经找不到(导入时会标红)` : ""));
+    } catch (e) { 报错(e); }
+  };
+}
+function 弹_导入备份({ 覆盖 = false } = {}) {
+  if (覆盖 && !能改图()) return;
+  const g = 图态;
+  弹层(覆盖 ? "从备份导入,覆盖当前草稿" : "从备份导入成一条新流程", `
+    ${覆盖 ? `<div class="note warn"><b>当前草稿将被覆盖,请先导出备份。</b>冻结版本和生产不受影响;覆盖直接落到服务端,不能撤销。</div>` : ""}
+    ${覆盖 ? "" : `<label class="f">名称(不填就用备份里的名字加「(导入)」)</label><input id="ib-n" placeholder="例如:门店录音整理(从总部导入)">`}
+    <label class="f">备份文件(.json,从「版本与发布」页「导出」拿到的那份)</label><input type="file" id="ib-f" accept=".json,application/json">
+    <div class="k">只建草稿,不发布。引用的模型 / 处理要求 / 业务动作 / 资料库 / 连接按名字和版本号在本项目里找;找不到的保留原值并标红,导入后去面板重新选。</div>
+    <div id="ib-msg" class="k"></div>
+    <div class="acts"><button class="pri" id="ib-ok">${覆盖 ? "覆盖并导入" : "导入"}</button> <button id="ib-no">取消</button></div>`);
+  $("#ib-no").onclick = 关弹层;
+  $("#ib-ok").onclick = async () => {
+    const f = ($("#ib-f").files || [])[0];
+    if (!f) { $("#ib-msg").textContent = "先选一个备份文件。"; return; }
+    let 备;
+    try { 备 = JSON.parse(await f.text()); } catch (e) { $("#ib-msg").textContent = "这个文件不是 JSON:" + e.message; return; }
+    try {
+      if (覆盖) {
+        const r = await 请求(`${P()}/workflows/${encodeURIComponent(g.wid)}/import`, { method: "POST", headers: { "If-Match": String(g.revision) }, body: JSON.stringify({ 备份: 备 }) });
+        关弹层();
+        图态 = null; await 页_画布(`${g.wid}/搭建`);
+        轻提示(`已覆盖导入(r${r.revision})` + 未找到话(r));
+      } else {
+        const 名 = ($("#ib-n") && $("#ib-n").value.trim()) || "";
+        const r = await 请求(`${P()}/workflows/import`, { method: "POST", body: JSON.stringify({ 名称: 名 || undefined, 备份: 备 }) });
+        关弹层();
+        if ((r["未找到"] || []).length) 提示("导入好了,但有几处引用找不到", md(`**${r["未找到"].length} 处**引用在这个项目里找不到,原值保留着、检查配置会标红:\n` + r["未找到"].map((x) => `- 「${x["节点"]}」的${x["类型"]}:${x["原因"]}`).join("\n") + "\n\n到「搭建」里这几步的面板重新选。"));
+        location.hash = `#/workflow/${encodeURIComponent(r.id)}/搭建`;
+      }
+    } catch (e) { 报错(e); }
+  };
+}
+const 未找到话 = (r) => ((r["未找到"] || []).length ? `;${r["未找到"].length} 处引用找不到,检查配置会标红` : "");
 /* 版本命名 / 删除(10-27 照 Dify 版本历史):名字和「删掉了」记在旁表上,冻结版本本身一个字不改 */
 function 弹_版本起名(vid) {
   const v = 图态.版本们.find((x) => x.id === vid) || {};
