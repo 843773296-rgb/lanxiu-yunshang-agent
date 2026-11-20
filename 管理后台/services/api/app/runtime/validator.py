@@ -866,6 +866,7 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                            node_id=i, field_path=fp))
 
     # ⑤¾ HTTP 请求节点(三期 3-1):方法只开读、路径得有、连接得在 —— 判据本体在 runtime/出网策略.py,这里只核配置
+    # (11-20 修:这里原来 node_id=i 写的是列表序号不是节点 id,前端按 node_id 找节点标红永远找不到 —— 报出来却没人看得见是哪一步)
     for i, n in enumerate(节点们):
         if n.get("type") != "http_request":
             continue
@@ -874,16 +875,30 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
         if 方法 not in ("GET", "HEAD"):
             出.append(问(阻断, "HTTP_METHOD_NOT_ALLOWED",
                        f"这一步想用 {方法} —— HTTP 请求一期只开「读」(GET / HEAD),写入(POST / PUT / PATCH / DELETE)要等二期",
-                       "把方法改成 GET 或 HEAD;要往外写数据,先用业务动作步骤", node_id=i, field_path="config.method"))
+                       "把方法改成 GET 或 HEAD;要往外写数据,先用业务动作步骤", node_id=n.get("id"), field_path="config.method"))
         有路径 = isinstance(cfg.get("path"), str) and cfg.get("path").strip() != "" or "path" in (cfg.get("bindings") or {})
         if not 有路径:
             出.append(问(阻断, "HTTP_PATH_MISSING", "还没写请求哪个路径",
                        "在右侧「基本」里填路径(相对连接白名单的,如 /stock),或在「用到的数据」里把 path 绑到前面某一步的结果",
-                       node_id=i, field_path="config.path"))
+                       node_id=n.get("id"), field_path="config.path"))
         cid = cfg.get("connection_id")
         if cid and 依赖存在 is not None and not 依赖存在("connection_id", cid):
             出.append(问(阻断, "REF_NOT_FOUND", "选的工具连接已经用不了:被删了、归档了,或者不在这个项目里",
-                       "在右侧「基本」里重新选一条工具连接", node_id=i, field_path="config.connection_id"))
+                       "在右侧「基本」里重新选一条工具连接", node_id=n.get("id"), field_path="config.connection_id"))
+
+    # ⑤⅞ 知识检索节点(三期 3-5,11-20 做通):要查什么得绑上;选了资料库但没有就绪的索引要说出来(不在没建好的索引上检索)
+    for i, n in enumerate(节点们):
+        if n.get("type") != "retrieve":
+            continue
+        cfg = n.get("config") or {}
+        绑 = cfg.get("bindings") or {}
+        if not isinstance(绑.get("问题"), dict) or not 绑.get("问题"):
+            出.append(问(阻断, "RETRIEVE_QUERY_MISSING", "还没说要查什么",
+                       "在右侧「用到的数据」里把「问题」绑到开始的某一项,或前面某一步产出的文本", node_id=n.get("id"), field_path="config.bindings.问题"))
+        if cfg.get("knowledge_base_id") and not cfg.get("index_build_id"):
+            出.append(问(阻断, "RETRIEVE_NO_READY_INDEX", "选的资料库还没有「已就绪」的索引,查不了",
+                       "先到「知识库」页给这个资料库建一次索引,回来重新选它;不在没建好的索引上检索 —— 结果会不完整,而那和「库里就这么点」长得一样",
+                       node_id=n.get("id"), field_path="config.index_build_id"))
 
     # ⑥ 依赖引用:存在、同项目、有权限 —— 由调用方提供查询能力 ────────
     引用字段 = {"connection_version_id": "连接版本", "prompt_version_id": "Prompt 版本",

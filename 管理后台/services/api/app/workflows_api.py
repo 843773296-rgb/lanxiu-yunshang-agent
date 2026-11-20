@@ -930,6 +930,22 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                                   order by w.name, v.version_no desc"""), {"p": project_id}).mappings().all()
         import glossaries_api as _GA
         术语们 = _GA.可选术语版本(c, project_id)
+        # 知识检索节点(11-20 三期 3-5 做通):资料库带「最新已就绪的索引」—— 面板选库时顺手填 index_build_id,检索只在就绪的索引上跑;
+        # 检索配置版本带召回设置那几项(候选数 / 最终片段数 / 召回方式 / 上下文预算 / 精排),面板只读显示 —— 口径在版本上,改了要重建索引才可比
+        库们 = c.execute(text("""select kb.id, kb.name, kb.status,
+                                       (select ib.id from index_builds ib
+                                         where ib.project_id=kb.project_id and ib.knowledge_base_id=kb.id and ib.status='已就绪'
+                                         order by ib.updated_at desc nulls last, ib.created_at desc limit 1) 就绪索引,
+                                       (select ib.retrieval_config_version_id from index_builds ib
+                                         where ib.project_id=kb.project_id and ib.knowledge_base_id=kb.id and ib.status='已就绪'
+                                         order by ib.updated_at desc nulls last, ib.created_at desc limit 1) 索引用的配置
+                                  from knowledge_bases kb
+                                 where kb.project_id=:p and kb.archived_at is null
+                                 order by kb.name"""), {"p": project_id}).mappings().all()
+        配置们 = c.execute(text("""select id, recall_modes, candidate_k, final_chunk_limit, context_budget_tokens, rerank, created_at
+                                   from retrieval_config_versions
+                                  where project_id=:p and archived_at is null
+                                  order by created_at desc"""), {"p": project_id}).mappings().all()
     读写 = {"read_only": "只读", "write": "写入", "irreversible": "写入 · 不可撤"}
     能批 = {r for r in PM.角色们 if PM.判("审批工具动作", r, [])[0]}
     return {
@@ -954,6 +970,15 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
         "角色": [{"码": r, "中文": PM.角色中文.get(r, r), "能审批": r in 能批} for r in PM.角色们],
         # 开始节点「这条流程用哪一版术语」的下拉框(11-06 深夜补:接口早就收 glossary_version_id,页面上却选不了)
         "术语": 术语们,
+        # 知识检索节点的两个下拉(11-20):没有就绪索引的库也列(标出来),选了检查配置会拦 —— 不藏,藏了人以为库不存在
+        "资料库": [{"id": r["id"], "名": r["name"], "状态": r["status"], "就绪索引": r["就绪索引"],
+                    "索引用的配置": r["索引用的配置"]} for r in 库们],
+        "检索配置": [{"id": r["id"],
+                      "名": f"候选 {r['candidate_k']} 条 · 最终 {r['final_chunk_limit']} 片 · {'+'.join(r['recall_modes'] or []) or '没配召回方式'}",
+                      "候选数": r["candidate_k"], "最终片段数": r["final_chunk_limit"],
+                      "召回方式": list(r["recall_modes"] or []), "上下文预算": r["context_budget_tokens"],
+                      "精排": r["rerank"],   # 原样给(现在全是 None = 没配;配了是一段 JSON),面板只显示,不替它解释
+                      "建于": r["created_at"].isoformat() if r["created_at"] else None} for r in 配置们],
     }
 
 
@@ -2562,7 +2587,10 @@ def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, �
     # 连接测试 / 评测跑法在 worker 的 _http 里照旧交替身,不受这里影响
     有HTTP连接 = any(n.get("type") == "http_request" and (n.get("config") or {}).get("connection_id")
                    for n in 定义.get("nodes") or [])
-    模式 = "live" if ((真的 or 有HTTP连接) and not __import__("runtime_cfg").模型是mock()) else "mock"
+    # 11-20(三期 3-5 做通):知识检索选了资料库也算要真跑 —— 资料库没有演示版,选了就是要真查(worker 的 _retrieve 在非 live / 连接测试 / 评测时照旧交空替身)
+    有检索 = any(n.get("type") == "retrieve" and (n.get("config") or {}).get("knowledge_base_id")
+                for n in 定义.get("nodes") or [])
+    模式 = "live" if ((真的 or 有HTTP连接 or 有检索) and not __import__("runtime_cfg").模型是mock()) else "mock"
     _要的 = sorted(set(_用的依赖(定义.get("nodes"))) | set(_Agent步骤的连接(c, project_id, 定义.get("nodes"))))
     if _要的:
         # 依赖指纹(DF-01 欠债,11-05):这一跑用的连接设置 / 工具父行是哪一份。探测会原地改 capabilities、

@@ -1114,7 +1114,59 @@ def _跑一张工作流(c, job, 打点):
             raise e
         return {"输出": 子.get("输出") or {}, "本段用量": 子.get("用量") or {}, "execution_mode": r["execution_mode"], **摘要}
 
-    适配器们 = {"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档, "http_request": _http, "subworkflow": _subworkflow}
+    def _retrieve(cfg, 实参):
+        """知识检索步骤(三期 3-5,11-20 做通 —— 此前 dsl 标「已实现」而这里没有适配器,跑到就 ADAPTER_MISSING,面板里也选不了资料库)。
+        真检索走 knowledge/retrieval.检索,和「召回测试」「chat 问知识库」同一条路:只在「已就绪」的索引上查;
+        语料权限按**发起这次运行的人的角色**过滤(服务端强制,§6.1;查不到角色就不查,不默认放开);
+        花了钱的步骤记账、照召回测试存一条记录(来源「工作流」),召回记录页能看到。
+        演示运行 / 连接测试 / 评测:不真检索,交一份空替身(execution_mode=mock)—— 和 HTTP 请求同一条规矩。"""
+        import types as _types
+        问题 = str((实参 or {}).get("问题") or "").strip()
+        if not 问题:
+            raise RN.节点失败("RETRIEVE_QUERY_EMPTY", "要查的问题是空的",
+                            "在右侧「用到的数据」里把「问题」绑到开始的某一项,或前面某一步产出的文本")
+        kb, 构建id = cfg.get("knowledge_base_id"), cfg.get("index_build_id")
+        if not 构建id and kb:
+            行 = c.execute(text("""select id from index_builds where project_id=:p and knowledge_base_id=:k and status='已就绪'
+                                   order by updated_at desc nulls last, created_at desc limit 1"""),
+                          {"p": job["project_id"], "k": kb}).first()
+            构建id = 行[0] if 行 else None
+        if not 构建id:
+            raise RN.节点失败("RETRIEVE_NO_READY_INDEX", "这个资料库没有「已就绪」的索引,查不了",
+                            "先到「知识库」页给它建一次索引;不在没建好的索引上检索 —— 结果会不完整,而那和「库里就这么点」长得一样")
+        if r["execution_mode"] != "live" or 跑法 in ("连接测试", "评测"):
+            return {"片段": [], "证据": "", "召回数": 0, "选了几片": 0, "原问": 问题, "改写": None, "试跑id": None,
+                    "execution_mode": "mock", "说明": "演示运行不真检索(不花钱、不进召回记录)"}
+        角色 = c.execute(text("""select role from memberships where user_id=:u and (project_id=:p or project_id is null) and status='active'
+                                 order by (project_id is null) limit 1"""),
+                       {"u": r["created_by"], "p": job["project_id"]}).scalar()
+        if not 角色:
+            raise RN.节点失败("RETRIEVE_NO_ROLE", "查不到发起这次运行的人在这个项目里的角色",
+                            "语料权限按角色过滤,没有角色就不检索(不默认放开);让管理员在「成员与权限」里把这个人加进项目")
+        _kp = os.path.join(ROOT, "services", "api", "app", "knowledge")
+        if _kp not in sys.path:
+            sys.path.insert(0, _kp)
+        import retrieval as _RT
+        import knowledge_api as _KA
+        # 精排跟着这个索引用的检索配置走(配了 rerank 才精排 —— 精排要多调一次模型,配置没要就不花这笔钱);今天库里的配置全没配
+        精排配置 = c.execute(text("""select rc.rerank from index_builds ib
+                                    left join retrieval_config_versions rc on rc.project_id=ib.project_id and rc.id=ib.retrieval_config_version_id
+                                   where ib.project_id=:p and ib.id=:i"""), {"p": job["project_id"], "i": 构建id}).scalar()
+        try:
+            链 = _RT.检索(c, 项目=job["project_id"], 构建id=构建id, 问题=问题, 这个人的角色们=[角色], 要精排=bool(精排配置), 要生成=False)
+        except _RT.检索不了 as e:
+            raise RN.节点失败("RETRIEVE_FAILED", str(e)[:300], "到「知识库」页看这个索引的状态和检索配置")
+        我 = _types.SimpleNamespace(user_id=r["created_by"])
+        链["记账"] = _KA.记这次检索的账(job["project_id"], 我, 链)
+        存 = _KA.记一次试跑(job["project_id"], 我, 链, 构建id=构建id, 来源="工作流")
+        选 = 链.get("选片") or []
+        return {"片段": [{"id": x.get("id"), "文": x.get("文"), "相似度": x.get("相似度"), "分数": x.get("分数"), "证据": x.get("证据")} for x in 选],
+                "证据": "\n\n".join(str(x.get("证据") or "") for x in 选),
+                "召回数": 链.get("召回数"), "选了几片": 链.get("选了几片"), "原问": 链.get("原问"), "改写": 链.get("改写"),
+                "试跑id": 存.get("试跑id"), "execution_mode": "live"}
+
+    适配器们 = {"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档, "http_request": _http, "subworkflow": _subworkflow,
+             "retrieve": _retrieve}
     结果 =RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器=适配器们,
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
                     系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例,

@@ -3864,6 +3864,35 @@ function 表_设置(n) {
           <button class="danger" data-k="${挂控件(() => { delete 状[k]; 重画(); })}">删掉</button></div>`).join("")
       + `<div class="two"><div>${输入框("", (el) => { const k = el.value.trim(); if (!k || 状[k]) return false; 状[k] = { initial: null }; 重画(); }, "新的状态名,回车加上")}</div></div>`
       + `<div class="k">循环里的步骤在「用到的数据」里能选「循环状态 · 名字」。这一轮没走到「取自」的那一步 → 那一项保持不变。</div>`;
+  } else if (n.type === "retrieve") {
+    // 知识检索(三期 3-5,11-20 做通 —— 此前这个节点能加进图、却没有面板,「查哪个资料库」「怎么查」没地方选):
+    // 选资料库时顺手记下它最新「已就绪」的索引(检索只在就绪的索引上跑);「召回设置」照 Dify 摆在这儿但**只读** ——
+    // 我们的口径在检索配置版本上(候选数 / 最终片段数 / 召回方式 / 上下文预算),改了要重建索引才可比,所以这里只选用哪一版,不改数
+    const 库们 = g.资源.资料库 || [], 配们 = g.资源.检索配置 || [];
+    const 库 = 库们.find((x) => x.id === c.knowledge_base_id) || null;
+    体 += `<label class="f">查哪个资料库</label>`
+      + 资源选择器("资料库", c.knowledge_base_id, 库们.map((x) => ({ id: x.id, 名: x["名"], 说: x["就绪索引"] ? "有已就绪的索引" : "还没有已就绪的索引(选了检查配置会拦)", 标: x["状态"] || "" })),
+          (id) => { c.knowledge_base_id = id || undefined; const k = 库们.find((x) => x.id === id);
+            c.index_build_id = (k && k["就绪索引"]) || undefined;
+            if (k && k["索引用的配置"] && !c.retrieval_config_version_id) c.retrieval_config_version_id = k["索引用的配置"];
+            重画(); }, "这个项目还没有资料库 —— 先去「知识库」建一个、传资料、建索引")
+      + (库 && !库["就绪索引"] ? `<div class="ferr">这个资料库还没有「已就绪」的索引 —— 先去「知识库」页建一次索引。不在没建好的索引上检索:结果会不完整,而那和「库里就这么点」长得一样。</div>` : "")
+      + (库 && 库["就绪索引"] ? `<div class="k">用的索引:${esc(库["就绪索引"])}(这个资料库最新就绪的那一个;重建索引后要重新选一次资料库才换过去)</div>` : "");
+    体 += `<label class="f">怎么查(检索配置版本)</label>`
+      + 资源选择器("检索配置", c.retrieval_config_version_id, 配们.map((x) => ({ id: x.id, 名: x["名"], 说: x["建于"] ? `建于 ${时间(x["建于"])}` : "", 标: "已冻结" })),
+          (id) => { c.retrieval_config_version_id = id || undefined; 重画(); }, "这个项目还没有检索配置版本 —— 建索引时会一起建");
+    const 配 = 配们.find((x) => x.id === c.retrieval_config_version_id) || null;
+    if (配) {
+      // 照 Dify 的「召回设置」弹窗列同样几项,但只读:数在版本上,这里不改
+      体 += `<label class="f">召回设置(只读,来自上面选的那一版)</label><div class="card">
+        <div class="two"><div><div class="k">候选数(先召回多少条)</div><b>${esc(String(配["候选数"] ?? "—"))}</b></div>
+          <div><div class="k">最终片段数(交给下一步几片)</div><b>${esc(String(配["最终片段数"] ?? "—"))}</b></div></div>
+        <div class="two"><div><div class="k">召回方式</div><b>${esc((配["召回方式"] || []).join(" + ") || "—")}</b></div>
+          <div><div class="k">上下文预算(token)</div><b>${esc(String(配["上下文预算"] ?? "—"))}</b></div></div>
+        <div class="k">精排:${配["精排"] ? "有配置(检索时多调一次模型重排)" : "没配(按向量相似度排)"} · 分数阈值:我们没有这一项,靠最终片段数和预算截断</div>
+        <div class="k">要改这些数:到「知识库」里新建一版检索配置并重建索引,回来选新的那一版 —— 改了口径的检索结果和旧的不可比,所以不在这里改。</div></div>`;
+    }
+    体 += `<div class="k">要查的话在下面「用到的数据」里绑「问题」;结果给下一步:片段(每片带原文和证据)、拼好的证据、召回数、选了几片。权限按发起运行的人的角色过滤,服务端强制。</div>`;
   } else if (n.type === "start") {
     // 开始方式(11-16,台账第六十九条,照 Dify):用户输入 / 定时触发器 / Webhook,**三选一** —— 定时开头的流程没人在场填东西。
     // 换法只在 设开始方式 写一份:这里的下拉、「开始」页签、新建空白时的引导弹窗三处同一个
@@ -4095,6 +4124,8 @@ function 结果字段名(n) {
   if (n.type === "classifier") return ["类别", "理由"];
   // HTTP 请求固定返回(runtime/HTTP请求.py 的结果形状;mock 跑法同形):状态码 / 响应头 / 正文 / 解出的 JSON / 实际地址 / 执行模式
   if (n.type === "http_request") return ["status_code", "headers", "body", "json", "url", "execution_mode"];
+  // 知识检索固定返回(workers/worker.py _retrieve 的结果形状;mock 跑法同形、全空)
+  if (n.type === "retrieve") return ["片段", "证据", "召回数", "选了几片", "原问", "改写", "试跑id", "execution_mode"];
   if (n.type === "condition") return ["branch"];
   if (n.type === "merge") return [c.output_field || "out"];
   if (n.type === "tool") {
@@ -4163,6 +4194,8 @@ function 表_输入(n) {
   if (n.type === "human") return `<div class="k">审核人会看到这些(左边原文、右边摘要)。「摘要」就是通过时默认的定稿。</div>`
     + 绑定编辑(n, "payload_binding");
   if (n.type === "condition") return `<div class="k">条件用到的值在上面「基本」里每一路单独选。</div>`;
+  if (n.type === "retrieve") return `<div class="k">知识检索只读一项:<b>问题</b>(要查的话)—— 绑开始的某一项,或前面某一步产出的文本。</div>`
+    + 绑定编辑(n, "bindings", { properties: { 问题: { type: "string", description: "要查什么" } }, required: ["问题"] });
   if (n.type === "parallel") return `<div class="k">并行这一步自己不取数 —— 每条支路里的步骤各自在自己的「用到的数据」里选(只能选并行外面的步骤,不能选另一条支路的)。</div>`;
   if (n.type === "subworkflow") {   // 交给子流程什么:按它那一版「要用户给什么」逐项选来源(契约行由它生成、名字只读,必填的不能删)
     const v = 子流程版本((n.config || {}).workflow_version_id);

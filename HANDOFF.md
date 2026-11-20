@@ -19,7 +19,7 @@
 > **沙箱选型(代码执行)**:规划写 wasm;这台机器实测 **macOS `sandbox-exec`** 拦得住网络(URLError Operation not permitted)和写文件(PermissionError),wasm 要下运行时 + python.wasm —— 用 sandbox-exec + 子进程限时,内存限制 RLIMIT_AS 在 macOS 上设不了(实测 ValueError),改用 RLIMIT_DATA 或看子进程 RSS,做的时候定。
 
 1. ⏳ 2-3「开始」页签与多开始(ec24f88d)批次推上主干 —— 21:16 起 e2e-ci,日志 scratchpad/e2e_ci_start.log / ship_start.log
-2. 3-5 知识检索「召回设置」(取几条 / 分数阈值;没有向量 / 重排模型就不摆空的)+ 条件分支多段 IF / ELIF(每块一个出口)
+2. ✅ 3-5(w1121 本地提交,待并进 w1117 推):**ELIF 原来就有**(branches 列表 + 加一路 / 上下移 / 第一个满足生效);**知识检索节点做通** —— 盘点发现它能加、标「已实现」,但没面板、worker 没适配器(ADAPTER_MISSING)。做了:workflow-resources 加「资料库」(带最新就绪索引 + 索引用的配置)「检索配置」;app.js retrieve 面板(选库顺手写 index_build_id;召回设置只读块;表_输入 固定「问题」;结果字段名);validator ⑤⅞ RETRIEVE_QUERY_MISSING / RETRIEVE_NO_READY_INDEX(顺手修 HTTP 段 node_id=i 是序号的老错);worker _retrieve(走 RT.检索,角色=发起人 memberships.role,精排跟配置 rerank,记账 + 记一次试跑 来源「工作流」,非 live / 连接测试 / 评测交空替身);受理时 retrieve 选了库算 live(同 HTTP)。测试:test_retrieve_node.py 8 条绿 / test_workflow_retrieve_panel.js 18 条绿 / test_retrieve_node_flow.py(**没真跑过**:主检出还是旧代码,① 就会红;随下一批 e2e-ci 第一次跑;真模型模式会调一次改写模型几分钱)。规划 3-5 进度段已写。
 3. Webhook 尾巴:网址参数 / 请求头参数表 → 自定义返回内容(状态码 / 响应体)→ 《澜绣云裳agent-接入Webhook怎么做》文档发飞书
 4. 4-3 导出 / 导入整条流程:版本历史「…」里导出我们自己的 JSON(含工具 / 连接 / Prompt 的名字和版本号,**不含密钥值**,导出前问一句);「创建应用」里「从备份导入」只建草稿、缺的引用标红;画布右键「导入」先提示覆盖
 5. 【0 点前批次】2–4 一起 e2e-ci + ship(23:xx 起,最晚 23:40 拿锁;来不及就留到 05:10 后)
