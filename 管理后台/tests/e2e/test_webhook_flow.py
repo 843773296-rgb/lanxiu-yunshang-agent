@@ -236,7 +236,7 @@ def main():
     密3, kid3, aid3 = (k3 or {}).get("原文", ""), (k3 or {}).get("id"), (k3 or {}).get("应用id")
     调试址3 = f"/open/v1/apps/{aid3}/webhook/debug"
     头 = {"Authorization": "Bearer " + 密3, "Idempotency-Key": str(uuid.uuid4()), "x-shop": "S01"}
-    c, r = 打("POST", 调试址3 + "?门店数=3", 谁=None, 体={"article": "三表来的"}, 头=头)
+    c, r = 打("POST", 调试址3 + "?" + urllib.parse.urlencode({"门店数": 3}), 谁=None, 体={"article": "三表来的"}, 头=头)
     ck("带网址参数 + 请求头 → 按配置回 200(不是默认 202),返回体是渲染后的 JSON:正文 / 门店数(整数)/ 店 / 运行编号",
        c == 200 and isinstance(r, dict) and r.get("收到") is True and r.get("正文") == "三表来的" and r.get("门店数") == 3
        and r.get("店") == "S01" and str(r.get("运行") or "").startswith("xr"), (c, r))
@@ -249,14 +249,14 @@ def main():
     ck("三张表合成一张平的输入:article / 门店数=3(整数)/ X-Shop=S01;Authorization 这种没登记的头没进来",
        快.get("article") == "三表来的" and 快.get("门店数") == 3 and 快.get("X-Shop") == "S01" and "Authorization" not in 快 and "authorization" not in 快, 快)
     前3 = 这把发起的运行数(kid3)
-    c, b = 打("POST", 调试址3 + "?门店数=三", 谁=None, 体={"article": "x"}, 头={**头, "Idempotency-Key": str(uuid.uuid4())})
+    c, b = 打("POST", 调试址3 + "?" + urllib.parse.urlencode({"门店数": "三"}), 谁=None, 体={"article": "x"}, 头={**头, "Idempotency-Key": str(uuid.uuid4())})
     ck("网址参数类型不对 → 422,点名「门店数」", c == 422 and 码(b) == "WEBHOOK_PARAM_INVALID" and "门店数" in 说(b), (c, b))
-    c, b = 打("POST", 调试址3 + "?门店数=1", 谁=None, 体={"article": "x"}, 头={"Authorization": "Bearer " + 密3, "Idempotency-Key": str(uuid.uuid4())})
+    c, b = 打("POST", 调试址3 + "?" + urllib.parse.urlencode({"门店数": 1}), 谁=None, 体={"article": "x"}, 头={"Authorization": "Bearer " + 密3, "Idempotency-Key": str(uuid.uuid4())})
     ck("缺必填请求头 → 422,点名「门店」", c == 422 and 码(b) == "WEBHOOK_PARAM_INVALID" and "门店" in 说(b), (c, b))
     ck("这两次一条运行都没建", 这把发起的运行数(kid3) == 前3, (前3, 这把发起的运行数(kid3)))
     键3 = str(uuid.uuid4())
-    c, r_a = 打("POST", 调试址3 + "?门店数=2", 谁=None, 体={"article": "重放"}, 头={**头, "Idempotency-Key": 键3})
-    c, r_b = 打("POST", 调试址3 + "?门店数=2", 谁=None, 体={"article": "重放"}, 头={**头, "Idempotency-Key": 键3})
+    c, r_a = 打("POST", 调试址3 + "?" + urllib.parse.urlencode({"门店数": 2}), 谁=None, 体={"article": "重放"}, 头={**头, "Idempotency-Key": 键3})
+    c, r_b = 打("POST", 调试址3 + "?" + urllib.parse.urlencode({"门店数": 2}), 谁=None, 体={"article": "重放"}, 头={**头, "Idempotency-Key": 键3})
     ck("同一个幂等键重放也按配置回 200、同一个运行编号(对方两次拿到的形状一样)", c == 200 and isinstance(r_b, dict) and r_b.get("运行") == (r_a or {}).get("运行"), (r_a, r_b))
 
     print("\n▸ 收尾:吊销密钥、归档工作流")
