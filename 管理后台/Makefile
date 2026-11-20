@@ -444,7 +444,7 @@ E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_workflow_graph_logic.js test_workflow_editor_actions.js \
              test_workflow_new_nodes_panel.js test_workflow_foreach_panel.js \
              test_workflow_http_panel.js test_workflow_parallel_panel.js test_workflow_subworkflow_panel.js \
-             test_workflow_start_tab.js test_workflow_retrieve_panel.js \
+             test_workflow_start_tab.js test_workflow_retrieve_panel.js test_workflow_human_code_panel.js \
              test_log_policy_page_actions.js test_newpage_actions.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
@@ -558,6 +558,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo ""
 	@echo "▸ 编排页 · 知识检索的配置面板(选资料库顺手记就绪索引、检索配置版本、召回设置只读块、用到的数据只有「问题」;不起服务)"
 	@node tests/e2e/test_workflow_retrieve_panel.js
+	@echo ""
+	@echo "▸ 编排页 · 人工介入表单化 + 代码执行的配置面板(按钮各一个出口、改名删除连线跟着走、字段表、结果字段;代码执行默认骨架、非管理员置灰;不起服务)"
+	@node tests/e2e/test_workflow_human_code_panel.js
 	@echo ""
 	@echo "▸ 设置页 · 日志采集策略卡(If-Match 是读到的 revision、体是页面填的数)"
 	@node tests/e2e/test_log_policy_page_actions.js
@@ -860,6 +863,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_workflow_retrieve_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_workflow_retrieve_panel.log; exit 1; }
 	@tail -1 /tmp/prog-test_workflow_retrieve_panel.log
+	@node tests/e2e/test_workflow_human_code_panel.js > /tmp/prog-test_workflow_human_code_panel.log 2>&1 \
+	  || { echo "  ❌ test_workflow_human_code_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_human_code_panel.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_human_code_panel.log
 	@node tests/e2e/test_log_policy_page_actions.js > /tmp/prog-test_log_policy_page_actions.log 2>&1 \
 	  || { echo "  ❌ test_log_policy_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_log_policy_page_actions.log; exit 1; }
