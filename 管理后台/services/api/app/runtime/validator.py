@@ -934,12 +934,54 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                        "先到「知识库」页给这个资料库建一次索引,回来重新选它;不在没建好的索引上检索 —— 结果会不完整,而那和「库里就这么点」长得一样",
                        node_id=n.get("id"), field_path="config.index_build_id"))
 
+    # ⑤⅞⁺ 人工介入表单化(四期 4-1,11-20 照 Dify):按钮 id 唯一非空、分支线的 key 要是某个按钮、按钮没接线提醒;字段名唯一非空;说明里 {{x}} 要是材料里有的
+    for n in 节点们:
+        if n.get("type") != "human":
+            continue
+        i, cfg = n.get("id"), (n.get("config") or {})
+        按钮 = cfg.get("actions") or []
+        键们 = []
+        for k, a in enumerate(按钮 if isinstance(按钮, list) else []):
+            aid = (a or {}).get("id") if isinstance(a, dict) else None
+            if not aid or not str(aid).strip():
+                出.append(问(阻断, "HUMAN_ACTION_KEY", f"第 {k + 1} 个按钮没有标识", "给每个按钮一个标识(比如 顾客责任),它就是这一路出口的名字", node_id=i, field_path=f"config.actions[{k}]"))
+            elif aid in 键们:
+                出.append(问(阻断, "HUMAN_ACTION_KEY", f"两个按钮都叫「{aid}」—— 走哪一路分不清", "改掉其中一个的标识", node_id=i, field_path=f"config.actions[{k}]"))
+            else:
+                键们.append(aid)
+        分支线 = [e for e in 边们 if e.get("source") == i and e.get("port") == DS.分支]
+        for e in 分支线:
+            if e.get("branch_key") not in 键们:
+                出.append(问(阻断, "HUMAN_EDGE_NO_ACTION", f"有一条线挂在按钮「{e.get('branch_key')}」上,但「基本」里没有这个按钮",
+                           "删掉这条线;还要这一路的话,先在「基本」里把按钮加回来再连", node_id=i, edge=f"{i} --{DS.分支}--> {e.get('target')}"))
+        for aid in 键们:
+            if not any(e.get("branch_key") == aid for e in 分支线):
+                出.append(问(警告, "HUMAN_ACTION_UNWIRED", f"按钮「{aid}」还没接线 —— 人点了它这次运行就在这里结束",
+                           "从这一步「{k}」那个出口拖一条线到下一步;用不上就在「基本」里删掉这个按钮".replace("{k}", aid), node_id=i))
+        名们 = set()
+        for k, f in enumerate(cfg.get("form_fields") or []):
+            名 = (f or {}).get("name") if isinstance(f, dict) else None
+            if not 名 or not str(名).strip() or 名 in 名们:
+                出.append(问(阻断, "HUMAN_FIELD_KEY", f"第 {k + 1} 个表单字段{'重名' if 名 in 名们 else '没有名字'}", "每个字段一个不重复的名字,下游按它取值", node_id=i, field_path=f"config.form_fields[{k}]"))
+            名们.add(名)
+            if (f or {}).get("type") == "下拉" and not ((f or {}).get("options") or []):
+                出.append(问(阻断, "HUMAN_FIELD_OPTIONS", f"下拉字段「{名}」一个选项都没有", "填上可选项,或把类型改成「段落」", node_id=i, field_path=f"config.form_fields[{k}].options"))
+        说明 = cfg.get("form_markdown") or ""
+        if 说明:
+            import re as _re2
+            材料键 = set((cfg.get("payload_binding") or {}).keys())
+            for 名 in sorted(set(_re2.findall(r"\{\{\s*([^{}\s]+)\s*\}\}", 说明))):
+                if 名 not in 材料键:
+                    出.append(问(警告, "HUMAN_FORM_REF", f"说明里引用了「{名}」,但「用到的数据」里没有这一项 —— 核对的人会看到一个空",
+                               "在「用到的数据」里加上它,或改掉说明里的名字", node_id=i, field_path="config.form_markdown"))
+
     # ⑥ 依赖引用:存在、同项目、有权限 —— 由调用方提供查询能力 ────────
     引用字段 = {"connection_version_id": "连接版本", "prompt_version_id": "Prompt 版本",
               "tool_version_id": "工具版本", "agent_version_id": "Agent 版本",
               "knowledge_base_id": "知识库", "index_build_id": "索引构建",
               "retrieval_config_version_id": "检索配置版本",
               "workflow_version_id": "工作流版本",
+              "notify_connection_id": "通知连接",   # 11-20 人工介入到这一步推飞书通知用的工具连接(四期 4-1)
               # 11-06:整条工作流选一版术语,挂在**开始节点**的配置上(冻结版本只存节点 / 连线 / 输入输出,
               # 顶层字段冻结时会丢;开始节点跟着节点一起冻、一起进逻辑哈希 —— 换术语版本 = 改了流程,发生产要重新跑通)
               "glossary_version_id": "术语版本"}

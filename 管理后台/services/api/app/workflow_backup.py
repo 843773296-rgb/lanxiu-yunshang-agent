@@ -27,7 +27,7 @@ from sqlalchemy import text
 引用字段 = {"connection_version_id": "模型连接版本", "prompt_version_id": "处理要求版本", "tool_version_id": "业务动作版本",
         "agent_version_id": "Agent 版本", "knowledge_base_id": "资料库", "index_build_id": "索引构建",
         "retrieval_config_version_id": "检索配置版本", "workflow_version_id": "子流程版本", "connection_id": "工具连接",
-        "glossary_version_id": "术语版本"}
+        "glossary_version_id": "术语版本", "notify_connection_id": "通知连接"}
 
 
 class 备份不对(Exception):
@@ -75,7 +75,7 @@ def _描述(c, p, 字段, 值):
         r = _一行(c, """select w.name 名, v.version_no 版本 from workflow_versions v join workflows w on w.project_id=v.project_id and w.id=v.workflow_id
                        where v.project_id=:p and v.id=:i""", p=p, i=值)
         return dict(r) if r else None
-    if 字段 == "connection_id":
+    if 字段 in ("connection_id", "notify_connection_id"):
         r = _一行(c, "select name 名 from capability_connections where project_id=:p and id=:i", p=p, i=值)
         return {"名": r["名"], "版本": None} if r else None
     if 字段 == "glossary_version_id":
@@ -116,7 +116,7 @@ def _找(c, p, 字段, 引):
     elif 字段 == "workflow_version_id":
         r = _一行(c, """select v.id from workflow_versions v join workflows w on w.project_id=v.project_id and w.id=v.workflow_id
                        where v.project_id=:p and w.name=:n and v.version_no=:v and w.archived_at is null order by v.created_at desc limit 1""", p=p, n=名, v=版本)
-    elif 字段 == "connection_id":
+    elif 字段 in ("connection_id", "notify_connection_id"):
         r = _一行(c, "select id from capability_connections where project_id=:p and name=:n and archived_at is null order by created_at desc limit 1", p=p, n=名)
     elif 字段 == "glossary_version_id":
         r = _一行(c, "select id from glossary_versions where project_id=:p and key=:n and version_no=:v", p=p, n=名, v=版本)

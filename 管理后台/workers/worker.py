@@ -369,15 +369,20 @@ def _挂起(c, job, r, run_id, 定义, 结果, 记事):
         策 = 载.get("expires_at_policy") or {}
         小时 = 策.get("小时") if isinstance(策, dict) else None
         到期 = (datetime.now(timezone.utc) + timedelta(hours=float(小时))) if 小时 else None
+        hid = _新("hr")
+        # 表单化(四期 4-1,11-20):说明 / 字段 / 按钮随材料一起进 payload_ref 的 __表单(待办详情页按它画控件;human_api 认按钮 id 当决定)
+        材料 = dict(载.get("材料") or {})
+        if 载.get("表单"):
+            材料["__表单"] = 载["表单"]
         c.execute(text("""
             insert into human_requests (id, organization_id, project_id, execution_run_id,
                 kind, payload_ref, allowed_fields, candidate_roles, status, expires_at,
                 target_ref, risk_note, created_at, created_by, updated_at, revision)
             values (:i,:o,:p,:r,:k,:pl, cast(:af as jsonb), cast(:cr as jsonb), 'pending', :ex,
                     cast(:t as jsonb), :rn, now(), :u, now(), 1)
-        """), {"i": _新("hr"), "o": job["organization_id"], "p": job["project_id"], "r": run_id,
+        """), {"i": hid, "o": job["organization_id"], "p": job["project_id"], "r": run_id,
                "k": 载.get("request_kind") or "核对",
-               "pl": _j.dumps(载.get("材料") or {}, ensure_ascii=False),
+               "pl": _j.dumps(材料, ensure_ascii=False),
                "af": _j.dumps(载.get("allowed_fields") or [], ensure_ascii=False),
                "cr": _j.dumps(载.get("candidate_roles") or [], ensure_ascii=False), "ex": 到期,
                "t": _j.dumps({"node_id": 等["node_id"], "运行": run_id, "第几次挂起": 第几次,
@@ -385,6 +390,10 @@ def _挂起(c, job, r, run_id, 定义, 结果, 记事):
                              ensure_ascii=False),
                "rn": "工作流里的人工核对:批准 = 按定稿接着走;退回 = 记下理由结束这一路",
                "u": 我是谁})
+        if 载.get("通知连接"):
+            # 飞书通知(四期 4-1,用户 11-15 拍「加」;替代 Dify 的 Email):只写哪条流程 / 哪一步 / 谁该处理 / 截止 / 链接,**不带客户数据**。
+            # 推不出去只记事件,不影响运行 —— 通知是提醒,待办本身已经在列表里
+            _飞书通知(c, job, run_id, hid, 载, 到期, 记事)
     else:
         import 桥闸
         放行, 为什么不 = 桥闸.放行吗(载.get("工具"), 点.get("节点输出"),
@@ -470,6 +479,68 @@ def 读上传(c, 项目, 上传id):
         except OS_.存不了:
             记录["字节"] = None        # 库里有、存储里没有 —— 执行器报 DOC_READ_FAILED(服务端不一致,不是文件的错)
     return 记录
+
+
+def 通知文本(流程名, 步骤名, 角色们, 到期, 链接):
+    """飞书群机器人的一句话。纯函数,自测打它:**不带客户数据**,只有流程 / 步骤 / 谁处理 / 截止 / 链接。"""
+    谁 = "、".join(str(x) for x in (角色们 or [])) or "有审批权限的人"
+    截 = f";截止 {到期:%m-%d %H:%M}" if 到期 else ""
+    return f"「{流程名 or '工作流'}」停在「{步骤名 or '人工介入'}」等人处理 —— 请 {谁} 核对{截}。打开:{链接}"
+
+
+def _飞书通知(c, job, run_id, hid, 载, 到期, 记事):
+    """到人工介入这一步推一条到飞书群机器人。连接 = 工具连接(capability_connections):允许的端点登记 hook 的前缀,
+    secret_ref 存 hook id(凭据在地址路径里)。发送前核白名单 + 禁区(同 HTTP 请求那套);curl 发(这台机器 Python 的 TLS 会被拦)。
+    记录里**不出现 hook id**:地址只记到 /hook 为止。"""
+    import json as _j
+    import subprocess as _sp
+    import sys as _s
+    _rt = os.path.join(ROOT, "services", "api", "app", "runtime")
+    for _p in (_rt, os.path.join(ROOT, "services", "api", "app")):
+        if _p not in _s.path:
+            _s.path.insert(0, _p)
+    import secretref as _SR
+    import 出网策略 as _策略
+    cid = 载.get("通知连接")
+    连 = c.execute(text("""select name, allowed_endpoints, secret_ref, status from capability_connections
+                           where project_id=:p and id=:i and archived_at is null"""), {"p": job["project_id"], "i": cid}).mappings().first()
+    if not 连 or 连["status"] not in (None, "active"):
+        记事("human.notify_failed", {"human_request_id": hid, "为什么": "通知用的工具连接不在了或已停用", "连接": cid})
+        return
+    端点 = list(连["allowed_endpoints"] or [])
+    if not 端点:
+        记事("human.notify_failed", {"human_request_id": hid, "为什么": "通知连接没登记允许的端点", "连接": 连["name"]})
+        return
+    try:
+        hook, _来路 = _SR.路径里的凭据(连["secret_ref"])
+    except Exception as e:  # noqa: BLE001
+        记事("human.notify_failed", {"human_request_id": hid, "为什么": f"取不到通知连接的凭据:{type(e).__name__}", "连接": 连["name"]})
+        return
+    地址 = 端点[0].rstrip("/") + "/" + hook
+    行, 为 = _策略.白名单里吗(地址, 端点)
+    if 行:
+        from urllib.parse import urlsplit as _us
+        行, 为, _ = _策略.解析并核(_us(地址).hostname)
+    if not 行:
+        记事("human.notify_failed", {"human_request_id": hid, "为什么": 为[:200], "连接": 连["name"]})
+        return
+    w = c.execute(text("select name from workflows where project_id=:p and id=:i"),
+                  {"p": job["project_id"], "i": ((c.execute(text("select definition_ref from execution_runs where project_id=:p and id=:i"),
+                                                              {"p": job["project_id"], "i": run_id}).scalar() or {}).get("id"))}).scalar()
+    链接 = f"{os.environ.get('AIMC_PUBLIC_BASE', 'http://127.0.0.1:8801')}/#/human/{hid}"
+    文 = 通知文本(w, 载.get("步骤名"), 载.get("candidate_roles"), 到期, 链接)
+    体 = _j.dumps({"msg_type": "text", "content": {"text": 文}}, ensure_ascii=False)
+    try:
+        p = _sp.run(["curl", "-sS", "-m", "8", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", "-H", "content-type: application/json",
+                     "--data-binary", 体, 地址], capture_output=True, text=True, timeout=12)
+        码 = (p.stdout or "").strip()
+        if p.returncode == 0 and 码.startswith("2"):
+            记事("human.notified", {"human_request_id": hid, "连接": 连["name"], "地址": 端点[0], "状态码": 码})
+        else:
+            记事("human.notify_failed", {"human_request_id": hid, "连接": 连["name"], "地址": 端点[0], "状态码": 码 or None,
+                                         "为什么": (p.stderr or "")[:160] or "飞书没回 2xx"})
+    except Exception as e:  # noqa: BLE001
+        记事("human.notify_failed", {"human_request_id": hid, "连接": 连["name"], "为什么": f"{type(e).__name__}: {str(e)[:120]}"})
 
 
 @处理("workflow_run")
@@ -963,22 +1034,26 @@ def _跑一张工作流(c, job, 打点):
                                       and target_ref->>'node_id' = :n
                                     order by created_at desc limit 1"""),
                            {"p": job["project_id"], "r": run_id, "n": 快照["从"]}).mappings().first()
+            材料 = (_j.loads(hr["payload_ref"]) if hr and hr["payload_ref"] else {}) or {}
+            # 表单化(四期 4-1):配了按钮的待办,决定记的是按钮 id;恢复时认 approved / rejected / 这条待办自己的按钮 id
+            按钮们 = [a.get("id") for a in ((材料.get("__表单") or {}).get("按钮") or []) if isinstance(a, dict) and a.get("id")]
             dec = hr and c.execute(text("""select actor, decision, reason,
                                                   cast(edited_fields as text) ed
                                              from human_decisions
                                             where project_id=:p and human_request_id=:h
-                                              and decision in ('approved', 'rejected')
+                                              and (decision in ('approved', 'rejected') or decision = any(:ids))
                                             order by at desc, id desc limit 1"""),
-                                   {"p": job["project_id"], "h": hr["id"]}).mappings().first()
+                                   {"p": job["project_id"], "h": hr["id"], "ids": 按钮们}).mappings().first()
             if not dec:
                 raise 干不了("RESUME_WITHOUT_DECISION",
                               {"为什么": "运行被排回队列,但停着的那一步还没有批准 / 退回的决定 —— 不猜"})
             改 = _j.loads(dec["ed"]) if dec["ed"] else {}
-            材料 = _j.loads(hr["payload_ref"]) if hr["payload_ref"] else {}
-            结果 = {"决定": "approve" if dec["decision"] == "approved" else "reject",
+            自定义 = dec["decision"] not in ("approved", "rejected")
+            结果 = {"决定": dec["decision"] if 自定义 else ("approve" if dec["decision"] == "approved" else "reject"),
                     # 定稿 = 人改过的那一版;没改就是给他看的那份摘要
                     "定稿": 改.get("定稿", 材料.get("摘要")),
-                    "理由": dec["reason"] or "", "处理人": dec["actor"], "改了": sorted(改)}
+                    "理由": dec["reason"] or "", "处理人": dec["actor"], "改了": sorted(改),
+                    "__action_id": dec["decision"]}   # 照 Dify 的输出名:人点的那个按钮
             # 核对人填的**其余字段**也往下传(10-24 录音加回电:「派回电 / 回电负责人 / 回电截止」)——
             # 原来只传定稿,勾了回电、填了负责人,下游一样都拿不到。哪些能填由请求的 allowed_fields 管(human_api 查编辑);
             # 决定 / 处理人 / 理由这几个保留键不许被覆盖 —— 否则核对人能在编辑里写一个「决定: approve」
@@ -1163,7 +1238,8 @@ def _跑一张工作流(c, job, 打点):
         return {"片段": [{"id": x.get("id"), "文": x.get("文"), "相似度": x.get("相似度"), "分数": x.get("分数"), "证据": x.get("证据")} for x in 选],
                 "证据": "\n\n".join(str(x.get("证据") or "") for x in 选),
                 "召回数": 链.get("召回数"), "选了几片": 链.get("选了几片"), "原问": 链.get("原问"), "改写": 链.get("改写"),
-                "试跑id": 存.get("试跑id"), "execution_mode": "live"}
+                "试跑id": 存.get("试跑id"), "execution_mode": "live",
+                **({"存档说明": 存.get("为什么")} if not 存.get("存了吗") else {})}   # 没存上召回记录要看得见,不吞
 
     适配器们 = {"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档, "http_request": _http, "subworkflow": _subworkflow,
              "retrieve": _retrieve}

@@ -30,7 +30,7 @@ def ck(名, 真, 补=""):
     (过 if 真 else 挂).append(名)
 
 
-def 打(方法, 路, 谁="U002", 体=None, 头=None):
+def 打(方法, 路, 谁="U001", 体=None, 头=None):
     h = {"X-Dev-User": 谁, "Content-Type": "application/json", **(头 or {})}
     rq = urllib.request.Request(基址 + urllib.parse.quote(路, safe="/?&=:%"), method=方法, headers=h,
                                 data=json.dumps(体, ensure_ascii=False).encode() if 体 is not None else None)
@@ -80,6 +80,9 @@ def main():
     入参 = {k: {"source": "input", "pointer": "/article"} for k in list(((t.get("入参") or {}).get("properties") or {}).keys())[:1]}
     定义["nodes"] = [n for n in 定义["nodes"] if n["type"] in ("start", "end")] + [
         {"id": "act", "type": "tool", "name": "查一下", "config": {"tool_version_id": t["版本id"], "bindings": 入参}}]
+    for n in 定义["nodes"]:
+        if n["type"] == "end":   # 空白模板的结束要返回 summary 却没绑来源,冻不了版本 —— 绑到开始的 article(这份测的是导出导入,不是流程本身)
+            n["config"]["bindings"] = {"summary": {"source": "input", "pointer": "/article"}}
     定义["edges"] = [{"source": "start", "target": "act", "port": "success"}, {"source": "act", "target": "finish", "port": "success"}]
     c, b = 打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定义, "布局": {"start": {"x": 40, "y": 120}, "act": {"x": 330, "y": 120}, "finish": {"x": 620, "y": 120}}},
              头={"If-Match": str(d["草稿"]["revision"])})
@@ -134,6 +137,7 @@ def main():
     rev = d2["草稿"]["revision"]
     c, v1 = 打("POST", P + f"/workflows/{wid2}/versions", 体={"变更说明": "e2e 覆盖前冻一版"})
     vid1 = (v1 or {}).get("id")
+    ck("导入的流程能冻一版(定义合法、引用都在)", c == 201 and bool(vid1), (c, v1))
     c, b = 打("POST", P + f"/workflows/{wid2}/import", 体={"备份": 坏})
     ck("没带 If-Match → 409 IF_MATCH_REQUIRED", c == 409 and 码(b) == "IF_MATCH_REQUIRED", (c, b))
     c, b = 打("POST", P + f"/workflows/{wid2}/import", 体={"备份": 坏}, 头={"If-Match": str(rev + 99)})

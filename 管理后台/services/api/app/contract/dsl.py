@@ -241,8 +241,11 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
            "而错位之后的数据看起来完全正常。「最多做几项」超了一项都不做;里面不能再放循环或迭代"),
 
     N("human", "人工输入/审核",
-      端口=[成功, 失败], 配置=["request_kind", "payload_binding", "allowed_fields",
-                              "candidate_roles", "expires_at_policy"],
+      # 11-20 四期 4-1 照 Dify 表单化:form_markdown(说明,可 {{材料键}})/ form_fields([{name,title,type:段落|下拉|是否,options,required}])/
+      # actions([{id,文字,样式}],每个按钮一个「分支」出口;不配就是原来的 通过 / 退回 走 成功 口)/ notify_connection_id(到这一步推一条飞书通知的工具连接)
+      端口=[成功, 失败, 分支], 配置=["request_kind", "payload_binding", "allowed_fields",
+                                  "candidate_roles", "expires_at_policy",
+                                  "form_markdown", "form_fields", "actions", "notify_connection_id"],
       调用外部=False, 实现=已实现,
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
       必填=["request_kind", "candidate_roles", "expires_at_policy"],

@@ -77,6 +77,15 @@ import re as _re
 _手机号 = _re.compile(r"(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)")
 
 
+def _表单按钮(载荷):
+    """payload_ref 里 __表单.按钮 的 id 们(四期 4-1 表单化的待办才有;老待办是空清单)。纯函数。"""
+    try:
+        d = _json.loads(载荷) if isinstance(载荷, str) else dict(载荷 or {})
+    except (ValueError, TypeError):
+        return []
+    return [a.get("id") for a in (((d.get("__表单") or {}).get("按钮")) or []) if isinstance(a, dict) and a.get("id")]
+
+
 def _核对材料(载荷):
     """**工作流里的人工核对**(2026-10-24):材料要给全文,只把手机号打码。
 
@@ -311,8 +320,10 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
             给的rev = None
 
     坏 = {}
-    if 决定 not in AP.决定们:
-        坏["decision"] = f"只收 {list(AP.决定们)}"
+    # 表单化(四期 4-1,11-20):配了按钮的待办,决定可以是按钮 id —— 具体认哪些要读到请求行上的 __表单 之后才知道,下面再核
+    自定义按钮 = 决定 not in AP.决定们
+    if 自定义按钮 and not 决定:
+        坏["decision"] = f"只收 {list(AP.决定们)},或这条待办表单上的某个按钮"
     if 给的rev is None:
         坏["request_revision"] = ("必填(或用 If-Match 头)—— "
                                   "**两个审批者同时点,第二个要看到 409 而不是覆盖第一个**")
@@ -332,6 +343,12 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
             raise _错(404, "NOT_FOUND", "没有这条待办", "回待办列表重新进入")
         d = dict(r)
         d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
+        if 自定义按钮:
+            按钮们 = _表单按钮(d.get("payload_ref"))
+            if 决定 not in 按钮们:
+                raise _错(422, "VALIDATION", "决定的字段不合格",
+                          f"这条待办只收 {list(AP.决定们)}" + (f" 或表单上的按钮 {按钮们}" if 按钮们 else "(它没有配按钮)"),
+                          field_errors={"decision": "不是这条待办认的决定"})
         # 幂等:同一个键只记一条决定
         老 = c.execute(text("""select id, decision from human_decisions
                              where project_id=:p and idempotency_key=:k"""),
@@ -389,8 +406,9 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
             raise _错(422, "EDIT_NOT_ALLOWED", 干净[0][:200], " / ".join(干净)[:600],
                       field_errors={"edits": 干净[0][:200]})
 
+        # 按钮 = 有了结论(任一按钮都算这一步「处理完了」,走哪一路由流程里按钮对应的出口定);状态仍记 approved,决定行记按钮 id
         新状态 = {AP.已批准: AP.已批准, AP.已驳回: AP.已驳回,
-               AP.要求补充: AP.要求补充}[决定]
+               AP.要求补充: AP.要求补充}.get(决定, AP.已批准)
         新rev = int(d["revision"] or 0) + 1
         did = _新id("hd")
         c.execute(text("""
@@ -413,7 +431,7 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
                   {"st": 新状态, "rev": 新rev, "p": project_id, "i": req_id,
                    "old": d["revision"]})
         恢复 = None
-        if d["execution_run_id"] and 决定 in (AP.已批准, AP.已驳回):
+        if d["execution_run_id"] and (决定 in (AP.已批准, AP.已驳回) or 自定义按钮):
             # **工作流里的人工核对**(2026-10-24):有了决定,停在这一步的运行排回队列接着走。
             # 「要求补充」不排 —— 那一步还没有结论,运行继续停着。
             # 排恢复和记决定在**同一个事务**里:记下了决定却没排上,运行会永远停着,

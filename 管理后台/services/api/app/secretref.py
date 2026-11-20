@@ -83,6 +83,13 @@ def 凭据头(secret_ref, 方式=None, 头名=None):
     raise 解析不了(f"鉴权方式「{方式}」认不出 —— 只有 无 / 令牌 / 自定义头 三种")
 
 
+def 路径里的凭据(secret_ref):
+    """定位符 → (原值, 来路)。给**凭据在地址路径里**的那类接口用 —— 飞书群机器人 webhook 的 hook id 就是这种(11-20 人工介入飞书通知)。
+    ⚠️ 返回的原值只许拼进要发的地址;记录 / 事件 / 错误里一律用 `遮`,地址也只记到 hook 那一段为止。"""
+    值, 来路, _ = _取原值(secret_ref)
+    return 值, 来路
+
+
 _敏感头 = ("authorization", "x-api-key", "api-key", "apikey", "x-auth-token", "cookie", "proxy-authorization")
 
 

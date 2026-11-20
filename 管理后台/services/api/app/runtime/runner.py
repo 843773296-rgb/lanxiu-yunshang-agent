@@ -426,8 +426,10 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
             if t == "human":
                 if 当前 in 注入:
                     状态["节点"][当前] = _拿注入(当前)
-                    记一步(当前, 成功, branch_key=状态["节点"][当前].get("决定"), 出=状态["节点"][当前])
-                    下 = 后继[当前].get((DS.成功, None), [])
+                    决定 = 状态["节点"][当前].get("决定")
+                    记一步(当前, 成功, branch_key=决定, 出=状态["节点"][当前])
+                    # 配了按钮(四期 4-1):每个按钮一个「分支」出口,按人点的那个走;没接那一路 / 没配按钮 → 照旧走「成功」口
+                    下 = 后继[当前].get((DS.分支, 决定)) or 后继[当前].get((DS.成功, None), [])
                     当前 = 下[0] if 下 else 循环回(当前)
                     continue
                 载荷, 缺 = 解绑定(cfg.get("payload_binding"), 状态)
@@ -435,11 +437,21 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 if 缺:
                     raise 节点失败("BIND_MISSING_AT_RUNTIME", f"要给核对人看的材料取不到:{'、'.join(缺)}",
                                  "前面产出这些材料的那一步这次没跑到;在右侧「用到的数据」里核对一下来源")
+                # 表单化(四期 4-1,11-20 照 Dify):说明里的 {{材料键}} 在这儿渲染好;表单字段名并进 allowed_fields(核对人填的值走 edits 回来);
+                # 按钮和字段原样带给待办详情页 —— 画什么控件由页面决定,这里只管把配置交出去
+                字段们 = [f for f in (cfg.get("form_fields") or []) if isinstance(f, dict) and f.get("name")]
+                表单 = None
+                if cfg.get("form_markdown") or 字段们 or (cfg.get("actions") or []):
+                    import re as _re
+                    说明 = _re.sub(r"\{\{\s*([^{}\s]+)\s*\}\}", lambda m: "" if 载荷.get(m.group(1)) is None else str(载荷.get(m.group(1))),
+                                 str(cfg.get("form_markdown") or ""))
+                    表单 = {"说明": 说明, "字段": 字段们, "按钮": [a for a in (cfg.get("actions") or []) if isinstance(a, dict) and a.get("id")]}
                 raise 需要等待("human", {
                     "node_id": 当前, "request_kind": cfg.get("request_kind"),
                     "candidate_roles": cfg.get("candidate_roles") or [],
-                    "allowed_fields": cfg.get("allowed_fields") or [],
-                    "expires_at_policy": cfg.get("expires_at_policy"), "材料": 载荷})
+                    "allowed_fields": list(dict.fromkeys(list(cfg.get("allowed_fields") or []) + [f["name"] for f in 字段们])),
+                    "expires_at_policy": cfg.get("expires_at_policy"), "材料": 载荷,
+                    "表单": 表单, "通知连接": cfg.get("notify_connection_id"), "步骤名": n.get("name")})
 
             if t in ("llm", "retrieve", "tool", "agent", "http_request", "subworkflow"):
                 # Agent 步骤恢复时**不能**把回执直接当这一步的输出(11-06):回执只是它中途一次工具调用的结果,

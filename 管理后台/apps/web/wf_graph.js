@@ -42,6 +42,10 @@
       return [{ port: "loop_body", branch_key: null, 名: "每一项做" }, { port: "loop_exit", branch_key: null, 名: "全部做完后" },
               { port: "error", branch_key: null, 名: "失败时" }];
     }
+    if (n.type === "human" && ((n.config || {}).actions || []).some((a) => a && a.id)) {   // 11-20 四期 4-1:配了按钮 → 每个按钮一个出口
+      return [...((n.config || {}).actions || []).filter((a) => a && a.id).map((a) => ({ port: "branch", branch_key: a.id, 名: a.文字 || a.id })),
+              { port: "error", branch_key: null, 名: "失败时" }];
+    }
     if (n.type === "parallel") {   // 11-16 并行与汇总:每条支路一个出口(支路名就是出口名)/ 全部做完后 / 失败时
       return [...((n.config || {}).branches || []).filter((b) => b && b.key).map((b) => ({ port: "parallel", branch_key: b.key, 名: `支路 · ${b.key}` })),
               { port: "success", branch_key: null, 名: "全部做完后" }, { port: "error", branch_key: null, 名: "失败时" }];
@@ -315,6 +319,31 @@
     const 删边 = (定义.edges || []).filter((e) => e.source === 节点id && e.port === "branch" && e.branch_key === 键);
     定义.edges = (定义.edges || []).filter((e) => !删边.includes(e));
     bs.splice(i, 1);
+    return { 删边, 键 };
+  };
+
+  /* 人工介入的按钮(11-20 四期 4-1):每个按钮一个「分支」出口,改名 / 删除要把挂在它上面的线一起带上 —— 和条件分支那套同一个做法 */
+  逻.人工按钮改名 = function (定义, 节点id, 旧, 新) {
+    const n = 逻.节点(定义, 节点id);
+    新 = String(新 || "").trim();
+    if (!n || n.type !== "human") return { 可以: false, 为什么: "这一步不是人工介入" };
+    if (!新) return { 可以: false, 为什么: "按钮标识不能为空" };
+    if (新 === 旧) return { 可以: false, 为什么: "未更改", 没变: true };
+    const as = (n.config || {}).actions || [];
+    if (as.some((a) => a && a.id === 新)) return { 可以: false, 为什么: `已经有一个按钮叫「${新}」了` };
+    const a = as.find((x) => x && x.id === 旧);
+    if (!a) return { 可以: false, 为什么: `没有「${旧}」这个按钮` };
+    a.id = 新;
+    (定义.edges || []).forEach((e) => { if (e.source === 节点id && e.port === "branch" && e.branch_key === 旧) e.branch_key = 新; });
+    return { 可以: true };
+  };
+  逻.删人工按钮 = function (定义, 节点id, i) {
+    const n = 逻.节点(定义, 节点id), as = ((n && n.config) || {}).actions || [];
+    if (!as[i]) return { 删边: [] };
+    const 键 = as[i].id;
+    const 删边 = (定义.edges || []).filter((e) => e.source === 节点id && e.port === "branch" && e.branch_key === 键);
+    定义.edges = (定义.edges || []).filter((e) => !删边.includes(e));
+    as.splice(i, 1);
     return { 删边, 键 };
   };
 

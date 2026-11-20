@@ -3802,6 +3802,35 @@ function 表_设置(n) {
         c.expires_at_policy = h > 0 ? { 小时: h, 到期: "fail" } : undefined;
       }, "例如 48")
       + `<div class="k">到点没人处理:这次运行结束、记「已过期」,不写任何东西;想补就重新发起一次。</div>`;
+    // 表单化(四期 4-1,11-20 照 Dify):说明(Markdown,可 {{材料键}})/ 要人填的字段 / 按钮(每个一个出口)/ 到这一步推飞书
+    体 += `<label class="f">给核对人看的说明(照 Dify 的表单内容;可以写 {{材料键}} 带进「用到的数据」里的值)</label>
+      <textarea data-k="${挂控件((el) => { c.form_markdown = el.value; })}" data-lb="说明" rows="3" placeholder="例如:客户 {{客户}} 的差评:{{摘要}}。请判断责任方。">${esc(c.form_markdown || "")}</textarea>`;
+    const 字段们 = c.form_fields = Array.isArray(c.form_fields) ? c.form_fields : [];
+    体 += `<label class="f">要核对人填的字段(照 Dify 的输入字段;填的值交给下一步)</label>`
+      + (字段们.length ? `<table><thead><tr><th>名字</th><th>显示名</th><th>类型</th><th>选项(下拉用,逗号分开)</th><th>必填</th><th></th></tr></thead><tbody>`
+        + 字段们.map((f, i) => `<tr>
+          <td>${输入框(f.name || "", (el) => { f.name = el.value.trim(); 重画(); }, "如 备注")}</td>
+          <td>${输入框(f.title || "", (el) => { f.title = el.value.trim() || undefined; }, "页面上显示的名字")}</td>
+          <td>${下拉(f.type || "段落", [["段落", "段落(多行文字)"], ["下拉", "下拉(从选项里选)"], ["是否", "是 / 否"]], (el) => { f.type = el.value; 重画(); })}</td>
+          <td>${f.type === "下拉" ? 输入框((f.options || []).join(","), (el) => { f.options = el.value.split(/[,，]/).map((x) => x.trim()).filter(Boolean); }, "顾客责任,门店责任") : `<span class="k">—</span>`}</td>
+          <td><input type="checkbox" data-k="${挂控件((el) => { f.required = !!el.checked; })}" ${f.required ? "checked" : ""}></td>
+          <td><button class="danger" data-k="${挂控件(() => { 字段们.splice(i, 1); 重画(); })}">删除</button></td></tr>`).join("") + `</tbody></table>` : `<div class="k">还没有要填的字段。不加也行:核对人只看说明、点按钮。</div>`)
+      + `<button data-k="${挂控件(() => { let j = 字段们.length + 1; while (字段们.some((x) => x.name === `字段${j}`)) j++; 字段们.push({ name: `字段${j}`, type: "段落", required: false }); 重画(); })}">加一个字段</button>`;
+    const 按钮们 = c.actions = Array.isArray(c.actions) ? c.actions : [];
+    体 += `<label class="f">按钮(照 Dify 的用户操作:每个按钮一个出口;不配就是原来的「通过 / 退回」)</label>`
+      + (按钮们.length ? `<table><thead><tr><th>标识(= 出口名)</th><th>按钮文字</th><th>样式</th><th></th></tr></thead><tbody>`
+        + 按钮们.map((a, i) => `<tr>
+          <td>${输入框(a.id || "", (el) => { const r = 图逻辑.人工按钮改名(图态.定义, n.id, a.id, el.value); if (!r.可以) { if (!r.没变) 轻提示(`没改:${r.为什么}`); el.value = a.id; return false; } 重画(); }, "如 顾客责任")}</td>
+          <td>${输入框(a.文字 || "", (el) => { a.文字 = el.value.trim() || undefined; }, "按钮上显示的字,不填用标识")}</td>
+          <td>${下拉(a.样式 || "默认", [["主要", "主要(蓝)"], ["默认", "默认"], ["强调", "强调(红,删除 / 驳回这类)"], ["幽灵", "幽灵(淡)"]], (el) => { a.样式 = el.value; })}</td>
+          <td><button class="danger" data-k="${挂控件(() => { const r = 图逻辑.删人工按钮(图态.定义, n.id, i); 轻提示(`已删除按钮「${r.键}」` + (r.删边.length ? `和它的 ${r.删边.length} 条连线` : ""), { 撤销: true }); 重画(); })}">删除</button></td></tr>`).join("") + `</tbody></table>`
+        : `<div class="k">没配按钮:核对人看到「通过 / 退回」,通过走「完成后」那条线。</div>`)
+      + `<button data-k="${挂控件(() => { let j = 按钮们.length + 1; while (按钮们.some((x) => x.id === `按钮${j}`)) j++; 按钮们.push({ id: `按钮${j}`, 样式: "默认" }); 重画(); })}">加一个按钮</button>
+      <div class="k">配了按钮,画布上这一步每个按钮一个出口,人点哪个走哪条线;下游「用到的数据」里能取到 <b>__action_id</b>(点的哪个)和每个字段的值。到点没人处理照旧:运行结束、不写任何东西(超时出口没做)。</div>`;
+    体 += `<label class="f">到这一步推一条飞书通知(可选)</label>`
+      + 资源选择器("通知连接", c.notify_connection_id, (g.资源.工具连接 || []).map((x) => ({ id: x.id, 名: x["名"], 说: (x["允许的端点"] || []).join("、"), 标: x["状态"] || "" })),
+          (id) => { c.notify_connection_id = id || undefined; 重画(); }, { html: `还没有工具连接 —— 到「集成 → 工具连接」登记一条飞书群机器人:允许的端点填 https://open.feishu.cn/open-apis/bot/v2/hook,密钥引用填 hook id。` })
+      + `<div class="k">通知里只写哪条流程、哪一步、谁该处理、截止和链接,<b>不带客户数据</b>;推不出去只记事件,不影响运行。</div>`;
   } else if (n.type === "condition") {
     const 源们 = 上游字段(n.id);
     体 += `<label class="f">满足什么条件</label>
@@ -4129,7 +4158,10 @@ function 上游字段(id) {
 }
 function 结果字段名(n) {
   const c = n.config || {};
-  if (n.type === "human") return ["决定", "定稿", "理由", "处理人"];
+  if (n.type === "human") {   // 11-20 表单化:核对人填的字段 + 点的哪个按钮(__action_id,照 Dify)也给下游
+    const 字段 = (c.form_fields || []).map((f) => f && f.name).filter(Boolean);
+    return [...new Set(["决定", "定稿", "理由", "处理人", ...字段, ...((c.actions || []).length ? ["__action_id"] : [])])];
+  }
   if (n.type === "answer") return ["回复"];
   if (n.type === "template") return ["文本"];
   if (n.type === "list_operator") return ["结果", "个数", "第一个", "最后一个"];
@@ -4312,7 +4344,7 @@ function 表_结果(n) {
       : `<div class="k">先在上面「基本」里选一个业务动作。</div>`;
   }
   if (n.type === "http_request") return `<div class="k">固定返回:<b>status_code</b>(状态码)、<b>headers</b>(响应头)、<b>body</b>(正文文字)、<b>json</b>(正文能解成 JSON 时的对象,解不出就是空)、<b>url</b>(实际请求的完整地址)、<b>execution_mode</b>(live 真发了 / mock 一个字节没出去)。下游要取正文里某一项,绑 json 再在那一步里挑字段。</div>`;
-  if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>。</div>`;
+  if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject;配了按钮就是按钮标识)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>${((c.form_fields || []).length ? `;表单字段:${(c.form_fields || []).map((f) => `<b>${esc(f.name || "")}</b>`).join("、")}` : "")}${((c.actions || []).length ? `;<b>__action_id</b>(点的哪个按钮)` : "")}。</div>`;
   if (n.type === "classifier") return `<div class="k">固定返回:<b>类别</b>(模型挑的那一个名字)、<b>理由</b>(它为什么这么分)。走哪条线由类别定。</div>`;
   if (n.type === "extractor") return `<div class="k">返回上面「基本」里列的每一项参数;<b>原文没提到的那一项是空</b>,必填的没抽到这一步就失败。</div>`;
   if (n.type === "assigner") return `<div class="k">返回改完之后的值(每一项一个)。循环里后面的步骤直接取「循环状态 · 名字」就是新值。</div>`;
@@ -7305,8 +7337,58 @@ async function 开_聊天转人工(编号) {
  * 和工具审批那一页分开画:审批要看的是「写哪儿、写什么类型」,核对的活是**对着原文看摘要漏没漏、编没编** ——
  * 原文给形状(「419 字 · 开头……」)的话,审核人只能照着摘要点通过,这一步就成了走过场。
  */
+/* 表单化的待办(四期 4-1,11-20 照 Dify):材料里带 __表单{说明, 字段, 按钮} → 画说明(Markdown)+ 字段控件 + 按钮(每个按钮一个决定);
+ * 没配按钮的照旧 通过 / 退回。字段值走 edits 回去(请求的 allowed_fields 里已经有这些名字),必填的不填不让提交 */
+function 画_表单待办(hid, d, 头, 表) {
+  const 材 = d["核对材料"] || {}, 请 = d["请求"] || {};
+  const 跑 = 请.execution_run_id || (d["影响对象"] || {})["运行"];
+  const 字段 = (表["字段"] || []).filter((f) => f && f.name), 按钮 = (表["按钮"] || []).filter((a) => a && a.id);
+  // 按钮样式写成整段字面 class(css_class_check 钉着拼出来的条数):主要 → pri,强调 → pri danger,默认 / 幽灵 → 普通按钮
+  const 按钮html = (a) => a.样式 === "主要" ? `<button class="pri" data-ha="${esc(a.id)}">${esc(a.文字 || a.id)}</button>`
+    : a.样式 === "强调" ? `<button class="pri danger" data-ha="${esc(a.id)}">${esc(a.文字 || a.id)}</button>`
+    : `<button data-ha="${esc(a.id)}">${esc(a.文字 || a.id)}</button>`;
+  const 控件 = (f, i) => f.type === "下拉" ? `<select data-hf="${i}"><option value="">请选择</option>${(f.options || []).map((o) => `<option>${esc(o)}</option>`).join("")}</select>`
+    : f.type === "是否" ? `<select data-hf="${i}"><option value="">请选择</option><option value="是">是</option><option value="否">否</option></select>`
+    : `<textarea data-hf="${i}" rows="3"></textarea>`;
+  $("#main").innerHTML = 头 + `
+    <div class="note">${跑 ? `来自运行 <code>${esc(跑)}</code> <a href="#/wfrun/${encodeURIComponent(跑)}">去看这次运行 →</a>` : ""}
+      ${请.expires_at ? ` · 截止 ${esc(String(请.expires_at).slice(0, 16).replace("T", " "))}(到点没人处理,这次运行结束、不写任何东西)` : ""}</div>
+    <div class="card"><h3>请核对</h3><div>${md(表["说明"] || "(这一步没写说明)")}</div>
+      ${Object.keys(材).filter((k) => k !== "__表单").length ? `<details><summary class="k">给核对人的材料(原文)</summary><pre class="io" data-raw="原文">${esc(JSON.stringify(Object.fromEntries(Object.entries(材).filter(([k]) => k !== "__表单")), null, 2))}</pre></details>` : ""}
+      ${d["你能处理吗"] ? `${字段.map((f, i) => `<label class="f">${esc(f.title || f.name)}${f.required ? " · 必填" : ""}</label>${控件(f, i)}`).join("")}
+        <label class="f">理由(可选${按钮.length ? "" : ";驳回必填"})</label><textarea id="rv-why" rows="2"></textarea>
+        <div class="acts">${按钮.length ? 按钮.map(按钮html).join(" ")
+          : `<button class="pri" data-ha="approved">通过</button> <button data-ha="rejected">驳回</button>`}</div>
+        <div id="rv-res"></div>` : `<div class="state err"><h3>你不能处理这条</h3><p>${md(d["为什么"] || "")}</p></div>`}
+    </div>
+    <h2>处理记录</h2>`
+    + ((d["决定历史"] || []).length ? `<table><thead><tr><th>谁</th><th>决定</th><th>理由</th></tr></thead><tbody>`
+        + d["决定历史"].map((x) => `<tr><td>${esc(x.actor)}</td><td>${x.decision === "approved" ? "通过" : x.decision === "rejected" ? "驳回" : esc((按钮.find((a) => a.id === x.decision) || {}).文字 || x.decision)}</td><td>${esc(x.reason || "")}</td></tr>`).join("")
+        + `</tbody></table>` : `<div class="k">还没有人处理过。</div>`);
+  if (!d["你能处理吗"]) return;
+  const 发 = 只跑一次(async (决定) => {
+    const 理由 = $("#rv-why").value.trim();
+    if (决定 === "rejected" && !理由) { $("#rv-why").focus(); $("#rv-res").innerHTML = `<div class="k">驳回要写理由 —— 不然发起的人不知道错在哪。</div>`; return; }
+    const edits = {};
+    for (let i = 0; i < 字段.length; i++) {
+      const v = (document.querySelector(`[data-hf="${i}"]`).value || "").trim();
+      if (!v && 字段[i].required) { $("#rv-res").innerHTML = `<div class="k">「${esc(字段[i].title || 字段[i].name)}」是必填的。</div>`; return; }
+      if (v) edits[字段[i].name] = v;
+    }
+    $("#rv-res").innerHTML = `<div class="k">提交中…</div>`;
+    try {
+      const r = await 请求(`${P()}/human-requests/${encodeURIComponent(hid)}/decisions`, {
+        method: "POST", headers: { "Idempotency-Key": 新键() },
+        body: JSON.stringify({ decision: 决定, request_revision: 请.revision, reason: 理由 || null, edits }) });
+      $("#rv-res").innerHTML = `<div class="note">已提交「${esc((按钮.find((a) => a.id === 决定) || {}).文字 || 决定)}」—— 流程按这个按钮对应的那条线接着走${r["运行"] ? ` · <a href="#/wfrun/${encodeURIComponent(r["运行"].id)}">看这次运行</a>` : ""}</div>`;
+      setTimeout(() => 页_待办详情(hid), 1500);
+    } catch (e) { const s = 错误块(e, null); $("#rv-res").innerHTML = s.html; }
+  });
+  document.querySelectorAll("[data-ha]").forEach((b) => { b.onclick = () => 发(b.dataset.ha); });
+}
 function 画_核对页(hid, d, 头) {
   const 材 = d["核对材料"] || {}, 请 = d["请求"] || {}, 影 = d["影响对象"] || {};
+  if (材["__表单"] && typeof 材["__表单"] === "object") return 画_表单待办(hid, d, 头, 材["__表单"]);
   // 待办 ↔ 运行互链(11-19,体检 #10):正源是 human_requests.execution_run_id(接口放在「请求」里),
   // target_ref.运行 只有部分流程会带 —— 原来只认后者,不带的那些待办看不到自己是哪次运行停下来等的
   const 跑 = 请.execution_run_id || 影["运行"];

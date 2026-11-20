@@ -58,6 +58,7 @@ _引用表 = {
     "retrieval_config_version_id": ("retrieval_config_versions", "检索配置版本"),
     "workflow_version_id": ("workflow_versions", "工作流版本"),
     "connection_id": ("capability_connections", "工具连接"),      # HTTP 请求节点选的连接(三期 3-1)
+    "notify_connection_id": ("capability_connections", "通知连接"),   # 人工介入到这一步推飞书通知用的连接(四期 4-1,11-20)
 }
 
 

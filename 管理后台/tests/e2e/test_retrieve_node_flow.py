@@ -45,7 +45,7 @@ def ck(名, 真, 补=""):
     (过 if 真 else 挂).append(名)
 
 
-def 打(方法, 路, 谁="U002", 体=None, 头=None):
+def 打(方法, 路, 谁="U001", 体=None, 头=None):
     h = {"X-Dev-User": 谁, "Content-Type": "application/json", **(头 or {})}
     rq = urllib.request.Request(基址 + urllib.parse.quote(路, safe="/?&=:%"), method=方法, headers=h,
                                 data=json.dumps(体, ensure_ascii=False).encode() if 体 is not None else None)
