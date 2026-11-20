@@ -92,6 +92,10 @@ P = f"{基址}/api/v1/projects/{项目}"
     "PATCH /workflows/{id}/draft": dict(
         取id=("/workflows", "items[0].id"),
         读="/workflows/{id}", 字段="草稿.revision"),
+    # 11-20 四期 4-3:从备份导入覆盖当前草稿 —— 和存草稿同一个 revision(编排页 图态.revision,进页时从详情的 草稿.revision 读)
+    "POST /workflows/{id}/import": dict(
+        取id=("/workflows", "items[0].id"),
+        读="/workflows/{id}", 字段="草稿.revision"),
     "PATCH /agents/{id}/draft": dict(
         取id=("/agents", "items[0].id"),
         读="/agents/{id}", 字段="草稿.revision"),
