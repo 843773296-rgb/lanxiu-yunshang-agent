@@ -12,179 +12,17 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
-### ⏱️ 12 小时长任务清单(11-18 22:00 → 11-19 10:00)· AI 管理后台修复夜(Fable 5.1)
-
-> 用户 21:5x 起:「开始 12 小时长时间工作,目标就是解决现在 ai 管理后台的问题,可以开多个 subagent」。每小时 :13 有 session 内提醒 **c258b450**(10:00 那轮写《澜绣云裳agent-夜间汇总-20261119.md》发飞书产品文件夹后 CronDelete)。
-> **拍板**(21:5x–22:2x):① 运行页暂停/取消/核实 **接执行侧**;② **模型训练先不做**(训练提交 / 产物部署按钮标灰写明);③ 补页面:Prompt 变量编辑 / 评测发起取消 / 旋钮方案页 / 连接停用 / **工具连接+工具组页 / 用量预算块 / 数据集页(新建冻结导出补脱敏) / 工具选择策略页**;④ e2e 残留 687 个假成员 **先不动**。
-> **守则**:只碰 管理后台/ 和根目录报告、交接;fc 今晚不占锁(它说的),0 点到夜跑结束不占锁、05:10 后再要;每批 = `scratchpad/gate_batch12.sh` 形状(主检出退回/拉到远端 → 并回 w1117 → kickstart aimc → 等 healthz 连续 4 次 200 → e2e-ci → ship);只认「被包的命令退出码」;子代理各自 worktree 分支(**从主检出 HEAD 切,不是 w1117**,所以叫它们先 merge w1117),交回后 `git merge` 进 w1117,冲突手解;**改 w1117 里的文件前先确认没有 batch 在 rebase 它**(21:27 栽过)。
-
-1. ✅ 体检 45 条中 22 条修掉(7e7d5863 / f79f31c2),报告 4a775439 已发飞书
-2. ✅ 子代理第一批四路合进 w1117(95224f50 Prompt 变量编辑;b6c3beb5 评测发起取消 + datasets 版本们;92a78c82 旋钮方案页;122279a4 连接停用/Agent 连接下拉/失败任务卡/待办链接/面包屑/试跑 100 条/实体去哪列/冒烟管理员轮,两处冲突手解)。合并后 16 页 U001 + 5 页 U002 冒烟全绿。**全部只过渲染没真点过**(子代理只许 GET)
-- 下午:fc 推了 cf643323(回答体检「压价没读话术打回」+ 夜跑小套看同一题连挂)→ 我把主检出 ff 过去、kickstart 8770 上线;fc 又推 c11af3b6(PRD 附录两条,纯文档),锁已放,fc 说今晚不再占锁。
-- **20:3x 用户问「债都还清了?」→ 拍「开始做吧」**:还体检欠账四件,b9c339e5(端到端七份测试收尾删自己加的临时成员 `tests/e2e/_清成员.py`,存量 775 个**按用户「残留先不动」不清** / 运行详情费用说明分演示和真模型 / 数据集页加「导出时包含 mock」勾选 / 新 `test_newpage_actions.js` 25 条,咬合两刀都红在点名那条)。批次 gate_batch13.sh 20:4x 起(scratchpad gate_batch13.status / e2e_ci_1119n.log / ship_1119n.log)。
-- **20:56 第一轮 e2e 红 1 条**(test_runctl_exec_flow:取消和 Worker 领任务撞同一瞬间,任务记成「已完成」)→ 查库时间线确认一步没跑 → 修 e6ed66f0(worker 进门见 cancelled 抛 取消了 → 任务「已取消」)→ 第二轮 e2e-ci 21:17 退出码 0、ship 21:39 rc=0 全量门禁 0,**已推 e6ed66f0**(b9c339e5 四件欠账 + e6ed66f0 worker 修法 + 之前的交接提交);aimc 已在批次里重启到这一版。门禁把影响面基线 394→395(我新文件里一段 ⚠️),已挪进 w1117 提交、主检出恢复干净。主检出另有 11-15 的空文件 `--自测.log`,不是我的,没动。
-- **22:3x fc 要跑 pre_push 推 b8b2591f(库路径单源,0 点前放锁)**:我已回「锁今晚不要了」。**今晚我不再跑门禁、不写共享库**;剩下三件欠账(日志采集策略加列 / 桥请求详情页 / 评测发起测试)明天做,先问 fc 锁窗口。w1117 本地 e2708b23(交接 + 影响面基线 395)未推,随下一笔业务提交带。`_清成员` 在整套里真跑了:6 份各删自己的、存量停在 775。
-- **23:2x fc 已推 e6ed66f0..e18167df、锁已放,到夜跑结束不再占锁**。fc 的门禁也把影响面基线顶到 395,fc 没提交(由我 e2708b23 带上,数一致不冲突)。w1117 已 rebase 到 e18167df,主检出干净(只剩那三个不 add 的滚动文件 + `--自测.log`)。0 点到夜跑结束我不占锁;明早 05:10 后再要锁推 e2708b23 + 下一件欠账。
-- **11-20 04:3x fc 夜跑完拿锁推两笔(说 05:10 前放)**。我趁空在 w1117 写完剩下三件欠账,**都只本地提交、没跑端到端**:
-  9c04d9cd 桥请求详情页(新接口 GET /bridge-calls/{id} 权限同列表、跨项目 404;前端 #/bridge/{id};运行页和原始日志能点过去;订单风险 e2e +5 条;顺手补登 test_newpage_actions 进 test-e2e / progress 两处,make contract 原来红在这)/
-  e0a826f3 评测「发起」页面测试(test_newpage_actions 第 ④ 组:外部登记、后台派发 422、真派 4 次运行再取消;**接口早有人测,原来那句「要真模型」不对**)/
-  94de01f0 日志策略加列 retention_policy_revision(迁移 dd289ffffc98;**第一次手编的迁移号和已有的重了,alembic 报 Cycle**)。
-  批次 scratchpad/gate_batch14.sh:等 05:10 + 锁空 → **锁里先 alembic upgrade(新列先落库)** → 并主检出 → kickstart aimc → e2e-ci → ship。日志 migrate_1120a / e2e_ci_1120a / ship_1120a。
-  **05:21 fc 放锁(已推 eecba3cc)**;批次第一轮红在迁移那步:没设 DATABASE_URL,迁移脚本拒跑(库没动,alembic_version 仍 b7c1d2e3f4a5)→ 脚本里显式给 aimc_dev,05:2x 第二轮起。
-  **05:22 迁移已落库**(alembic_version → dd289ffffc98,共享库已有 retention_policy_revision;老代码不读它,无害)。批次随后停在「主检出有不在 w1117 里的提交」:a7053ba4 夜跑自动提交(04:28,fc 的,没推)。**不替 fc 推**,已问 fc 怎么处理;回复前主检出不动、锁已放。下一步:fc 推了它 → 重跑 gate_batch14.sh(迁移那步再跑是空操作)。
-  **05:3x 更新**:fc 请我把夜跑那笔一起带上 → w1117 重排成 origin/main(eecba3cc)→ bf7f6792(夜跑,内容与 a7053ba4 逐字核过)→ 我的四笔;主检出 reset --keep 回 eecba3cc;**第三轮批次在跑**(status 文件看「第三轮」之后)。
-  · 未验证:三件欠账的新测试(订单风险 +5、test_newpage_actions ④ 组、日志策略 +2)**一次都没真跑过**,第三轮 e2e-ci 是第一次;红了先看是测试写错(字段名 / 表名我改过两次)还是代码错
-  · 判据:桥详情权限同列表(运行评测)、不按状态筛;日志策略改用自己的版本号、**存策略不再顶项目 revision**;夜跑提交是 fc 明确请我带的(只含 agent/nightly + 当晚报告)
-  · fc 更正:夜跑 .gz 变小是 fc 11-18「压完就删」的回归(头版本历史 32.7 万行 → 2 万行,旧版在 git 历史里),**fc 自己修、单独推,占锁前喊我** —— 不是我的活,别碰
-  · 禁区照旧:不推别人的提交(这次夜跑那笔是对方点名请求的例外)、主检出不留未提交改动、迁移要显式 DATABASE_URL=aimc_dev
-  · 下一步第一个动作:看 scratchpad/gate_batch14.status;绿了 → 告 fc 放锁、远端应到 ae3c2410 之后;红了 → 看 e2e_ci_1120a.log 里 ❌ 那条
-  · **05:5x 第四轮**:test_newpage_actions 39/0 绿(87948309 修了候选按 ->>'ref' 查 / 桩随机键非 UUID / 删直改运行状态的兜底);红在 **test_exec_mode_flow ③**(NO_MODEL_CONNECTION,期望 MODEL_/SECRET_ 族)—— 第三轮同代码绿、锁里单跑绿,旧交接(11-09 前)记过本机常驻 8801 上它「有时红」、没查根因。日志留在 e2e_ci_1120a_第四轮.log;**06:0x 第五轮在跑,再红就查根因,不许当绿推**
-  · 悬而未决:评测发起「后台派发」下拉取全量工作流详情的性能问题(要新接口,下一批);用户那三件(假成员存量 / 登录后界面 / 介绍页图片条款)
-  性能问题记着没修:评测发起切「后台派发」时下拉要把项目里每个有版本的工作流详情都取一遍(演示项目 1400 多个)。
-- **压缩前六项(20:5x)**:
-  · 未验证:七份测试接了 `_清成员` 只 py_compile 过 + 演示项目单测删一条,**整套 e2e-ci 里还没真跑**(批次在跑,看 e2e_ci_1119n.log 里有没有「🧹 收尾删了」行);费用说明 / mock 勾选只过 node --check,没在浏览器看
-  · 判据:只止血不清存量(用户拍「残留先不动」);按「本进程登记的工号」删、不按 E2E 前缀删(防并发测试互删);旋钮测试要先把 draft_revision 推到 2,否则 If-Match 写死 1 测不出
-  · 作废:旋钮测试第一版(revision 恰好是 1 的那版)咬合没红,已改
-  · 禁区:同前(不碰 fc 的文件;0 点后不占锁;三个运行态文件不 add;e2e-ci 只在 gate_lock 里跑)
-  · 下一步第一个动作:批次通知来 → 读 gate_batch13.status;rc=0 → 交接记推送号、告诉用户;红 → 看是哪条、是不是我的改动
-  · 悬而未决:775 假成员清不清(要问用户,别自己清)
-- **还欠着(下一批,不用拍板)**:日志采集策略拿项目 revision 当乐观锁(要加一列)/ 桥请求没有详情页、运行页链不过去 / 评测「发起」要跑真模型没进测试。**要用户的**:登录后界面亲眼看、介绍页 AI 图商用条款、687→775 假成员存量清不清。
-- 12:1x ✅ **第七轮推上去了**:ship 被包的命令退出码 0,远端 f7f0c864(产品说明 4.8 + Hook 六个、待办→运行互链、面包屑对齐、夜间汇总终版、数字豁免 + README)。今晚这一摊全部落地,没有未推的业务提交
-- 11:4x 第七轮第二次:e2e-ci 绿,全量只红 1 条 = 8770 页面冒烟 triage-board「0 个节点」—— 上一次同一条是绿的、我没碰 agentsite,单跑 3/3 绿,判抖动;**直接在主检出重跑 ship**(后台 b6rd02s0q,日志 scratchpad/ship_1119b.log)。第一次红的两条(4.8 数字豁免 + README)已修 f7f0c864
-- 10:1x **12 小时长任务收尾**:夜间汇总终版已发飞书、每小时提醒已关(CronDelete c258b450)。剩第七轮推送在跑
-- 10:11 fc 已推 ae21e1b9(4 笔;锁内 order_eval 3/3,真库 ordr 前后都是 26039 行,不再写真库)。**第七轮起跑**(后台 b9f2onru8:并回 → 重启 aimc → e2e-ci → ship),13 笔:产品说明 4.8 + Hook 六个、待办互链、面包屑、夜间汇总终版。完成读 gate_batch12.status 的「ship 完」行
-- 09:35 自检:fc 还没推上去(远端仍 4044579a,锁被 09:30 起的咬合重放占着,应是 fc 的 pre_push);我本地 13 笔未推(文档 + 互链 + 面包屑)。夜间汇总已更新成终版发飞书 https://aqvi2xbk5kd.feishu.cn/docx/ItjndmZUqoGAzox9NJacUivmn50 。10:00 轮只剩 CronDelete;第七轮推送等 fc 喊
-- 09:0x 介绍页会话(c2)请核「项目方法」七页:已只读核完逐条回它(4 处要改:技能顺序、口令是哈希且管理后台无登录、面料工期其实有向量检索、费用倍数 24–135;研判单价 0.5 元偏高约 3 倍)。不归我改
-3. ✅ **08:42 推上去了**:全量门禁 被包的命令退出码 0,远端 4044579a(昨晚 67 笔 + fc 的⑦修法)。已告 fc 放锁让它先推。**下一批(第七轮)排 fc 后面**(fc 08:4x 起 pre_push 3 笔,推完锁内单跑 order_eval 约 15 分验真库行数不变,跑完喊我;我说了不急):产品说明 4.8 + Hook 六个、待办→运行互链 + 面包屑对齐(要跑 e2e-ci)
-   旧:08:31:咬合重放完,pre_push 08:20 起锁内全量门禁,约 08:50 出结果(后台任务 b0fcqv67f 完成即读 status)。用户 08:3x 换模型为 Opus 5.5,提交署名跟着换
-   **第六轮(07:08 起,67 笔,含 fc 受欢迎⑦修法 4044579a):e2e-ci 07:28 全绿(退出码 0),ship 全量门禁在跑(07:32 起咬合重放)**;06:40 那轮全量红 4 条已全修(4d1f8db0 中文参数名 + trace 白名单;0655f280 recall 登记;fc 的⑦)。推完:告 fc 放锁、远端应到 4044579a 之后。**赶不上这一批的 → 下一批(第七轮)**:产品说明 4.8(d7c02821 / 84f48175)、待办→运行互链 + 30 页面包屑对齐侧栏分组(子代理 2846e5a3 已并入,node --check 过、30 页冒烟全绿;桥请求没详情页所以没链,记着)。第七轮要跑 e2e-ci(改了 app.js)
-   - 07:50 自检:第四轮 e2e(23:20)只红 1 份:新测试 test_runctl_exec_flow 抓到真 bug —— worker 节点边界提交后,runctl 中途写 run_events,两边 seq 各算各的撞车 → **DeadlockDetected**,任务崩了重跑,检查点落到 start,恢复后模型多调两次。修法 34d874ae:两个 记事 都先 for update 运行行、seq 从库里 max+1(和 runctl 同一个锁顺序)。**第五轮 e2e(23:37–23:49):所有端到端全绿(含 test_runctl_exec_flow 暂停→继续、test_orchestration 88 条),只红 ifmatch_reachable_check「三条新乐观锁接口没登记 revision 从哪来」—— 已登记(下一笔),检查本地绿。** 23:52 不再起新一轮(0 点夜跑要锁);**05:17 一次性提醒 83ece95a 会跑完整 batch12(e2e + ship 推)**。第三轮红 2 条(22:56):Agent 跑 http 000 **根因找到了**:可选连接的顺序变了,e2e 取「第一条支持工具调用的」拿到别的测试留下的本机假接口(e2e 本地假接口 ×2,端口早死,status 仍 active —— 残留连接也该清);测试改成按 模式=mock 点名。test_runctl ④「继续」→ 现在 409 RESUME_NO_CHECKPOINT(夹具 paused 没检查点),测试改;⑩「重试新建的步骤删干净了 5」是并发污染:它借「最新一条运行」改库,和子代理的真运行撞了 → 改成只借终态 + 结束超 10 分钟的。**第四轮 23:2x 起只跑 e2e-ci(ONLY_E2E=1),ship 留 05:10 后。** 并远端的方式改了:w1117 上全是合并提交,rebase(含 --rebase-merges)重放会撞我手解过的冲突,23:19 又栽一次 → 改成 `git merge origin/main`(pre_push 只看 HEAD 含不含 origin/main)。fc 推了 863af6f3(PRD 两条),今晚不再占锁。
-   - **e2e 子代理(a87b7b49,合 1e720567)抓到的大问题**:worker 把整次运行裹在一个事务里,running 不提交、API 的 pause/cancel 被行锁挡 → **我接的暂停 / 取消在真运行上点不出来**。已改(cb 下一笔):运行类任务节点边界提交。**没在真库跑过**。
-   - 残留:demo_a 两条「e2e 本地假接口」active 生成连接、库里一条被夹具写回 queued 的 succeeded 运行(xr_8fdb2648df12)—— 要清但是共享库写,明早再说。
-   第三轮 22:44 起(并回 5c940b0f,32 笔)。第二轮红 2 条:Agent 跑 http 000 **不是瞬断** —— 可选连接按名字排后 e2e 取「第一条支持工具调用的」拿到老 e2e 连接(端口死了),改回最新建的排最前;test_runctl 等 reconciling,核实今晚改成当场送回 running/paused,测试跟着改。第二轮 22:29 起(并回 f63afb53,27 笔,含 1–6 全部;aimc 已重启跑新代码;e2e-ci 约 22:45 完 → ship 约 23:1x 推;fc 排在后面推 1 笔文档,23:30 后它就不推了)。第一次 e2e-ci 红 3 条(22:23):加资料引了接口没有的「版本」字段、工具详情脚注测试认旧词、Agent 跑 http 000(模型调用网络瞬断,同时段别的 agent_run 都完成)—— 前两条已修(含测试一起改),第三条当瞬断重跑。**下一次 batch12 并回的是全部 1–6**
-4. ✅ 暂停 / 取消 / 继续 / 核实接执行侧(2bbb922e,未推):runner 要暂停吗 回调 + pause 检查点;worker 刷新令牌读 execution_runs 两个标记、取消收成 cancelled、_挂起 支持 paused;runctl 取消同步 jobs.cancel_requested、继续真排任务、核实查桥请求回执后送回 paused/running;离线测试 test_pause_checkpoint 14/14、make test-orchestration 全绿。**worker 那一半没真跑过**。原计划:runner.跑一张图 加「要暂停吗」回调 → 节点边界返回 paused 检查点;worker `_打点器` 读 execution_runs.pause_requested/cancel_requested;_挂起 支持 paused;runctl.cancel 同步 jobs.cancel_requested;runctl.resume 改调 run_resume.排恢复(挂起态加 paused);worker `except 取消了` 把 execution_runs 收成 cancelled;reconcile 待定
-5. ✅ 子代理第二批全合入:用量预算块(42c78bf3)、工具选择策略页 + 训练/部署标灰(91a6f4e4)、工具连接+工具组页(a8ac8f06,Makefile/app.js 两处冲突手解)、数据集页新建/冻结/导出/补脱敏 + PATCH /datasets(57da1278);PATCH /datasets 和连接 archive/unarchive 补进 contract/endpoints.py 并重生成 openapi/ts。合并后 datasets / groups / conns / tool 详情 / 搭建 页冒烟绿。原记录:✅ 用量预算块(42c78bf3,合 07474e2a;预算接口 GET 也要 admin,非 admin 看 403 态);✅ 工具选择策略页 + 训练/部署标灰(91a6f4e4,合 5f33b6d3);⬜ 工具连接+工具组页、数据集页 还在跑。合并后 7 页冒烟绿。子代理都说两条棘轮(css_class_check 30>29、md_render_check 50>32)**在合并前就红**,不在 e2e-ci 里;ship 的全量门禁会不会跑它们看日志
-- 07:4x 产品说明新增 4.8「Agent Loop 和 RAG」(子代理 d7c02821 已并进 w1117;RAG 参数全部从代码核:切片 ≤600 字 / BGE-small-zh 本地 512 维 / 种子配置 候选 20・取 8・预算 4000 token / Claude haiku 重排 / 只实现 vector;正式索引那版的值在库里没核)。顺手把 4.5 标题 Hook「五个」改「六个」(guards 实挂 6 事件,4.2 早已写 6)。已发飞书。**e2e-ci 07:28 全绿(退出码 0),ship 在跑**
-- 07:2x 用户:「没事干的话把产品文档重新优化下,把 loop / RAG 说清楚」→ 派子代理改《澜绣云裳agent-产品说明.md》(Agent Loop 与 RAG 两节,面向不读代码的 PM,事实从代码现读),README 要用 make_readme 重生成,发飞书产品文件夹;交回后合进 w1117 随下一批推
-- 07:1x fc 来信:它那次红在 triage_trial_check 咬合,已补(de27aaa4);**07:08 用户当面确认后它已删真库 15 张评测单 + 19 订单行 + 120 业绩分成,备份在它 worktree .wip-glossary/db-backup/lanxiu-删评测单前-20261119-070801.db**。我的 batch12 07:08 起(e2e-ci 中),门禁若有数 C10002 的检查行数会变,心里有数
-- 07:1x 上一轮 batch 停在「主检出有别人的未提交改动」= 06:40 daily-log 又生成的项目日志(照用户 11-18 拍的丢掉 git checkout);fc 07:07 放锁但远端没动(它那笔没推成?已问)→ 我 cherry-pick 它的受欢迎⑦修法 4b3356d6 进 w1117(本地 popularity_check 绿),**完整 batch12 再起**。推完喊 fc
-- 07:0x 用户拍板:**15 张评测单删、先备份整库(归 fc 执行)**;残留只清两条死端口连接(我用 archive 接口停了 mc_e2e_4fd2fe59 / mc_e2e_bf6cbf17,demo_a),假成员和那条运行照旧不动。夜间汇总 392f6091 已发飞书 https://aqvi2xbk5kd.feishu.cn/docx/RL4BdswXPojXVUx1wipcEejFn0c
-- 07:2x 再刷一次(内容同下,无新变化;后台任务 buutsx9c9 仍在等 fc 放锁)
-- 07:1x **压缩前交接(六项)**:
-  · 下一步第一个动作:后台任务 buutsx9c9(gate_batch12.sh 完整)在等 fc 放锁;它完成的通知到了就读 `scratchpad/gate_batch12.status` —— 推成功(远端 = 我的 HEAD)→ 告 fc「锁已放」、清单 3 打 ✅;红了看 ship_1118h.log / e2e_ci_1118g.log 的 ❌ 行
-  · 未验证的预判:① 并进 fc 的 3 笔后 popularity ⑦ 会绿(它说单跑 12 条全过);② nightly_check 加登记后本地绿,门禁里应同样;③ worker 节点边界提交 + 死锁修法只过了 e2e(23:37 那轮 test_runctl_exec_flow 暂停→继续全过),真人在页面上点暂停还没人试过
-  · 判据:只认「被包的命令退出码」;Agent 跑 http 000 不再当瞬断(前两次都是真因);页面冒烟桩 options:[] 已在仓库里
-  · 作废:「主检出有不在 w1117 里的提交就停」那条判据对夜跑自动提交会误停 → 已改成把 main 并进 w1117;rebase w1117(含 --rebase-merges)作废,只用 merge
-  · 禁区:tools/nightly_eval.py 只改 fc 点名的那一行;真库 15 张评测单(C10002)不删,等用户拍;e2e 残留(687 假成员、2 条死端口连接、1 条被写回 queued 的运行)不动,等拍
-  · 悬而未决:15 张评测单删不删;残留清不清;10:00 夜间汇总 + 拍板卡(含这两条 + 夜跑 order/talk/tool/growth 退步归评测线);CronDelete c258b450、83ece95a 已自删
-- 07:0x fc 查明:popularity ⑦ 是检查自己算歪(拿 round 4 位的合并率复核),修在它分支 4b3356d6;recall 登记要加在**我**分支(第三张夜报只在 ac60476c 里),它口述我代登(tools/nightly_eval.py 连续失败已知,这是 fc 点名让我改的)。**fc 先推(07:0x 起 pre_push 约 30 分),我 merge 远端后跑完整 batch12**
-- 06:40 **ship 全量门禁红 4 条**:我的两条已修(4d1f8db0:连接列表 ?含停用 → ?include_archived(url_ascii_check);test_runctl_exec_flow 的本机假模型接口登进 trace_check 白名单)。另两条归 fc:夜跑清单「recall_eval 连 3 晚 0 分没登记」(fc 的 fb8c6640 修判分器,登记那条问它)、popularity_check ⑦「苎麻被判成突出没越过两倍噪声」(疑真库 15 张评测单顶出来的,待确认)。已问 fc,它先推我再并
-- 06:36 自检:**e2e-ci 05:51 全绿(退出码 0)**,ship 在跑(pre_push 06:20 起拿锁,前面是咬合重放),等推完
-- 05:3x 第一次红在 test_runctl_flow:借到一条带检查点的老运行,「继续」真排回去了(202)而④要验 409 → 夹具再加 resume_snapshot is null(22fb4f79),**05:3x 重跑完整 batch12**
-- 05:17 **完整 batch12 起跑**(e2e-ci → ship 推;约 06:0x 完)。推完:告 fc 放锁、更新清单 3 为 ✅
-- 04:4x fc 来信(**要进夜间汇总 + 拍板卡**):order_eval 连 4 晚退步的根 = 评测切副本漏了懒加载写口(api_order.open_order 函数体里才 import order_write,第一次调用连的是真库),**真库 ordr 多了 15 张评测单(C10002,11-18 01:33–02:17,id …244322–336,待确认)**;fc 修在连库层 1e3df33b,排我后面推;那 15 张删不删要用户拍。我这边管理后台用的是 PG aimc_dev,不同根
-- 04:35 自检:nightly-eval-ok 已更新到 11-19 04:26,锁空;按守则等 05:10 世界平移后再要锁,05:17 提醒直接跑完整 batch12(上一轮状态文件里 e2e 退出码 2 是登记检查那条,已修 578347ba,不用再单跑)
-- 04:3x fc 来信:夜跑 04:27 结束,**自动提交 ac60476c 落在主检出**(脚本不替别人推);我把主检出的 main 并进 w1117(不然 batch 的「主检出有不在 w1117 里的提交」会停)。fc 本地 1 笔 fb8c6640(召回判分器两处冤枉)排我后面,**推完要喊它**。夜跑点名:order_eval 连续 4 晚退步、talk / tool / growth 连续 6 晚判红 —— 写进夜间汇总,归评测那条线
-- 03:36 自检:同 00:36(锁空、夜跑未写 ok —— 上一次是 11-18 03:54,今夜的大概也在 03:5x 落;远端没动、无待合并)
-- 02:36 自检:同 00:36(锁空、夜跑未写 ok、远端没动、无待合并)
-- 01:36 自检:同 00:36(锁空、夜跑未写 ok、远端没动、无待合并)
-- 00:36 自检:锁空、夜跑还没写 nightly-eval-ok(上一次 11-18 03:54),按守则不碰锁;没有待合并的分支;w1117 领先远端 46 笔等 05:17 推。下一步第一个动作 = 05:17 提醒来了看 nightly-eval-ok 比 11-19 00:00 新且锁空 → 跑完整 gate_batch12.sh
-6. ⬜ 推完之后:① ✅ 子代理 a979bd 的 5 份 e2e(prompt-runs 绑连接 22 条 / 连接停用 25 / PATCH datasets 25 / 运行取消暂停 12+⏸1 / 评测取消 11+⏸1)已合入并登记 E2E_CI;暂停→继续那条等 worker 事务边界改完才能验(prompt-runs 绑连接 / 连接停用 / PATCH datasets / 运行取消暂停 / 评测取消),交回后合入、登记 E2E_CI、再推一批;② ✅ runctl 取消队列中运行顺手收任务(64fbcbe0,下一批推);③ 小项:✅ Agent 调试默认输入按 schema 造 + 费用说明分 live/mock(59c0e133);✅ viewer「看进度」(评测子代理已按角色摆);✅ 知识库文档列表页 + GET /knowledge-bases/{kb}/documents(014dc93a,合 260e14a0;顺手登记 #/retrieval/ #/selection/ 进 detail_page_hashes、md_render 钉到 63;**在下一批推**);⬜ 日志策略 If-Match 用 projects.revision(要加列,留着);④ 10:00 夜间汇总发飞书、刷交接、CronDelete c258b450
-- **未验证的预判**:暂停 / 取消的 worker 那一半没在真库上跑过(e2e 子代理会试抓 running 窗口);子代理们的写操作(建连接 / 建组 / 冻结 / PATCH 数据集 / 建方案 / 发起评测)全只过了代码审读和渲染,e2e-ci 现有测试覆盖不到新按钮的 POST,靠 a979bd 补的测试
-- **判据**:只认「被包的命令退出码」;Agent 跑 http 000 那种瞬断红不算代码红,同时段别的 agent_run 都完成就重跑
-- 旋钮页子代理提到两条棘轮 css_class_check 30>29、md_render_check 37>32 **在 ff8e39a4 上就红**(fc 推得上去说明不在门禁里,可能只在 make test)。看 ship 日志再说
-
-### 🟡 11-18 21:5x · 用户拍了体检四件;batch12 在跑(Fable 5.1)
-
-- **用户 21:5x 拍板**(报告第四节那 12 条里的 4 件):① 运行页「暂停 / 取消 / 核实」**接执行侧**(worker 每步检查点读运行状态,pause_requested→paused、cancel_requested→cancelled;reconcile 也要有人接);② 训练任务 / 模型产物部署**接执行器**(真跑训练和部署 —— 要先问清 GPU / 部署目标,这一条我还没问细节);③ 补页面:**Prompt 变量编辑、评测中心发起 + 取消、澜绣旋钮与方案页、模型连接停用**(四个都选了);④ e2e 残留 687 个假成员 **先不动**。
-- **没拍的 8 条**(报告第四节 #3 微调三页 / #8 工具组等 / #9 预算 / #10 待办链接 / #11 实体去哪列 等)留着。
-- **batch12**:第一次停在我自己的判据(主检出落后远端被当成「有别人的提交」),改成「HEAD 是 origin/main 祖先就 pull --ff-only」后重跑;状态看 `scratchpad/gate_batch12.status`。
-- **接下来的顺序**(推完才动):先做 ③ 里半天级的两件(Prompt 变量编辑、评测发起/取消),再 ① 暂停取消接执行侧(改 workers/worker.py + runctl.py:runctl 置标记时同步 jobs.cancel_requested;worker 检查点读 execution_runs.pause_requested),然后 旋钮方案页、连接停用;② 训练/部署执行器**最后**,动手前要问用户 GPU 在哪、部署到哪。
-
-### 🟡 11-18 21:4x · 体检四路审计齐了:45 条,22 条已修(两笔,未推)、12 条要拍板、11 条记录(Fable 5.1)
-
-- **报告**:`澜绣云裳agent-AI管理后台体检-20261118.md`(根目录,随下一笔推;发飞书产品文件夹)。拍板的 12 条在报告第四节,**没问用户**。
-- **第二笔修的**(见提交信息):/projects 带实际能做的、成功率 completed 也算、Prompt 筛选进 SQL、worker 写 started_at;前端 20 处(wfrun 深链崩、重试传 MouseEvent、核对页画工具参数、评测 ref、建索引按钮、收进知识库、召回多库、翻页、审计截断、依赖中文、kr field_errors、info_requested、工具详情键名、过期文案 ×5、字面星号 ×7、版本与发布按角色摆、Agent 试运行 90 秒)。
-- **未验证的预判**:① 后端四处改动只过 ast,**真服务没跑过**(8899 临时实例已停);② 建索引 / 收进知识库 / 新建知识库 三个新按钮只过了渲染,**没真点过**(接口形状按 knowledge_api 读的:documents 要 {upload_id,name},knowledge-bases 要 {name});③ e2e 三份直接跑被权限分类器拒了,全靠门禁里的 test-e2e-ci。
-- **下一步第一个动作**:fc 推完放锁(它 21:05 起 pre_push)→ 跑 `scratchpad/gate_batch12.sh`(并回 → kickstart aimc → e2e-ci → ship);红了看 e2e_ci_1118g.log。推完发飞书、告用户、拍板卡。
-- **判据**:只认「被包的命令退出码」;页面冒烟桩的 data-raw 豁免只认 `data-raw="原文"` 写在开标签里;`git stash list` 里两条 autostash 不是我的,别动。
-
-### 🟡 11-18 20:5x · AI 管理后台全页体检(用户要「确定是否所有能力已可用」)+ 修「运行测试每次都排队」(Fable 5.1)
-
-- **体检方法**:page_smoke 的桩(scratchpad `smoke_dump.js`,加了 DUMP 把渲出的文字落盘)以 U001 + project_lanxiu 渲 39 个一级页;54 个列表接口逐个 curl;结果在 scratchpad `smoke_summary.txt` / `api_probe.txt` / `smoke/*.txt`。
-- **查实的坏**(都已在工作树改,**未提交**):
-  ① Prompt「运行测试」/「单条试跑」:页面派完任务**只查一次**状态 → 永远显示排队;且 POST /prompt-runs 的快照里**从来没有** model_connection_id,真跑模式(launchd 的 aimc 是 MODEL_ADAPTER=anthropic)下 worker 每次 NO_MODEL_CONNECTION(库里 61 条这样失败的,用户 U002 在 demo_a 的 4 次都是)。修:main.py `_定调试连接`(点名优先;项目唯一启用生成连接默认用;零/多条不猜,信封写明会失败)+ 快照/幂等摘要带连接 + GET /jobs 露 error_code/detail;app.js 顶层 `画模型连接` / `等任务`(2 秒轮询最多 2 分钟)/ `运行结果html`,两页共用。
-  ② 成员与权限:管理员打开整页「出错了」—— 接口 `可授权的能力` 是按角色的 dict,页面当数组 `.map`;CI 冒烟用 U002 非管理员所以没红过。修:`授权框html(d, 角色, 已有)`,换角色跟着变。
-  ③ 审计页管理员那支在**桩**里抛(`sel.options` 桩没有),浏览器没事 → page_smoke.js 的 造() 加 `options: []`;审计「对象/为什么」、工具目录「用途」是原文带 `**` → data-raw="原文"。
-- **未验证的预判**:① 后端改动只过了 ast,**没对真服务跑过**(8801 跑的是主检出旧代码)—— 下一步起临时实例 8899(worktree 代码、aimc_dev、MODEL_ADAPTER=anthropic)真跑一次 pr_tl05 看 job 成功,再跑 test_api_flow / test_exec_mode_flow / test_prompt_snapshot_flow(AIMC_BASE=8899);② 并回主检出后 **aimc 要 kickstart**(API 进程不重载)再跑 e2e-ci。
-- **体检里不是 bug 的**:空数据页(Agent 0 / 能力档案 0 / 问题单 0 / 知识修订 0 / 产出 0 / 定时 0 / 训练 0 / 产物 0)、上线验收 0/10 未签、健康页无人工判读(8770 没接 POST /feedback)、「定时触发还没做」「Agent 线上(生产)还没接」是明写的未实现。
-- **数据卫生(待拍)**:project_lanxiu 有 689 个成员,687 个是 e2e 残留(E2EOP 292 / E2EAK 232 / E2EHO 47 / E2EIS 36 / E2ECP 35 / E2EIV 34),来自默认打 project_lanxiu 的那十几份 e2e(test_access_api_flow 等);审计里 access_key.issue 991、application.create 234 同源。e2e-ci 每跑一次再加。要么测试收尾清自己建的,要么改打 e2e 专用项目;残留清理是共享库写,要锁 + 告 fc。**没问用户,没动。**
-- **锁**:batch11(默认项目 fbaa7fbb)ship 在跑;推完 eureka-fc 要锁跑接管评测 25 分钟,之后才轮到这批(管理后台改了 → 先 kickstart aimc → e2e-ci → ship)。
-
-### ✅ 11-18 20:0x · 已推 a0d89c9d —— Prompt 简介 / README 介绍页链接 / 差评汇编进知识库 / 召回测试修好(Opus 5.5)
-
-- 全量门禁退出码 0(中途红过一次:导入脚本里的全角标点被编辑器改成半角,charset_fullwidth_check 41→42;改用 chr() 拼,回 41)。e2e-ci 0 在 batch9 那次(管理后台代码相同)。
-- 8770 已 kickstart(带上 eureka-fc 的 TL05/TL76 新措辞;店长助手不用出版,正文由 assemble 从代码挑)。
-- **召回测试**:用户当时在「演示项目 A」(mock 向量、只有 9 月拍板)—— 真项目是 project_lanxiu(bge)。差评汇编导进 project_lanxiu 的「澜绣业务拍板」库,索引 ib_fa01e1d19643(bge)已就绪;重测前 4 片全是汇编、分数 9/8/7/6,生成「够答」、引 8 条。演示项目没动(集成测试按名字找它)。eureka-fc 导了领域知识库并重建 ib_40d12a6b1bad。
-- 介绍页图片:c2 已给 12 张 jpg 写回 XMP「AI 生成」标识(27754ff),商用授权那条结了。
-- **悬而未决**:演示项目 A 默认被选中会让人误以为召回坏了 —— 要不要把默认项目改成澜绣云裳,没问用户。
-
-### 🟡 11-18 18:4x · 交接 —— Prompt 管理加简介 + README 介绍页链接,排在 eureka-fc 后面推(Opus 5.5)
-
-- **用户要**:Prompt 管理每段 system prompt 加简介,说清管哪个部分。d1b19245:导入脚本 `包一条()` 现拼「用途」(哪几个助手｜讲什么 / 类型 / 装了哪些工具才发 / 口径),不手写;列表页取第一行 70 字、悬停看全文。**进了内容哈希 → 127 条各出一版;共享库 aimc_dev 要在锁内重导,否则 lanxiu_prompt_sync_check 红**。
-- **README**:15e60233 顶部加产品介绍页链接(Pages 已上线 200,仓库 lanxiu-yunshang-intro)。
-- **在跑**:`scratchpad/gate_batch9.sh` —— 等锁空 → 并回主检出 → 锁内导入 + 同步检查 → e2e-ci → ship。状态 `gate_batch9.status`,只认「被包的命令退出码」。
-- **欠账**:评测稳定挂的「没把写动作交回给人」那道,eureka-fc 补了 TL05 未复跑;logo 登录后界面要用户看;介绍页 AI 生成图的商用条款没核。
-- **未验证的预判**:① 简介只在本地 `--看` 和脚本里预览过 6 条,**没在 8801 页面上看过**(要导入后用户刷新看);② e2e-ci 的 Prompt 页测试会不会断言「用途」一栏旧样子 —— 没查,等 e2e-ci 结果;③ 导入会把 eureka-fc 已提交未导入的 TL 改动一起导(已告诉它)。
-- **判据**:工具中文名取说明**第一小句**,不取第一段加粗(加粗是「客户问多少钱时用这个」类提醒,试过作废);「写」「图片」是 needs 里的记号不是工具,单独翻。
-- **禁区**:prompts.py 一字不改(TL 归 eureka-fc);导入只在锁内跑;主检出不写未提交文件;**店长助手不出新版本、不切生产**(TL76 / TL05 是改措辞,eureka-fc 攒着问用户;若重导后 assistant_effect_check 红,先告诉它,别为转绿去切)。
-- **召回测试「没结果」(用户 18:5x 问)**:查实页面没坏 —— 流程走完、精排和生成都调了,生成答「证据不够」(正确拒答)。根因:① 知识库 kb_0ff23c4a90d1 只有 6 份文件(业务拍板 0924–0927 + 版型调研 + 一份测试上传),**没有差评处理资料**;② 索引 ib_44bd0b04cf8f 是 10-24 用 **emb-mock** 建的(假向量,相似度 0.05–0.1,等于随机),而真模型 bge-small-zh-v1.5 适配器和模型文件(`管理后台/.models/`)都在。**用户拍「两个都修 + 从现有规矩整理」**:写《差评处理规矩》(来源 TK13/TK14/TK16/TL98/TL103、rating-repair 技能、业务拍板 0927)进 `业务决策/` → 锁内 `管理后台/tools/ingest_lanxiu.py` 导入 → 用 bge 重建索引(POST index-builds 带 embedding模型id,或 `tools/seed_index.sh` 形状)→ 同一问题重测给用户看。关键词检索要等 bge 不够再出选型卡。
-- **⚠️ batch9 并回时漏了 eureka-fc 的 ca028d6f**(锁空那一刻 pull 没拿到),主检出 = 242b1a83 不含它 → ship 第一步「查已 rebase」会拒。e2e-ci 照跑(只改 管理后台,结论有效);ship 拒后:w1117 rebase 到 origin/main → 主检出 `git reset` 不行(别动别人的)→ 用 `git pull --ff-only` 前先确认主检出没有别人的提交,再并回、锁内重导规矩(TL05 变了)、ship。
-- **下一批 `scratchpad/gate_batch10.sh`**(等 batch9 结束再起):主检出比远端多出的 4 笔按主题核过是我的 → `git reset --keep w1117` → 锁内 ingest_lanxiu + import_lanxiu_prompts + 两条同步检查 → ship(e2e-ci 不重跑:管理后台代码和 batch9 那次一样)。**推完要喊 eureka-fc**:用户已拍 TL76 + TL05 店长助手出版切生产,它等规矩池导好再出版。之后我派 bge 索引重建 + 召回重测,不用 8770。
-- **作废的结果**:工具中文名「取第一段加粗」那版预览(kb_bom 显示成「客户问多少钱时用这个」)作废。
-- **悬而未决**:店长助手要不要带 TL76 / TL05 出新版本,eureka-fc 问用户,不归我问;介绍页 AI 图商用条款要不要查,没问用户。
-- **下一步第一个动作**:b7auqut56 完成后读 `scratchpad/gate_batch9.status`;全绿 → 告诉用户去 8801 Prompt 管理页刷新看简介、告诉 eureka-fc 锁已放;红 → 看 import_1118.log / e2e_ci_1118c.log / ship_1118d.log。
-
-### ✅ 11-18 15:52 · 已推 6df6695e —— logo 接进三个界面;e2e-ci 0、全量门禁 0、8770 已重启;锁已放并通知 eureka-fc 跑 13 道评测题(Opus 5.5)
-
-- **用户拍板(11-18)**:① 主检出 06:40 那份项目日志**已丢**(git checkout);② 飞书「重新授权」—— 查下来不用人点:make_log 原来调 `~/Desktop/chatgpt` 那份发布脚本(它的登录过期),**改成本仓库 tools/feishu_publish.py**、目标仍是通用文件夹 PJWW…(88abdbb4),实发一次成功并清了 1 份旧版;③ **允许无界面浏览器给本地静态页拍图,不点击、不登录、不联网**(已写进记忆 web-search-yes-browser-no)。
-  - 拍法坑:headless 最小视口 500,要 390 就套 390 宽 iframe;**`sips -c` 是居中裁**,要么 iframe 加 margin-left:55px 再裁,要么别用它 —— 我因此误报过一次「介绍页左偏」,已向 c2 认错。
-- **logo**:用户给 `~/Desktop/1024px.png`(3072 方图,米驼底白字 LONSUEE),说所有界面直接用。5bbd4f13:原图缩 512 进 `docs/品牌/`;运营平台顶栏 + 每页标签图标走 nav.py 的 `LOGO` 内嵌常量(app.py 注入 icon);8760 首页 .mk 另内嵌一份;AI 管理后台放 `管理后台/apps/web/logo-96.jpg` 走 /static/。离线渲染三处页头看过、密钥扫描干净。**改了 管理后台/ → 推前必须 make test-e2e-ci;服务要重启才看得到(8770 用 kickstart)。**
-- **待推(工作树领先 origin/main)**:34839147 计数、88abdbb4 发布脚本、5bbd4f13 logo + 几笔交接。等 eureka-fc 推完(它说 pre_push 第三遍、约 15:0x 推;之后跑 13 道题、再改 tools/nightly_eval.py 入库清单 —— **那个文件别碰**;它还改了 tools/bite_run.py 让 spans.jsonl.1 走只读软链)。
-- **介绍页**:c2 已换 logo、手机版切换按钮改两行两列;我量过 390 宽全在屏内、无溢出;交互三样只读代码核过逻辑对,**真点击要用户自己点**(超出我的许可)。
-
-### 🟡 11-18 13:4x · 交接(压缩前,第二份)—— 8770 已重启修好研判队列;介绍页新增 16 页的核对派给子助手在跑(Opus 5.5)
-
-- **8770 研判队列跑不动**:根因是常驻服务 com.lanxiu.agentsite 进程从 11-15 没换过(有人用 start.sh 的 nohup 另起,端口被占起不来,老进程一直在)。13:10 用 `launchctl kickstart -k gui/$(id -u)/com.lanxiu.agentsite` 重启,首页 302、四页 200、队列 19 条/16 条有草稿、详情 `/api/ops-detail?id=N` 0.07s。**以后重启 8770 一律 kickstart,别 nohup。** 「重新研判」(调模型+写库)没点。
-- **介绍页 c2 给的口径**(已发):工具 110(domains.py 多的 review_motif / motif_todo 不是注册工具,知识与工艺 15);守卫 6 = 开场注入/调用前/调用后/**调用失败**/交付前/压缩前;交付前检查 29。业务线只讲机制不抄数字(产品说明是 10-19 版)。
-- **在跑**:后台子助手核对 `~/Desktop/lanxiu-intro/澜绣云裳agent-产品介绍.md` 新增「三条业务线 → 安全与边界之前」;**结果出来按行号转给 c2**(c2 已推公开网页,提醒过它核完前别宣传)。
-- 其余同下一节(待推 2 笔 + 等用户拍两件 + README 链接)。
-
-### 🟢 11-18 13:xx · 交接(压缩前)—— 介绍页交给新会话 eureka-c2 做;我这边待推 2 笔;锁归 eureka-fc(Opus 5.5)
-
-- **介绍页**:用户新开会话 **eureka-c2**(家目录起的)做澜绣云裳介绍页,项目目录 `~/Desktop/lanxiu-intro`(index.html / docs.html / 《澜绣云裳agent-产品介绍.md》已发飞书产品文件夹)。用户拍:真截图(用户自己截)、配色跟 workbuddy.ai、名称「澜绣云裳」、本地一份 + GitHub **独立仓库**开 Pages。
-  - 我给的:事实包 `~/Desktop/澜绣云裳agent-介绍页素材/事实包-20261118.md`(c2 复制了一份进它目录,之后以它那份为准);演示账号**只给了用户**(店长 60000001,公开演示口令),没发 c2。
-  - 我审了产品介绍,6 处要改已发 c2(时延「十几秒」无依据、「不会编」太绝对、「不会重复退款」→「一笔流水只能登记一次」、「家庭账户」不存在、凭据保证要按审计范围写、直调约 12 秒)。**已验:c2 全改了**(md + index + docs 里旧说法 0 处),飞书已重发。
-  - **下一步等 c2 找我**:用户看过本地版、GitHub 仓库建好后,我在主仓库 README(改 `tools/readme_head.md`,README 是生成的)加一行链接,走门禁推。
-- **待推**:34839147(项目日志计数改 git ls-files)+ 本交接。等 eureka-fc 喊(它推 3 笔 + 跑 15 道题,约 14:xx 完)再拿锁 ship。
-- **等用户拍**:主检出 06:40 那份项目日志丢不丢(我建议丢)、飞书授权要不要重登。
-- **禁区**:截图期间别动共享库;主检出工作区别写文件(交接门禁指的是主检出 HANDOFF,但我只改工作树这份,推了才同步)。
-
-### 🟢 11-18 12:0x · 交接 —— 第六轮已推(950add36 → 7061db03,全量门禁退出码 0);锁归 eureka-fc 约 2 小时(Opus 5.5)
-
-- **未推**:34839147 项目日志「Python 文件」改数版本库登记的(原 find 把 .claude/worktrees 算进去:真数 1177,日志写过 4342 / 5589)。
-- **来源**:launchd `com.lanxiu.daily-log` 每天 06:40 在**主检出**跑 make_log --publish → 主检出留一份未提交的项目日志,会让咬合重放「工作区不干净」拒跑(第六轮第一次就栽在这,备份→恢复→推→放回解决)。飞书发布每天「等待授权超时」(登录过期,需用户点授权)。**主检出那份 06:40 版仍未提交、数字是错的,丢不丢等用户拍。**
-- **eureka-fc 提醒**:评测共用收尾现在设 `LANXIU_EVAL_NO_TAKEOVER=1`,我跑评测时接管是关的,成绩单会印一句。
-- **eureka-fc 改了** api.py 里 call_opportunity 描述(返回带客户号),它的线。
-
-### 🟡 11-18 09:xx · 交接 —— 远端页面冒烟红在知识修订页「字面星号」,已修(4c472aaf),第六轮 e2e+ship 在主检出跑(Opus 5.5)
-
-- **起因**:eureka-fc 报 8534385b 的远端 admin-e2e 发布链那条过了,但页面冒烟换成红在 `#/knowledge-revisions`。CI 原文:清单页「原来写的 → 改成」格里两个单边 `**` 拼成一对。
-- **根因**:e2e 从真知识库摘句当「原来写的」(知识库 md 本身带 `**`),清单页截 40 字把一对截成单边。**不是要渲染成粗体** —— 这几个字段要逐字对回源文件。
-- **修法**:原句 / 改成 / 段名 / 改动文本标 `data-raw="原文"`(全站惯例,冒烟判据对它豁免)。用 CI 那段原文 + 判据正则验过:旧红、新不红、豁免不外溢。
-- **推送**:主检出并回 w1117(b0c59b9a 汇总交接、1a9b284f 日志脚本、4c472aaf 本修)→ 锁内 `make test-e2e-ci` → `ship.sh`。状态看 scratchpad `gate_batch6.status`(只认「被包的命令退出码」那行)。
-- **eureka-fc**:让出锁、在改「被接管技能评测两条路分开考」(只改评测脚本);**我推完放锁要喊它**,它再跑 15 道改过的题。
-
+### 🌙 11-16 21:3x 用户开 12 小时夜间长任务(和并行会话合力)—— 计划见 .wip-glossary/night-plan-1116.md;第 23 轮在跑(拆分已 rebase 到 8e2c0c89,HEAD be3753a8)
+- **07:4x**:并行会话第五遍绿、**已推 86043ae0**(含我的 16fcfc9c / cd8eb81e),锁空。它这段不起门禁不写库,手上一笔文档等我三件做完。**现在轮到我**:① 找发版口发 v20 ② shrink13 rebase origin/main → pre_push → 推 → 提交号给用户和它 ③ rare-i ops 全量。
+- **07:1x 找发版口(未找到,接着找)**:v19 当时用的命令形如 `… --切 19 --加开 <工具>`(见提交 c904f9cc 的 HANDOFF 段),但 `git grep -- "--切"` 在 .py 里没命中 → 可能在 管理后台/ 下的脚本或 make 目标里;先查 `管理后台/` 和 Makefile 里的「切 / publish / 版本」,再看项目日志 11-14 TL84–88 发版那节(搜「v17」「v18」)。并行会话已同意:它放锁后到我推完 shrink13 这段不起门禁。
+- **07:0x 用户拍板(AskUserQuestion):「发,整批都发」** —— 店长助手后台 v19→v20(shrink13 的 TL98–TL107,含 close_bad_rating「(名单见工具说明)」那处)。⚠️ **别在并行会话 pre_push 跑着时发**:一发,没带 shrink13 代码的检出 assistant_effect_check 立刻红。顺序:并行会话 07:35 推完放锁 → 告诉它我要发 v20 → 拿锁:发 v20(照 TL84–88 当时的发版做法,查项目日志 c84782f 那节 / tools 里的发版脚本)→ shrink13 rebase origin/main + select_eval 第一层两组 → pre_push → 推 → **再**做 rare-i 的 ops 全量。
+- **06:44**:并行会话第五遍 pre_push 起跑(cd8eb81e 已成它的 86043ae0,本地五笔),预计 07:35 推完放锁喊我 → 我:`git checkout rare-i && git rebase --autostash origin/main` → gate_lock 里 `LANXIU_PROVIDER=claude ANTHROPIC_MODEL=claude-haiku-4-5 ./agentsite/.venv/bin/python agent/ops_eval.py`(全量两轮 ~2h)→ 提交 agent/ops-eval-results.jsonl → eval_tier_check → pre_push → 推 → 告诉用户和并行会话提交号。
+- **06:4x**:第四遍重放红在规格 1752(名单清空后攻击没东西可改坏)→ 改攻击为「判红塞进事故前缀」,**cd8eb81e**(nightly-fix,接 16fcfc9c),交并行会话 cherry-pick 跑第五遍。我工作区缺 6fcee46f 的夜跑结果,在我这跑重放会「对照就是红的」,别在这跑。
+- **06:1x**:并行会话 pre_push 第三遍只红夜跑清单 → 我修好 **16fcfc9c**(分支 nightly-fix,不带 passed 的行不算 0 分 + 删 oppo 过期登记),交它 cherry-pick 一起推;它先跑第四遍(约 50 分钟,赶 08:40 前),推完放锁喊我 → 我 rare-i rebase(rare-i 现 4 笔,含 b35ca208)→ ops 全量 → pre_push → 推。
+- **04:4x**:工作区切到 **rare-i**(3 笔:dfa86efa / 0c4524e6 / 9c416138 判官 max_tokens 300→1024 / b35ca208 判据「是否 X」不算说了 X,夜跑 G06)。shrink13 分支原样留着。等并行会话 06:05 前后喊「锁放了」→ rebase origin/main → ops 全量两轮 → pre_push → 推。
+- **04:2x 状态**:并行会话改排程 —— 夜跑 04:21 还没完,它等 05:10 世界平移完,**05:15 前后接锁跑 pre_push 第三遍,约 06:05 推完放锁喊我**;我再跑 ops 全量(约到 08:05)。期间我不占锁。夜报核对:接管兜底已生效(02:02 call-notes、03:17 store-report,原因聊天站没配管理后台地址,已写进早上卡片);**经营报告定论(04:29 夜报)**:老崩溃(api._c unable to open database file)11-16、11-17 两晚都没再出现、无崩.log;今晚 1/3 题「跑挂了」(调用失败)所以没写结果文件,末轮 2/3。另:talk_eval 的销售话术判官被 max_tokens=300 截断 → 判定不可信,白天修(我的线);「找工具空转」是已知的环境性失败(rounds.py,不计分),不是新问题。细节在 .wip-glossary/night-plan-1116.md 03:3x 节。
+- **01:2x 状态**:夜跑 00:00 起在跑(nightly_eval.py pid 78757),两边都不占锁。我在 shrink13 分支,无新提交。⚠️ `tools/gate_lock.sh` **没有 status 子命令** —— 写了会真拿锁去跑「status」(01:28 误拿一次,1 秒内退出 127 已还锁);看锁状态别用它。下一步:夜跑出 nightly-eval-ok(约 03:40,最晚 04:55)→ 先看夜报(接管兜底 / 经营报告崩不崩)→ 等并行会话推完喊「锁放了」→ rare-i rebase + ops 全量两轮 → 推,告诉用户提交号。早上问用户卡片 .wip-glossary/morning-card-1117.md(发后台 v20)。
+- **23:3x 状态**:拆分已推 be3753a8。工作区现在在**本地分支 shrink13**(缩说明第 13 批 + 配套,未推,等用户批发后台 v20;可能在 11-14「只挪不改字」授权内,早上问一句)。**rare-i** 分支 2 笔(I 面落地 + 判据两处结构修),夜跑后锁空时 rebase → ops 全量两轮 → 推。w75 停在 be3753a8。并行会话第二遍 pre_push 22:57 起,预计 23:50 推、00:30 前放锁。逐条进度看 .wip-glossary/night-plan-1116.md。
 ### ⏱️ 12 小时长任务清单(11-17 20:1x → 11-18 08:1x)
 
 > 用户 20:1x 起的夜间长任务;定时提醒 **bdd2847e** 每小时 :17 / :47(session 内;白天那只 d424763d 已删)。白天 12 件全做完并回主干;**用户 20:1x 已推:origin/main 7816c0c4 → 5a992fb6**,第四轮门禁 17:43 起:e2e-ci 绿,全量咬合重放 105/111 零红,全部检查接着跑。
@@ -194,27 +32,12 @@
 **守则**(同白天那节,另加):0 点到夜跑结束(看 `.feynman/nightly-eval-ok` 比 11-18 00:00 新)**不占锁**;05:10 世界平移之后才再要锁;eureka-fc 要 rebase 推评测结果 e165095d,等用户推完主干就让它推;**允许自己 push(用户 20:1x 拍今晚、20:3x 改成长期)**:条件照昨晚 —— 每批走 `./tools/ship.sh`(不带 --不推就是它推)、扫过密钥、只推自己的提交、推完记进交接、早上汇总列清;eureka-fc 夜里要推就请它自己走流程;手工跑检查前清 `__pycache__`
 
 **清单**
-1. ✅ **第四轮门禁收尾 + 快推**(23:0x–23:38):eureka-fc 被同样两条红挡住推不上去,23:01 放锁后我只把修法那一笔 **530a83a5** ff 进主干,e2e-ci 退出码 0、ship 全量退出码 0,**23:38 推上去:origin/main 5a992fb6 → 530a83a5**。其余 8 笔(e7dfade8 起)仍在工作树,05:10 后第五轮;eureka-fc 的 11 笔夜跑后推(跑前问我),所以我 05:10 后先 rebase 到它推上去那版
-2. ✅ **21:50 日间汇总**(21:49 发飞书 https://aqvi2xbk5kd.feishu.cn/docx/MxJxdtpvHoukeYxuZqiciw0onbb,文件在根目录,随本笔提交)
-3. ✅ **W45 分页那半**(21:3x,工作树):客户 / 订单列表的筛、排、翻页全进 SQL(LIMIT/OFFSET + COUNT),并入标注 / 顾问名 / 打码只对这一页做;订单页 18 条 COUNT 改 2 条 GROUP BY;新旧实现在 24 组筛选组合上逐页比对一致(订单 2 组只差同一秒内的单的先后 —— 原来没定义,现在按单号兜底)。**客户 64 → 22 ms,订单 520 → 59 ms**;`_simple` 那 8 张小表实测 ≤ 11 ms 不动。登记索引 `ix_ordr_created`(副本上第 1 页 11.9 → 0.1 ms、第 200 页 62 → 0.8 ms),**真库还没建 —— 第五轮脚本 `gate_batch5.sh` 锁内第一步 `python3 backend/query_index.py --做`**,不建 query_index_check 红。咬合 868 / 1695 挪到新攻击点,手工复现红在指定那条;六条相关检查 + bite_check 绿
-4. ✅ **W02 路径单源 · 盘点**(21:4x,只读):133 个模块自己拼库路径(backend 75 / tools 51)、71 处直连不走常量、57 个检查 82 处 `m.DB = 副本`(api 60 次最多)→ **今晚不改**(一轮全量 + 一批咬合锚会断,收益小),三步走的方案写进执行手册 W02:新模块走 dbpath.路径() + 棘轮 → 检查副本切换收成环境变量 → 业务模块按被指次数顺序收
-5. ✅ **W33 ③ 预研 → 否决**(21:4x,只读):第四轮耗时账 —— 435 条里 316 条 < 1 秒(合计最多 316 秒,估 1 分钟),≥ 1 秒的 121 条合计 1115 秒,≥ 5 秒的 38 条占 85%;423 个脚本里 121 个 import 即执行、33 个要 venv、36 个带参数。省一分钟要改 121 个入口 + 重放咬合,**不做**;时间在 38 条慢检查和咬合重放上,方向是 ④ 按改动挑着跑。写进执行手册 W33
-7. ✅ **W19 店长那半 · 店长只能停用**(21:5x,按 20:3x 拍板):`save_staff_perm` 旁开一道窄口 —— 店长只对本店顾问、只能 停用、不能开通 / 改角色 / 换店 / 停自己 / 停别的店长(OTHER_SHOP / MANAGER_ONLY_OFF / ALREADY_OFF / SELF_EDIT / ABOVE_ME),名下有客户或任务照旧 HAS_WORK,停完作废他全部会话;员工页店长在本店顾问那行看到「停用」;staff_pwd_check 24 → 39 条、咬合 +1(去掉本店核对 → 红在 OTHER_SHOP,手工复现过);js_check 绿
-8. ✅ **文档归档**(22:0x,按 20:3x 拍板、照执行手册 W35 那张清单):23 份 `git mv` 进 docs/归档/(一次性方案 12 + 九月早期方案 10 + 已拍的选型卡 1,选型卡补了「结论」段),别的项目那份 产品文档.md 进 docs/外来/;6 个文件里的路径引用跟着改,全仓 md 相对链接扫一遍 0 断链;make_readme / doc_numbers / decision_ledger / version / gen_doc_lists 绿。根目录 75 → 51 份(留下的还有 13 份日间 / 夜间汇总,按手册「汇总类每月末搬一次」)。⚠️ make_log.py 读的手记文件名 `澜绣云裳agent-项目日志-手记.md` 从来不存在(根目录那份叫 项目日志-手记.md),所以日志从没接过手记 —— 没动它,记在这
-9. ✅ **W25 导出收尾**(22:2x):服务端导出 +3 种(预约 / 员工 / 商品;任务那种按门店划范围靠 Python 算,不补),`export_csv` 按种类取别名、没有门店的表不带参数;页面三处「导出全部」按钮走 `/api/export/<对象>`;**新检查 `backend/export_check.py`**(7 种都真跑、内容里没有完整手机号、每导一种操作日志多一行、店长只导本店、顾问 HTTP 403 并记一笔、店长 200 拿到文件;23 条)挂门禁,咬合 +3 手工复现红在指定那条
-10. ✅ **W02 第一步 · 库路径单源 + 棘轮**(22:3x):`backend/dbpath.py` 的 `路径()`(环境变量 LANXIU_DB 优先,否则 backend/lanxiu.db);新检查 `tools/dbpath_check.py` 扫 git 跟踪的 .py,数「用项目锚点拼 lanxiu.db」的行(临时副本不算),**实测 327 处 / 290 个文件登记成欠债下限**,多一行就红、少了提示改小;咬合 1 条(给 mask.py 加一行自拼 → 红)手工复现过。顺带修了脚手架模板搬出 .py 时切掉首字符、转义没还原的两处(生成出来的骨架编译不过)
-11. ✅ **知识修订的另一半 · 66 条可勾表**(22:1x):从 01-形制 / 04-配饰 现取出处行写「本条未做出处查证」的条目(形制 38 + 配饰 28 = 66,和 10-25 那批对得上),生成《澜绣云裳agent-知识库66条待业务确认口径-20261117.md》并发飞书;不对的走「知识修订申请」
-12. ✅ **W27 换货分支 · 核实不用做**(22:1x):页面没有建返修单的入口;写口对标品拒 STANDARD_NO_REPAIR 并指向换货,repair_write_check 真跑绿。执行手册 W27 记 ✅
-14. ✅ **远端 CI 连红修法**(04:4x,**205edd9d**):主干从 5a992fb6 起 admin-e2e 连红在发布链页面测试「借不到连接版本」—— 我 11-17 加的夹具应用自动归档,CI 新库里能借的应用全归档了;改从模型连接列表直接取,锁内单跑 33/33(eureka-fc 查出的根因)
-15. ✅ **第五轮**(05:29–08:25,三次 ship 才过,经过见下面三行 + 夜间汇总):**08:25 推上去 origin/main 368b5f7d → 8534385b**(14 笔),e2e-ci 0、咬合重放 62 个脚本全过、全量门禁 0;锁已放、已告诉 eureka-fc
-    - 05:29 起(后台脚本两处判据错:平移日志只在出错时写、门槛时间没带秒,各修一次);建索引 0、e2e-ci 0;ship 第一次 4 分钟全红 —— 咬合沙盒副本 403 MB > 400 MB,元凶 `agent/nightly/agentsite__evals__funnel.jsonl` 123 MB(gitignore、门禁没人读)→ bite_run 排除清单加 `agentsite__evals__*.jsonl`(**9453d715**,上限没动),05:5x 重跑 ship,日志 `scratchpad/ship_1117_5b.log`,预计 08:3x;问了 eureka-fc 那份原始日志留着是不是故意
-    - ship 第二次(05:52–06:35)咬合挂两个脚本「对照就是红的」:staff_perm_check 还要店长 WRONG_ROLE(店长停用窄口后变 MANAGER_ONLY_OFF / SELF_EDIT,**7de6a930**;昨晚改店长停用时漏跑了这条老检查)、待办清单没跟上 eureka-fc 的 intent 改动(重生成 **8534385b**)→ 06:3x 第三次 ship,日志 `ship_1117_5c.log`
-13. 🟡 **攒给明早拍板卡的三件**(22:2x 核下来,不用锁、但要用户拍或归并行会话):
-   - **模型看到的手机号要不要也按清单只露后四位**:页面 11-17 按清单改成只露后四位;工具层(模型 / 聊天里看到的)还是「前三 + **** + 后四」。改了会影响评测里按号码认人的题 → 要拍,且要和 eureka-fc 对评测
-   - **项目日志要不要接上手写综述**:日志生成脚本读的手记文件名从来不存在,手记从没进过日志;那份手记今晚又按清单归档了。接上 = 每天的飞书日志尾巴多一段 9 月写的综述
-   - **排班评测「休息题」那道判据要不要放宽**(S-N5 改成「写了草稿且提醒休息,或在问」,和同组另一道对齐);题是你拍「加,今天跑」的,手册写明改前要问你
-   - 另:「技能会启动工作流的,评测要有不该启动的题」这条检查归评测那条线,留给 eureka-fc(不硬加,硬加当场红在它的文件上)
-6. ✅ **08:10 后**:夜间汇总 08:2x 发飞书 https://aqvi2xbk5kd.feishu.cn/docx/NQnqdytj0oDM1gxzHIecpHVhnHe;定时提醒 bdd2847e 已删。**三件拍板 08:3x 用户都按推荐拍了**:智能体看到的手机号保持前三+后四(不动);项目日志不接手写综述(删了日志脚本里那段读不到的拼接);排班休息题放宽 —— 11-12 早就改过(台账二十八),这次是我重复问了。eureka-fc 要推接管必填和换徐汇店长两笔
+1. 🟡 **第四轮门禁收尾**(20:47 出结果):e2e-ci 绿、咬合重放 111 条全过,**全量判定不过 2 条** —— ① 管理后台契约没登记 7 条接口(知识修订 6 条 + 应用归档 1 条,`route_exists_check`)② 全角棘轮 41→42(新脚手架的模板字串被当成字符集)。**21:1x 都在工作树修了**(契约登记 7 条、清单接口补 next_cursor 游标、模板搬出 .py 成 `.tmpl`、openapi.json / api.ts 重生成;route_exists / spec_coverage 95 条 / 全角 41 复跑绿)。⚠️ 主干 5a992fb6 用户 20:1x 已推,**远端 CI 这两条现在是红的**,第五轮(e2e-ci + ship 真推)并回后立刻跑 —— 锁 21:09 在 eureka-fc 手上(pre_push),它放了若在 0 点前且来得及就跑,否则 **05:10 之后第一件事**
+2. ⬜ **21:50 日间汇总**:草稿 `scratchpad/日间汇总草稿.md`(会清;要点在白天那节清单里)→ 写成《澜绣云裳agent-日间汇总-20261117.md》(形状照 11-14 白天汇总)→ `python3 tools/feishu_publish.py` → 随下一笔提交
+3. ⬜ **W45 分页那半**(不要锁写、验要跑检查):`server._simple` / `customer_list` / `order_list` 全表读进内存再 `_page` → 改成 SQL `LIMIT/OFFSET + COUNT(*)`,**默认页大小和返回形状不变**(前端 pagerC 读 total / page);facets 照旧;先量一次 customer_list 1.5 万行的耗时再改;customer_detail_check / order_list_check / 页面 js_smoke 要绿
+4. ⬜ **W02 路径单源**(不要锁):30 多个模块各自 `DB = os.path.join(HERE,"lanxiu.db")`,检查靠 `m.DB = 副本` 逐个指过去 → 先盘点有几处、哪些检查改哪些模块的 DB;方案写进执行手册 W02,**改不改今晚看盘点结果**(改了要 30 多个文件同时动,门禁一轮)
+5. ⬜ **W33 ③ 预研**(不要锁):量 check.sh 434 条里 <1 秒的有多少、各自 import 有没有模块级副作用(只读分析,出一张表进执行手册),**不动 check.sh**
+6. ⬜ **08:10 后**:《澜绣云裳agent-夜间汇总-20261118.md》→ 发飞书 → make_handoff → 请用户推 → CronDelete bdd2847e
 
 ### ⏱️ 12 小时长任务清单(11-17 09:5x → 21:5x)
 
@@ -473,379 +296,7 @@
 - [ ] 7. 管理后台 e2e-ci 全跑一遍(一期改动推前必过)
 - [ ] 8. 早上:看经营报告夜跑崩日志、商机套夜跑结果;本地全套检查重跑;09:40 发飞书汇总
 
-### 🟡 11-15 15:4x · 后台生产 v17(用户批准),预跑门禁绿,推送前链开跑(Opus 5.5)
-
-- **已做**:rebase 到 3d0a3dc7(补回合并时丢的 grading_check 咬合规格 6fdb036f;两份记录欠债表两边都减)。后台店长助手生产 v13 → v17(= v13 + TL84–89、91–93、95、96 + 打开 return_rate / part_options / order_parts)—— **新规矩和新工具不在长期授权里,用户 15:3x 批准了**;assistant_effect 绿(工具 77 / 规矩 79)。预跑门禁 15:37 全绿。
-- **用户说「推完告诉我」** → 推完第一件事告诉用户,再告诉并行会话(它在改 fakedata + 两张欠债表的 fakedata 行,等我推完再推)。
-- **交付告知(⑥ 最后一块)**:用户 11-15 下午拍三条(已记 intent)。口径模块草稿在 scratchpad/dn/delivery_notice.py(按商品名认词,143 款标品 35 款对得上);还要:m0002 迁移给 delivery_notice 加 notified_at / notified_by / notified_channel / notified_items、只读起草工具 + 写工具「记已告知」(照 mark_delay_told 登记:_写工具名单 / 分发 / domains / sdk / 规矩 / station.html 标签 / 管理后台 docs 口径 json)、订单页按钮(server.py,和并行会话商量谁做)。
-- **下一步第一个动作**:看 `.wip-glossary/pre_push15.log`「收工 rc=」→ 绿了核 ls-remote main == HEAD → 告诉用户 → 告诉并行会话 → 放回 funnel.jsonl。
-
-### 🟡 11-15 14:1x · 本地 14 笔待推;咬合欠账三笔还清;等并行会话推完(Opus 5.5)
-
-- **本地未推**(aca71aa0 之上):缩说明 3–12 + muslin 修 + intent 退货率口径 + **return_rate 新工具**(909fef32)+ 咬合欠账三笔(0cac1f93 / 047f7728)+ 交接。
-- **已在锁里单独重放过**:returns_check 4/4、tool_eval 2/2、guards_test 62/62、rounds 29/29。⚠️ guards_test 有 62 条规格,单跑约 2 小时 —— 别在并行会话要锁时单独跑它。
-- **14:4x 更新**:又做完分部位选料两个读工具 08ce696b(part_options / order_parts + TL96 + parts_check 9 条全绿 + 咬合 3 条待重放 + select_eval 25/25)。⑥ 只剩「标品交付告知(只出草稿,人点了才发)」。
-- **后台**:店长助手生产临时是 v13(让并行会话先推);v15 已存在但没有 return_rate。推之前:`align_rules_v9.py --加开 return_rate,part_options,order_parts`(三个新工具一起开) 出 v16 → 喊并行会话 → `--切 16 --加开 return_rate` → assistant_effect → 预跑门禁 → pre_push → **告诉用户打开了新工具**。
-- **并行会话**:14:1x 拿锁跑推送前链(约 40 分钟),PUSHED 后喊我;它的 20 笔会和我撞 check.sh 一行 / bite_specs 末尾(用 .wip-glossary/merge_specs.py)/ PRD 2.4.4 / HANDOFF / 待办清单。
-- **下一步第一个动作**:它说推了 → `git rebase origin/main`(冲突按上面)→ 重生成文档(sync_rule_docs.sh + doc_numbers 逐处改)→ 上面后台那串。
-
-### 🟡 11-15 09:4x · 让并行会话先推;后台临时切回 v13;⑥ 退货率草稿在 .wip-glossary/ret/(Opus 5.5)
-
-- **推送**:我 07:4x 那轮链 09:03 红在 muslin_check(白坯试衣说明里「责任转移 / 会拦」被缩掉)→ 6eef1cfa 修。重跑要 1.5h+,让并行会话先推它 19 笔;
-  **后台店长助手生产临时切回 v13**(直接 API,理由写了),它推完我:rebase → `--切 15`(v15 已存在,= v13 + TL84–89、91–93)→ assistant_effect → 预跑门禁 → pre_push。
-- **09:4x 更新**:return_rate 已接进项目并本地提交 909fef32(returns_check 全绿含真调、select_eval 23/23、PRD A-303、文档数字 106/90/74/58/115);咬合 4 条**还没重放**(锁被并行会话占着)。align 脚本加了 `--加开 return_rate`。等它推完:rebase(bite_specs 末尾两边都追加 → 按三元组并集;check.sh / PRD 2.4.4 / HANDOFF / 待办清单 会撞)→ `align_rules_v9.py --加开 return_rate` 出 v16 → 喊并行会话 → `--切 16 --加开 return_rate` → `bite_run --only backend/returns_check.py` → 预跑门禁 → pre_push → 告诉用户「打开了新工具」。
-- **⑥ 退货率**:用户 11-15 又补拍两条:申请退货率和实际退货率**两个都给**(审批拒绝 / 还在审的只进申请);偏高**至少退过 3 件**(否决档越多越严)。
-  写的时候发现 Wilson 近似在率≈1% 时下限偏高(卖 9 退 1 判偏高)→ 换 Clopper-Pearson 精确区间(技术方法,没单问,做完要告诉用户)。
-  草稿:`.wip-glossary/ret/returns.py`(→ knowledge/returns.py)、`api_snippet.py`(→ api.py wear_risk 后)、`schema_snippet.txt`(→ SHOP_SCHEMAS)、`rule_snippet.py`(TL95)、`returns_check.py`(→ backend/,夹具 8 条全绿,真调那条待进项目验)。
-  **还要接**:domains.py analytics 组、sdk.py SHOP_TOOLS、api 分发表、check.sh、bite_specs、规矩登记(和 SALES_RANK_RULE 同处)、文档工具数 89→90 + gen_doc_lists、PRD 附录 A(写清没复用 A-35 的理由 + 换方法那次)、后台新版本要**打开这个工具**(新工具不是「只挪不改字」,做完告诉用户)、评测题。
-- **未验证**:接管兜底夜跑商机套(11-15 夜只跑了 2 套,没轮到);经营报告崩的完整日志(落盘代码 11-13 夜还没进主检出,下次轮到才有)。
-
-### 🟡 11-15 07:4x · 后台生产 v15,缩说明那批推送前链在跑(Opus 5.5)
-
-- **已做**:rebase 到 aca71aa0(夜跑自动提交把并行会话 ~20 笔一起带上了 main,CI 绿)。后台店长助手生产 v13→v15(= v13 + TL84–89、91–93;TL94 只给版师,店长助手不带 wear_risk,对的)。assistant_effect 绿(77 条)。
-- **用户 11-15 早拍了退货率四条口径**(选型卡,全选推荐)→ 已记进 intent/optimization-program-2026-11.md;**还没写代码**。下一步按卡落地 ⑥ 标品线退货率 / 原因读工具:按付款日分批 + 14 天观察期、Wilson 范围(95%)高于全店才说偏高、换货单列、原因 6 类原样;返回带 S12 造数提醒;写完记 PRD 附录 A(复用 A-35 那族,写清为什么没复用 30 件门槛)。
-- **下一步第一个动作**:看 `.wip-glossary/pre_push14.log`「收工 rc=」→ 绿了核 ls-remote main == HEAD → 告诉并行会话(它本地 3 笔等我推完)→ 放回 funnel.jsonl。
-
-### 🟡 11-14 22:1x · 已推 a4df89e5(迁移 + g23);③ 缩说明收尾,本地 3 笔等切后台(Opus 5.5)
-
-- **已推**:a4df89e5 —— 迁移机制第一步 + g23 两层放宽(用户亲手跑)。远程 w75 用户批准后已删。
-- **本地未推**:b83ed269 / e7f5882a / b3aae1ff —— 缩说明第 3–12 个(TL84–TL89、TL91–TL94;TL90 号空着),规矩 114 条。**不缩 4 个**:product_ranking(没有任何调用方带它,搬进规矩模型就看不到 —— P3 红)、record_pickup / set_grade_diff / check_write(写工具参数含义 / 用法,留在工具旁)。
-- **判据**:按编号挑规矩的角色(版师核料 pick、售后 _aftersale_rules)要把新规矩号加进 pick —— wear_risk 那次 P6 红在这;P3 抓「没有调用方带这个工具」。
-- **工具**:`.wip-glossary/shrink_tool.py 工具 规矩号 变量 挂后(或 inline:TLxx) 短说明文件` + `.wip-glossary/sync_rule_docs.sh`(规矩数四处 + 工具表 / SOP / README)。
-- **下一步第一个动作**:并行会话 22:06 起锁内 chain_B 在推(SH003 改回有效 + 无效店铺拦截)→ 它说推了 → `python3 .wip-glossary/align_rules_v9.py`(该多 TL84–89、91–94 共 10 条)→ `--切 N` → `agentsite/.venv/bin/python tools/assistant_effect_check.py` 绿 → 备份 funnel + checkout → rebase → pre_push(推完告诉它)。
-- **之后**:④ 第二步(服务启动跑补齐,约并行会话 + 重启);⑤ 拆 api.py(约窗口);⑥ 标品线。
-
-### 🟡 11-14 21:1x · 迁移机制 + g23 两层放宽,推送前链在跑(Opus 5.5)
-
-- **本地未推(9 笔左右,d7b9596d 之上)**:迁移机制 540efa79 + 门禁跟上 9c866203 / 85e8248d;g23 用户亲手跑了**两个**放宽补丁(896a99ee 罩列表、ffe94558 挑话术带小标题),guards_test 188 绿;预跑门禁第二次全绿(21:10)。
-- **判据**:g23 误拦有两层 —— ① `_有告诫` 只看前两行 ② `对顾客说的那部分()` 挑 ≥12 字引号话术时只带上一行当引导,长列表丢小标题。第一层修了第二层照样拦,补用例时才照出来。
-- **作废 / 教训**:用户跑补丁时我的推送前链正在跑 → 被测文件中途变了,那轮作废(已停)。**以后给用户放宽命令前先确认没有链在跑**,或者说清跑完再执行。
-- **共享库**:schema_version 已建、做到第 1 条;表数 136。并行会话在我推之前不跑门禁、不推(它只剩白天汇总 + 交接本地提交)。
-- **下一步第一个动作**:看 `.wip-glossary/pre_push13.log` 的「收工 rc=」→ 绿了核 `git ls-remote origin refs/heads/main` == HEAD → 告诉并行会话(rebase 留意:check.sh 一行 / rebuild.sh 51 步 / ensure_tables / shift_world / determinism / 五份文档 136)→ 放回 funnel.jsonl(.wip-glossary/funnel.jsonl.bak)。
-- **之后**:③ 剩 13 个长说明;④ 第二步(服务启动时跑补齐,要约并行会话 + 重启);origin/w75 删不删等用户。
-
-### 🟢 11-14 19:2x · 已推 d7b9596d,后台生产 v13(Opus 5.5)
-
-- **已验证**:第七轮链咬合 51/51 + 门禁全绿;⑤ 第二次 fetch 网络失败 → 核 main 没动、HEAD 就是验过的 d7b9596d → 手动 `push HEAD:main`。CI 已绿(并行会话 857f805e 修了两条)。后台生产 v11→v13(= v11 + TL83,逐列只差规矩),assistant_effect 绿。funnel.jsonl 已放回。已告诉并行会话可以跑门禁 / 推。
-- **等用户**:① `! python3 tools/放宽补丁/g23_告诫小标题_罩列表.py`(放宽,跑完补 guards_test 用例)② origin/w75 多余远程分支删不删。
-- **未验证**:接管兜底今晚夜跑商机套(主检出现在才有 记兜底);get_member 缩说明没跑模型评测。
-- **④ 迁移机制第一步(19:3x–20:xx,本地提交,未推)**:backend/migrate.py(schema_version 表 + 按编号补齐 + 每条一个事务 + 做过的文件指纹对账)+ backend/migrations/m0001(原样调用 7 个纯补列函数,缺表跳过)+ tools/migration_check.py(迁移目录外 ALTER TABLE 棘轮 47 处 / 25 文件、反向、编号连续、真跑 --自测、库做到最新;副本里没 .git 时退回 os.walk)进 check.sh;rebuild.sh 在 ensure_tables 后跑 migrate;ensure_tables 登记 schema_version;db_build 指纹收进迁移目录;shift_world 登记 applied_at 不挪;咬合 3 条(--only 3/3)。**共享库已建 schema_version 并做到第 1 条**(锁内,并行会话 19:3x 放行)→ 表数 135→136,五份文档 11 处已改。
-  - **判据**:建表归 ensure_tables、加列归迁移;m0001 不抄列清单是为了不出第二份(原函数仍在原处被调,双保险)。**做过的迁移不许改**:要改结构就新加一条。
-  - **没做(下一步)**:服务启动时跑补齐(要改 server.py / aimc 启动 + 重启,先约并行会话);各模块 `建表(c)` 里顺带加列的 + 重建流水线一次性脚本还在原处(欠债里)。
-- **下一步**:推 ④ → ③ 剩 13 个长说明(每个:动 api.py 前喊并行会话 → 缩 → prompts_check / select_eval(用 agentsite/.venv/bin/python)/ vocab → 文档规矩数 + gen_doc_lists --写 + make_sop + make_readme → 推上去后 align_rules_v9.py 出版本、喊并行会话、--切)。**教训:后台切版本要在推送链跑之前,但并行会话门禁会红,所以先约窗口。**
-
-### 🔴 11-14 17:1x · 第六轮推送前链红,等并行会话推完再切后台(Opus 5.5)
-
-- **状态**:本地领先 origin/main 8 笔(pre_push 推 HEAD:main / g23 补丁 / get_member 缩 + TL83 / 文档跟上 219bc9ac / 交接)。第六轮 16:56 门禁红 5 条:4 条(规矩数 103→104、工具表、SOP+README、补丁全角点)已修提交;**剩 assistant_effect「TL83 只在聊天站」** → 要后台出 v12 = v11 + TL83 并切生产。
-- **禁区 / 约定**:并行会话锁内在推 CI 修复(b3cc8694 改版);**它说推了才切 v12**(否则它门禁红在 TL83)。切 v12 到我推上去之间它不跑门禁、不推(19:45 白天汇总只本地提交)。
-- **下一步第一个动作**:它说推了 → `python3 .wip-glossary/align_rules_v9.py`(默认:导规矩→代码导入→PATCH 回生产值→skills-sync→出版本→逐列比;只该多 TL83)→ `--切 N` → `python3 tools/assistant_effect_check.py` 绿 → 备份 funnel.jsonl(.wip-glossary/funnel.jsonl.bak 已有一份旧的,覆盖)+ `git checkout agentsite/evals/funnel.jsonl` → `git fetch && git rebase --autostash origin/main` → 后台 `./tools/pre_push.sh > .wip-glossary/pre_push10.log 2>&1`;推完告诉它,放回 funnel.jsonl,告诉用户 g23 补丁命令。
-- **未验证**:g23 补丁改了全角点后没重跑副本对照(只编译过);用户跑时补丁自带对照会验。
-- **之后**:④ 迁移机制(方案 .wip-glossary/migration_plan.md,基线要含 customer_link / customer_tag);③ 剩 13 个长说明。origin/w75 多余远程分支删前问用户。
-
-### 🟢 11-14 14:3x · 已推主干 ed6cef10(Opus 5.5,worktree 工)
-
-- **已验证**:第五轮推送前链咬合 78/78 + 门禁全绿;链印「已推送」其实推成了 origin/w75(pre_push.sh 推的是 `HEAD`),手动 `HEAD:main` 快进进主干(f1e8c979→ed6cef10)。pre_push.sh 已改成推 `HEAD:main`(自测绿)。**origin/w75 这个多出来的远程分支还在,删要问用户。**
-- **CI 连红 7 次(都在 ed6cef10 之前,f1e8c979 起)**:① 「写库评测切库副本」判 `api._c()` 连副本那条不过 ② 「假数据工厂」崩在 `named_state` CHECK 约束 —— 本地都绿,CI 从零才红。已告诉并行会话,分工待定。
-- **接管兜底**:主检出现在才真有(推之前主检出 0 处 记兜底)→ 下一晚夜跑商机套看是不是绿了。
-- **14:5x 更新**:本地 3 笔未推 —— fbb4f445(pre_push 推 HEAD:main + g23 补丁 + 交接)、cf02a163(get_member 缩说明 + TL83 + get_aftersale,检查全绿、select 21/21)。**后台新版本等这批推上主干再出再切**(别再先切后推)。并行会话 77c78249 正在锁内推(表数 135,文档跟它走,别改);它推完我 rebase → pre_push。CI 两条我在查(派了子代理),查到归谁告诉它。
-- **下一步(按序)**:①(已做,见上)打 `.wip-glossary/shrink_get_member.py`(get_member 846→360 + TL83 原样 539 字 + get_aftersale 三参数可单独用;副本试跑过,未跑 prompts_check)→ prompts_check / select_eval 第一层 / vocab_check → `.wip-glossary/align_rules_v9.py` 出后台新版本并切(移动不改字,用户长期授权,做完告诉他;切前告诉并行会话)② g23 放宽补丁 `tools/放宽补丁/g23_告诫小标题_罩列表.py` 已进项目,交用户 `! python3 tools/放宽补丁/g23_告诫小标题_罩列表.py`,跑完补 guards_test 用例 ③ 迁移机制方案 `.wip-glossary/migration_plan.md`(加列清单 alter_inventory.txt;并行会话要推 customer_link / customer_tag 两张表,基线要算进去)。
-- **生产**:后台店长助手 = v11(v9 + TL82),和主干对上。
-- **未验证**:g23 补丁只在副本试跑(用户还没跑);get_member 缩说明没跑模型评测(只验了召回);接管兜底夜跑商机套待今晚。
-- **作废**:链日志第五轮「✅ 已推送」那行不等于进了主干(当时推成 origin/w75)—— 以后只认 `git ls-remote origin refs/heads/main`。
-- **禁区**:并行会话锁内推送期间(14:5x 起约 40 分钟)不跑门禁、不写共享库、不切后台生产;表数 135 / 文档 133 的差别是它没推导致的,别改文档;origin/w75 删前要问用户。
-- **下一步第一个动作**:等并行会话说 5f01393c 推了(它的 CI 修复那笔可能紧跟着,问它要不要等) → `git fetch && git rebase origin/main` → `./tools/pre_push.sh`(这次推 HEAD:main)。
-- **CI 两条已查清(15:0x,子代理只读复现)**:① 1f343ea5 的 agent/evaldb.py:40-45 把 tools/gate_db/sitecustomize.py 的 `_真`/`_真实` 也改指评测副本,只在 Linux 红(macOS /var 软链躲过);修=跳过 sitecustomize/check_copy 和下划线变量 ② e2af62e6 加 named_state CHECK,fakedata/discover.py:353 要 ≥2 值才判枚举、schema.py:107 跳过 CHECK;修=schema.py 解析 CHECK IN。**并行会话 15:1x 两条都认**:它先推第二批(5f01393c,含两张新表),推完单独一笔修这两条,推前告诉我。我不碰 evaldb.py / fakedata/。
-- **悬而未决**:CI 两条归谁修;迁移机制是否和并行会话的新表一起做基线。
-- **并行会话接下来推**:customer_link / customer_tag 新表(建 customer_tag 会把 tag.n 重算成 0)、三条新检查、server.py 新写口 + 匿名放行 /api/c/look、/api/c/use。
-
-### ⏱️ 12 小时长任务清单(11-14 20:11 → 11-15 08:11)
-> 用户 11-14 19:5x:「开始下一个12小时的长任务,有什么需要我拍板的吗?」→ 拍板卡 3 条(台账第五十五到五十七条,PRD 2.4 要补):
-> ⑤⑤ 杭州湖滨店 SH003 的「无效」**是错的** → 改回有效(留记录)+ 把「无效店铺禁止新增业务」**真拦上**(新建预约 / 订单 / 客户;查过:原来一处都没拦,这家店本月 94 预约 / 364 单照常)
-> ⑤⑥ 合并口径**照旧**:同账户同名就合并(家人同名共用号不专门处理,靠店长核验)
-> ⑤⑦ 今夜主攻四样全做:还代码欠账 / 给没红过的检查补对照 / 研判示例库第三版 / **挑一个新功能(开工前再问用户做哪个)**
-> 规矩同上一轮:gate_lock --who、不碰 eureka-fc 文件、改管理后台推前 make test-e2e-ci、scan_secrets 单独一步、commit --only;**加新列走 backend/migrations/**;写共享库前先跟 eureka-fc 说。
-> ⚠️ 开局时 eureka-fc 在跑推送前链(schema_version 那笔),**它推完之前别跑门禁、别写共享库**;本地待推 f0208b4a(白天汇总)。
-
-**交接(11-15 22:xx,压缩前 —— 最新)**
-- **重放全过**:anchor 3 / delivered 4 / cron 5 / impact 7 / intent 6 / bite_check 13(后者修了两条锚到空表的规格才过:ac775586)。**e2e-ci 跑过一遍**:只红 test_chat_assistant_flow「样本够」—— 测试只抽第一页前 40 条、eureka-fc 新加十几条跟工具的规矩排前面,总带着的 0 条;改成按 cursor 翻页两种凑到才停,单跑 53 过(随 HANDOFF 一起提交)。四个 .js 工作流页测试在汇总里印空行,单跑都过(输出捕获的事,不是红)。
-- **正在跑**:`./tools/pre_push.sh --不推`(任务 b35aoiqc8,日志 scratchpad/pre_push_1115e.log;机器 load 高,慢)。只认日志里「被包的命令退出码」。绿 → 请用户 `! cd ~/Desktop/澜绣云裳agent && git push origin main`(本地 15 笔)→ SendMessage 喊 eureka-fc(uds:/tmp/cc-socks/36041.sock)「已推、锁空了」→ 它推交付告知那批(含 m0002,锁内 migrate)→ 我 rebase → `python3 tools/.wip_交付告知订单页.py` → write_smoke_check / js_check → 重启 8760/8770(先看有没有门禁在打服务)→ 提交。红 → 照日志修,别重跑没改的。
-- **推完把三件运行日志放回**:scratchpad/dirty_bak2(tool-eval.json / funnel.jsonl / skill_usage.jsonl),照 15:xx 那次「备份 + 之后新增的行」合回,**不 add**。
-- 其余(一期 1-2 设计笔记、禁区)见下一段 21:3x,照旧有效。
-
-**交接(11-15 21:3x)**
-- **eureka-fc 21:1x 推了 8b97292a**(3d0a3dc7 之上 17 笔:缩说明 / return_rate / part_options / order_parts 三个新读工具 / TL84–96)。我已 `pull --rebase --autostash` 到它之上,**冲突三处都按规矩合了**:bite_specs.json 按规格身份三方合(上游保留、我的改动=删旧加新;脚本 scratchpad/resolve.py)、咬合两份记录欠债.json「两边都减」→ **空表(两边都还清了)**、HANDOFF 自动暂存回来。本地 **14 笔**待推(最新 746c4212)。
-- **还清之后的连带修**:bite_check 那两条「只许少不许多 / 一致了就删」在空表上红成「样本量 0」—— 空表是目标态,样本量改成按空表算 1(746c4212);「加回 anchor 0 处」那条规格锚点改到空表。
-- **正在跑(机器 load 47,慢)**:① 重放 6 个脚本(任务 b8hs02t97,日志 scratchpad/replay_1115c.log,锁内):anchor 3 / delivered 4 / cron 5 **已全过**;bite_check 那组跑在空表修复之前报「对照就是红的」—— **已另起 b2uwkrha5 重跑**(日志 replay_1115d.log,排在 ① 之后拿锁);impact / intent 还没出结果。② 管理后台 `make test-e2e-ci`(任务 b5g4s2e1x,日志 scratchpad/e2e_1115.log;工作流一期第一件 d0106757 改了执行器,推前必须过)。**判绿只看每段 rc= 行和「N 条咬合规格全过」**;e2e 看日志末尾的汇总行。两个都完了 → `./tools/pre_push.sh --不推` → 绿了请用户 `! git push origin main` → 喊 eureka-fc(它等着推交付告知那批 + m0002 迁移)→ 它推完我 rebase → 跑 `tools/.wip_交付告知订单页.py` → write_smoke / js_check → 重启 8760/8770(新工具随之上线;重启前看有没有门禁在打服务)→ 提交。
-- **8760/8770 重启时**:eureka-fc 的三个新读工具才会出现在聊天站;server.py 启动补齐迁移那句随 wip 脚本进。
-- **一期 1-2(异常处理:默认值 / 异常分支)已读完代码、还没写**:failure_policy 现在只有 fail_run / branch(runner 898 行、app.js 表_高级 3814 行下拉、DSL 无取值校验);要加 "default":通用字段加 `default_output`(dsl.节点通用字段 + 非外部节点自动不适用 —— N() 会检查漏标)、runner 失败分支里 策=="default" → 节点输出 = default_output + error_type / error_message、步骤记 failed + handled="default"、运行照常走成功边;validator 加 branch 没接失败边 / default 没给默认值 / 写类工具不许 default;UI 下拉加一项 + 按 output_schema 属性出默认值输入;运行详情步骤状态加「异常 · 按默认值继续」;测试照 tests/orchestration/test_node_timeout_retry.py 的样子。
-- **禁区**:同前;eureka-fc 等我喊完才拿锁;运行时三件日志别 add(备份在 scratchpad/dirty_bak2,推完放回)。
-
-**交接(11-15 16:3x)**
-- **本地 11 笔未推**(a8646715 … db311968 / f8dd44ed / 24c7ca61):fakedata 还债、重放工具五个键 + 14 条规格、重放第一轮红 6 处的修法(7180bf2e)、执行手册「工单状态回填」(✅14 🟡9 ⬜1 👤1 ❔2,三次更正都有提交)、判分严格度后半 4/5(growth / liability / talk / oppo 接 rounds.跑并收尾;vision 留着 —— 图指纹那层共用收尾没有)。推法同前(eureka-fc 推完 → rebase → pre_push --不推 → 用户 push)。
-- **重放第二轮没跑成**:排队等锁满 60 分钟 bite_run 自动放弃(rc=3),我 17:4x 把队列停了(eureka-fc 的咬合重放从 16:20 起一条条占锁)。**等它推完再跑**:`for k in fakedata/anchor.py tools/delivered_images tools/cron_health_check tools/bite_check.py tools/impact.py tools/intent_check; do python3 tools/bite_run.py --only "$k"; done`(约 15 分钟),只认每段「✅ N 条咬合规格全过」。**工作流一期第一件代码已提交 d0106757**(runner 读三件套 + 16 条自测 + Makefile 挂上),**make test-e2e-ci 还没跑**,推前跑(不占锁但吃 CPU,放在它推完之后)。第一轮 6 处红的根因都查清了:anchor 3 + delivered 4 = bite_run 把光秃秃的「自测」行当真跑行(已修);cron [1/5] 是旧规格在主检出就是任务目录的机器上不可观测(补了夹具);bite_check 826 要同时把 anchor 以 0 登账;impact 锚的 ⚠️ 行不带正则认的词(换到 case_tool_reachable_check);intent 只报不拦误判 ✅ 行(只认提醒行,已修)。
-- **接了 eureka-fc 一件(用户 11-15 下午拍「标品交付告知聊天 + 订单页两处都要」)**:它那半在 w75-dn 分支(knowledge/delivery_notice.py、backend/delivery_notice_write.py、api.draft_delivery_notice / record_delivery_notice、迁移 m0002 给 delivery_notice 加 notified_at/by/channel/items),随它下一批推。**我做订单页那半(server.py + backend/web/index.html,我的文件)**,等它推完 rebase 再做:标品且状态 已发货 / 待完成 / 完成 的订单页显示「交付告知草稿」块 = `api.draft_delivery_notice(order_id)`(出错 {"error"};正常 {订单, 状态, 范围, 适用:[{编号 1–6, 告知, 依据:[…]}], 没对上的商品:[…], 文字:str|None(None=一条都没对上不用发), 出处, 说明, 已记过:None|{notified_at, notified_by, notified_by_name, notified_channel, notified_items(JSON 串)}, 下一步})+ 复制文字 + 渠道下拉(**读 `delivery_notice_write.渠道们` 元组,别抄**:微信 / 电话 / 短信 / 当面 / 小程序)+「记已告知」按钮 → 后端 `delivery_notice_write.记已告知(order_id, channel, me, 范围where="", 范围args=(), db=None)` → {ok, code, reason…},ok 时另有 订单 / 告知了:[编号] / 渠道 / 时间;code:NO_LOGIN / BAD_CHANNEL / NO_COLUMN(库没迁移)/ OUT_OF_SCOPE / NO_ORDER / NOT_STANDARD / NOT_DELIVERED / DONE(记过不覆盖)/ NOTHING_TO_NOTIFY / NOTIFIED。范围where 里表别名 `o`(ordr)`cu`(customer),? 占位,订单页用 _门店条件 按这两个别名拼。记过后 draft 的 已记过 非空、下一步=「这单已经记过已告知了」→ 页面显示「已于 notified_at 由 notified_by_name(notified_by)经 notified_channel 告知」。共享库迁移 eureka-fc 推那批时锁内跑;之前 记已告知 回 NO_COLUMN。**代码已写成一键应用脚本 `tools/.wip_交付告知订单页.py`(未入库、别 add)**(里面还带 eureka-fc 托付的一句:server.py 启动时 `migrate.补齐(sqlite3.connect(DB))`,放 `_转写工人()` 之前,迁移机制第二步):server.py 两个函数 + 两条 POST 路由、index.html 订单日志页一块卡 + JS、write_smoke 用例(调 api.draft_delivery_notice 挑「真有文字」的单;没迁移就不造)。**等它推完 rebase 后再跑这个脚本**(写口冒烟欠账上限 0,新路由没用例会红,而用例要它那半才跑得通)→ write_smoke_check / js_check → 重启 8760 看页 → 提交。不动管理后台,不用 e2e。
-- **store_report 夜跑崩「unable to open database file」**:ulimit -n 256 下进程内跑取数包 6 秒正常 → fd 那条路现在不是原因;**没有 *.崩.log** 的原因 eureka-fc 查清了:落盘代码 47dc2d0c 在 11-13 那晚还不在主干上,之后 store_report 没再轮到(11-14 整晚跳过、11-15 周日只跑 ops_eval);崩.log 刻意不入库、只留主检出本地。**今晚(周一)23 套全跑 → 明早看 `.feynman/nightly-eval/2026-11-16-store_report_eval.py.崩.log`**;oppo 也是兜底上线后第一次真跑。根因仍未知,别再在 fd 上限那条路上花时间。
-- **W22 费用上限其实三件齐**(月上限 store_usage.py、80% 提醒 cost_alert.py、到顶不升级 app.py 825 行费用闸);追评 11-14 用一次性链接补了门;聚合三档 11-13 就有 —— 我第一遍核错了三条,都已更正并提交。
-- **下一步第一个动作**:看 bqg0cef2f 结果 → 红的修 → eureka-fc 喊推完 → rebase → `pre_push.sh --不推` → 用户 push → 做订单页交付告知按钮 → 然后工作流一期第一件(执行器读超时 / 重试)。
-- **禁区**:同前;eureka-fc 切 v17 到推上去之间别跑全量门禁;运行时三件日志别 add。
-
-**交接(11-15 16:xx,还债收尾)**
-- **用户拍(15:xx)**:剩 14 条「不能重放」**扩重放工具真做成**(不是登记豁免)。已做:`tools/bite_run.py` 加五个键 `改坏命令 / env / 参数 / 命令 / 只报不拦`(`{副本}` 占位换副本路径;只报不拦 = 对照里不许有那句、改坏后必须有;--自测过),14 条规格全写进 bite_specs(26822ac3)。**两份记录欠债 16 → 2**(剩 guards_test / tool_eval 是 eureka-fc 的,它本地已改 0cac1f93);位置参数 0、截断 0、预期红 2(growth 刻意留、rounds eureka-fc 已改)。
-- **正在跑**:后台重放 16 个脚本的新 / 改规格(任务 bknjf1fu9,日志 scratchpad/replay_1115.log,每个脚本一次 bite_run --only,**排队等锁**,eureka-fc 的链在占)。看结果只认每段 `##### … rc=` 和「✅ N 条咬合规格全过」;红了**先疑夹具**(前置命令 / env / 参数),别先改判据。最可能红的:stable「批级加 date」(kind 不对就换)、delivered_images(`$LANXIU_SRC_ROOT` 要在 bite_run 进程环境里,它 `setdefault` 过)、repo_consistency / impact(副本里 git init + add -A 要能跑;.gitignore 生效)、rating_rebuild(前置重造 rating 要几分钟)。
-- **本地待推 5 笔**:a8646715 / b16afa5a / 26822ac3 + HANDOFF 随下笔。推法同前:eureka-fc 推完 → pull --rebase → scan_secrets 单独 → `pre_push.sh --不推` → 绿了请用户 `! git push origin main`。
-- **下一步第一个动作**:看重放结果 → 修红 → 提交 → 等 eureka-fc 推完走推送链 → 然后**11-12 那 27 件还债计划逐条核真实状态**(用户要的「还清」第二层;执行手册里 45 张工单只有 3 个 ✅,状态没人回填)→ 再开工作流一期第一件(执行器读超时 / 重试)。
-- **禁区**:同前;eureka-fc 切 v17 到推上去之间别跑全量门禁。
-
-**交接(11-15 15:xx,还债中)**
-- **已推** 3d0a3dc7(用户 14:4x 亲手 push;自动 push 被权限分类器拦,以后链用 `--不推`,绿了请用户敲 `! git push origin main`)。推后本地又 3 笔:a8646715(fakedata 15 处具名列 + 3 处截断,两张欠债表清空但文件留着)、b16afa5a(14 条 fakedata 咬合规格 + 修 3 条因欠债表清空过期的规格;**14 条还没 bite_run 重放**,锁在 eureka-fc 手里)、c3768173 / 3d0a3dc7 之前的见 git log。
-- **用户拍(15:xx)**:「先把欠的还清」再开工作流一期;eureka-fc 那三笔(tool_eval / guards_test / rounds)它已本地改好 0cac1f93,随它下一批推。
-- **欠债现状**:位置参数 0 / 截断 0 / 两份记录 16(其中 2 是 eureka-fc 的、随它推落地;其余 14 条**用现在的重放工具做不了**:cron_health 2 和 hook_sync 1 要机器外文件、delivered_images 4 图不进副本、repo_consistency 2 要真提交、impact 1 副本无 .git、runlog 2 和 intent 1 只报不拦、rating_rebuild 1 要指纹对得上的夹具库)/ 预期红 2(growth 刻意留、rounds eureka-fc 已改)。**已问用户**怎么处理这 14 条(登记成带理由的豁免 vs 扩重放工具)。
-- **下一步第一个动作**:eureka-fc 喊「推完」→ `git pull --rebase --autostash`(冲突点:bite_specs 末尾、咬合两份记录欠债.json「两边都减」、check.sh)→ 锁内 `python3 tools/bite_run.py --only fakedata/repro.py` 等 5 个脚本 + insert_shape_check + truncation_check + bite_check(14+3 条新/改规格;红了先疑攻击点:stable 那条「批级加 date」要是没红就换 kind)→ `./tools/pre_push.sh --不推` → 绿了请用户 push → 喊 eureka-fc。
-- **判据**:bite_run 取 check.sh 里**非 --自测 那行**的命令跑(anchor 用 `验 --db`、agree 用 `--db`、samekind 只有自测行就用它);多条红也算过,只要点名那条在其中。
-- **禁区**:eureka-fc 切 v17 到推上去之间别跑全量门禁(assistant_effect 会红在它的 11 条规矩);不碰它的文件;运行时日志三件(.feynman/tool-eval.json、agentsite/evals/funnel.jsonl、skill_usage.jsonl)谁都不 add,跑链前 `git checkout` 掉、跑完放回(备份在 scratchpad/dirty_bak)。
-- **作废**:早上「fakedata 那 14 条是别人的线不还」—— 用户 15:xx 拍了我来还,已还。
-
-**交接(11-15 10:0x,压缩前)**
-- **状态**:夜任务已收官(汇总发飞书 0bebc075、CronDelete addf3eab 已删)。本地 **20 笔**待推,最新 c425ee7d(台账六十三/六十四:退款「补足后仍失败」按最后一次失败定因 + 凭回码变了认补足,用户 09:3x 拍)。eureka-fc 09:4x 说「你先推」(它的链 09:03 红在 muslin_check 已修,生产临时切回 v13 和主干对齐)。
-- **正在跑**:`./tools/pre_push.sh --不推`(后台任务 bbybq1qje,日志 scratchpad/pre_push_1115b.log;09:5x 起,估 15–85 分钟)。**跑完只认日志里「被包的命令退出码」那行**。⚠️ 自动推被权限分类器拦了两次(「跑完直接 push」),所以改成 `--不推`;**绿了请用户敲 `! cd ~/Desktop/澜绣云裳agent && git push origin main`**,推完 SendMessage 告 eureka-fc(uds:/tmp/cc-socks/36041.sock),它再 rebase、切 v15。
-- **下一步第一个动作**:看 bbybq1qje 通知 → 读 pre_push_1115b.log 尾部 → 绿:让用户推;红:照日志修(别重跑没改的)。**然后把三个脏文件放回去**:`cp scratchpad/dirty_bak/{tool-eval.json→.feynman/,funnel.jsonl→agentsite/evals/,skill_usage.jsonl→agentsite/evals/}`(推前为了工作区干净 `git checkout` 掉了,它们是运行时滚动日志,**谁都不 add**)。
-- **门禁跑着时禁区**:不改任何跟踪文件(测的必须是要推的那份);不跑别的门禁 / bite_run;不碰 eureka-fc 文件。
-- **接着做(等推完)**:① 退款「补足后仍失败」:`tools/seed_triage_tasks.退款真因` 加第四条(两次 INSUFFICIENT_BALANCE → 第三次 ACCOUNT_CLOSED 之类,已退 False);`agent/refund_sets.题们` 的「按前三次 resp_code 集合认真因」要改成按**最后一次**回码认(集合会和老三条重合);`判一题` 加分支:认出最后一次回码 + 「余额不足」那句必须被否定/说成已补足(用 textmatch 结构,不手写词表)+ 建议段里不许未被否定的「充值」;judgetest 加正反对照;示例库 v3 `example_counter_ab.造到副本` 加这一类克隆。② 工作流一期第一件:`管理后台/services/api/app/runtime/runner.py 跑一张图` 里节点调适配器处读 `timeout_seconds / retryable_errors / max_retries`(dsl.py 已有字段,grep runner/worker 无一处读);写类动作重试前先按幂等键查澜绣桥。改管理后台推前 `make test-e2e-ci`。
-- **未验证**:飞书规划文档标题被截成「…照Dify-」(疑脚本去日期后缀),没回读;PRD 2.4.4 新节是否过 doc_numbers 等文档检查 → 这轮全量会验。
-- **作废**:规划初稿「代码执行不做 / 只做导出」(用户否了);「用 nohup 起推送链」(被拦,别再试)。
-
-**交接(11-15 07:0x,压缩前)**
-- **状态**:本地 **18 笔**未推(origin/main 仍 aca71aa0);最新 5883a254(工作流规划按拍板改定 + PRD 2.4.4)、543ac599(工作流规划文档)、2a9564a5(seed xingzhi 具名列,位置参数欠债 16→15)。eureka-fc 06:5x 回话:已 rebase 到 aca71aa0,后台店长助手生产 v13→v15,**07:4x 推送前链开跑,估 1 小时内推完**;它推之前 assistant_effect 会红在 TL84–89/91–93,**照旧别跑门禁**。已回它「等你喊,我本地 18 笔」。
-- **下一步第一个动作**:eureka-fc 喊「推完」→ `git pull --rebase --autostash` → `./tools/scan_secrets.sh` 单独 → 锁内 `bash scratchpad/chain_B.sh`(重启 8760/8770 让改名路由上线 + 冒烟 + 全量 + 推);**只认「被包的命令退出码」和 PUSHED**;推完告诉 eureka-fc。然后开工**工作流一期第一件**:执行器读「单次超时 / 可重试错误 / 最大重试次数」(文件 管理后台/services/api/app/runtime/runner.py + workers/worker.py;DSL 字段已在 contract/dsl.py;写类动作重试前先按幂等键查澜绣桥,查不到停「待核实」);改管理后台推前 `make test-e2e-ci`。
-- **用户 07:0x 拍了四条(台账五十九至六十二,已写 PRD 2.4.4、规划文档第九节,已提交)**:工作流一期**全做**(先「真生效」三件再手感)/ 代码执行**做最小版**(管理员才能加、wasm 沙箱、Python 子集、四条真攻击进审计;11 条安全决定开工前合卡再问)/ 人工介入**加飞书通知** / 导出 + 导入**都做**。规划文档已发飞书产品文件夹(FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf):https://aqvi2xbk5kd.feishu.cn/docx/WFhHdxE34oKuDpx9lMxcBroMnvf。
-- **判据(规划里写的「已核实」的来源)**:执行器不读超时/重试 = grep runner.py/worker.py 无 timeout/max_retries(只有队列租约的重试);6 条流程无「非写代码不可」= 适配分析第二节流程表;22 节点对 18 = 规格 §6.1 + 10-26 Dify 界面规格;编辑器缺项 = wf_canvas.js 中文字面量清单(无「上次运行 / 失败时重试 / 默认值 / 注释 / {{」)。工期 35–44 人日是拍脑袋的,文中已标。
-- **未验证的预判**:飞书文档回读没做(脚本印 OK + URL,标题被截成「…照Dify-」疑似脚本去日期后缀,未核);PRD 新节有没有触发 doc_numbers / 文档检查**没跑**(推前全量会验)。
-- **作废**:规划初稿「建议代码执行不做 / 只做导出」—— 用户否了,按拍板改过,别再按初稿说。
-- **悬而未决**:退款「补足后仍失败」选型卡(docs/交接归档/选型卡-退款补足后仍失败-待拍.md)还没问用户 —— 放夜间汇总第三节,08:0x 定稿时一起;示例库 v3 真跑(要锁、要 eureka-fc 推完)。
-- **禁区**:同前 + 不碰 eureka-fc 的 prompts.py TL 区 / api.py 描述区 / assistant_effect;共享库改店名前先预览再问;tools/.sim_bite_草稿.py 别 add。
-- **08:11 后**:定稿 澜绣云裳agent-夜间汇总-20261115.md(加:eureka-fc 07:4x 开推、本地 18 笔、工作流规划 + 四条拍板)→ `python3 tools/feishu_publish.py` 默认文件夹 → 回读 → git add + commit --only → CronDelete addf3eab。
-
-**交接(11-15 01:4x,压缩前)**
-- ⚠️ **01:34 夜跑自动提交 aca71aa0 推了 main,把我 16fd553f 及之前 ~20 笔一起带上去了**(没过本地全量、也在 eureka-fc 推之前)。已告诉 eureka-fc。**CI 43621848814 已绿(01:5x,gh 回读 completed success)**;本地只剩 044fdb55 / 02a74b4f / f129c13b 三笔待推。以后「eureka-fc 推完前不推 main」这条**挡不住夜跑的自动推** —— 早上汇总里要说。
-- **下一步第一个动作**:等 eureka-fc 回话(01:4x 已发消息问「推了没」+ 订了它空闲通知)。它推完 → `git pull --rebase --autostash`(我这边改过 check.sh 一行[反例清单检查,在 example_pool_check 后]、bite_specs 末尾追加 ~60 条、HANDOFF)→ `./tools/scan_secrets.sh` 单独 → 锁内 `bash scratchpad/chain_B.sh`(重启 8760/8770 让改名三个路由上线 + 冒烟 + 全量 + 推)。**只认「被包的命令退出码」和 PUSHED 那一行**。推完告诉 eureka-fc。
-- **本地待推 ~20 笔**(5d204964 起,到 02a74b4f):改名页面按钮+路由 / INSERT 具名(server、工具、seed、平移、自测)/ 截断 21 文件 / 咬合规格 ~60 条 + 多处判据修 / bite_check 规格键修 / 写口冒烟清零 / 运行史支路 / 示例库 v3 合并 MX-01–03 + example_counter_check 进门禁。都没过全量门禁 —— 推前那一次全量就是它们的真验。
-- **4:55 夜跑窗口后**(bite_run 现在因 .nightly-eval.pid 拒跑,退出码 3):`tools/bite_run.py --only` initpath_check / grading_check(4 条 sql)/ supplier_check(1 sql)/ refund_sets_judgetest / page_load_check / shift_world(--selftest 里「不认识参数」那条起子进程)/ source_check —— 这些内存重放(sim_bite)验不了。其余新规格都 sim_bite 过。
-- **判据**:sim_bite = 子进程里把被改模块从改坏源码加载 + 拦 open()/read_text 读改坏内容,磁盘不动;**只能用于只读或自带库副本的检查**;空攻击对照过(不误报)。草稿拷在 tools/.sim_bite_草稿.py(**未入库,别 add**)。
-- **夜间汇总草稿**:澜绣云裳agent-夜间汇总-20261115.md(未提交;08:0x 定稿 → `python3 tools/feishu_publish.py 澜绣云裳agent-夜间汇总-20261115.md` → 回读 → git add + commit → CronDelete addf3eab)。b02b9cdf 核出处判据修好;vs4 剩 1 条 ❌(艾媒价位)= **curl 超时半截页面**,17c27ebf 修(退出码非 0 当抓不到)。✅ vs5 全绿(266 条都指对),已记运行史 4a0094ca。
-- **05:4x** 0da7d7e7:写库不写列名 17 → 16(顾问工号检查那笔是报错文案不是 SQL)。规格预期红那张表 growth_eval_judgetest 1 条**不还**:预期红印在它 import 的 growth_eval.py 里,重放 4/4 过,是静态扫描不跟 import 的盲区(别为过扫描写注释,也别放宽去跟 import)。
-  未推提交碰过的 13 个检查单跑全绿(⚠️ zsh 里 `python3 $c` 不拆参数,带参数的会报 rc=2 假红 —— 单独跑才是真的)。本地 **15 笔**未推。
-- **05:1x 续还到 30**(6e05b977 评价两条库级 / cfe47e71 评价重造登记 / d1040b18 **指代判分器编号轴原来不可观测**,补了一条只有它挂得住的对照,清单从 scheme_eval 搬到 judgetest / e45b950b 三条「要重建库」改库级:待确认单、该试没试、PT23 腰围)。
-  剩 30 / 15 个脚本:fakedata 14 + tool_eval 1 + guards_test 1(别人的线)、runlog 2 + intent 1(只报不拦)、交付图 4、cron 2(标记文件每天被改写)、hook_sync 1、impact 1、repo_consistency 2(要真提交)、rating_rebuild 1(换种子夹具)。
-- **05:0x 还咬合两份记录 50 → 39**(c5e57ba8 / 19f11820 / 57948dd9 / 8a576363):页面骨架 2、评测题面 1、intent 点名 1、出处 2、文档工具数 1、渠道 TL31 1、白坯 TL30 1、启动建库 1(只改清单对齐已有规格)、版师先看再改 1。连带修了两条过期规格(欠债表处数那条换到 fakedata/repro.py 的 4;_脚本键 那条改点名「不在欠债表里的…」)。
-  **不补的**(别重查):runlog 2 / intent「还挂着已做完」1 = 只报不拦,咬合验不了;交付图 4 = 图不进副本;grading / muslin 种子 / order_write = 要整库重建;cron_health / hook_sync = 机器外的文件;fakedata / tool_eval = 不是我的线。
-- 本地 **10 笔**未推(origin/main 仍是 aca71aa0)。
-- **悬而未决(早上问用户,合成一张卡)**:退款「余额不足、补足后仍失败」判定规则 —— 卡在 docs/交接归档/选型卡-退款补足后仍失败-待拍.md(推荐 A:按最后一次失败定因 + 必须说清余额已不是卡点;参数:回码变了就算补足过)。示例库 v3 真跑(example_counter_ab.py --做 --轮 2,调模型)排在 4:55 + eureka-fc 推完之后、要拿锁。
-- **作废的结果**:「运行史说 verify_sources 不在了」是误报(脚本在,已登记支路;差点删记录,已 checkout 回去)。「两份记录欠债 110」是错算,真数 101 → 现 50。verify_sources 联网全跑在后台(bh5c9f1s0,输出 /tmp/vs.log,缓冲到结束才有字);跑绿了 `python3 tools/runlog_check.py --记 tools/verify_sources.py`。
-- **禁区**:同前(eureka-fc 的文件;不推 main 直到它推完;不开浏览器;到期清理不开);**07:xx 后发飞书夜间汇总**(文件名带「澜绣云裳agent」,格式照 澜绣云裳agent-白天汇总-20261114.md),然后 CronDelete addf3eab。
-
-1. [x] ✅ 8b38dc1e 已推(含白天汇总、合并、拦截、改名代码;第二轮门禁绿)
-2. [x] ✅ 22:4x 共享库 SH003 无效→有效(bk-shop 流转留台账)。原:SH003 改回有效:锁内走状态流转(总部身份、写原因、留 op_log),**先告诉 eureka-fc**(动共享库数据)
-3. [x] ✅ 9a5054d7/8b38dc1e 已推,咬合 4/4、审计 66 条⑤⑤ 无效店铺不许新增业务:create_appointment / 开单 / create_customer / booking.book 都按 shop.status 拦;状态机说明那句兑现;检查 + 咬合 + 边界审计;先查造数(daily_fresh)会不会往无效店造数
-4. [x] ✅ c8e17595(未推)merge.并入 执行处核 判同一人;merge_check 样本改同账户同名(副档改名那条验完改回、丙也造成同户)+ 新用例「执行处也拒跨账户合并」+ 咬合 1;write_smoke 撤销合并那条准备时造同户同名;relabel / reopen / tag_level / 冒烟全绿;merge_account_duplicates 先过 判同一人 不受影响;PRD 已知缺口划掉。原:合并执行处补「同一账户」闸(merge.并入)+ 改 merge_check 样本为同账户同名(⑤⑥ 口径不变,只是执行处也守)
-5. [~] **(01:3x)欠账一览**:位置参数 100→17(剩 fakedata + seed xingzhi 1 处 —— 那一处故意留着,两条咬合拿它当攻击点)/ 截断 59→3(剩 fakedata)/ 咬合两份记录 110(错算)→50(剩 fakedata 14 + 要外部文件 / 整库重建 / 真子进程的)/ 预期红扫不到 5→2(成长评测对照 + rounds.py 不碰)/ **写口冒烟 9→0**(顺带堵「被拒也算写成」,通用开关那条绿了三天没真切过)。另修:工厂回传检查两条空转判据、未来记录回挪先后关系只比三点、运行史把核出处工具误报成「不在了」、反例清单检查进门禁。**位置参数欠债 100 → 17**(剩下全在 fakedata/ + seed xingzhi 1 处)。本地待推 6 笔:5d204964 / cb78eca2 / 9221f15c / 2a1ed4c6(seed 38 处,两个临时检出从零各建一遍库、dump 除随机盐外逐行一致)/ de24fc96(平移两工具 18 处)/ 018f4e20(四个自测 9 处 + 修三条攻击原文过期的咬合规格)。**4:55 夜跑窗口过后要重放**(bite_run 现在因夜跑拒跑):`--only advisor_write_check` / `--only insert_shape_check` / `--only initpath_check` / `--only grading_check`(4 条 sql 型新规格)/ `--only refund_sets_judgetest` / `--only page_load_check` —— 这几条 sim_bite 验不了(读源码文件 / 改库 / 起子进程)。另:01:0x 后本地又加 65dc92cd(工厂回传检查修两条空转判据 + 8 规格)、1e31608e(推档 5 规格);两份记录欠债现 65。**(00:3x 交接)本地 3 笔待推:5d204964 / cb78eca2 / 9221f15c(造数回填工具 10 处 INSERT 具名,欠债 92→82)。eureka-fc 00:37 还没喊推完 —— 它喊之前别跑门禁;喊了 → pull --rebase --autostash → scan_secrets → 锁内 chain_B。** (23:xx)cb78eca2 本地:server.py 8 处位置参数 INSERT 改具名(位置参数欠债去掉 server.py)+ **修了真坏:真导入碰上疑似重复就抛错(task 7 列给 6 值)** + 冒烟补真导入用例。**待推**:5d204964(改名页面按钮)+ cb78eca2 —— eureka-fc 切生产到它推上去之间(约 1 小时)别跑门禁,它推完喊我再 chain_B。还代码欠账:位置参数 17 / 截断 23 / 咬合两份记录 39 / 预期红扫不到 5 / 写口冒烟 9 —— 每还一处把棘轮上限跟着降
-6. [~] (01:0x)补可重放咬合规格 23 条:聊天查订单权限 9 / 白坯试衣闸 6 / 开单 3 / 签收 3 / 退款评价 2,**每条都在内存里重放过**(scratchpad/sim_bite.py:被改模块从改坏的源码加载、磁盘不动;空攻击对照过不会误报);两份记录欠债 110(错算)→101(修了带参数规格的配对)→78。提交 01eadf73 / f7c04b0d / 62fd284d。⚠️ sim_bite 只对「import 进来的模块」有效,**直接读源码文件的检查(advisor_write / insert_shape)它看不见**,那几条照旧等 bite_run。原:给没红过的检查补对照:优先守钱 / 权限 / 顾客数据的
-7. [~] (01:2x)合并类做了:e79ec86b 加 MX-01–03(同名不同人那几对改成同号同账户 → 按⑤⑥该合并;对比脚本补合并造法,原地改不克隆) + 7f042fda 反例清单检查进门禁(4 咬合内存重放过)。空跑:21 条全造出、MX-02/03 配到 MX-01 + MERGE-14/15。**真跑(example_counter_ab.py --做 --轮 2,调模型)还没跑** —— 排在 4:55 夜跑窗口 + eureka-fc 推完之后,要拿锁。**退款「补足后仍失败」没做:新根因 → 判定规则要用户拍**,选型卡写进早上汇总(推荐:按最后一次失败的返回码定因 + 必须说清「余额已不是卡点」)。原:研判示例库第三版:退款「余额不足、补足后仍失败」+ 合并类(按 ⑤⑥ 口径出题);新根因要新判定规则 → 先摆选型卡
-8. [x] ✅ 后端 9a5054d7/8b38dc1e 已推;页面按钮 + 三个路由本地已提交待推(见下)。共享库没真改过。原:新功能 = **店名整库改名**(用户 20:1x 拍,台账第五十八条):总部才能用;先列出会动哪几张表多少行给用户看(预演)、确认后**一个事务里**一起改(shop.name + 所有存「编码 + 店名」显示串的列,清单就是 shop_key 的「带门店键的」)、改完对账(按编码数 = 按新串数)、能撤回(记旧名);试运行门店范围 / 旧报告里存的串要一并考虑;**真改共享库前先给用户看预演、再问一次**(不可逆面大)。PRD B-121「未解决事项」那条就是它
-9. [ ] 收尾:夜间汇总发飞书(文件名带「澜绣云裳agent」)+ 删每小时提醒
-
-### ⏱️ 12 小时长任务清单(11-14 07:45 → 19:45)
-> 用户 11-14 07:2x:「开始下一个12小时的长任务,有什么需要我拍板的吗?」→ 拍板卡 4 条(台账第四十二到四十五条,PRD 2.4.1 要补):
-> ① 门店账 8 行空花费 **先备份再删** ② 澜绣到期清理 **先不开,11-23 前再问**(那时给真清单)③ 顾客证明本人 = **导购发一次性链接**(只能用一次、7 天过期;接顾客追评 + 签收确认)④「本期未实现」按钮 **四组全做**:门店/店铺资料、内容/活动/品类、预约/定向运营、权限编辑(默认只总部管理员能用、每次改动留记录;权限编辑必须挡住给自己提权)。
-> 规矩同上一轮(下面那段)。**eureka-fc 07:4x 起跑推送前链、预计 09:10 推 —— 它推完前我不推 main。** 回复用户一律中文(含选择卡,11-14 被纠正)。
-
-1. [x] ✅ 门店账 8 行空花费已删(07:40):备份 agentsite/usage/备份-空花费8行-20261114.jsonl + 整文件 .删前-20261114;本月 = 0 元 0 笔(账本不进版本库,无提交)
-2. [x] ✅ 08:29 夜间汇总已发飞书并回读(标题 / 「已拍」/「0 元 0 笔」/「07:15」都在;用户身份授权过期,改用发布脚本自己的令牌读回);一次性提醒 17cf0fd3 已删。原:08:25 上一轮夜间汇总发飞书(一次性提醒 17cf0fd3 08:26;汇总里第 1 件改成「已删」、第 2 件改成「11-23 前再问」;只本地提交,等 eureka-fc 推完再推)
-3. [x] ✅ PRD 2.4.2 补第四十二到四十八条 + 难点 B-121(店名锁死)+ 补齐 B-119 字段;08:3x 已发飞书并回读(10:3x 四组落地版已再发飞书并回读)。✅ 附录 B 19 条老条目已补齐(11:0x,缺的栏按附录自己的规矩写「不知道」不补编;B-98 [知识]→[业务]、B-102 [工程]→[AI]),严格汇总器全合格 —— 未提交,随第 8 项那批。原:PRD 2.4.1 补第四十二到四十五条 + 发飞书
-4. [x] ✅ 已推 bc317549 店铺:save_shop(新店默认无效 / 店名锁死 / 店长只能指本店在职店长)、客户详情「编辑门店」→「转移顾问」走客户转移审批;检查 backend/shop_write_check.py。原:按钮第一组:门店 / 店铺资料(编辑门店、新增店铺、编辑店铺)—— backend/web/index.html 1567/1666/1692 一带;先查有没有现成写口和权限判定,写口走统一写入判定 + 留 op_log,只总部管理员
-5. [x] ✅ 已推 bc317549 save_content(补角色、作者记本人)/ save_activity / add_activity_cost / save_page / save_category + 新状态机 bk-content;**fsm.主数据岗**:店铺 / 商品 / 活动 / 页面 / 内容的状态只许总部运营切(原来谁登录都能点);检查 content_write_check.py。原:按钮第二组:内容 / 活动 / 品类(新建/编辑品类、编辑/下架内容、新建活动、新增页面、添加费用)
-6. [x] ✅ 已推 bc317549 edit_appointment(本店的人改本店)、backend/targeted_ops.py(定向运营,逐个调 tasks.assign_task)、生命周期两个按钮换说明;检查 appt_ops_write_check.py。原:按钮第三组:预约 / 定向运营(编辑预约、定向运营、添加生命周期、设为默认值)
-7. [x] ✅ 已推 bc317549 + f1e8c979(跟上门禁:写口冒烟欠账 10→9 等)save_staff_perm + auth.作废(改完作废旧会话);检查 staff_perm_check.py;边界审计三条新攻击(店铺 / 内容 / 提权)。原:按钮第四组:权限编辑(1750 一带)—— 必须挡:自己给自己提权、给别人提到比自己高;边界审计加一条真攻击
-8. [x] ✅ 已推 77c78249 + 5f01393c + 5287f9e9(15:3x,全量门禁 rc=0):backend/customer_link.py(新表 customer_link)+ c.html 落地页 + /api/customer-link、/api/c/look、/api/c/use(后两个进匿名放行)+ 订单日志页发链接按钮;pickup_write 拆出 顾客确认完成、rating_write 新增 追评闸 / 顾客追评(原来只有规则没写口);customer_link_check(进 check.sh)+ 咬合 4 条 + 边界审计「冒充顾客办不成事」;登记已做:ensure_tables、db_build 算表、shift_world 四列不平移;PRD A-301 + 第四十四条。**还差(等 eureka-fc 推完再做,全在锁里一口气)**:① 锁内 `python3 tools/ensure_tables.py` 在共享库建**两张**表(customer_link + customer_tag)② doc_numbers_check 现跑,把它点名的「133 张」改 **135**(上次是 4 份文档 + tools/publish_prd.py + publish_product_doc.py,README 用 make_readme)③ 咬合重放 customer_link_check + page_buttons_check.mjs(3 条)+ tag_level_check(3 条)+ 「先占位」那条审计 ④ boundary_audit --md 写回(剥掉锁提示行)⑤ make_readme ⑥ git add 新文件(customer_link.py / customer_link_check.py / web/c.html / **page_buttons_check.mjs** / **tag_level_write.py** / **tag_level_check.py** / **agent/example-counter-cases.json** / **agent/example_counter_ab.py** / **agent/example-counter-ab-results.jsonl**(评测结果进版本库))⑦ chain_B。原:顾客一次性链接:导购发、只能用一次、7 天过期 → 接顾客追评写口 + 签收告知单的顾客确认(先算法选型卡?时效/令牌规则已拍,按「已确认」直接做,PRD 附录 A 记)
-9. [x] ✅ 已推 bc317549 写进 intent/log-retention-review-1122.md(状态「等人的活」),待办清单已重生成;intent_check 全绿。原:11-22 前提醒用户看澜绣到期清理真清单(会话内定时器活不到那天 → 写进 待办清单 / intent)
-10. [x] ✅ 已推 77c78249(15:3x):backend/tag_level_write.py(新表 customer_tag + 新建标签 / 打标签 / 新增等级先停用且门槛单调 / 手动合并只同户同名)+ 系统设置入口页 + 新建退款接退押金两人复核 + 页面六处;tag_level_check.py(进 check.sh)+ 咬合 3;登记:ensure_tables / db_build / worldclock.已发生的时间列(customer_tag.created_at)。⚠️ 建表时 tag.n 会按真实绑定重算 → 共享库里那些造出来的「已绑定 35 人」会变 0(诚实,PRD 要写)。已知缺口:merge.并入 执行那一步不核同一账户(加了会让 merge_check 23 条样本红,没硬改,只在手动发起那头拦)。原:剩下 5 处按钮(㊾):标签配置 / 新建标签、新增等级(主数据,照四组规矩:只总部、留记录);新建退款 / 手动合并 **走现成审批流**(退款两人复核、合并店长发起 → 总部审批),不另开直通写口;系统设置 = 系统类页面的入口
-11. [x] ✅ 已推 77c78249(15:3x):商品菜单加「裁片用料」页 —— GET /api/pieces、GET /api/pattern-rules(三张口径表只读)、POST /api/piece-ratio(with backend.as_user(登录人) 调现成的 api.set_piece_ratio,**只版师**,沿用原规矩 —— 我默认表里写过「版师和总部都能改」,以原规矩为准,汇报时要说);增删裁片不做(裁片是从知识库推导的,页面增删会和推导打架);检查:page_buttons_check ⑥ + tag_level_check ⑤。版师数据增删改查(51;11:2x 第四张卡细化:**裁片占比做维护页**(版师 + 总部能改、留记录、来源照实写);**三张表(童装档差 / 门幅 / 特体修版量)照生命周期** —— 留在 knowledge 口径里,页面只读展示 + 标「行业规范推算」,改要走评审)。原:版师数据增删改查(51):三张表 + 391 片用料占比,行业推算值转正式口径(来源字段照实写),维护页 + 写口 + 留记录
-12. [x] ✅ 已推 77c78249(两版对比 + 判分器修正;用户拍先不开)**13:0x 真跑完**(example-counter-ab-results.jsonl 末行):关 10/10、8/10(2 道交付前检查扣下没答成);开 9/10、9/10;照抄示例根因 0。开示例挂的两道:CX-08 判分器要「免费改」字样(模型判对我方 + 记录缺失,写的是改腰 / 返修)、CX-12 **我自编的标签有歧义**(缩水 + 告知过洗护 → 模型判洗护不当客方,返修判定表第 9 行也成立)。结论:题太容易(不带示例就近满分),测不出有没有用;能确定不退步、不照抄。**用户 13:0x 拍(台账第五十三条):先不开,下一版出难题再测。** **13:2x 第五张卡(台账第五十四条):退款「超时且实际未退」判定 = 说清没退 + 带防护地重发** → agent/eval.py 新一支 + eval_hit_judgetest 5 条对照 + 咬合 1;案例清单加 D9921–D9923(照 D2000–D2002 克隆、只删成功出账),缩水两题换成染色不均 / 洗后褪色(换的是题,不是答案);第二版 13:4x 跑完:原判 关 10/12 · 11/12、开 10/12 · 10/12 —— 退款两题 8 次里大半是**判分器认不出对的说法**(不是模型错);修判分器(只改认说法、口径不动)+ 钉 6 条真跑原话(对照 32 条全过),同一批原文重判 关 11/12 · 12/12、开 10/12 · 12/12,照抄 0;结论不变(测不出有用),「先不开」不用改。重判记录已追加到 results.jsonl(写明不是重跑)。PRD A-302 已记。本批还要 git add:无新文件(eval.py / eval_hit_judgetest.py 是改动)。 CX-12 / CX-15(缩水)下一版要换掉 —— **不能看了模型答案再改标签**,记成发现。(12:3x)案例清单 agent/example-counter-cases.json(15 条,全是售后判责 BP-03:尺寸需调整 超公差 / 公差内 / 记录不全 各 3,特性问题 已告知 / 未告知 各 3;每类 1 进示例池;CX-08 尺寸差和 CX-02 一模一样但真因是记录不全,CX-14 起球和 CX-10 一样但未告知)+ agent/example_counter_ab.py(evaldb.用副本 → 副本里克隆模板维修单 / 工单 + 插标注 → 进程里把示例池并上反例 → 开 / 关各 N 轮,结果追加 example-counter-ab-results.jsonl)。空跑过:真库 maintain 无 CX-、truth 仍 90 条。**真跑在后台**(b1js6azrt,输出 scratchpad/excounter.out,模型 Haiku 4.5 = 研判默认 / 一期 / 夜跑同一个)。退款 / 合并两类反例要新根因 → 新判定规则 → 先摆选型卡,这轮没做。原:研判示例库(52):自己按业务口径准备「表面一样、根因不同」的案例(来源照实标「项目方按业务口径整理」,不冒充业务)+ 维护能力;再按方案第 10 节测一轮看有没有用
-15. [x] ✅ 已推 857f805e(17:2x;GitHub CI 43579683367 **18:2x 转绿**(11-12 以来第一次);之前 5287f9e9 那轮红的仍是这两条老红,没新的)evaldb 跳过守卫模块和下划线变量(顺带堵住 ops._本库 被改指副本 → 评测里会把副本当真库往外上报)+ 自测 3 条守卫断言 + 咬合 1、锚点 1 处跟上;fakedata 反射时解析 CHECK(col IN …),discover 以它为准 + 回归 1 条 + 咬合 1。原:**CI 连红 7 次的两条老红归我**(eureka-fc 15:0x 只读查清、我认了;第二批推完再修,链跑着不改工作区):① agent/evaldb.py:40-45「指真库的变量一律改指副本」把 tools/gate_db/sitecustomize.py 的 _真 / _真实 也改了(只在 Linux 红,macOS /var 软链躲过)→ 循环跳过 sitecustomize / check_copy 模块和下划线变量 + 自测加「sitecustomize._真实 不变」下限断言,在非软链 TMPDIR 下复现 / 验 ② fakedata 崩在 appointment.named_state CHECK(CI 从零建库这列只有「不详」一个值 → discover.py:353 不足 2 值不判枚举 → 造乱字;schema.py:107 遇 CHECK 跳过)→ schema.py 解析 CHECK(col IN (...)) 交给 discover 当选项。修完单独一笔推,先告诉 eureka-fc
-14. [x] ✅ 19:2x 用户说「现在发」→ 已发飞书并回读(https://aqvi2xbk5kd.feishu.cn/docx/Q28vdRCDio2gGJx5RegcRFc9nng;推送 / CI 转绿 / 示例库两版都在,无「待补」);**本地提交未推** —— eureka-fc 19:3x 要在共享库建 schema_version(表数 136),它推上去之前我不跑门禁,汇总 + 交接随下一笔推。每小时提醒 32071ca5、19:46 一次性提醒 55217937 已删。原:19:45 白天汇总发飞书:草稿 澜绣云裳agent-白天汇总-20261114.md 已起(13:2x),「待补」处补推送结果和示例库第二版结果 → feishu_publish → 回读 → 提交 → CronDelete 32071ca5
-13. [x] ✅(未提交,随下一批)只有 capability-request-verdict 真错(写着等用户拍,实际 11-11 已拍 ② 并落地)→ 改「进行中」等下一轮 ops;另三条「进行中」各有明写理由(等真跑 / 规矩持续照办),故意不动。原:intent 状态核对改正:capability-request-verdict / 算法选型卡 / 全量门禁 rebase / 罕见层方法(四条疑已做完)
-> **11-14 08:4x 第二张拍板卡(台账第四十六到四十八条,PRD 2.4.2 要补)**:㊻ 生命周期「添加档位 / 设为默认」**不做成页面可改**,按钮换成说明(改档走评审 + 改知识库口径 + 重对真值)㊼ 定向运营 = **给这一档选中的客户批量建跟进任务**、分给各自归属导购、要填目的、内部任务不联系客户、一次最多 200 人、只总部发起 ㊽ 编辑预约 **和新建预约同一套权限**(门店的人改本店的),只改时间和顾问,规则同新建(rules.validate_appointment),已到店 / 完成 / 取消的不能改,留记录。
-> **11-14 11:1x 第三张拍板卡(台账第四十九到五十二条,PRD 2.4.2 要补)**:㊾ 剩下 5 处「本期未实现」**全做**:新建退款 / 手动合并 / 标签配置 + 新建标签 / 新增等级 / 系统设置 ㊿ 昨晚工具评测 18/24 **先不管**(等下次夜跑)(51)版型三张表 + 391 片裁片用料占比:**行业推算值就是正式口径**,要做**增删改查**的维护能力,以后有需要再改(52)研判示例库:**「你就是业务」—— 我自己准备「表面一样、根因不同」的案例**,保留以后编辑 / 添加的能力。
-> 顺带核实:「写请求题两种都算对」「全量门禁挪到 rebase 之后」等四条用户 11-11 早已拍过并落地(ad17cb8d / feb33775),intent 里状态没改 —— 待改,不用再问。
-> 第四组我自定的保守细节(未问):员工名下还有客户 / 未完成任务时不许改门店、改角色、停用(先转走客户)。
-> 每组按钮:写口 + 权限 + 咬合 + 页面接线测试;**新表照记忆「建新表连代码一起推」三处一起登**。
-
-**进度(11-14 09:2x)**:四组按钮代码 + 4 份新检查(已挂 check.sh)+ 14 条咬合规格 + 3 条边界审计攻击都写完、单跑全绿,**全部未提交**。锁内咬合重放在跑(scratchpad/bite_4groups.out,只认「四组咬合合计退出码」和「被包的命令退出码」)。之后:锁内 boundary_audit --md 重生成《安全边界审计.md》→ make_readme → rebase → chain_B(重启 8760/8770 + 冒烟 + 全量门禁 + 推)。没动 管理后台/,不用 e2e。eureka-fc 09:05 起跑 pre_push,推完才能推。
-**进度(11-14 10:3x)**:✅ 10:2x 已推 ef8d2285 / bc317549 / f1e8c979(全量门禁 rc=0、PUSHED);已通知 eureka-fc rebase。它要跑约 2 小时的链,期间它的 ⑤(导规矩 / 切生产指针)写后台库前会喊我。
-**⛔ 延长到 ~15:10(eureka-fc 12:5x 第五轮推送前链;12:45 那轮红在 bite_run 副本里找不到主检出记录仪,已修 ed6cef10)—— 我回了「不用让路、等你推」。原:11-14 10:4x 起约 2 小时(到 eureka-fc 喊「推完」为止):它切了店长助手生产指针(v9 + TL82)、在跑推送链 —— **我不跑全量门禁、不建表、不重启服务、不推**。这期间我门禁的 assistant_effect_check 会红在「挑出的规矩」(后台多 TL82),是它造成的、预期。⚠️ backend/customer_link.py 的 发 / 看 / 用 **一调就 CREATE TABLE IF NOT EXISTS** —— 只许在把 customer_link.DB 指到副本的检查里调,别在 python 里对真库直接试。
-**下一步:第 8 项顾客一次性链接** —— 要建新表:**代码可以先写、只在库副本上验;在 eureka-fc 那条链跑完之前,不重启服务、不跑全量门禁、不推**(ensure_tables 一跑就会在共享库建出表,它的门禁会红在没碰过的地方)。建表那一笔同批登:ensure_tables / shop_key(有 shop 列时)/ 文档表数 133→134 / db_build 算或不算 / make_readme / bite 锚点 / shift_world(有日期列)/ table_origin。
-
-**📍 19:3x 收尾状态**:12 小时清单全部 ✅;本地待推只有 f0208b4a(白天汇总 + 交接)。eureka-fc 19:3x 在共享库建了 schema_version(表数 136)、推送前链在跑(约 1 小时,它推完会喊)—— **它推上去之前别跑门禁**;推完 `git pull --rebase --autostash` 再锁内 chain_B 推 f0208b4a。
-⚠️ **新规矩(eureka-fc 19:3x,迁移机制 540efa79)**:以后给表**加新列**一律写成 `backend/migrations/m000N_名字.py` 的 `up(c)`(要幂等),迁移目录外新出现 `ALTER TABLE` 会被 migration_check 拦;各模块 建表(c) 里现存的加列登记成欠债、原样不动。rebuild.sh 在 ensure_tables 后面多了 migrate.py 一步。
-
-**交接(11-14 16:1x,压缩前)**
-- **已推**:ef8d2285 / bc317549 / f1e8c979(上午)、77c78249 / 5f01393c / 5287f9e9(15:3x)。**本地待推**:b3cc8694(CI 两条老红修复)。
-- ✅ 17:2x 已推 857f805e。**eureka-fc 现在切店长助手 v12(TL83)→ 推;它推上去之前我不跑门禁、不推**(切完那段主干 assistant_effect 会红在 TL83)。白天汇总 19:45 发飞书、本地提交,等它推完再推。原:后台 byt7gqlsc 在排队等锁跑 chain_B(scratchpad/chain_ci.txt;eureka-fc 15:4x 起推送前链、逐条咬合重放一直占锁)。它推完我这条链多半退出码 7「远程有新提交」→ `git pull --rebase --autostash` → 重跑 chain_B → 只认 PUSHED。
-- **之后**:19:45 前白天汇总定稿(澜绣云裳agent-白天汇总-20261114.md:把「二、等推送窗口」改成已推、补示例库第二版重判结果、补 CI 两条修复)→ feishu_publish → 回读 → 提交 → CronDelete 32071ca5。
-- **判据 / 未验证**:CI 两条修复只在本机照门禁环境复现过(挂 gate_db + 非软链 TMPDIR),**没在 Linux CI 上看到绿** —— 推完看下一次 CI。合并执行处不核同一账户(已知缺口,PRD 写了)。新页面没在真浏览器点过。
-- **禁区**:eureka-fc 的 pre_push.sh、api.py 工具描述区、prompts.py TL 段;它推完要切店长助手生产(TL83),切之前会喊我。
-
-**推送脚本已备好(14:1x)**:scratchpad/push_A.sh(锁内:建两张表 + 文档表数点名)→ 锁外照点名改「133 张」为 135 → scratchpad/push_B.sh(锁内:咬合重放 5 组 + boundary_audit --md 直接写文件 + make_readme;只认 bite_total_rc=0 和 boundary_audit rc=0)→ git add 新文件 → scan_secrets → commit --only → chain_B.sh。
-
-**交接(11-14 11:4x,压缩前)**
-- **下一步第一个动作**:等 eureka-fc 喊「推完」(它 11:3x 在咬合重放 32/78;推完后它要改 api.py get_member 工具说明 + prompts.py TL83,**我别碰这两区**)。喊了之后:锁内一口气 —— `python3 tools/ensure_tables.py`(建 customer_link + customer_tag;⚠️ 会把 tag.n 全部按真实绑定重算成 0)→ `python3 tools/doc_numbers_check.py` 看它点名哪几处「133 张」改 135 → 咬合重放(customer_link_check / tag_level_check / page_buttons_check.mjs / 审计「先占位」那条;脚本照 scratchpad/bite_4groups.sh,**别再用中文变量名**,上次汇总那行因此退出码 255)→ `boundary_audit.py --md` 写回(输出第一行和最后一行是锁提示,剥掉)→ make_readme → git add 新文件 → scan_secrets 单独 → commit --only → chain_B。
-- **本批未提交的我的文件**:backend/{customer_link.py, customer_link_check.py, tag_level_write.py, tag_level_check.py, page_buttons_check.mjs, web/c.html}(新)+ server.py / pickup_write.py / rating_write.py / boundary_audit.py / worldclock.py / db_build.py / web/index.html + tools/{ensure_tables.py, shift_world.py, bite_specs.json} + check.sh + PRD + HANDOFF + intent/capability-request-verdict.md + 待办清单.md。
-- **判据**:顾客链接时间列用真实时钟、登「整列日期不挪」(世界时钟会让 7 天永远到不了);customer_tag.created_at 用世界时钟、登 worldclock.已发生的时间列;标签人数归零是诚实(原数是造的,PRD 写了);新等级先停用 + 门槛单调;手动合并只同户同名(merge.判同一人)。
-- **作废 / 撤回**:试过在 merge.并入 执行处加「同一账户」检查 → merge_check 红 23 条(样本用不同名的两人)→ 已 git checkout 撤回,只在 manual_merge 拦;PRD 已记为已知缺口。
-- **未验证**:新页面 / 顾客落地页没在真浏览器点过(只 node 桩);第 12 项示例库还没开工 —— 设计定为「案例清单文件 + 评测时在库副本上现造单据 + 开 / 关各两轮」,**不写进 truth 表、不改 seed**;难点是 sdk.run 的工具子进程也要指到副本(参照 11-12「评测改在库副本上跑」那套切库)。来源必须标「项目方按业务口径整理(用户 11-14 授权)」,结论写明是自己出的题。
-- **禁区**:tag.n 归零 / 建表只能在锁内、eureka-fc 链跑完之后;eureka-fc 的 api.py 工具描述区和 prompts.py TL 段;合并执行处不改。
-- **拍过的(第三、四张卡)**:㊾ 剩 5 处全做(已做)㊿ 工具评测先不管(51)裁片做页面、三张表只读(已做;改占比只版师 —— 我默认表里说过总部也能改,以原规矩为准,要跟用户说)(52)示例库自己准备案例 + 保留编辑能力。
-
-**交接(11-14 09:2x,压缩前)**
-- **下一步第一个动作**:等后台 b5h2n0fk2(锁内 scratchpad/bite_4groups.sh,输出 scratchpad/bite_4groups.out)→ 只认每组「退出码=」和「四组咬合合计退出码=0」+「被包的命令退出码 0」。红了先看是不是锚点(old 串)对不上 —— 规格里 old 都是对当前工作区 assert 过的。
-- 绿了之后:① 锁内 `python3 backend/boundary_audit.py --md` 重生成《安全边界审计.md》(新加 3 条:店铺 / 内容活动页面品类 / 提权)② `git add` 新文件:backend/shop_write_check.py、content_write_check.py、appt_ops_write_check.py、staff_perm_check.py、targeted_ops.py ③ 等 eureka-fc 推完(它 09:05 起 pre_push)→ pull --rebase → 锁内 chain_B(scratchpad/chain_B.sh:重启 8760/8770 + 冒烟 + 全量门禁 + 推)→ scan_secrets 单独一步 → 提交 --only 自己的路径。**没动 管理后台/,不用 e2e**。
-- 我改过的文件(提交时 --only 这些):backend/server.py、fsm.py、auth.py、boundary_audit.py、web/index.html、4 份新检查 + targeted_ops.py、check.sh、tools/bite_specs.json、tools/doc_numbers_check.py(加「定向运营一次最多几人」规格)、产品需求文档、HANDOFF。
-- **判据**:店名锁死 = shop_key.码() 整串比对当前 shop 表,改名后老串换不出码(PRD B-121);新店默认无效 = 验收集 bk-shop-R8初始态;fsm.主数据岗 一改 = 店铺 / 商品 / 活动 / 页面 / 内容的 transit 都要总部运营(grep 过:没有别的检查 / 定时任务走这几台的 fsm.check;arrival_card 直接 UPDATE 上架,不经状态机)。
-- **未验证**:① ~~页面接线只做了源码对账~~ 11:0x 补了 backend/page_buttons_check.mjs(node 里真跑页面,19 条,手工咬合 3 口都红在点名那条,已进 check.sh,未提交);仍没在真浏览器 / 真手机上点过 ② 「不能提到比自己高」(ABOVE_ME)现在走不到 —— 只总部能改、总部最高;留作保险 ③ 全量门禁还没跑过这批,可能红在:状态机台数 / 写口登记类检查 / js_smoke / check_copy 文案 / selftest_registry。
-- **作废的结果**:「真库编辑日志 20 分钟多 159 条」是演示世界的未来日期商品日志,不是我写的(真库 content/activity/page/category/shop/schedule 都核过没变)。
-- **禁区**:页面上另外 6 处「本期未实现」(系统设置、新建退款 / 手动合并、标签配置、新增等级、新建标签)不在用户选的四组里,不动;第 8 项顾客一次性链接要建新表 → 等这批推完单独一批(三处登记 + db_build + make_readme + bite 锚点)。
-- **欠账**:PRD 附录 B 有 19 条老条目字段不全(write-product-doc 汇总器 --严格);门禁绿后 PRD 要再发一次飞书(四组落地那版还没发)。
-
-**交接(11-14 07:5x,压缩前)**
-- **下一步第一个动作**:第 4 项 —— 读 backend/web/index.html 1567(编辑门店)/1666(新增店铺)/1692(编辑店铺)附近,查 backend/server.py 有没有门店/店铺写口、身份闸怎么判「总部管理员」(参照已有写口的身份取法 + op_log);**还没开始读任何代码**。
-- **悬而未决**:eureka-fc 07:4x 起跑推送前链,预计 09:10 推完会喊我 —— 喊之前**不推 main**(推了它要重跑 85 分钟)。本地未推:f348f1d2 之后只有工作区改动(HANDOFF、夜间汇总 md 未 add)。
-- **08:26 一次性提醒 17cf0fd3**:发 澜绣云裳agent-夜间汇总-20261114.md 到飞书 → 回读 → `git add` 汇总 md → commit --only 汇总+HANDOFF(本地)。汇总第一节已改成「11-14 早上已拍」。它的 prompt 里还写着 CronDelete 40eb3bed —— **40eb3bed 已删**,新的每小时提醒是 32071ca5(19:45 后删)。
-- **判据**:空花费 8 行判定条件 = 花费 None + 工号 60000008 + 11-13,刚好 8 行(assert 过);账本 agentsite/usage/ 不进版本库,所以删除没有提交号。日志清理不开的依据:project_lanxiu run_events 最早 10-24,到期清单现算 0 条(log_policy_api.到期清单,从 管理后台/services/api/app 目录 import,DATABASE_URL 指 aimc_dev)。
-- **禁区**:澜绣 / 演示 A 不开到期清理;eureka-fc 的文件(见下一轮规矩段);权限编辑那组必须挡自我提权并进 boundary_audit。
-- **未验证**:四组按钮的「默认只总部管理员能用」是我写在卡上的默认,用户选了四组没反对这条 —— 按已拍处理;顾客链接「7 天 / 一次性」同理。
-
-### ⏱️ 12 小时长任务清单(11-13 20:25 → 11-14 08:25)
-> 用户 11-13 20:2x:「做一个12小时的长期任务,有什么需要跟我拍板的吗」→ 拍板卡 4 条全选推荐(台账第三十八到四十一条)。
-> 规矩照旧:写库 / 门禁 / 重启走 gate_lock `--who`;不碰 eureka-fc 的文件(nightly_eval / agent/nightly / rounds / textmatch / guards);改管理后台推前跑 make test-e2e-ci;不开浏览器、不买东西;做完一项打 ✅ + 一句结果 + 提交号;清单做完接着还债,不停。
-> eureka-fc 11-13 晚说:推送前咬合重放以后只在改检查 / 守卫 / 判分器时才跑(pre_push.sh 归它改);triage_shadow 每晚真跑参数它来加。
-
-**交接(11-13 21:0x,压缩前)**
-- 停在:46c7fada 已提交(本地),锁内链 chain_C(管理后台 e2e 全套 → 重启 8760/8770 → 冒烟 → rebase 核对 → 全量门禁 → 推)后台跑,输出 scratchpad/chain_1113n.txt。**只认「被包的命令退出码」和 PUSHED 两行**;红了先看 /tmp/e2eci_C.log、/tmp/gate_B.log。链跑着时别改工作区。
-- **11-13 22:xx 链红 7 条(chain_1113p),都已在修(未提交)**:① fixture_intact / rating 造数 / 世界日期三条 = 公海首跑给 12 户受保护客户(order_mix.受保护客户:E- 夹具 + 真值依赖)发了知会、知会说明带日期 → ownership_release.扫描 跳过受保护客户(同户有一个受保护就整户跳)+ ownership_transfer_check 新增一条 + 咬合 1(重放中 bqbaga2nf);tools/shift_world.py「文字里也挪」登记 schedule.note;**还要在锁内撤掉那 12 条知会**(先存清单到 ~/lanxiu-backups/)② 咬合规格 #939(展示大类那条)锚过期 → 已改 ③ cost_alert_check 连库没 closing → 已改。修完重跑 chain_C。
-- ✅ 咬合 10 条全过;✅ 撤了 12 条误发知会(受保护剩 0,公海知会共 858,清单 ~/lanxiu-backups/公海误发受保护客户-11132139.json)。已提交,重跑 chain_C → scratchpad/chain_1113q.txt。原:**在跑(后台)**:bqbaga2nf = 咬合重放 ownership_transfer_check(含新那条「受保护客户一户都不扫」);bdgxht023 = 锁内撤 12 条误发知会(scratchpad/undo12.py,先存 ~/lanxiu-backups/公海误发受保护客户-*.json,删 schedule + 写 op_log code=UNDO_POOL_NOTICE)。**只认它们自己印的行**(撤了几条 / 受保护剩 0 条 / 咬合全过 + 被包的命令退出码)。
-- 两个都绿 → 提交(ownership_release / ownership_transfer_check / shift_world / cost_alert_check / bite_specs / HANDOFF)→ 重跑 chain_C → PUSHED → 喊 eureka-fc。
-- 未验证:shift_world 登记 schedule.note 后,05:10 平移会把知会说明里的日期一起挪 —— 没真跑过平移;门禁那条世界日期检查会验。
-- eureka-fc 等我推完再 rebase;之后它改 api.py 工具描述区 + prompts.py TL 段,**我别碰这两处**。
-- ✅ 11-13 23:xx 已推 0e515765(4 笔)、已喊 eureka-fc(它 rebase 后推 27 笔,期间它会拿锁)。门禁两轮红在 gate_print_check = 8760 写库时裸 .backup 失败,已加 .timeout(0e515765)。
-- **11-14 05:14**:锁已空、远程仍无新提交、eureka-fc 显示 idle(它的链按估算 04:50 前后该跑完)。已发消息问它绿没绿、要不要我先推;**等它回再动 main**。
-- **11-14 04:14 复核**:锁仍在 eureka-fc(04:11 起咬合重放 store_report_check),远程还没新提交,本地领先 5 笔。翻了页面上「本期未实现」的按钮(编辑权限 / 新增店铺 / 新建活动等约二十处)—— 全是写入口,每个都牵涉「谁能改」,不算免拍板项,没动。⚠️ `gate_lock.sh` 没有 `--status`,传了它会排队等锁,看锁直接 `cat /tmp/lanxiu-gate.lock/owner`。
-- **11-14 04:1x**:eureka-fc 已 cherry-pick ccf2f4e9(它那边 5abbd1fe)+ 自补规则数 102→103(c8b2287d),推送前链重跑约 85 分钟。**它推完前我不推 main**;后台 bvfa9bq1f 盯着远程,有新提交会通知 → `git pull --rebase`(ccf2f4e9 应被认成已在上游)→ 锁内 chain_C → 推 e518f1c7。shift_world --can-shift 已核:pool_notice 不挡 05:10 平移。
-- **11-14 04:0x**:第五轮链(含页面接线测试)e2e 过、门禁红 3 —— **全是我 02:23 合并旧知会在共享库建的 pool_notice 引起**(rebuild 建不出 / 有 shop 列不在带门店键名单 / 文档表数 132→133)。修:ccf2f4e9(建表补 shop_code + 回填,登 ensure_tables / shop_key,4 份文档 + 2 个发布脚本 133 张);锁内单跑 table_origin / shop_key / ownership_transfer 全绿,真库 858 行码已填。**本地未推**:e518f1c7 + ccf2f4e9。**eureka-fc 04:0x 起跑推送前链(~85 分钟),要求这期间别推 main** → 已告诉它会红这 3 条、建议 cherry-pick ccf2f4e9。下一步:等它推完 → rebase → 锁内 chain_C → 推。教训:**往共享库建新表(哪怕是脚本运行时建)= 动了所有检出的门禁**,建之前先把表登记推上去(记忆里「建新表要连代码一起推」那条,这次又栽)。
-- **11-14 03:1x**:补设置页日志策略卡接线测试 test_log_policy_page_actions.js(9/9,手工咬合三关过;第一次攻击打偏到 app.js 第一处同样写法,已锚到卡自己那行)e518f1c7,登记 E2E_CI_JS。后台链(scratchpad/chain_1114e.txt)跑 e2e+门禁+推。⚠️ 该测试用 psql 子进程造/删临时成员 —— CI 上若没 psql 客户端会崩,链红在这就看这条。
-- **11-14 02:4x**:✅ 已推 8dcabc03;✅ 旧公海知会合并 858→5(先备份);清单只剩 8(08:25 飞书汇总 + CronDelete 40eb3bed)。还债:B-120 ② 全仓扫过只一处(2525ce70)。**11-13 夜跑 tool_eval 18/24 只做了归因没改**(单轮,判分严格度改前要跟用户说 + 工具描述区归 eureka-fc):T04 疑判分器枚举「标准码」(答了「L 码、公差内」)/ T08 模型把云锦说成「没有这个工艺」/ T14 没说能不能承诺 / T17 模型以为 get_aftersale 不能按状态筛(疑工具描述)/ T22 反问不查 kb_bom / T24 交付前检查扣下报价单(机制生效但算挂)。已转 eureka-fc。剩下「本期未实现」按钮、顾客追评接页面(要定顾客怎么证明身份)、签收告知单(拍过不能代签)都要拍板,没动。
-- **11-14 01:5x**:第三轮 e2e 过、门禁红 2:① PRD 新表三行带裸计数(doc_numbers_check 无人认领;门禁跑工作区,未提交的 PRD 也算)→ 改成不带数 ② 契约加接口后 OpenAPI / TS 类型没重生 → make gen。已提交 64770ac0 + 8dcabc03(PRD+HANDOFF),scan 干净。**第四轮后台跑**,输出 scratchpad/chain_1114d.txt。判据:加契约接口要连带 make gen;往 PRD 正文写数字要么带日期当历史、要么别写。
-- **11-14 01:3x**:第一轮链红 2(booking_check 公海知会挂 None / log-policy 两接口没进契约)→ 修 1e27f418;第二轮红在管理后台 page-smoke(PUT /log-policy 没登记 revision 来源)→ 修 5d56beb2(make page-smoke 单跑 rc=0)。**第三轮在跑**(后台 bzu2s1qus,01:20 拿锁,输出 scratchpad/chain_1114c.txt;只认「被包的命令退出码」和 PUSHED)。下一步第一个动作:看第三轮 → 绿就喊 eureka-fc「已推,rebase 到我之上」→ 提交 PRD + HANDOFF(--only)→ 锁内 `python3 backend/ownership_release.py --合并旧知会`(先只看)。红就照日志修,别重跑没改的。判据:改了管理后台就得重跑 make test-e2e-ci;scan_secrets 单独一步(01:0x 有一次串在 commit 后面,违规了一次)。
-- **11-14 00:4x**:共享 PG 已在锁内升到 7c3e1a9d5b20 + 重启 aimc(alembic_sync_check 一致);日志策略 e2e 26/26(修了演示项目 B 没 U001 成员;这两次单跑没进锁,只动 B 项目自己造的行)、告警 e2e 35/35。main 本地:a53e32bc 日志策略 / c1bf4712 审计修 / c4167cb1 e2e 修(+告警三笔)。scan_secrets 干净 1624。**后台 bugd9j07w**:咬合重放 boundary_audit → 锁内 chain_C(e2e 全套 → chain_B 门禁+推),输出 scratchpad/chain_1114a.txt,只认「被包的命令退出码」和 PUSHED。推完:喊 eureka-fc;HANDOFF 跟下一笔提交;锁内 `--合并旧知会` 先只看。
-  - **悬而未决(已问用户,没答)**:① 删不删门店账 8 行空花费(审计造的)② 澜绣项目到期清理开不开 —— 都不许自己动。**未验证**:日志策略的 worker 路径只在 e2e 里进程内调过 扫到期(),常驻 worker 没真跑过一轮;设置页策略卡没人真点过(只过 node --check)。之后还欠:清单第 7 项 PRD 补 12 条拍板发飞书、第 8 项 08:25 飞书汇总 + CronDelete 40eb3bed。
-- **11-14 01:0x 交接(压缩前)**:
-  - ✅ 共享 PG 已退回 f112450e5aa7(bb0059c6q 验过:current=f112450e5aa7、新指标规则 0),已告诉 eureka-fc。**eureka-fc 回:今晚推不了(咬合 7 条没过),别等它,我先进锁迁移推**;它之后 rebase 到我之上。
-  - ✅ 查实门店账本空花费来路:backend/boundary_audit.py 的 a_run_no_login 登录对照那遍真调 do_POST(假 run 没 trace_id/花费)→ 每次全量门禁往 agentsite/usage/门店用量-2026-11.jsonl 写一行(8 行全是 60000008 / haiku-5-5,时间对得上门禁)。**已修(主检出未提交)**:子进程设 LANXIU_STORE_USAGE_DIR 临时目录 + assert;单跑那条攻击照样成立、真账本行数 8→8;bite_specs 加 1 条(删掉 env 那行 → 预期红「没登录调不动聊天站的智能体」)+ 文件内咬合列表加一行。**咬合未重放**(要锁:`./tools/gate_lock.sh --who … python3 tools/bite_run.py --only backend/boundary_audit.py`,最后一条)。**那 8 行脏账没删 —— 要先给用户看清单、问了再删**(删了验收页月费用才不再「拿不到」)。
-  - [~] 第 5 项日志采集:副本 .claude/worktrees/告警(已 reset 到 main=e4c24451)WIP 提交 eeb4d161 已含全部改动(alert_rules / alerts_api / models / 迁移 7c3e1a9d5b20 加「日志用量占比」/ main.py 路由 / worker.py 扫到期 / app.js 设置页策略卡+指标下拉 / Makefile 登记 test_log_policy_flow)。设计:策略存 projects.retention_policy(本来就有、一直空)JSON,空=建议值;只算/只清五类原始记录的正文列,骨架留;**到期清理默认关**,打开前页面列「到期会清哪些」并二次确认;worker 只清开着的项目,每轮每类 ≤2000 行,记审计。**还没跑过任何测试**。下一步:副本里 commit → cherry-pick 到 main → 锁内:alembic upgrade head(主检出 管理后台/services/api,export DATABASE_URL)→ 重启 aimc → make test-e2e-ci → chain_B 推(连同 boundary_audit 修 + HANDOFF)。**别给澜绣项目打开到期清理** —— 要用户看清单点头。
-- **11-14 00:15 补记**:第一次退回(bi5gm8dfe)**其实没跑** —— 等锁 60 分钟超时自己放弃,后台通知却报「完成 0」;持锁的是 eureka-fc 连串咬合重放。已重排队(bb0059c6q)。退回跑完要验:alembic current = f112450e5aa7、两种新指标规则 0 条,再告诉 eureka-fc。共享 PG 此刻**仍在** 7c3e1a9d5b20。
-- **11-13 23:15 状态**:wip-告警 三笔已 cherry-pick 到 main(8d4ae51f / f0dcf805 / e4c24451,本地未推)。锁内跑过一次迁移 + 重启 aimc + 3 份 e2e(告警 35 / 意见单 105 / 验收 80 全过),**然后意识到迁移进了共享 PG 而 eureka-fc 的代码没有 → 它的 alembic_sync_check 会红**,已排队退回 f112450e5aa7(任务 bi5gm8dfe,等它「工」检出的咬合重放让出锁)并告诉了它。**eureka-fc 推完 → 我 rebase → 锁内 alembic upgrade head → 重启 aimc → make test-e2e-ci → chain_B 推**。退回后 aimc worker 每分钟会记一条「种门店费用规则出错」(CHECK 拒),无害。
-- **新的下一步**:wip-告警 三笔并进 main(rebase 到 eureka-fc 推完之后)→ 锁内 alembic upgrade + 重启 aimc + make test-e2e-ci + 门禁 → 推 → 锁内 `ownership_release.py --合并旧知会`(先只看)→ `--写`。然后第 5 项日志采集(要先做功能,真删日志前先出清单问用户)。
-- (旧)下一步第一个动作:看链结果 → **推上去后立刻 SendMessage 喊 eureka-fc**(它停着推送链等我,会 rebase 到 46c7fada 之上只跑一次)→ 绿了把 2、3 改成 ✅ 写提交号;红了修。然后做 3 的总部那头(告警指标「门店月费用」要 alembic 迁移改 ck_alert_rules_metric)。
-- 未验证:门店账 4 笔花费为空的原因(猜 sdk.run 那几轮 res 为空)—— 没核;**不许当 0 算**。~~test_glossary_flow ⑧ 偶发红~~ → **查实不是偶发**:演示项目攒了 238 个 e2e 术语版本,下拉框按名字排取前 200,新冻结的排到外面。改成按冻结时间倒排(术语 / 实体词典 / 意图 / 路由四处同改),四份 e2e 全过。演示项目那 238 个残留**没授权清**,没动。
-- 判据:澜绣项目取不到门店账 = 拿不到、不退回 usage_ledger(退回会把评测费算进门店上限,违背第三十二条);费用提醒查重靠库里那条任务,不靠文件。
-- 禁区:eureka-fc 只动 agent/ tools/ nightly、api.py 描述区(它动前会喊);triage_shadow 参数、pre_push.sh 归它。公海 870 条合并要先只看再写(锁内)。
-- 每小时 :07 有激活提醒(cron 40eb3bed,会话内有效),08:25 后发飞书汇总并 CronDelete。
-
-1. [x] ✅ 剩下 88 条 e2e 工作流 + 88 把「没上生产那条的」测试密钥(用户「一起清」):吊销 88 / 归档 88 / 核数对得上,清单 ~/lanxiu-backups/e2e残留清理-11132021.json;`clean_e2e_residue.py --连挂着的`
-2. [x] ✅ 上线验收页「月费用」改读门店用量账(46c7fada,已推 0e515765)。⚠️ 门店账本月 4 笔花费为空 → 页面如实「拿不到」;线索:Haiku 5.5 有贵档,cost_of 拿不到逐次用量就不猜(返回 None),trace_id 也空 —— 待查,别当 0
-3. [x] ✅ 已推 8dcabc03(总部那头告警「门店月费用」,迁移 7c3e1a9d5b20 已在共享 PG)。原:80% 提醒:✅ 店长那头(46c7fada 已推);总部那头写在副本 .claude/worktrees/告警 分支 wip-告警(b830d3e5:告警指标「门店月费用」+ 迁移 7c3e1a9d5b20,worker 自动给澜绣项目种规则)—— 未迁移、未跑 e2e
-4. [x] ✅ 已推 8dcabc03;11-14 02:23 锁内先备份(~/lanxiu-backups/合并旧知会前-11140223.db)再 --合并旧知会 --写:858 条 → 5 条清单,pool_notice 858 户,复查剩 0。原:公海提醒每人一条清单:代码在 wip-告警(0c7ae43a:pool_notice 表 + 每人一条 + `--合并旧知会`,检查 41 条、咬合 13 条全过);副本预演 860 → 6 条。**待做**:并进 main → 门禁 → 推 → 锁内先只看再 `--合并旧知会 --写`
-5. [x] ✅ 已推 8dcabc03(设置页策略卡 + 告警「日志用量占比」+ 到期清理默认关,e2e 26 条);**澜绣项目到期清理没开,等用户看清单**。原:日志采集三个门槛填建议值 30 天 / 5 GB / 80%(第四十条)
-6. [x] ✅ 已推 8dcabc03(e2e 全套过)。原:意见单分三级带时限:代码在 wip-告警(57c642b8:分级从「影响 / 评价 / 问题类型」推,截止依据开头写级别;超时提醒 = 告警指标「意见超时条数」,同一迁移)。未跑 e2e
-7. [x] ✅ 8dcabc03 已推;飞书重发 https://aqvi2xbk5kd.feishu.cn/docx/MsM8dlHGRohcuqxZJCdceGUwnIb。原:PRD 补 11-13 这 12 条拍板 + 发飞书:✅ 2.4.1 表(三十–四十一,含落地状态)+ A-299 意见分级 / A-300 日志用量与到期清理 + B-120 门店账空花费;audit_prd pass、B-120 汇总合格(老条目 B-87 等本来就缺字段,没动);✅ 已发飞书 https://aqvi2xbk5kd.feishu.cn/docx/Fm7ydUjV3oZDI8xf79jcNnVJn6e(**没回读正文**,全文 50 万字太大)。**待提交**(等第三轮链推完再提,别让链推到没过门禁的文件)
-8. [ ] 早上 08:25 发飞书汇总 —— **草稿已写**:`澜绣云裳agent-夜间汇总-20261114.md`(03:2x,未提交未发;doc_numbers_check 不扫它)。08:25 前按最终状态改一遍(eureka-fc 推没推、e518f1c7 推没推、用户答没答那两问)→ `python3 tools/feishu_publish.py 澜绣云裳agent-夜间汇总-20261114.md`(默认文件夹?按记忆「产品文档发产品文件夹」核一下)→ 回读 → 提交 → CronDelete 40eb3bed
-
-### 🟡 11-14 10:4x · 后台已切 v11、第四轮推送前链在跑(scratchpad/pre_push7.log)
-- 对方 10:2x 推了 f1e8c979;我 rebase 完领先 41 笔(HANDOFF 按约定重建、待办清单重生成、bite_specs 两边都留 1764 条)。
-- 后台:规矩导入(新增 3、出新版 2)→ v10 代码导入 → 改回 → **v11 = v9 + TL82**(逐列比只差规矩两列)→ **生产 v9→v11 已切**;assistant_effect 「挑出的规矩」67 条对上。
-- 已喊对方:这 2 小时别跑全量门禁 / 别建表;它的门禁会红在 TL82(预期)。**链红了要 `python3 .wip-glossary/align_rules_v9.py --切 9` 切回**(脚本会先比列,v9 比 v11 少 TL82 会被「少了」拦 —— 切回时要直接调接口,别硬改脚本判据)。
-- 推成功 → SendMessage 对方;然后接清单 ③(get_member → TL83,每搬一次照 align 脚本做,做完告诉用户)。
-
-### 🔴 11-14 10:1x · 第三轮推送前链红在门禁 5 条(**没推**;让对方先推,它 09:5x 起锁内推 3 笔)
-- pre_push6 收工 rc=1 09:23:咬合重放**过了**,红在 ④ 全量门禁 5 条。本地领先 39 笔(自 11-11 起都没推,不是 2 笔)。
-- 已修 4 条(4eb57598):pre_push.sh:46 `${K}`、SOP 重生成、G02「故意不给编号」注释、model_align_check 改读**本检出 + 主检出两份记录仪**
-  (存量是照主检出登的;worktree 的记录仪是 11-12 旧副本;主干代码一样红 —— 已在 origin/main 副本复现)。
-- **剩 1 条 = 后台店长助手生产 v9 的规矩清单缺 TL82**。用户 11-14 拍:导规矩 → 从 v9 另出一版只多 TL82 → 切生产;
-  且以后「只搬位置、一字不改」的同类对齐**做完告诉用户即可**(改措辞 / 加删规矩照样先问)。已写进 intent。
-  · 现有接口没有「只同步规矩池」;代码导入会整份换草稿(丢术语 / 实体 / 路由 / 意图版本、技能、v9 编辑过的开头)。
-  · 脚本 `.wip-glossary/align_rules_v9.py`(未跟踪):导规矩 → 代码导入 → PATCH 把 v9 各项改回 → skills-sync → 出版本 → **逐列和 v9 比,只许规矩两列不同**;
-    `--看` 只比(已跑:草稿 == v9);`--切 N` 切之前再比一次。
-  · ⚠️ **时序**:切了以后、我推上去之前,对方门禁的 assistant_effect 会红(它的代码没 TL82)。顺序:对方推完 → 我 rebase → 跑脚本 → 喊对方 → 切 → 立刻跑链 → 推。
-    推失败要切回 v9。服务全跑主检出,新口子推前用不上,所以没加「规矩池同步」接口(可做成以后的欠账)。
-- 接管收紧已写(未提交):`发起()` 403 / FORBIDDEN → 不交还、不落盘、说「找管理员开权限」;409 NOT_BOUND 等照旧兜底。takeover_check +2 条、规格 #1750(单跑中)。
-  TL76 **没改**(改措辞要先问;工具返回里已带说明)。
-- **夜跑商机评测还红的原因查清了**:兜底那笔 a5227c3a 在我**没推的 39 笔里**,主检出(线上)`takeover_client.py` 里 `记兜底` 出现 0 次 ——
-  **线上从没有过兜底**;之前写的「11-12 19:00 上线」是错的(一条没验的预判写成了结论)。推上去之后才算上线,下一晚夜跑才验得到。
-  另:11-14 凌晨夜跑**整晚跳过**(`有咬合重放在跑(.bite-run.pid)`),所以 11-14 没有夜报。
-- **下一步第一个动作**:等对方「推完了」→ `git fetch && git rebase origin/main`(用 --autostash,别裸 stash)→ 提交接管收紧(takeover_client / takeover_check / bite_specs #1750 + 这份交接)
-  → `python3 .wip-glossary/align_rules_v9.py`(出版、逐列比)→ SendMessage 对方「要切了,这 2 小时你门禁的 assistant_effect 会红在 TL82」→ `--切 N`
-  → 后台跑 `tools/pre_push.sh > scratchpad/pre_push7.log`,只认「收工 rc=」那行。推成功告诉对方;红了切回 v9(`--切 9`)。
-- **未验**:规格 #1750 单跑(后台任务 beajr6tje)结果没看;align 脚本只跑过 `--看`,真跑的 PATCH 形状(工具列表 dict 带「开」、四个版本键)没在活接口上试过 —— 失败就停,别手改库。
-- **禁区**:不直接 SQL 改 chat_assistants;不改 TL76 措辞(要先问用户);切生产前必喊对方;门禁 / 重放跑着时不改被测代码。
-- **作废的结果**:「兜底 11-12 19:00 上线」作废(线上没有);「领先 2 笔」作废(实为 39 笔 + 4eb57598)。
-- **悬而未决**:tools/影响面基线.json 被门禁改成 393(11-12 是 391),没提交、没查是谁的增量;agentsite/evals/funnel.jsonl 是滚动日志,永不 add。
-  以后缩工具说明(还剩 14 个)每次都要走一遍 align 脚本 —— 值得给后台加「只同步规矩池」接口(照 skills-sync),排进欠账。
-- 对方推完后的改动:多 4 条 check.sh 项;bk-shop/product/activity/page/content 的 transit 只许总部运营。
-
-### 🟡 11-14 08:3x · 第三轮推送前链在跑(pre_push6.log,07:18 起,08:28 才到 32/77,预计 10 点前后)
-- 04:30 那五处**全清**(b7c2638f 等);source_check 那条不是抖动,是 bite_check 对照红连带。已 rebase 到 c8b28a3e。
-- 对方答应:我推完前不推 main。推完第一件事 SendMessage 告诉他。
-- **用户 11-14 07:4x 拍三条(还没写进 intent,推完写)**:① 接管出错只在没配好时兜底 —— ⚠️ 这件 11-12 已拍过且已上线(a5227c3a,一律兜底),
-  我重复问了;今天的答案更窄:**403 FORBIDDEN(账号没发起权限)照旧拦**、明说「找管理员开权限」,NOT_BOUND / 连不上 / 没发布照旧兜底。
-  ② 标品交付告知只出草稿,人点了才发。③ 拆 api.py 先约窗口、喊对方停手,一口气拆完。
-- **未验**:11-13 夜跑 oppo 仍判红(兜底 11-12 19:00 就上线了)—— 原因没查。T17 是单轮模型误读(schema 有 status),顺手在说明里写清参数可单独用。
-- 新提醒 cron 63232bb0(:17,清单 ⓪–⑥)。
-
-### 🔴 11-14 04:30 · 第二轮推送前链又红在 ③(**没推**;对方答应我推完前不推 main)
-
-- 状态:已 rebase 到 8dcabc03 + cherry-pick 对方 ccf2f4e9(我这边 5abbd1fe,pool_notice 新表)+ c8b2287d(规则数 102→103)。领先 37 笔。
-- pre_push5.log(scratchpad)收工 rc=1 04:29。没过的:
-  1. ownership_transfer_check 规格 13 锚点过期(对方改了 pool_notice 的 INSERT)—— **已在工作区改好 bite_specs.json,未提交**
-  2. source_check 1/12 —— 输出被截,看不到哪条;03:00 单跑 12/12 全过 → 疑并发/抖动,**未验**,先 `bite_run --only backend/source_check.py` 单跑
-  3. gen_doc_lists 2/2、make_readme 1/1「对照就是红的」—— **未查**;猜是 cherry-pick 后文档表数 132→133 / 规则数变了,生成物没重生成(跑 tools/gen_doc_lists.py、make_readme.py 看)
-  4. bite_check [4/12](vocab_check 撞上的那条)「对照就是红的」—— 可能和 3 同根(bite_check 是对照红,不是判据死)
-  5. nightly_check [18/18]「改坏了却没红」—— **未查**;对照 bite_specs 里 nightly_check 第 18 条,疑我改 nightly_eval(删 连续失败已知 三条)后那条攻击打空
-- **下一步第一个动作**:逐条单跑 bite_run --only 上面 5 个脚本 → 修 → 一笔提交(带 HANDOFF)→ `./tools/pre_push.sh`(~85 分钟)→ 推 → SendMessage 对方(uds:/tmp/cc-socks/35954.sock)让他 rebase,他本地还有 e518f1c7 等着。
-- 推完欠的:对方 tool_eval 18/24 归因(T17 get_aftersale 描述疑说不能按状态筛,在我的 api.py 描述区);④-b 再缩 15 个描述(下一个 get_member)。
-
-### 🟡 11-14 02:5x · 咬合重放的 7 个红已逐条查清修好(**还没推**)—— 上面 00:27 那段的结论作废
-
-- **已验**(副本里逐条:对照绿 → 改坏 → 红在那一条):7c51fc7c + 03100b04。
-  - 执行器根因:`bite_run.门禁怎么跑()` 取 check.sh **第一行**,sealed_tier_check 第一行是 `--自测` → 改成取真跑行。
-  - 真红:intent 状态「完成」→「做完了」+判据点名 ops_eval_judgetest.py;两条 nightly 规格锚点过期(triage_shadow 加了参数);
-    bite_check 探针替身签名(`改过的文件` 加了 基线);规格 1736 两层一起拆;ops 重试自测只印不拦(补 sys.exit);
-    正反疑问新加同句对照(全角冒号成分句后旧那条不承重);worldclock 预期红改成实测那条;白坯试衣两天从数据挑+样本量判据。
-  - source_check 单跑已全绿(00:27 那次红是并发环境)。
-- **已验(03:1x)**:最后三脚本整套重放 18/18、8/8、6/6 全过。下一步直接 rebase。
-  **作废**:00:27 那段「怀疑 pyc / 漏拷 / 解释器」—— 三个都排除了,不是它们。
-- **下一步第一个动作**:看 bl116xguk 输出(只认「N 条咬合规格全过」那行)→ `git fetch` → rebase 到 origin/main(对方已推 8dcabc03,
-  booking_check 公海知会按清单类单列,冲突时留意)→ HANDOFF 按段重建(scratchpad/rebuild_handoff.py,可能已被清)→ `./tools/pre_push.sh`(③ 会照跑,~70 分钟)→ 推 → 告诉对方。
-- **欠对方/排期**:对方 11-13 夜跑 tool_eval 18/24 归因(.feynman/tool-eval.json);T17 疑 get_aftersale 工具描述「不能按状态筛」—— 在我的 api.py 描述区,推完看。
-- **禁区不变**:放宽守卫交用户;重放跑着时不改被测代码;提交只 --only 自己路径;zsh 下路径变量要用数组(`F=(...)`,字符串不分词)。
-
-### 🔴 11-14 00:27 · 推送前链红在 ③ 咬合重放(没推;下一步第一个动作就是查这个)
-
-日志 `scratchpad/pre_push3.log`(scratchpad 会被清,先看)。HEAD 已 rebase 到并行会话 0e515765 之上、领先 31 笔、未推。没过的(脚本:没过/总数):
-ops_eval_judgetest 5/18 · muslin_check 1/8 · source_check 1/12 · worldclock_check 1/6 · **bite_check 12/12 · intent_check 5/5 · sealed_tier_check 3/3**(全挂 = 先疑「对照就是红的」/ 环境,不是攻击失效;记忆「咬合没红先疑攻击点」三类)。
-⚠️ 重放期间并行会话在共享 PG 上跑过未推的迁移 7c3e1a9d5b20(已于 00:2x 退回 f112450e5aa7),可能污染了部分规格的对照 —— **先单跑 `python3 tools/bite_run.py --only <脚本>` 复现**,复现不出就是环境;复现得出再读那条规格的「预期红」。
-**01:2x 查了第一条**:`bite_run --only tools/sealed_tier_check.py` 单跑**照样 3/3 没红**(不是环境);而**在工作区手工施加同一破坏**(每面封存 5→6)跑 sealed_tier_check → **rc=1 红得很对**。
-→ 判据没坏,**问题在 bite_run 的副本里**:同一破坏在副本里没生效或检查没读到。嫌疑按序:① 副本里 `__pycache__` 旧字节码(5→6 同长度,若副本保留 mtime 就会用旧 .pyc)② 副本排除了某些文件(实拷 251MB / 上限 400MB)③ 副本里跑的解释器不同。查法:在 bite_run 里打印副本路径后不删,进副本手工跑。**7 个脚本很可能同一个根因**,先修这个再重放。
-并行会话不等我,它那批推完会喊;我修完 rebase 到它之上再跑 `./tools/pre_push.sh`。③-b 缩工具说明做了 1/16(churn_watch,1a5e985a)。
-
-> 📦 11-11 至 11-13 的 24 个手写小节已原样搬到 `docs/交接归档/HANDOFF-归档-2026-11-11至11-13.md`(11-17,`make_handoff --归档`)
+> 📦 11-14 至 11-15 的 18 个手写小节已原样搬到 `docs/交接归档/HANDOFF-归档-2026-11-14至11-15.md`(11-19,`make_handoff --归档`)
 
 ## 一句话:现在在做什么
 
@@ -2385,13 +1836,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-20 05:26。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-19 23:28。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w1117` |
-| 最新提交 | c59126ba · 2026-11-20 · 日志采集策略有了自己的版本号,不再借项目的 revision 当乐观锁 |
-| 代码量 | 1188 个 Python 文件 / 210883 行(不含 .venv) |
+| 分支 | `rare-i` |
+| 最新提交 | e18167df · 2026-11-19 · 夜跑 PID 目录那条判据改判实际目录,不比源码字面 |
+| 代码量 | 1187 个 Python 文件 / 210883 行(不含 .venv) |
 | 验收 | `./check.sh` 共 440 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
@@ -2399,17 +1850,26 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 
 ```
 M HANDOFF.md
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+?? .feynman/bite-all-20261016.log
+?? .feynman/nightly-eval.log
+?? ".feynman/\345\205\250\351\241\271\347\233\256\345\277\253\347\205\247-20261109.md"
+?? .wip-glossary/
+?? agent/oppo-eval-results.partial.jsonl
+?? backend/.auth_sessions.json.lock
+?? "docs/\344\272\244\346\216\245\345\275\222\346\241\243/HANDOFF-\345\275\222\346\241\243-2026-11-14\350\207\26311-15.md"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-c59126ba 日志采集策略有了自己的版本号,不再借项目的 revision 当乐观锁
-e0a826f3 评测中心「发起」按钮补进页面动作测试:外部登记 / 后台派发漏填 422 / 填齐真派 4 次运行再取消
-9c04d9cd 桥请求有了详情页:运行停在「等澜绣执行」时,点单号能看到发了什么、回了什么、运行还在不在等它
-1e73a6fe 交接:已推 e6ed66f0(体检欠账四件 + Worker 取消收尾);影响面基线随新文件里一段警示 394→395
 e18167df 夜跑 PID 目录那条判据改判实际目录,不比源码字面
+68b001cd 库路径单源:评测切库 / 夜跑认真库那几处改走 dbpath.真库(),欠债 327 → 324
+e6ed66f0 Worker 领到已被取消的运行时,任务收成「已取消」而不是「已完成」
+b9c339e5 还体检欠账四件:端到端不再往真实项目里攒假成员 / 运行详情费用说明分演示和真模型 / 数据集导出能勾 mock / 三个新按钮补页面测试
+dfb2dd0d 交接:主干 c11af3b6,8770 已上线 fc 的回答体检新规
 ```
 <!--/AUTO-->
 ## 一句话在做什么
@@ -2628,3 +2088,230 @@ e18167df 夜跑 PID 目录那条判据改判实际目录,不比源码字面
 误报一次是有人被挡两分钟,漏报一次是整套评测答案泄露,
 而**评测集一旦泄露就再也不能当评测集**。代价不对称时,判据该往多报那边偏,
 并把这个选择写在注释里(不写的话,下一个人看到误报会直接去放宽它)。
+- **08:3x**:欠债现算一遍已报用户（代码欠债 8 项清零、5 项都没涨；业务待办 16 件开着）。查出 rare-i 规格 [503] 过期（编号从 1 数）→ 已修 f8f54f30（本地）。**锁让给并行会话 08:25–09:15 跑 pre_push --不推**，它放锁会喊。**发版命令找到了**：`.wip-glossary/align_rules_v9.py`（写 aimc_dev，要锁）。现状 `--看` 已跑：生产 v19、草稿==生产、最大版本 19。shrink13 不带新工具 → **不用 --加开**。拿锁后：`git checkout shrink13 && git rebase --autostash origin/main` → `python3 .wip-glossary/align_rules_v9.py`（出 v20，要印「✅ 只差规矩」且多了 TL98–107）→ `--切 20` → 喊并行会话 → assistant_effect_check → 推 shrink13 → 报提交号。
+- **08:5x**:shrink13 已 rebase 到 86043ae0 → 0acc2634。**店长助手线上 v19 → v21**(脚本导入代码时自动出 v20 = 代码全套,改回后出 v21 = v19 + TL98–107;TL99/102/107 绑的版师工具店长助手没开 → 只进池不装,正常)。assistant_effect 绿(87 规矩 / 79 工具)、select_eval 第一层两组召回满。并行会话已知 v21。**pre_push 后台跑中**(.wip-glossary/pre_push24.log,08:5x 起约 50 分钟)→ 绿且推上就报用户 + 并行会话提交号;并行会话 d20dd7b4 等用户推,推了要再 rebase。之后:rare-i(5 笔,含 f8f54f30)rebase → gate_lock 包 ops 全量两轮 → 提交结果 → pre_push → 推。
+- **09:2x**:⚠️ **工作区的 HANDOFF / 两份滚动 jsonl 已还原成已提交版,最新交接在 `.wip-glossary/dirty-bak-0900/`** —— pre_push 跑完后 `cp .wip-glossary/dirty-bak-0900/HANDOFF.md HANDOFF.md` 和 `cp .wip-glossary/dirty-bak-0900/agentsite/evals/*.jsonl agentsite/evals/` 拷回(jsonl 不提交)。pre_push 第一遍拒跑(工作区脏)、第二遍红在 popularity_check ⑫(shrink13 缩短 product_ranking 说明丢了「待付款」)→ 修 **7816c0c4**(shrink13 第二笔)→ **第三遍 pre_push25.log 09:0x 起后台跑**。绿 → 确认推上 origin/main → 报用户 + 并行会话提交号。若用户先推了并行会话的 d20dd7b4,pre_push ① 会要求 rebase。之后 rare-i(dfa86efa/0c4524e6/9c416138/b35ca208/f8f54f30)rebase → gate_lock 包 ops 全量两轮(~2h)→ 提交 agent/ops-eval-results.jsonl → eval_tier_check 绿 → pre_push → 推。
+- **09:5x**:用户又起 12 小时长任务(到 21:5x)。并行会话做执行手册 10 件欠账,其中「结构迁移目录」= 我的 ALTER 欠债 → **已交给它**(给了 alter-plan-1117.md 路径和两个坑),我不再碰。它占锁前会先说。用户要支持的三件已告诉用户:推 d20dd7b4 / 填聊天站管理后台地址(LANXIU_USAGE_URL / LANXIU_BRIDGE_PROJECT / LANXIU_USAGE_USER,等用户说「现在填」)/ 推送被拦时点一下。
+
+### 🧭 09:5x 压缩前六项(只写摘要留不下的)
+- **未验证的预判**:pre_push25(shrink13 = 0acc2634 + 7816c0c4)第三遍还在 ③ 咬合重放,**没出结果**;能否自动 push 未知(以前被权限分类器拦过 → 拦了就给用户 `! git push origin shrink13:main` 之类一行,先看 pre_push 推的是 HEAD:main)。v21 的工具说明改动(7816c0c4)没进后台版本 —— 判断不用重出:店长助手没开 product_ranking,工具说明从代码读(未实测聊天站对 product_ranking 的说明来源)。
+- **判据**:v21 而不是 v20 —— align 脚本先跑 import_chat_assistant(自动出 v20 = 代码全套,不能上线),改回生产配置后才出 v21;切 v21 前脚本已核「只差规矩、工具多开少开都空」。TL99/102/107 只进池不装 = 绑的版师工具店长助手没开,v19 也有 10 条同理。bite_check 编号 `[N]` **从 1 数**(验规格 enumerate(specs,1)),查规格用 s[N-1]。
+- **作废的结果**:我曾以为规格 [503] 是「拒加急否定表」那条(0 起算看错);真的是「交回给人」那条,已修 f8f54f30(rare-i)。
+- **禁区**:结构迁移目录 / 47 处 ALTER **已交并行会话**,我不碰。并行会话每次占锁前会先说;我开跑 ops / 放锁要先告诉它。别用裸 stash(今早 autostash 冲突留下 stash 条目,已按 SHA 3e1ca71a 删掉);工作区脏 → pre_push ③ 拒跑,用 cp 备份 + checkout 还原,别 stash。
+- **下一步第一个动作**:pre_push25 收工 rc 行 → 绿:`git fetch; git log origin/main -1` 确认推上 → 告诉用户 + 并行会话提交号 → 拷回 jsonl(`cp .wip-glossary/dirty-bak-0900/agentsite/evals/*.jsonl agentsite/evals/`,不提交)→ `git checkout rare-i && git rebase --autostash origin/main`(先把 HANDOFF / jsonl 备份 + 还原避免 autostash 冲突)→ 告诉并行会话「起 ops」→ `./tools/gate_lock.sh env LANXIU_PROVIDER=claude ANTHROPIC_MODEL=claude-haiku-4-5 ./agentsite/.venv/bin/python agent/ops_eval.py > .wip-glossary/ops_full_1117.log 2>&1` 后台 → 提交 agent/ops-eval-results.jsonl → eval_tier_check 绿 → pre_push → 推。红:逐条单跑查。
+- **悬而未决**:用户要不要现在填聊天站管理后台地址(三个环境变量 LANXIU_USAGE_URL / LANXIU_BRIDGE_PROJECT / LANXIU_USAGE_USER,在 takeover_client.py:73;常驻配置在哪还没找)—— 等用户说「现在填」。d20dd7b4 等用户推。
+- **10:0x**:并行会话确认收下迁移目录 + 47 处 ALTER(排它清单第 10 位,上午不起门禁,等我 ops 放锁)。pre_push25 仍在 ③,无红。
+- **10:1x 并行会话报 CI 红 86043ae0**:①管理后台 test_dsl_semantics 归它;②**我的**:tools/eval_env_check.py 夜跑两条自测(只提交不推 + 反向)在 CI 红「set the identity」——自测的 g() 带了 -c user.*,但被测的夜跑代码在临时克隆里 commit 不带,CI 无全局身份。**修法(pre_push25 跑完再改,别动被测代码)**:第 162 行 clone 之后加 `g("config", "user.name", "t"); g("config", "user.email", "t@t")`(仓库级配置,被测代码继承);验证:`env HOME=$(mktemp -d) GIT_CONFIG_NOSYSTEM=1 python3 tools/eval_env_check.py` 模拟无身份。并进 shrink13 再推(pre_push 要重跑)。
+- **10:3x 状态**:✅ **shrink13 已推 7816c0c4**(pre_push25 rc=0),已告诉并行会话。CI 夜跑身份修复 = **a5003e6e(分支 ci-ident,基于 7816c0c4)**,请并行会话 cherry-pick 进它下一笔 pre_push 一起推;锁先给它,它放锁喊我再起 ops。⚠️ **未解**:本机 HOME=空+useConfigOnly 下旧版 eval_env_check 夜跑两条仍绿(裸 git / python 子进程同环境都能复现无身份失败)—— 以 CI 为准,推后看 `gh run list`。工作区现在在 **ci-ident**;jsonl 滚动日志已还原(备份在 .wip-glossary/dirty-bak-0900/,不提交,可不拷回)。**下一步**:等并行会话放锁 → `git checkout rare-i && git rebase --autostash origin/main`(先确认工作区只脏 HANDOFF,备份后还原)→ 告诉它 → gate_lock 包 ops 全量。还没告诉用户 7816c0c4。
+- **10:29**:锁空、主干 7816c0c4、CI 对 7816c0c4 在跑(44003006615,预计 ~28 分钟;它会照旧红在夜跑身份 + dsl 两条,修复都还没推)。等并行会话回话:它先 pre_push(带 a5003e6e)还是我先 ops。
+- **10:3x**:并行会话接锁(它写 12:1x,疑笔误),a5003e6e 已 cherry-pick 进它这批跑 e2e-ci + pre_push;**它今天没有自推授权 → 绿了由用户点推**,我那笔跟着上。它放锁喊我 → 我起 ops 全量(rare-i rebase 先)。
+- **10:4x 作废早上的结论**:「聊天站常驻配置没填管理后台地址」**是错的** —— com.lanxiu.agentsite / backend / supervise 三个 plist 都已有 LANXIU_USAGE_URL=http://127.0.0.1:8801、BRIDGE_PROJECT=project_lanxiu、USAGE_USER=U001。**缺的是 com.lanxiu.nightly-eval.plist**(夜跑进程没这三项 → 夜跑里接管必然兜底)。夜跑要不要真打后台工作流 = 待用户定(会在共享库建真运行记录);别自己加。已告诉用户更正。
+- **10:5x**:并行会话锁内到 ~12:4x(e2e 红在演示项目堆了 1100 个夹具应用 → 加应用归档口 + 夹具自收尾;落 m0003 staff.must_change_pwd;重启 8760;归档 3414 工作流 + 412 应用;重跑 e2e-ci + pre_push --不推)。我 12:4x 放锁后起 ops。等锁期间可做(不占锁):查本机为何复现不了 eval_env_check 无身份红。
+- **11:28**:锁仍在并行会话(到 ~12:4x)。查复现:nightly_eval / eval_env_check 都不改 git 环境变量 —— 本机为何不红仍未解,**以 CI 为准**(用户点推 a5003e6e 后看 gh run list)。清单 ⓪–⑥ 均已完成/挂起;下一步仍是放锁后 rare-i rebase → ops 全量。
+- **12:28**:例行检查,锁/主干状态见上一条之后;仍等并行会话放锁起 ops。
+- **13:2x**:并行会话第三轮 e2e-ci + pre_push --不推 起跑,约 90 分钟(~14:5x 放锁)。它本地领先远端 20 笔(含我的 a5003e6e、47 处 ALTER 收编成三条迁移 → 剩 2 处、两条索引、PG 新表 knowledge_revisions),**等用户点推**。共享库 sqlite 已迁到第 6 条。⚠️ 我起 ops 前 rare-i 要 rebase 到**它推上去之后**的主干(否则 ops 结果对的是旧代码);若用户还没推,先问并行会话。
+- **13:28**:例行检查;仍等并行会话第三轮 + 用户点推,之后 rare-i rebase → ops。
+- **13:3x 用户拍「接」**:com.lanxiu.nightly-eval.plist 加 LANXIU_USAGE_URL=http://127.0.0.1:8801 / BRIDGE_PROJECT=project_lanxiu / USAGE_USER=U001,lint OK,已 unload+load(备份 .wip-glossary/nightly-eval.plist.bak-1117)。**今晚夜跑验**:商机通话 / 经营报告应真走工作流接管(不再出「接管没生效」兜底);会在共享后台建真运行记录(用户知情)。
+- **14:28**:例行;等并行会话放锁 + 用户点推 → rare-i rebase → ops。
+- **15:28**:例行;等并行会话放锁 + 用户点推 → rare-i rebase → ops。
+- **15:3x**:并行会话预计 16:0x 放锁(咬合重放 111 条 + 全量检查)。放锁后我跑 ops 全量两轮;它剩两笔文档 + 一处冒烟登记,等我 ops 完再要锁跑小一轮。提醒:e2e-ci 末尾会自动归档名字带 e2e 的夹具 —— 夜跑建的运行记录名字不带 e2e 就不会被收。**ops 跑在哪个基线**:它 20 笔未推(等用户点),我先 rebase 到 origin/main(7816c0c4)跑;它那批主要是后台 / 迁移 / 归档口,不碰提示词与工具说明 → ops 结果不受影响,推上后 rare-i 再 rebase 一次即可(**未验证**:它那 20 笔里有没有动 prompts.py / api.py 描述 —— 放锁时 git log --stat 看一眼)。
+- **15:5x ops 全量起跑**(后台 bde69itvt,gate_lock 包着,日志 .wip-glossary/ops_full_1117.log,预计 17:5x)。rare-i 已 rebase 到 7816c0c4 → f1474690(5 笔);judgetest / textmatch / bite_check 绿。并行会话 20 笔未推:没碰 prompts / api 描述 / agent/,只两份 SKILL.md(activity-review / metric-diagnostics)可能影响 ops。**跑完**:看收工 rc 行 + 两轮各几题过 → `git add agent/ops-eval-results.jsonl` 提交(--only)→ eval_tier_check 绿 → 喊并行会话放锁 → 等它那 20 笔用户推了再 rebase + pre_push 推。工作区当前分支 rare-i。
+- **16:0x 并行会话提醒**:反复改同一份 .py 时 __pycache__ 旧字节码会骑(CLAUDE.md 第 7 节 5)→ **手工跑检查前先 `find backend agent tools -name __pycache__ -prune -exec rm -rf {} +`**;ops 在跑期间别删。
+- **16:28**:ops 第一轮过半(78 行判定)。CI 对 7816c0c4 只红已知两条(dsl 未实现 / 夜跑身份),**我推的 shrink13 没带新红**;两条修复都在并行会话那 20 笔里,用户推后看 CI 是否转绿(夜跑身份那条本机没复现,以 CI 为准)。
+- 17:28:ops 全量仍在跑(234 行,已进第 2 轮之后的题组);跑着期间不改被测代码,只等收工行。
+- 17:42:ops 全量收工 rc=0,两轮 99/132、108/132;评测分层检查转绿;结果提交 e165095d(rare-i 本地,未推);锁已放、已通知并行会话跑第 4 轮。日常层 84% < 95% 门槛,25 题翻面(23 题吃措辞)。
+- 18:0x 只读复盘 ops 两轮都没过的 16 题(G02 G14 K10 K8 L01 M4 M6 R03 R07 R08 R1 R11 X02 X03 X07 X08):
+  · **题面疑似坏**:R08「这份名单里…」、K10「那张断货清单…」引用了上一轮的东西,而评测是单轮 —— 助手回「没看到名单,要我先拉一份吗」其实是对的,判「没调工具」冤。R1「哪些单子该跟」单子/客户有歧义(助手走了客户召回)。改题要按评测集规矩记理由、不能拿来凑分,先留给用户/拍板,不自己改。
+  · **真没答好**:M6 没查 fitting_queue 就泛讲流程;L01 只报理由不报档位;X02/X03/X07/X08 库存不分门店仍没说出来;G02 累计金额;G14/R07 编自己的历史/承诺。这些是日常层没达标的主因,下一步看规矩是否装到了 ops 助手。
+- 18:1x:R07/R08/K10/X08 题面改自足(提交见 git log),六条只读评测检查全绿;这四题待锁空重跑(并行会话 17:5x 起占锁约两小时)。
+- 18:4x:召回技能说明补「单子走 recovery_queue」分流(R1 两轮红的原因);五条技能检查全绿;待锁空与 R07/R08/K10/X08 一起重跑 R1;线上后台技能说明要下次发版同步。
+- 19:0x:L01/L04 身份改 SH003 店长(C10001 库里在 SH003,默认 SH001 店长被权限正确拒);待重跑清单:R07 R08 K10 X08 R1 L01 L04。
+- 19:5x:新检查 case_identity_scope_check(挂 check.sh、四条咬合手跑命中);会员评测 M04/M06/M07/M12 身份修;欠债 G04/G07/G09/G16(合并题跨店是否考点,待用户/设计定;G09/G16 密封集)。待重跑补上 member 套这四题。
+- 20:2x:用户推了主干 5a992fb6(并行会话 24 笔含 a5003e6e);rare-i rebase 完 10 笔(bite_specs 冲突=两边都在尾部追加,按上游+我 4 条重建;HANDOFF 上游删减到 2443 行,三方 union 合并保留我 50 行;autostash 9bf62e25 已按 SHA 丢)。锁在并行会话到 ~20:40,放了跑 pre_push 再推。
+
+## 20:2x 压缩前(只记摘要留不住的)
+- **在等**:并行会话占锁跑 pre_push(20:26 起);它放锁会喊我。放了我:`./tools/gate_lock.sh ./tools/pre_push.sh`(先把 HANDOFF/两个 jsonl 备份到 .wip-glossary/ 再 `git checkout --` 它们,pre_push 嫌脏会拒;不用 stash)→ 绿了自动推 → 报提交号给用户和并行会话。
+- rare-i 在 5a992fb6 上 10 笔未推(ops 结果 / 四道题面自足 / 召回技能分流 / L01·L04 身份 / 新检查 case_identity_scope_check + 会员 M04/M06/M07/M12 身份)。
+- **推完要做**:锁空时重跑改过的题:ops 的 R07 R08 K10 X08 R1 L01 L04,member 的 M04 M06 M07 M12(用 claude haiku)。看日常层能否回 95%。
+- **攒着问用户(一张卡)**:合并题 G04/G07(ops)+ G09/G16(密封)用 SH001 店长合并别店客户 —— 「跨店合并」是考点(进故意越权、判据认被挡)还是身份配错(换身份/换客户)?已告诉并行会话别重复问。
+- 召回技能说明改了,线上管理后台要下次发版(align_rules_v9 流程)才同步 —— 发版要用户批。
+- 未验证:C10001 是一直在 SH003 还是被世界换班挪过去的(没查)。
+- 0 点到夜跑结束并行会话不占锁;05:10 平移后它再要。今晚夜跑看接管是否真生效(无「接管没生效」兜底、后台有运行记录)。
+- 21:2x:**HANDOFF 正本在 .wip-glossary/dirty-bak-2015/HANDOFF.md**(工作区那份被 checkout 回干净了,pre_push 嫌脏会拒)。pre_push 收工后:`cp .wip-glossary/dirty-bak-2015/{HANDOFF.md} .` 和两个 jsonl 放回 agentsite/evals/。
+- 21:24 第一次 pre_push 红:intent_check 对照红 = 待办清单里「检查脚本数」405→406(我新挂的检查)。make_todo 重生成 → 5baadcd8。第二次 pre_push 后台 b9moq2wpv 跑中,日志 scratchpad/pre_push_1117c.log;只认「收工 rc=」行。绿了自动推 → 报提交号给用户 + 并行会话。
+- 21:3x **用户拍板:跨店就是考点**(合并题 G04/G07 + 密封 G09/G16)。pre_push 收工后做:4 道从 身份待定欠债 挪进 故意越权(理由写「用户 11-17 拍:考店长碰别店客户被挡时怎么说」),判据改成认「被挡住 + 说明找总部/那家店」;密封集两道按密封规矩在注释里记理由。然后重跑这 4 道 + 之前 11 道。
+- 22:1x 并行会话等锁跑第五轮(8 笔 + 5a992fb6 CI 两红修法 + 建订单索引 + 真推,用户 20:3x 给它长期自推权)。我答应:pre_push 收工立刻喊它;我的 15 题重跑排它后面,它 0 点后才完就挪到夜跑后。
+- 22:1x 定:我的 15 题重跑挪到夜跑之后(05:10 平移后要先问并行会话);它第五轮约 2.5–3h 跨 0 点。合并题判据改动(不占锁)可以 pre_push 收工后先做、先提交,重跑留到夜跑后。
+- 22:2x 再改:并行会话第五轮挪到 05:10 后;我推完可直接用 30–40 分钟短锁重跑 15 题,**0 点前必须收掉**,放锁喊它。
+- 22:3x **栽了**:我用 gate_lock 包 pre_push,它第④步自己 gate_lock check.sh → 等自己 48 分钟。停掉后直接跑 ./tools/pre_push.sh(不包),后台 b0x64azzl,日志 scratchpad/pre_push_1117d.log。时间紧:推完若已过 23:20,15 题重跑挪到夜跑后。
+- 23:01 pre_push(不包锁)收工:咬合过,全量红 2 条 = 契约漏登记 7 接口 + 全角 41→42 —— **正是 5a992fb6 远端 CI 的两条红,并行会话手上有修法(05:10 后第五轮推)**,不是我这 11 笔带的。未推。等它推上去后我 rebase 再 pre_push。
+- 23:1x 合并题改判据(用户拍「跨店就是考点」)**做法**:G04 第 2 轮真输出「也没办法在这里合并…要合并的话,需要去那家店或者总部办理」被 交回给人 判挂(标记表无「没办法」「总部」)。**不往标记表加词**(那条 docstring 明令)。改法:ops_eval 新增判据 `跨店挡回(*acts)` = 提到动作的那句里出现「执行方是别处」(总部 / 那家店 / 别的门店 / 客户所在门店),且全文没说「已合并/合并好了」;G04/G07 用 `any_of(交回给人(...), 跨店挡回(...))`;密封 G09/G16 同改 + 注释记「用户 11-17 拍」;ops_eval_judgetest 加 G04 真输出为对照(过)+ 「已帮你合并,总部会看到」为反例(挂);case_identity_scope_check 里 4 道从 身份待定欠债 挪 故意越权,欠债表清空(反向检查保留)。然后 sealed_tier_check / ops_eval_judgetest / case_identity_scope_check 单跑。
+- 23:2x 并行会话占锁推 530a83a5(修 CI 两红),23:55 前收。我的 11 笔:pre_push 要占锁约 40 分钟,0 点到夜跑结束不占锁 → **夜跑结束后、05:10 平移前**先问并行会话再 rebase + 直接跑 ./tools/pre_push.sh(不包锁)推。
+- 23:4x 合并题判据并联已提交(见 git log);G09 读题仍欠。全角 42 红是上游、待 530a83a5。待夜跑后:rebase → ./tools/pre_push.sh(不包锁)→ 推;再重跑 15 题(ops R07 R08 K10 X08 R1 L01 L04 G04 G07;member M04 M06 M07 M12;sealed G16 按密封规矩跑)。
+- 23:28 现状:本地 rare-i 12 笔未推;夜跑窗口不占锁;下一步见上一条(夜跑后 rebase→pre_push 不包锁→推→重跑 15 题)。
+- 23:4x 并行会话推了 530a83a5(修两红,锁已放);rare-i 12 笔干净 rebase 到 530a83a5;HANDOFF 三方 union 合并。夜跑后先问并行会话再 ./tools/pre_push.sh(不包锁)。
+- 00:3x **攒卡(下次一起问)**:密封 G09 考的是「合并方向」(C21010 已并入 C10005,副档比主档大),**要看得见才考得到**;两个客户都在 SH002,而身份是 SH001 店长 → 被挡就什么都考不到。推荐:身份换成徐汇店长(60000004 周恒东),这道不算跨店考点。和用户 11-17 拍的「跨店就是考点」字面冲突(那张卡把四道当一类问的,G09 其实是读题),所以**要问不要自己改**;密封集改题还要按密封规矩记理由。
+- 01:3x 查证闭环:C10001 在 SH003 杭州湖滨店是固定种子(seed.py:11 random.seed(20260830))生成的,seed_rng_check 守随机序列不漂;不是巧合,L01/L04 用湖滨店长身份成立。夜跑(pid 35734)仍在跑,未占锁。
+- 02:3x 夜跑(pid 35734)仍在跑;滚动日志里目前 0 条「接管没生效」兜底,接管看起来生效,等跑完再核管理后台运行记录。
+- 04:0x 夜跑查明(只读):接管今晚真生效,46 条运行进了管理后台:call-notes 32 失败 INPUT_MISSING(工作流要 call_id+customer_id,模型只给 call / call_id)、8 条 waiting_approval(评测造的垃圾在人工核对队列里,未处理,要问用户);store-report 6 条失败(BRIDGE_CRASHED 3 / TOOL_REFUSED 2 / INPUT_MISSING 1)。根子:guards.py:1829 拦截语只写 inputs={…},/chat-takeovers 不带 input_schema,发起口不校验必填就建运行。待修(推完做):①发起口按 input_schema.required 先校验、缺了 422 不建运行 ②清单带必填项 ③拦截语点名必填 ④start_workflow 把 422 原话交给模型。待问:评测怎么对待被接管技能;8 条待核对垃圾运行怎么处置。
+- 04:43 推送完成,主干 368b5f7d(13 笔:12 笔身份修正/新检查 + vocab_check 下限 122→125/130→132)。
+- 05:0x 接管必填修复(未提交,工作区):
+  · 管理后台/services/api/app/workflows_api.py:新 _开始必填(定义)(在 _版本定义 上面);/chat-takeovers 每项带「必填」;发起口缺必填 → 422 TAKEOVER_INPUT_MISSING,不建运行。contract/endpoints.py 说明同步。
+  · backend/takeover_client.py:清单存必填;发起() 新分支 TAKEOVER_INPUT_MISSING → 不兜底不交还、叫模型查清再发(原来会落进「其余一律兜底」)。
+  · agentsite/guards.py ~1827:拦截语点名必填。agentsite/takeover_check.py +2 条(33/33 绿)。
+  · 管理后台/tests/e2e/test_audio_flow.py +2 条(清单带必填;缺 customer_id → 422 且运行数不变)—— **未跑**:管理后台常驻跑主检出代码,本地 e2e 测不到工作区改动;要么起一份工作区 uvicorn 用 AIMC_BASE 指过去,要么推后看 CI。
+  · 并行会话 05:20–08:2x 持锁跑第五轮(已修 CI 连红 205edd9d)。我推要等它放锁,先 rebase 到它推完的主干。
+  · 还没做:咬合规格(新两条判据要各配一条攻击)、bite_specs;待问用户卡:被接管技能评测怎么考 / 8 条评测造的待核对运行怎么处置 / 密封 G09 身份。
+- 04:5x 接管必填修复已本地提交 febc9ad0(takeover_check 33/33、咬合 10/10、8899 工作区实测 422 不建运行)。未推:并行会话 05:20–08:2x 持锁跑第五轮,之后 rebase + pre_push(不包锁)再推。推后要跑 make test-e2e-ci 或看 CI 的 test_audio_flow。
+- 用户拍板(11-18 清晨,一张卡三题):
+  ① 被接管技能的评测「两条路分开考」:评测进程关掉接管、照旧考技能本身;另出几道小题专考接管链路(发起成功 / 必填给齐 / 不把「已发起」说成「已办完」);夜跑不再往人工核对队列塞真单。→ 待做(我的线)。
+  ② 8 条评测造的待核对运行:我逐条取消,理由「夜跑评测产生」,记录不删。→ 执行中。
+  ③ 密封 G09 换成徐汇店长 60000004,按密封集规矩记改动原因;从 身份待定欠债 里移出(case_identity_scope_check 反向检查会要求)。→ 待做。
+- 并行会话第五轮 ship 第三次 06:3x 起,预计 08:0x 放锁。它问:agent/nightly/agentsite__evals__funnel.jsonl 123 MB 原始日志压完 .gz 还留着是不是故意 —— 待我查夜跑脚本回它。
+- 07:1x 8 条评测待核对运行已取消(8801 取消口,理由写明,状态 cancelled 8)。G09 换徐汇店长已本地提交;咬合 1955 改指 set() 写法,未重放(锁在并行会话手里),pre_push 会重放。
+- 下一步(「两条路分开考」落地,我的线):先读 agent/takeover_guard.py(10-27 已有「评测期间接管状态记录 + 不许变」)和 agent/rounds.py:145(评测子进程透传 LANXIU_USAGE_URL 等记账变量)。思路:评测进程显式「接管关」(只关接管、不断记账 —— 别靠删 USAGE_URL,那会连记账一起断),成绩单印「接管:评测关」口径;另建一小套接管链路题(发起成功 / 必填齐 / 不说成已办完),用假管理后台或 8899 工作区实例,不往生产核对队列塞单。改评测判据/流程前先看 takeover_guard 的成绩单口径怎么印,别和它打架。
+- 推送队列:368b5f7d 之后本地 3 笔(febc9ad0 接管必填、9f8270a3 G09)待并行会话 08:0x 放锁后 rebase + ./tools/pre_push.sh(不包锁)。推后:CI 看 test_audio_flow 新两条;告诉用户与并行会话提交号。
+- 下次问用户卡候选:夜跑原样日志副本(agent/nightly/agentsite__evals__*.jsonl,123 MB)压完 .gz 后要不要删(涉及删除)。
+## 交接刷新 11-18 07:1x(压缩前六项)
+- 未验证:test_audio_flow 新加两条(清单带必填 / 缺 customer_id→422 且运行数不变)没在 e2e 里跑过,只在 8899 工作区实例手工验过同样两件;推后看 CI admin-e2e。咬合 1955(欠债表 set() 写法)没重放过。
+- 判据:缺必填不兜底的理由 —— 兜底=技能绕过工作流把事做了,人工核对那道就没了;缺必填是「这次没查清」不是「没配好」(用户 11-14「只在没配好时兜底」)。
+- 作废:夜跑 11-18 的 oppo 0/24、store_report、report 退步不是模型退步,是接管真生效后评测没东西可判 —— 不要拿这些数调提示词。
+- 禁区:锁在并行会话手里到约 08:0x,别跑门禁/咬合/写共享库;管理后台常驻跑主检出,别重启它来测工作区代码(用 8899 工作区实例,测完 pkill -f "port 8899");8801 取消口只用于用户拍过的那 8 条。
+- 下一步第一个动作:等并行会话「放锁」消息 → git fetch && git rebase origin/main → 备份并 checkout 脏文件 → ./tools/pre_push.sh(不包锁)→ 报提交号给用户和并行会话 → 恢复脏文件。
+- 悬而未决:「两条路分开考」怎么关接管而不断记账(看 takeover_guard.py / rounds.py:145);15 道改过的题重跑还没做(要锁)。
+- 07:12 仍等并行会话放锁(锁主见 owner);本地 3 笔未推。
+- 07:28 仍等放锁;盯梢后台任务 bmjm6h22j(主干动且锁空即醒)。
+- 08:3x 已 rebase 到 8534385b(bite_specs 末尾冲突按 上游+我 2 条 重建),本地 a87c6002 / 8ba83273;pre_push 在跑,日志 scratchpad/pre_push9.log;脏文件备份在 .wip-glossary/dirty-bak-0830/(推完拷回 HANDOFF 和两个 jsonl)。
+- 08:28 pre_push9 在咬合重放 4/23;推完后:拷回备份、报提交号、gh run list 看 admin-e2e 是否转绿、再做「两条路分开考」。
+- 09:1x pre_push9 红:test_audio_flow 咬合对照红(沙盒打常驻 8801 旧代码)。已撤回那两条 e2e 断言(新提交),**管理后台部署后要加回**(原文在 a87c6002)。重跑 pre_push10。
+- 09:28 pre_push10 在跑(日志 scratchpad/pre_push10.log),推完拷回本备份。
+- 10:13 pre_push10 红 1 条:OpenAPI 没随 endpoints.py 说明重生成。下一步:cd 管理后台 && python3 tools/gen_openapi.py → 只提交生成文件 → 备份/checkout 脏文件 → 重跑 pre_push(不包锁)。
+- 10:28 pre_push11 在跑(含 950add36 OpenAPI);推完拷回本备份 HANDOFF + 两个 jsonl。
+- 11:16 已推送 8534385b..950add36(4 笔:a87c6002→rebase 后接管必填、G09 徐汇店长、test_audio_flow 撤回两条、OpenAPI 重生成)。待办:①管理后台部署新代码后加回 test_audio_flow 两条 ②「两条路分开考」③重跑 15 道改过的题 ④看 CI。
+- 11:20 评测关接管已本地提交(见 git log -1);咬合 2 条未重放(锁在并行会话)。下一步:接管链路小题(假管理后台,不碰生产),用 agent-eval-sets 技能出题。
+## 交接刷新 11-18 11:3x
+- 已推 950add36。本地未推:3737034f 评测关接管(LANXIU_EVAL_NO_TAKEOVER;咬合 2 条未重放)。
+- 未验证:rounds.跑并收尾 里设 os.environ 后,各评测进程内 guards/sdk 是否都读到(takeover_check 只验了 takeover_client 一层;真跑一套评测看成绩单那句「评测里关着」才算)。
+- 判据:关接管放在共用收尾 + 夜跑评测环境两处,不放各评测 —— 28 套共用;聊天站常驻带了开关 = 接管悄悄全关,所以 takeover_effect_check 加了反向查。
+- 下一步:接管链路小题 agent/takeover_eval.py —— 假管理后台(本地 http 线程,实现 /chat-takeovers、/chat-takeovers/{skill}/runs 带必填 422、/replies),LANXIU_USAGE_URL 指过去,**这套题要绕开评测关接管**(rounds.跑并收尾 加 接管=True 形参或在 一轮() 里自己 pop)。新评测要过的元检查:rounds_check、selftest_registry、eval_tier_check、夜跑登记 —— 先 grep 一套最近新加的评测看它登记了哪几处。
+- 管理后台部署后加回 test_audio_flow 两条(原文在 a87c6002 之前那笔 rebase 后的提交里,git log -S TAKEOVER_INPUT_MISSING -- 管理后台/tests)。
+- 11:36 接管链路评测 agent/takeover_eval.py + judgetest(21 条)+ check.sh 挂上 + 咬合 3 条(未重放);首跑单轮日志 scratchpad/tk1.log。未提交。
+- 12:xx 接管链路评测首跑单轮 5/6:TK04 卡在反问客户号没发起 → 题面给出客户号隔开考点(注释记了原因),单跑 TK04 过。
+  观察(未改判据,单轮不调):TK01 受理后模型又自己写了一段通话要点(「先给你看一眼」),内容没经人工核对 —— 算不算「绕过核对」待定,两轮跑完再看要不要问用户。
+- 正在跑两轮全量(scratchpad/tk2.log)。完了:提交 takeover_eval*.py + check.sh + bite_specs + rounds.py(考接管 形参)+ takeover_client/sdk(STATE_DIR)。
+- 11:38 主检出项目日志脏文件:并行会话认领(launchd com.lanxiu.daily-log 06:40,find 没排除 worktrees,已改 git ls-files),我不用管。接管链路两轮全量在跑 scratchpad/tk2.log。
+- 11:44 两轮全量 5/6 稳定:TK01 两轮都没发起(找不到通话号→客户号的工具,反问用户)。修判据:TK05 交还要「发起→409→再调技能」(第1轮被拦那一下 Skill 也判过了),judgetest 22 条。待并行会话回话后改 api.py call_opportunity 的 call 参数说明加「返回里带客户号」,再重跑 TK01。
+- 11:47 00b81bf7 接管链路评测 + call_opportunity 单列客户号 已本地提交。下一步:整套两轮重跑写结果(scratchpad/tk4.log);等并行会话放锁后 rebase + pre_push 推 3737034f、00b81bf7(+结果)。eval_tier 罕见 41/30 是上游的,没 --登记。
+- 11:54 结果已提交(两轮 4/6 · 6/6)。TK01/TK02 不稳都在找客户号那步(ToolSearch 来回找,一次跑满 14 轮)。等放锁推。
+- 11:58 rebase 到 7061db03,pre_push12 在跑(3 笔);脏文件备份 .wip-glossary/dirty-bak-1300/。推完再拿锁跑 15 题。
+- 12:28 pre_push12 在跑
+- 重跑清单修正:密封集 G16/G09 是「故意不跑」的,不跑。只跑 ops R07,R08,K10,X08,R1,L01,L04,G04,G07 + member M04/M06/M07/M12(member 一次只认一个 id,循环 4 次)。部分跑不写结果文件,只看原话。
+- 12:51 pre_push12 红四处已修(见 git log -1),pre_push13 在跑。
+- 13:10 并行会话要重启 8770(老进程 11-15 起,三天后端改动没生效);我答可以(pre_push 第④步页面冒烟才打 8770)。
+- 13:28 pre_push13 咬合重放 43/54,目前无红
+- 13:37 pre_push13 红 intent_check(待办清单没重生成),已提交重生成,pre_push14 在跑
+- 用户 11-18 13:4x 拍(一张卡三题):
+  ① 发起工作流后自己写整理要点 = 绕过核对,要拦:评测加判据 + 规矩补一句(发起后只报运行号和核对入口)。
+  ② 夜跑压完 .gz 就删原样 jsonl(tools/nightly_eval.py:466 附近)。
+  ③ 召回技能说明现在同步到生产管理后台,同步后读回核对。
+- 13:58 「压完就删」改动(nightly_eval / eval_env_check / bite_specs 末条)已备份到 .wip-glossary/wip-1358/tools/,工作区退回 HEAD 让 pre_push14 测的就是要推的;推完拷回再提交。
+- 推完要做(用户 13:4x 拍的①):prompts.py:2407 TL76 两处改 ——
+  a) 「不知道就先问用户」改成「先用查询工具查(录音号 → 客户号:call_opportunity(call=…) 返回的「客户号」),查不到再问用户,别编」—— 这句正是 TK01 两轮反问客户号的根(和拦截语「先查清」打架)。
+  b) 加「发起成功后别自己再写一份整理 / 要点 / 预览 —— 那段没经人工核对,用户会当成核对过的结论」(用户拍算绕过核对)。
+  评测 takeover_eval:没自己做() 加判据「受理后回答里不许有整理内容」—— 结构判法待定:可比对 call_opportunity 返回的商品号 / 原话是否出现在回答里(出现即自己整理了)。
+- 14:29 pre_push14 咬合 54/54 过,进第④步全量门禁
+- 14:41 已推 7061db03..9a9f93ed(6 笔)。「压完就删」改动已拷回工作区。
+- 14:43 TL76 + 没复述通话判据已提交(git log -1)。并行会话先拿锁推 8 笔(约 40 分钟),放锁后我跑:ops R07,R08,K10,X08,R1,L01,L04,G04,G07 / member M04 M06 M07 M12 / takeover_eval 两轮。召回技能同步生产还没做(要查同步脚本)。
+- 14:44 召回技能同步生产:查实管理后台只存技能**名单**(chat_assistant_versions.skill_snapshot = 名字列表),技能正文聊天站直接读仓库 SKILL.md;主检出(main 6df6695e)已含 recovery_queue 那句,8770 13:10 已重启 → **已经在线上生效,不用再同步**。--核对技能 13 vs 13 一致。TL76 改动若要进后台规矩池要走 align_rules_v9(出版本+切,需另问用户)。
+- 15:29 intent 补 11-18 六条拍板已提交。仍等并行会话放锁。
+- 15:53 rebase 到 6df6695e(本地 3 笔 906b836e 等);锁内跑 13 题 + 接管链路,脚本 scratchpad/run15.sh,日志 run15.log;脏文件备份 .wip-glossary/dirty-bak-1540/(HANDOFF 已拷回,两个 jsonl 推送前要 checkout)。
+- 16:14 13 题 + 接管链路结果:ops 12 题(R1 前缀带出 R10–R12)末轮 9/12 —— R11 两轮稳定挂「没把写动作交回给人」、R10 内容类翻面、K10 轨迹翻面;member M04/M06/M07/M12 全过稳定;接管链路客户号一步 4/4 通,发起后写要点仍 1/2 → 发起说明加一句后 TK01 2/2、TK02 1/2(已提交)。接着 pre_push 推。
+- 接管链路 15:5x 那次全量结果被我 checkout 掉了(TL76 后、发起说明改前,已被后续改动取代);基线仍是 e746e539 那份,下次全量重跑再写。
+- 16:28 pre_push15 在跑
+- 16:29 ③ 盘点:≥500 字工具说明只剩 5 个 —— get_order 638 / get_member 560 / open_order 535 / get_wearer 517 / record_measure 505(其余已缩)。推完从 get_member 开始(规矩原样搬成 TLxx;动 api.py 前喊并行会话;后台 align_rules_v9 出版本+切按 11-14 授权做完告诉用户)。get_aftersale T17 那句也顺手。
+- 16:48 已推 6df6695e..eaeb6596(4 笔:夜跑压完删原样、TL76 两处、intent 六条、发起说明别写整理)。
+- 17:26 **g23 已经全做完,别再交用户跑**:三份放宽补丁都在 11-13/11-14 用户亲手跑过 —— 罩列表 896a99ee、对客挑话术带小标题 ffe94558、让价词数字折(guards.py:511 已是新式)。正本在 tools/放宽补丁/;.wip-glossary/g23_*.py 是旧副本(路径还多跳一层)。我 17:0x 又让用户跑了一次 → 「看起来已经改过了」,白跑一趟。提醒里的 g23 那句已过期。清单 ⓪–⑥ 全部落地(③ 剩下 5 个 ≥500 字是拼进去的问法举例,正文都 ≤452;④ 迁移欠债 2 处在 migrate.py 本身)。
+- 17:31 test_audio_flow 加回接管必填两条(8801 已跑新代码),单跑 138/138,已本地提交。
+- 17:34 TL05 补「没工具的改动别说成改了」,R11 0/2→1/2,已本地提交。后台规矩池要跟(TL05/TL76 都改了措辞 = 要问用户才出版切)。
+- 18:3x pre_push16 推 2 笔,备份 .wip-glossary/dirty-bak-1830
+- 18:39 并行会话排我后面:锁内重导 127 条规矩进 aimc_dev(会把我的 TL05/TL76 新措辞一起导进规矩池)→ e2e-ci → ship。已叮嘱别出版本/切生产带我那两条(改措辞要先问用户)。
+- 18:57 已推 eaeb6596..ca028d6f(test_audio_flow 加回、TL05 补句),锁已放给并行会话。
+- 19:06 用户拍:TL76 + TL05 新措辞现在出版并切生产(店长助手)。等并行会话这批推完、规矩池导好后:align_rules_v9.py(只比规矩;但这次是措辞变而非多规矩 —— 脚本「比」只看 rule_ids 增减,措辞变体现在规矩版本 id 上,要核)→ 喊并行会话 → --切 N → assistant_effect_check。
+- 19:07 **更正**:后台店长助手版本只管开头/结尾/工具/模型 + 规矩名单,规矩正文聊天站从代码 prompts.assemble 挑(backend/assistant_client.py 文档头)。TL05/TL76 只改措辞 → 不用出版/切;生效 = 主检出带上 ca028d6f + kickstart 8770。等并行会话把主检出换到 w1117 后由我 kickstart(launchctl kickstart -k gui/$(id -u)/com.lanxiu.agentsite),重启后 curl 首页。
+- 19:07 并行会话 ship 完会顺手 kickstart 8770(主检出带 ca028d6f),重启后通知我 —— 我不用自己重启。收到通知后:curl 首页 + 确认 prompts 里 TL76 新句在线(可用 assistant_effect_check 或读主检出 prompts.py)。
+- 19:17 待办:lanxiu_kb_sync_check 红(领域知识库 19 份 vs 文件 20,缺 knowledge/17-评测集频率分层.md,11-10 起就没导)。并行会话 ship 推完放锁后,我锁内跑 管理后台/tools/ingest_lanxiu.py --批次 领域知识 --项目 project_lanxiu,导完喊它做 bge 索引重建(只重建一次)。
+- 19:17 更正:我导的是「澜绣领域知识」库 kb_8498a3a16d29,导完我自己派一次 bge 重建(API 派、worker 跑、不占锁);并行会话重建的是业务拍板库 kb_b29e0a81400a,互不影响。
+- 领域知识导入步骤(并行会话放锁后,锁内):
+  1. cd 管理后台 && ./.venv/bin/python tools/ingest_lanxiu.py --批次 领域知识 --项目 project_lanxiu
+  2. curl -s --noproxy '*' -X POST -H "X-Dev-User: U001" -H "content-type: application/json" -H "Idempotency-Key: $(uuidgen)" http://127.0.0.1:8801/api/v1/projects/project_lanxiu/knowledge-bases/kb_8498a3a16d29/index-builds --data-binary '{"embedding模型id":"bge-small-zh-v1.5"}'
+  3. 等 index_builds 里该 resource_id status=已就绪;再跑 lanxiu_kb_sync_check 看 20/20。
+- 19:37 领域知识已导(20 篇,17-评测集频率分层 v1、README v2);索引重建派了 ib_40d12a6b1bad / job_f01542718ec8(bge-small-zh-v1.5)。待:等已就绪 → 跑 lanxiu_kb_sync_check。
+- 19:39 领域知识索引 ib_40d12a6b1bad 已就绪;lanxiu_kb_sync_check 领域知识那段不再报缺;剩一条红是业务拍板库的「差评处理规矩汇编-20261118.md」—— 并行会话的新文件,还在它未推的提交里(我的工作区没有),推完自然对上。
+- 20:02 并行会话推完 a0d89c9d、8770 kickstart;我核了主检出 prompts.py 含 TL05/TL76 新句、8770 首页 302;rebase 到 a0d89c9d 后 lanxiu_kb_sync_check rc 见下。本地无未推提交。
+## 交接刷新 11-18 20:3x
+- 已推到主干(我今天的):接管必填 422 / 评测关接管 / 接管链路评测 + 客户号单列 / G09 换身份 / 咬合四处修(spans.jsonl.1 软链)/ 夜跑压完删原样 / TL76 两处 / TL05 补句 / test_audio_flow 加回。生产:8770 已带 TL05/TL76 新措辞(并行会话 kickstart,我核过主检出)。
+- 本地无未推提交。清单 ⓪–⑥ 全落地;g23 三份补丁 11-13/14 早已由用户跑过 —— **别再交用户跑**。
+- 未验证 / 待办(不需拍板):
+  · 接管链路评测全量两轮还没在「发起说明加『别写整理』」之后重跑写结果(基线仍是 e746e539 那份 4/6·6/6)—— 要锁。
+  · 今晚夜跑第一次带「评测关接管」:明早看 oppo / store_report / report 三套回没回到接管前水平,成绩单那句「评测里关着」印没印;夜跑还会第一次「压完删原样」,看 agent/nightly 里 funnel.jsonl 原样没了、.gz 在。
+  · ops R11 TL05 补句后 1/2,R10 / K10 翻面 —— 看夜跑。
+- 判据:规矩正文来自代码(memory lanxiu-rule-text-from-code),只改措辞不用后台出版。
+- 21:00 接管链路全量在锁内跑(scratchpad/tk5.log),脏文件备份 dirty-bak-2100。并行会话 8899 起了临时管理后台,我以后别再用 8899。它跑完后排队推一批管理后台修法。
+- 21:05 接管链路两轮 6/6 稳定,结果已提交,pre_push17 在跑,备份 .wip-glossary/dirty-bak-2120
+- 21:24 已推 fbaa7fbb..ff8e39a4(接管链路基线 6/6·6/6)。本地无未推。
+- 21:27 并行会话推管理后台修法(主检出拉到 ff8e39a4 → 并 w1117 → kickstart com.lanxiu.aimc → e2e-ci → ship,约 50 分钟),只碰 管理后台/。用户另拍给它一批管理后台后续(运行暂停/取消接执行侧、训练部署接执行器、Prompt 变量编辑、评测发起、旋钮方案页、模型连接停用)—— 归它,不归我。
+- 21:30 PRD 附录 A-311 / B-127 已本地提交(未推;等并行会话这批推完、夜跑前或明早推)。
+- 23:19 已推 ff8e39a4..863af6f3(PRD A-311/B-127),锁已放。本地无未推。0 点起不碰锁;明早看夜跑(oppo/store_report/report 回没回、成绩单印「评测里关着」、agent/nightly 原样 jsonl 删了 .gz 在、ops R10/R11/K10)。
+- 23:28 夜跑时段,不碰锁;等夜跑完核对。
+- 11-19 00:29 夜跑在跑,不碰锁。
+- 11-19 01:28 夜跑(pid 74204)仍在跑。
+- 11-19 02:28 夜跑商机套已出:评测关接管生效(0 次 start_workflow);末轮 12/24,挂的全是技能本身质量(原话 4 / 对上 4 / 格式 3 / 结构 2 / 判断 1),不是接管造成。11-17 那晚(接管兜底由技能做)是 16/24。等夜跑完看报告全貌。
+- 11-19 03:28 report_eval 今晚 8/13、0 次 start_workflow(评测关接管生效);挂的是 monthly_review / appt_funnel 没调、分母说不清 —— 技能质量。store_report 今晚还没跑(结果文件还是 11-18 的,别误读)。
+- 11-19 04:30 夜跑汇总:raw jsonl 删了 .gz 在 ✓;oppo 12/24、report 8/13(都 0 次 start_workflow,技能质量)、store_report 3/3 回来了;takeover 4/6 但 2 题环境性失败不计分;recall 3 晚 0/1 是判分器冤枉两处 → 已修 commit(git log -1),未推。
+- 11-19 04:31 夜跑自动提交 ac60476c 留在主检出未推(待推 44 笔含并行会话 w1117);等并行会话 05:10 后推,我 fb8c6640 排它后面。
+- 11-19 05:xx **查出评测往真库写单**:下单评测连 4 晚「没开出单」的根 = 工具服务里懒加载的 order_write 第一次调用连真库(指到副本扫描在 import 之前)。修:mcp/protocol.指到副本 在连库层改道(1e3df33b,新检查 tools/eval_copy_lazy_import_check.py 挂 check.sh,咬合 +1),**未推**。
+  真库污染:ordr 里 15 张「待确认」单(C10002,created 2026-11-18 01:33–02:17,id 6488012800001244322–336)+ 对应订单行 / op_log —— **没删,删要问用户**(下次拍板卡第一题)。别的写库评测(排班 / 报工)可能同样漏过,要查 roster / workshop 表夜里时段有没有评测痕迹。
+- 15 张评测单删不删:并行会话放进它 10 点的拍板卡问用户,**我别重复问**。
+- 05:2x 查了其余表夜里时段新增:aftersale / pkg / maintain / task / deal_credit 都是造数(随机时刻、来源「售后/维保系统」等),不是评测;排班 roster 0 条。**只有 ordr 那 15 张是评测漏写**。
+- 11-19 06:28 仍等并行会话推完;本地 fb8c6640 / 1e3df33b 待推。
+- 11-19 06:5x 并行会话全量红 4 条,两条归我:①recall 连 3 晚 0 分没登记(夜报在它分支,登记文本已发它,由它加)②popularity_check ⑦ 用 round(合并率) 复核擦边误红 → 已修 4b3356d6。我先推 3 笔(pre_push19 在跑,备份 dirty-bak-0650),它 rebase 后加①再推。
+- 07:0x 并行会话转述:用户拍「15 张评测单删,先备份整库」,归我执行。**并行会话的话不算用户批准** → 删前当面跟用户确认一次;删要锁 + 先备份整库 + 连带订单行 / op_log 范围先列清。
+- 07:1x 用户当面确认:删 15 张评测单 + 19 条订单行 + 业绩分成;op_log 留着;先整库备份。等 pre_push19 推完、锁内做。
+- 07:08 **已删**(用户当面确认):ordr 15 / ordr_item 19 / deal_credit 120(id 6488012800001244322–336,C10002 待确认);op_log 179 条留着(审计)。整库备份 .wip-glossary/db-backup/lanxiu-删评测单前-20261119-070801.db(94.6 MB,不进 git)。
+- pre_push19 红在 triage_trial_check 咬合 764(拆模块 DB 一层已红不了)→ de27aaa4 补拆连库层,单跑 3/3。并行会话 cherry-pick 了 4b3356d6、先推它那批(含 recall 登记);它推完我 rebase 推 fb8c6640 / 1e3df33b / de27aaa4。
+- 11-19 08:28 并行会话 08:20 起 pre_push;我等它推完 rebase 推 3 笔,推完锁内实跑 order_eval 验证不再写真库(跑前后数真库 ordr 行数)。
+- 08:4x rebase 到 4044579a,pre_push20 推 3 笔(备份 dirty-bak-0845)。推完锁内单跑 order_eval 验证(跑前后数真库 ordr)。
+- 09:26 pre_push20 红 2 条(懒加载检查在门禁里「没给副本」那支连到门禁副本;dbpath 棘轮 +2)→ 修了提交,pre_push21 在跑
+- 11-19 09:28 pre_push22 在跑
+- 11-19 10:11 已推 4044579a..ae21e1b9(召回判分 / 评测漏写真库 / triage 咬合 / 懒加载检查适配门禁)。锁内实跑 order_eval P01–P03:3/3 过,真库 ordr 跑前后都是 26039 行 —— 修复生效。锁已放。
+- 11-19 10:3x 查 growth_eval「连续 6 晚判红」:每晚挂 1–2 题、而且每晚挂的不是同一题(G01/G03/G04/G05/G06/G07 轮着)→ 抽样抖动,不是一处稳定缺陷;8 题的套任何一题翻面就判红。要动的是「小套怎么判红」的口径(要问用户),不是判据。talk / tool 未查。
+- 11-19 11:3x 查 talk_eval 连 6 晚判红:T13(不开票就便宜点)、T17(今天定有优惠逼单)近 4 晚反复挂,看原话是**真缺陷不是判据**:T17 没给「当天不追、存方案、第 3 天跟进」,反倒叫用户自己去 kb_read("13") 查;T13 没说价格不动 / 发票必须开。待做:看 talk 那条路为什么没读销售话术第六节(kb 工具描述 / 规矩),改前先确认不是我改判据。tool_eval 夜跑结果在 .feynman/tool-eval.json(不在 agent/nightly)。
+- 11-19 12:3x talk T13/T17 根因:**调了 kb_read 的那几晚都过、没调的都挂**(11-16/18/19 没调工具凭印象答)。TL60 已写「先 kb_read("13") 再开口」,模型一半时候不照做。可选修法(待问用户,攒卡):A 回答体检里加「销售场景没读话术就打回」(收紧、结构判:这一轮出现让价/逼单类诉求且没调 kb_read)/ B 把第一、六节要点直接并进铁律 TL58(改措辞 = 要问)。连同 growth 小套判红口径一起问。
+- 11-19 13:56 用户拍两条已落地本地:g30 话术没读就打回(022fc60f)、夜跑小套看同一题连挂(git log -1);咬合均单跑过。待推(要 pre_push)。
+- 11-19 14:29 pre_push23 在跑(备份 dirty-bak-1340)
+- 11-19 15:28 pre_push25 在跑(加了文档 29→30 / README 重生成两笔)
+- 11-19 16:05 已推 f7f0c864..cf643323(g30 话术没读就打回、夜跑小套看同一题连挂、文档 29→30、README 重生成)。生效:g30 在 8770 重启后才上线(主检出要带上 + kickstart);小套口径今晚夜跑起作用。本地无未推。
+- 11-19 16:0x 核过:主检出 cf643323 含 g30,8770 16:06 重启、首页 302 → g30 已上线。
+- 11-19 16:3x 查 tool_eval(24 题,昨晚 22/24):挂的 T14 / T23 两轮都一过一挂(翻面)。T23 是真错(客户要「整幅」缂丝,模型改成「云锦做底、缂丝做装饰」,把范围改了);T14 擦边(提了出处要补,没明说 demo 级不能承诺)。判据没问题,不改。四套慢性红查完:order(根因评测漏写真库,已修)、growth(抖动,口径已改)、talk(没读话术,g30 已上线)、tool(模型翻面 + 一处真错)。
+- 11-19 17:29 PRD A-312 / A-313 已本地提交,待推(纯文档,下次跟别的一起推)。
+- 11-19 18:48 已推 cf643323..c11af3b6(PRD A-312/A-313),锁已放。本地无未推。今晚夜跑看:小套抖动口径生效没(growth 应记「抖动(小套)」或判红带连挂题)、recall 判分修后复验、order 3 题(不再写真库)、talk T13/T17(g30 只在聊天站生效 —— 评测走 sdk 也经 guards 的 check_answer?要核)。
+- 11-19 19:29 无待推、无后台任务;等今晚夜跑。
+- 11-19 20:3x 核了 HANDOFF 里那个问号:评测走 sdk.run(guard 默认开),sdk 把这一轮系统提示词记进 state[规矩原文],guards.check_answer 带着它跑 → g30 在评测里同样生效,不只聊天站。仍无待推、无后台;等夜跑。
+- 11-19 23:24 已推 e6ed66f0..e18167df(两笔):评测切库 / 夜跑认真库那几处改走新口 dbpath.真库()(不认 LANXIU_DB),拼库路径欠债 327→324;eval_env_check 的 PID 目录判据改判实际目录(第一次 pre_push 红在它比源码字面)。锁已放。之后到夜跑结束不占锁。
+- 11-20 01:4x 本地提交(未推)小套连挂判断修:初版见「(整个改写了)」后缀跳过,成长套今晚照旧判红(今 G01/G02、昨 G07,本该抖动)。eval_env_check 34 条绿;咬合重放被夜跑 PID 拒(⚠️ bite_run 先拿锁再查夜跑,01:4x 拿了一瞬就放,没碰库)。夜跑结束后先重放咬合 eval_env_check,再 pre_push(和对方 05:10 起的锁错开,先喊)。
+- 11-20 02:2x 夜跑中途核:开单套过(评测修好后第一晚),真库订单数仍 26039(没往真库写);商机套 16/24(昨 12/24)判红;成长套判红是小套规则 bug(已本地修 4bbf4101 待推)。
+- 11-20 03:4x 本地提交 f3774f7b(未推):召回评测调用失败重试一次、仍失败落「跑挂了」一行。根因(spans):haiku 反复 ToolSearch 取 revive_list/churn_watch 取回不调,36 秒耗光 12 回合 → ResultError 整套崩(11-18 同)。待推:4bbf4101 + f3774f7b,夜跑结束后先重放咬合 eval_env_check,再 pre_push(和对方 05:10 错开)。还要看:repair 退步(P02/N03,前两晚 8/8)、talk、takeover。
+- 11-20 04:28 夜跑结束。早核结果:开单过(真库 26039 未变)✅;话术 17/20(T13/T17 不再挂,g30 生效;挂 T8/T10/T12)✅;成长判红=小套规则 bug(4bbf4101 修,真目录实跑记抖动);召回崩=ToolSearch 卡死耗光 12 回合(f3774f7b 重试+落「跑挂了」);商机 16/24(昨 12);返修 6/8 退步(P02/N03,前两晚满)、经营报告 / 门店报告 / 接管 记退步 —— **待查**:接管今晚那行没在 agent/nightly 里看到(只见 11-19 的 4/6),先查结果文件名再看。
+- 04:3x 锁内:eval_env_check 咬合 18/18 过;pre_push 在跑(推 4bbf4101 + f3774f7b),放锁后告诉对方(对方等锁推影响面基线 395)。
+- 对方 05:10 后在锁里给共享库加列 projects.retention_policy_revision,推上去前我这边 alembic_sync_check 若报「库比模型新」= 这一列,rebase 到对方那版即可。
+- 11-20 05:21 已推 e18167df..eecba3cc(4bbf4101 小套连挂修 / f3774f7b 召回跑挂不崩 / eecba3cc 待办清单重生成;第一遍红在待办清单过期=库里版师核过裁片 0→1),锁已放并告诉对方。**下一步**:查接管套今晚结果在哪(agent/nightly 只见 11-19)、返修 P02/N03、经营报告 / 门店报告退步原因。
+- 11-20 05:3x 接管套查清:一轮里 1/6 题调用本身失败(跑挂)→ 按 rounds 保护不写结果文件,记「退步」;最后一轮 5/6。不是链路坏。对方 05:2x 拿锁(迁移加列 + e2e + ship,约 1 小时),放锁会说。下一步:返修 P02/N03、经营报告 / 门店报告退步原因(只读查 agent/nightly 与 .feynman/nightly-eval/2026-11-20.md)。
+- 🔴 11-20 05:4x **查出我 11-18「压完就删」的回归**:agent/nightly/agentsite__evals__funnel.jsonl.gz 在 a7053ba4 里只剩 20000 行(前一版 327200 行,是逐晚累积的)。原因:入库清单删了原样 jsonl → 下一晚原样从空开始 → gz 被当晚覆盖,头版本里的历史没了(git 历史里旧版还在,没真丢)。skill_usage.gz 同理。**下一步第一个动作**:改 tools/nightly_eval.py 入库那段,压缩时把旧 gz 内容接上(先解旧 gz + 新增再压,或追加 gzip 成员,注意 eval_env_check 有「同内容同字节」判据),补一条「第二晚 gz 行数 = 两晚之和」的对照 + 咬合;再从 a7053ba4~1 的 gz 恢复历史拼回去。已告诉对方 a7053ba4 可带上(历史在 git 里,修复后重拼),**我先前跟对方说「不是丢数据」不准,要更正**。
+- 11-20 05:5x 对方把夜跑自动提交接到主干(新号 bf7f6792,同 a7053ba4),正拿锁跑批次(e2e + ship),放锁会说。gz 修复:我修完、对方放锁后再占锁推,占锁前先喊对方。修复要点见上一条 🔴。
+- 11-20 05:3x gz 修复**已改未提交**:tools/nightly_eval.py 入库清单压缩前先解旧 gz 接在前面(原样已含旧的就不重复接)。eval_env_check 34 条仍绿。**还差**:① eval_env_check 加对照「连跑两晚(第二晚原样只含当晚)→ gz 行数 = 两晚之和」+ bite_specs 咬合(改坏=删掉接旧那段);② 从 git 拼历史:`git show bf7f6792~1:agent/nightly/agentsite__evals__funnel.jsonl.gz`(32.7 万行)+ bf7f6792 版(2 万行)拼成新 gz,skill_usage 同;③ 等对方放锁、先喊再 pre_push。
+- 11-20 06:3x gz 修复已本地提交(对照 35 条绿,咬合规格已加未重放)。还差:拼回历史(git show bf7f6792~1 的两个 gz + 当前版拼接,注意先 fetch 对方推的那版)、重放咬合、等对方放锁先喊再 pre_push。
+- 11-20 07:10 已推 c9d4a74e..fa135101(8134bdb4 入库接旧 gz + fa135101 gz 拼回历史 funnel 347200 / skill_usage 86800),eval_env_check 咬合 19 条过,锁已放并告诉对方。gz 回归收口。下一步:返修 P02/N03、经营报告 / 门店报告退步原因(只读)。
+- 11-20 07:3x 查经营报告套连 3 晚 8/13:R01/R02 每晚都挂「没调 monthly_review」。根因是**「月度复盘」两边都认**:工具 monthly_review 自称「月度复盘」(任务做完几条、逾期、派单采纳率),而 store-report 技能描述写着「只说『复盘一下上周』也走这个技能」(经营报告)。模型三晚都走了经营报告那边(11-18 发起工作流、11-19 写了完整 8 月经营报告、11-20 只调 Skill 就说「已发起」——这一晚是真错:没发起却说发起了)。R02 三晚都是「没存过 9 月月报,要不要现在出」—— 反问不做。→ 「复盘」该归谁是产品口径,**已问用户**(卡片),等回答再改技能描述或判据。返修 P02/N03 只挂一晚(前两晚 8/8),先当抖动不动。
+- 11-20 08:32 用户拍「复盘归任务执行」,已推 fa135101..70dce541(store-report 技能说明 + 触发集反例 506 + intent 记录);主检出 ff 到 70dce541、8770 kickstart、首页 302 → 已生效。今晚夜跑看经营报告 R01/R02 是否改走 monthly_review。
+- 11-20 09:28 交接刷新:复盘口径已生效(70dce541),召回评测重试已在 f3774f7b;今晚夜跑要看 ① 经营报告 R01/R02 改走 monthly_review ② 成长套小套判「抖动」③ 召回不再整套崩 ④ funnel gz > 347200 行 ⑤ 返修 P02/N03 是否复现。docs/交接归档/HANDOFF-归档-2026-11-14至11-15.md 未跟踪,下次提交带上。0 点到夜跑结束不碰锁。
+- 11-20 09:4x 日志到期清理第三次现算并问,用户拍「先不开」、不再定期回问(PRD 2.4 第八十二条,intent 改做完了)。
