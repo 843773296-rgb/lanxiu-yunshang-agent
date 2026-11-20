@@ -139,6 +139,37 @@ print("▸ ⑦ 没给读写查询能力 → 记成「没查」")
 跳 = [p for p in 问 if p["code"] == "CHECK_SKIPPED" and "Webhook" in p["消息"]]
 ck("出现在「有一类没检查」里,且没有冒充通过", len(跳) == 1 and 码 not in 码们(问), len(跳), 码们(问))
 
+print("▸ ⑧ 三张参数表 + 返回内容(11-20 尾巴,照 Dify 的 Query / Header / 响应配置)")
+
+
+def 带(**额外):
+    g = 直连("tv_读")
+    g["nodes"][0]["config"].update(额外)
+    return g
+
+
+表 = lambda **p: {"type": "object", "properties": {k: {"type": v} for k, v in p.items()}, "required": []}  # noqa: E731
+问 = 校(带(webhook_query_schema=表(份数="integer"), webhook_header_schema=表(门店="string"),
+          webhook_response={"status_code": 200, "body": '{"单": "{{单号}}", "n": {{份数}}, "店": "{{门店}}", "运行": "{{运行编号}}"}'}))
+ck("配得对 → 没有 WEBHOOK_ 开头的阻断", not any(c.startswith("WEBHOOK_") for c in 码们(问, V.阻断)), 1, 码们(问))
+问 = 校(带(webhook_query_schema=表(单号="string")))
+ck("请求体和网址参数都登记「单号」→ 阻断 WEBHOOK_PARAM_DUP", "WEBHOOK_PARAM_DUP" in 码们(问, V.阻断), 1, 码们(问))
+问 = 校(带(webhook_header_schema=表(份数="integer")))
+ck("请求头参数登记成整数 → 阻断 WEBHOOK_HEADER_TYPE", "WEBHOOK_HEADER_TYPE" in 码们(问, V.阻断), 1, 码们(问))
+问 = 校(带(webhook_response={"status_code": 201, "body": "ok"}))
+ck("返回状态码 201 → 阻断 WEBHOOK_RESPONSE_STATUS(只许 200 / 202)", "WEBHOOK_RESPONSE_STATUS" in 码们(问, V.阻断), 1, 码们(问))
+问 = 校(带(webhook_response={"status_code": 200, "body": "{{没登记的}}"}))
+ck("返回体引用没登记的名字 → 阻断 WEBHOOK_RESPONSE_REF", "WEBHOOK_RESPONSE_REF" in 码们(问, V.阻断), 1, 码们(问))
+问 = 校(带(webhook_response={"status_code": 200, "body": "{{运行编号}} {{状态}} {{跑的版本}} {{查结果}}"}))
+ck("只引用系统给的四项 → 不报 WEBHOOK_RESPONSE_REF", "WEBHOOK_RESPONSE_REF" not in 码们(问), 1, 码们(问))
+问 = 校(带(webhook_response="不是对象"))
+ck("返回配置形状不对 → 阻断 WEBHOOK_RESPONSE_BAD", "WEBHOOK_RESPONSE_BAD" in 码们(问, V.阻断), 1, 码们(问))
+g = 带(webhook_query_schema=表(份数="integer")); g["nodes"][0]["config"]["start_mode"] = "用户输入"
+问 = 校(g)
+ck("用户输入开头却配了网址参数 → 警告 WEBHOOK_CONFIG_UNUSED(不阻断)", "WEBHOOK_CONFIG_UNUSED" in 码们(问, V.警告) and "WEBHOOK_CONFIG_UNUSED" not in 码们(问, V.阻断), 1, 码们(问))
+问 = 校(带(webhook_query_schema={"type": "object", "properties": {}, "required": []}, webhook_response={}))
+ck("空表 / 空返回配置 → 不报任何 WEBHOOK_ 问题(面板初始化出来的空壳不算配了)", not any(c.startswith("WEBHOOK_") for c in 码们(问)), 1, 码们(问))
+
 print()
 if 挂:
     print(f"❌ {len(挂)} 条没过:{挂}")

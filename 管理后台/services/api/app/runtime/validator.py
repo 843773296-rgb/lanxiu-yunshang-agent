@@ -390,6 +390,40 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
             出.append(问(阻断, "START_MODE_UNKNOWN", f"「开始」的开始方式「{方式}」认不出",
                        "在「开始」的「基本」里选「用户输入」「定时触发器」或「Webhook」", node_id=n["id"], field_path="config.start_mode"))
             continue
+        # Webhook 的三张参数表 + 返回内容(11-20 二期 2-2 尾巴,照 Dify 的 Query / Header / 响应配置):
+        # 三张表的参数名不能撞(撞了运行时不知道取哪个);请求头只能是文字;返回状态码只许 200 / 202(契约里成功码);
+        # 返回体模板里 {{名}} 只许引用登记过的参数或 运行编号 / 状态 / 跑的版本 / 查结果 —— 引用不存在的名字,对方收到的永远是空
+        三表 = (("input_schema", "请求体参数"), ("webhook_query_schema", "网址参数"), ("webhook_header_schema", "请求头参数"))
+        if 方式 == "Webhook":
+            import re as _re
+            名们 = {}
+            for 键, 叫 in 三表:
+                for 名, 定 in ((c.get(键) or {}).get("properties") or {}).items():
+                    t = (定 or {}).get("type") or "string"
+                    if 键 == "webhook_header_schema" and t != "string":
+                        出.append(问(阻断, "WEBHOOK_HEADER_TYPE", f"请求头参数「{名}」登记成了{t},请求头只能是文字",
+                                   "把它的类型改成「文本」;要数字就放到网址参数或请求体里", node_id=n["id"], field_path=f"config.webhook_header_schema.properties.{名}"))
+                    if 名 in 名们:
+                        出.append(问(阻断, "WEBHOOK_PARAM_DUP", f"「{名}」在{名们[名]}和{叫}里都登记了 —— 运行时不知道取哪个",
+                                   "三张表里的参数名不能重复,给其中一个换个名字", node_id=n["id"], field_path=f"config.{键}.properties.{名}"))
+                    else:
+                        名们[名] = 叫
+            回 = c.get("webhook_response")
+            if 回 not in (None, {}):
+                if not isinstance(回, dict) or ("body" in 回 and 回.get("body") is not None and not isinstance(回.get("body"), str)):
+                    出.append(问(阻断, "WEBHOOK_RESPONSE_BAD", "「返回给对方什么」的形状不对", "状态码选 200 或 202,返回体是一段文字(可以写 {{参数名}} / {{运行编号}})",
+                               node_id=n["id"], field_path="config.webhook_response"))
+                else:
+                    if 回.get("status_code", 202) not in (200, 202):
+                        出.append(问(阻断, "WEBHOOK_RESPONSE_STATUS", f"返回状态码 {回.get('status_code')} 不在允许的范围(200 / 202)",
+                                   "受理成功只能回 200 或 202;参数错、密钥错这些由系统按契约回 4xx,不在这里配", node_id=n["id"], field_path="config.webhook_response.status_code"))
+                    for 名 in sorted(set(_re.findall(r"\{\{\s*([^{}\s]+)\s*\}\}", 回.get("body") or ""))):
+                        if 名 not in 名们 and 名 not in ("运行编号", "状态", "跑的版本", "查结果"):
+                            出.append(问(阻断, "WEBHOOK_RESPONSE_REF", f"返回体里引用了「{名}」,它不在三张参数表里、也不是 运行编号 / 状态 / 跑的版本 / 查结果",
+                                       "改成登记过的参数名,或先在上面的参数表里加上它", node_id=n["id"], field_path="config.webhook_response.body"))
+        elif any(((c.get(k) or {}).get("properties") if k != "webhook_response" else c.get(k)) for k in ("webhook_query_schema", "webhook_header_schema", "webhook_response")):
+            出.append(问(警告, "WEBHOOK_CONFIG_UNUSED", f"开始方式是「{方式}」,网址参数 / 请求头参数 / 返回内容只对 Webhook 开头有用,现在不会用上",
+                       "要么把开始方式改成 Webhook,要么把那几项清掉(留着不影响跑,但会让人以为生效了)", node_id=n["id"], field_path="config.webhook_response"))
         if 方式 != "定时":
             continue
         try:

@@ -3903,9 +3903,28 @@ function 表_设置(n) {
       设开始方式(c, el.value);
       重画();
     }, "请选择") + `<div class="k">一条流程只有一个「开始」、只选一种开始方式 —— 触发器和「用户输入」不能同时存在于同一条流程(照 Dify);几种都要就复制一条流程。</div>`;
-    if (方式 === "Webhook") 体 += `<div class="note">${md("外部系统推过来的 JSON 就是下面这张表里的参数(`{参数名: 值}`),类型不对会被拒并点名是哪一项。"
-      + "地址和密钥在「**访问 API**」页签:**调试地址只跑草稿**(边改边让对方推一条试),正式地址跑生产那一版。"
-      + "以发密钥的那个人的身份跑;**写数据的业务动作前面必须有「人工介入」**,让人核对后再写(检查配置会拦)。")}</div>`;
+    if (方式 === "Webhook") {
+      体 += `<div class="note">${md("外部系统推过来的 JSON 就是下面「使用者要提供什么」那张表里的参数(`{参数名: 值}`),类型不对会被拒并点名是哪一项。"
+        + "地址和密钥在「**访问 API**」页签:**调试地址只跑草稿**(边改边让对方推一条试),正式地址跑生产那一版。"
+        + "以发密钥的那个人的身份跑;**写数据的业务动作前面必须有「人工介入」**,让人核对后再写(检查配置会拦)。")}</div>`;
+      // 照 Dify 的 Query / Header 参数表和响应配置(11-20 二期 2-2 尾巴):三张表合成一张平的输入,参数名不能撞;请求头只能是文字
+      体 += `<label class="f">网址参数(照 Dify 的 Query:地址后面 ?名=值)</label>`
+        + 字段表编辑(c.webhook_query_schema = c.webhook_query_schema || { type: "object", properties: {}, required: [] }, true)
+        + `<div class="k">网址上来的都是文字:登记成整数 / 数字 / 是否时按类型转,转不了拒并点名;列表 / 对象不能从网址来。</div>`;
+      体 += `<label class="f">请求头参数(照 Dify 的 Header)</label>`
+        + 字段表编辑(c.webhook_header_schema = c.webhook_header_schema || { type: "object", properties: {}, required: [] }, true)
+        + `<div class="k">只能是文字;名字不分大小写。三张表(请求体 / 网址 / 请求头)里的参数名不能重复,检查配置会拦。</div>`;
+      const 回 = c.webhook_response || {};
+      const k体 = 挂控件((el) => { const v = el.value; (c.webhook_response = c.webhook_response || {}).body = v; if (!v.trim() && !(c.webhook_response.status_code && c.webhook_response.status_code !== 202)) delete c.webhook_response; });
+      体 += `<label class="f">返回给对方什么(照 Dify 的响应配置;不配就回默认的 202 + 运行编号)</label>`
+        + 下拉(String(回.status_code || ""), [["202", "202 已受理(默认)"], ["200", "200"]], (el) => {
+            if (!el.value) { if (c.webhook_response) delete c.webhook_response.status_code; }
+            else (c.webhook_response = c.webhook_response || {}).status_code = Number(el.value);
+            if (c.webhook_response && !c.webhook_response.status_code && !(c.webhook_response.body || "").trim()) delete c.webhook_response;
+            重画(); }, "202 已受理(默认)")
+        + `<textarea data-k="${k体}" data-lb="返回体" rows="3" placeholder='例如:{"ok": true, "单号": "{{单号}}", "运行": "{{运行编号}}"}'>${esc(回.body || "")}</textarea>
+        <div class="k">写 <code>{{参数名}}</code> 带回对方推来的值,<code>{{运行编号}}</code> / <code>{{状态}}</code> / <code>{{跑的版本}}</code> / <code>{{查结果}}</code> 是系统给的;写出来能解成 JSON 就按 JSON 回,否则按文字回。参数错、密钥错这些由系统回 4xx,不在这里配。</div>`;
+    }
     if (方式 === "定时") {
       const r = c.schedule_rule = c.schedule_rule || { 周期: "周", 周几: [0], 时刻: "08:00" };
       体 += `<label class="f">多久跑一次</label>` + 下拉(r.周期 || "周", Object.entries(周期说法), (el) => {
@@ -5226,11 +5245,13 @@ async function 画_访问入口() {
     <button id="ak-doc">接入文档(按生产那一版的字段生成)</button> <span class="k" id="ak-doc-why"></span>
   </div>
   <div class="card"><h3>Webhook(外部系统推一条就跑)</h3>
-    <div class="k">流程「开始」的开始方式选 <b>Webhook</b> 才收。请求体就是开始里登记的参数本身,用同一把访问密钥、同样要带幂等键。</div>
-    <pre>正式:POST ${esc(址.replace(/\/runs$/, "/webhook"))}   ← 跑生产那一版
-调试:POST ${esc(址.replace(/\/runs$/, "/webhook/debug"))}   ← 只跑草稿,改着就能试
+    <div class="k">流程「开始」的开始方式选 <b>Webhook</b> 才收。参数照开始里登记的三张表给:请求体 / 网址参数 / 请求头;用同一把访问密钥、同样要带幂等键。</div>
+    <pre>正式:POST ${esc(址.replace(/\/runs$/, "/webhook"))}?网址参数=值   ← 跑生产那一版
+调试:POST ${esc(址.replace(/\/runs$/, "/webhook/debug"))}?网址参数=值   ← 只跑草稿,改着就能试
+请求头:Authorization: Bearer 密钥 · Idempotency-Key: 每条一个 · 登记过的请求头参数: 值
 请求体:{"参数名": 值, …}
-→ 202 {"运行编号": "xr_…", "状态": "排队中"} ;参数类型不对 → 422,说明里点名是哪一项</pre>
+→ 202 {"运行编号": "xr_…", "状态": "排队中"}(开始里配了「返回给对方什么」就按它回);参数类型不对 / 缺必填 → 422,说明里点名是哪一项</pre>
+    <div class="k">对接方看的文档:《澜绣云裳agent-接入Webhook怎么做》(飞书产品文件夹)。</div>
   </div>
   <div class="card"><h3>密钥</h3>
     ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th>最后一次用</th><th>有效期至</th><th></th></tr>${行}</table>`

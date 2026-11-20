@@ -117,7 +117,7 @@ def 收尾():
           "required": ["article"]}
 
 
-def 建一条(名, 方式):
+def 建一条(名, 方式, 额外=None):
     c, w = 打("POST", P + "/workflows", 体={"名称": f"{名} {uuid.uuid4().hex[:6]}", "模板": "空白"})
     wid = (w or {}).get("id")
     if wid:
@@ -129,6 +129,7 @@ def 建一条(名, 方式):
         if n["type"] == "start":
             n.setdefault("config", {})["start_mode"] = 方式
             n["config"]["input_schema"] = 参数表
+            n["config"].update(额外 or {})
         if n["type"] == "end":
             n["config"]["bindings"] = {"summary": {"source": "input", "pointer": "/article"}}
     c, b = 打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定义}, 头={"If-Match": str(d["草稿"]["revision"])})
@@ -222,6 +223,41 @@ def main():
     c, k2 = 打("POST", P + f"/workflows/{wid2}/access-keys", 谁=发人, 体={"名字": "e2e 非webhook", "每天上限": 5, "有效期天数": 90})
     c, b = 外(f"/open/v1/apps/{(k2 or {}).get('应用id')}/webhook/debug", (k2 or {}).get("原文", ""), {"article": "x"}, str(uuid.uuid4()))
     ck("用户输入开头的草稿 → 409 WEBHOOK_NOT_START", c == 409 and 码(b) == "WEBHOOK_NOT_START", (c, b))
+
+    print("\n▸ ⑧ 网址参数 / 请求头参数(照 Dify 的 Query / Header)+ ⑨ 自定义返回内容(11-20 尾巴)")
+    表 = lambda **p: {"type": "object", "properties": {k: {"type": v} for k, v in p.items()}, "required": list(p)}  # noqa: E731
+    wid3, c, b = 建一条("e2e Webhook·三表", "Webhook", 额外={
+        "webhook_query_schema": 表(门店数="integer"), "webhook_header_schema": {"type": "object", "properties": {"X-Shop": {"type": "string", "title": "门店"}}, "required": ["X-Shop"]},
+        "webhook_response": {"status_code": 200, "body": '{"收到": true, "正文": "{{article}}", "门店数": {{门店数}}, "店": "{{X-Shop}}", "运行": "{{运行编号}}"}'}})
+    c, vb = 打("POST", P + f"/workflows/{wid3}/validate")
+    阻 = [p.get("code") for p in (vb or {}).get("问题", []) if p.get("级别") == "blocking"]
+    ck("三表 + 返回配置存上、检查配置无阻断", c == 200 and 阻 == [], (c, 阻))
+    c, k3 = 打("POST", P + f"/workflows/{wid3}/access-keys", 谁=发人, 体={"名字": "e2e 三表", "每天上限": 5, "有效期天数": 90})
+    密3, kid3, aid3 = (k3 or {}).get("原文", ""), (k3 or {}).get("id"), (k3 or {}).get("应用id")
+    调试址3 = f"/open/v1/apps/{aid3}/webhook/debug"
+    头 = {"Authorization": "Bearer " + 密3, "Idempotency-Key": str(uuid.uuid4()), "x-shop": "S01"}
+    c, r = 打("POST", 调试址3 + "?门店数=3", 谁=None, 体={"article": "三表来的"}, 头=头)
+    ck("带网址参数 + 请求头 → 按配置回 200(不是默认 202),返回体是渲染后的 JSON:正文 / 门店数(整数)/ 店 / 运行编号",
+       c == 200 and isinstance(r, dict) and r.get("收到") is True and r.get("正文") == "三表来的" and r.get("门店数") == 3
+       and r.get("店") == "S01" and str(r.get("运行") or "").startswith("xr"), (c, r))
+    rid3 = (r or {}).get("运行") if isinstance(r, dict) else None
+    d = 等跑完(rid3) if rid3 else {}
+    ck("跑成功了", d.get("执行状态") == "succeeded", d.get("执行状态"))
+    with 库().connect() as cc:
+        来 = cc.execute(text("select input_snapshot from execution_runs where id=:i"), {"i": rid3}).mappings().first() if rid3 else None
+    快 = (来 or {}).get("input_snapshot") or {}
+    ck("三张表合成一张平的输入:article / 门店数=3(整数)/ X-Shop=S01;Authorization 这种没登记的头没进来",
+       快.get("article") == "三表来的" and 快.get("门店数") == 3 and 快.get("X-Shop") == "S01" and "Authorization" not in 快 and "authorization" not in 快, 快)
+    前3 = 这把发起的运行数(kid3)
+    c, b = 打("POST", 调试址3 + "?门店数=三", 谁=None, 体={"article": "x"}, 头={**头, "Idempotency-Key": str(uuid.uuid4())})
+    ck("网址参数类型不对 → 422,点名「门店数」", c == 422 and 码(b) == "WEBHOOK_PARAM_INVALID" and "门店数" in 说(b), (c, b))
+    c, b = 打("POST", 调试址3 + "?门店数=1", 谁=None, 体={"article": "x"}, 头={"Authorization": "Bearer " + 密3, "Idempotency-Key": str(uuid.uuid4())})
+    ck("缺必填请求头 → 422,点名「门店」", c == 422 and 码(b) == "WEBHOOK_PARAM_INVALID" and "门店" in 说(b), (c, b))
+    ck("这两次一条运行都没建", 这把发起的运行数(kid3) == 前3, (前3, 这把发起的运行数(kid3)))
+    键3 = str(uuid.uuid4())
+    c, r_a = 打("POST", 调试址3 + "?门店数=2", 谁=None, 体={"article": "重放"}, 头={**头, "Idempotency-Key": 键3})
+    c, r_b = 打("POST", 调试址3 + "?门店数=2", 谁=None, 体={"article": "重放"}, 头={**头, "Idempotency-Key": 键3})
+    ck("同一个幂等键重放也按配置回 200、同一个运行编号(对方两次拿到的形状一样)", c == 200 and isinstance(r_b, dict) and r_b.get("运行") == (r_a or {}).get("运行"), (r_a, r_b))
 
     print("\n▸ 收尾:吊销密钥、归档工作流")
     收尾()

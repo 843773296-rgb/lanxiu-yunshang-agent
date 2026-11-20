@@ -129,7 +129,10 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
 # ── 节点登记表(对齐规格 §6.1 那张表的每一行)────────────────────────
 节点表 = [
     N("start", "开始",
-      端口=[成功], 配置=["input_schema", "defaults", "size_limits", "glossary_version_id", "start_mode", "schedule_rule"],
+      端口=[成功], 配置=["input_schema", "defaults", "size_limits", "glossary_version_id", "start_mode", "schedule_rule",
+                        # Webhook 开头(11-20 二期 2-2 尾巴,照 Dify 的 Query / Header 参数表和响应配置):网址参数 / 请求头参数两张表形状同 input_schema;
+                        # webhook_response = {status_code: 200|202, body: 文字模板,{{参数名}} / {{运行编号}}}。只在 start_mode=Webhook 时有意义
+                        "webhook_query_schema", "webhook_header_schema", "webhook_response"],
       调用外部=False, 实现=已实现, 唯一=True,
       不适用=["timeout_seconds", "retryable_errors", "max_retries",
               "bindings", "required_capability"],

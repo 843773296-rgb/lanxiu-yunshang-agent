@@ -21,6 +21,7 @@
 """
 import hashlib
 import json
+import re as _re
 import secrets
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -452,6 +453,73 @@ def 核Webhook参数(input_schema, 体):
     return 输入, 问题
 
 
+def _转类型(t, 原):
+    """网址 / 请求头上来的都是文字:按登记的类型转。转不了 → None(调用方点名报)。"""
+    s = str(原).strip()
+    if t in (None, "string"):
+        return 原
+    if t == "integer":
+        return int(s) if _re.fullmatch(r"[+-]?\d+", s) else None
+    if t == "number":
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    if t == "boolean":
+        return {"true": True, "1": True, "yes": True, "是": True, "false": False, "0": False, "no": False, "否": False}.get(s.lower())
+    return None   # array / object 不能从一段文字里来
+
+
+def 核Webhook三源(起配置, 体, 网址参数, 请求头):
+    """照 Dify 的 Body / Query / Header 三张表(11-20):各按各的表核,合成一张平的输入(名字不撞由校验器保证)。
+    网址 / 请求头的值都是文字,按登记的类型转(整数 / 数字 / 是否);请求头名字不分大小写。只收登记过的,别的丢掉。纯函数。"""
+    起配置 = 起配置 or {}
+    体表 = 起配置.get("input_schema") or {}
+    # 请求体表里一项都没登记时,对方可以不带体(体 None 不算错);登记了就要是个 JSON 对象
+    if not ((体表.get("properties") or {})) and 体 is None:
+        体 = {}
+    输入, 问题 = 核Webhook参数(体表, 体)
+    for 键, 叫, 源 in (("webhook_query_schema", "网址参数", 网址参数 or {}), ("webhook_header_schema", "请求头参数", 请求头 or {})):
+        表 = 起配置.get(键) or {}
+        必填 = set(表.get("required") or [])
+        小写源 = {str(k).lower(): v for k, v in dict(源).items()} if 键 == "webhook_header_schema" else dict(源)
+        for 名, 定义 in (表.get("properties") or {}).items():
+            叫名 = (定义 or {}).get("title") or 名
+            原 = 小写源.get(名.lower()) if 键 == "webhook_header_schema" else 小写源.get(名)
+            if 原 is None or 原 == "":
+                if 名 in 必填:
+                    问题.append(f"缺必填{叫}「{叫名}」({名})")
+                continue
+            t = (定义 or {}).get("type") or "string"
+            值 = _转类型(t, 原)
+            if 值 is None:
+                问题.append(f"{叫}「{叫名}」({名})要是{_类型叫.get(t, t)},收到的是 {str(原)[:40]!r}")
+                continue
+            输入[名] = 值
+    return 输入, 问题
+
+
+def 渲染Webhook返回(回配置, 输入, 运行信息):
+    """开始里配了「返回给对方什么」→ (状态码, 体)。体模板里 {{名}} 换成参数值或 运行编号 / 状态 / 跑的版本 / 查结果;
+    换完能解成 JSON 就按 JSON 回,解不成按文字回。没配 → None(调用方回默认的 202 原形)。纯函数。"""
+    if not isinstance(回配置, dict) or not 回配置:
+        return None
+    码 = 回配置.get("status_code") or 202
+    模板 = 回配置.get("body")
+    if not isinstance(模板, str) or not 模板.strip():
+        return 码, None
+    值表 = {**{k: v for k, v in (输入 or {}).items()}, **(运行信息 or {})}
+
+    def 换(m):
+        v = 值表.get(m.group(1).strip())
+        return "" if v is None else (json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v))
+    文 = _re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", 换, 模板)
+    try:
+        return 码, json.loads(文)
+    except ValueError:
+        return 码, 文
+
+
 def _Webhook开头(定义):
     起 = WF._开始节点(定义)
     return ((起 or {}).get("config") or {}).get("start_mode") == "Webhook"
@@ -504,10 +572,14 @@ async def _Webhook受理(aid, request, authorization, idempotency_key, 调试):
                           f"这条流程{'的草稿' if 调试 else '在生产的那一版'}不是 Webhook 开头,不能这样叫起",
                           "在编排页把「开始」的开始方式改成 Webhook" + ("" if 调试 else ",再发布到生产"))
             起 = WF._开始节点(定义) or {}
-            输入, 问题 = 核Webhook参数((起.get("config") or {}).get("input_schema") or 定义.get("input_schema"), 体)
+            起配置 = dict(起.get("config") or {})
+            if not 起配置.get("input_schema"):
+                起配置["input_schema"] = 定义.get("input_schema") or {}
+            # 照 Dify 的三张表(11-20):请求体 + 网址参数(?名=值)+ 请求头;请求头名字不分大小写
+            输入, 问题 = 核Webhook三源(起配置, 体, dict(request.query_params), {k: v for k, v in request.headers.items()})
             if 问题:
                 raise _拒(422, "WEBHOOK_PARAM_INVALID", "参数不对", ";".join(问题)[:500],
-                          "照后台编排页「开始」里登记的参数名和类型推送")
+                          "照后台编排页「开始」里登记的参数名和类型推送(请求体 / 网址参数 / 请求头三张表)")
             老 = c.execute(text("select target_ref from jobs where project_id=:p and idempotency_key=:k"),
                           {"p": r["project_id"], "k": 键}).mappings().first()
             if 老:
@@ -534,9 +606,20 @@ async def _Webhook受理(aid, request, authorization, idempotency_key, 调试):
     except _拒 as e:
         _记一笔(r, 接口, e.结果 or e.code, e.http, 说明=e.message)
         raise _拒成错(e)
-    _记一笔(r, 接口, "重放" if 重放 else "受理", 202, 运行=回["resource_id"])
-    return {"运行编号": 回["resource_id"], "状态": "排队中" if not 重放 else "这是之前那一次(同一个幂等键,没跑第二遍)",
-            "跑的版本": 版本号 if 版本号 is not None else "草稿", "查结果": f"{对外}/runs/{回['resource_id']}"}
+    默认 = {"运行编号": 回["resource_id"], "状态": "排队中" if not 重放 else "这是之前那一次(同一个幂等键,没跑第二遍)",
+          "跑的版本": 版本号 if 版本号 is not None else "草稿", "查结果": f"{对外}/runs/{回['resource_id']}"}
+    # 开始里配了「返回给对方什么」(照 Dify 的响应配置,11-20):按它回;没配照旧 202 原形。重放也按它回 —— 对方两次拿到的形状一样
+    自定义 = 渲染Webhook返回(起配置.get("webhook_response"), 输入, 默认)
+    _记一笔(r, 接口, "重放" if 重放 else "受理", (自定义[0] if 自定义 else 202), 运行=回["resource_id"])
+    if 自定义:
+        from fastapi.responses import JSONResponse, PlainTextResponse
+        码, 体回 = 自定义
+        if 体回 is None:
+            return JSONResponse(status_code=码, content=默认)
+        if isinstance(体回, (dict, list)):
+            return JSONResponse(status_code=码, content=体回)
+        return PlainTextResponse(status_code=码, content=str(体回))
+    return 默认
 
 
 @router.post(对外 + "/apps/{aid}/webhook", status_code=202)
@@ -837,6 +920,9 @@ async def 对外聊天(cid: str, request: Request, authorization: str = Header(d
     "NOT_BOUND": (403, "发密钥的人没绑澜绣工号(聊天助手那种要按工号取数)", "找后台的人先绑工号"),
     "WRONG_APP": (403, "拿这把密钥去调别的应用 / 助手了 —— 一把只绑一个", "用发给这个应用的那把"),
     "NOT_IN_PRODUCTION": (409, "这个应用还没有生产版本", "等后台审核发布到生产;草稿和候选版本不对外"),
+    # Webhook 触发(11-20):这两条 11-20 白天加的时候漏登记,test_access_doc 在 test-orchestration 里红着没人看见(它不在推主干的门禁里)
+    "WEBHOOK_NOT_START": (409, "这条流程(草稿 / 生产那一版)不是 Webhook 开头,不能这样叫起", "找后台的人把「开始」的开始方式改成 Webhook(正式地址还要重新发布)"),
+    "WEBHOOK_PARAM_INVALID": (422, "推来的参数不对:缺必填 / 类型不对 / 请求体不是 JSON 对象;message 里点名是哪一项", "照后台「开始」里登记的三张参数表(请求体 / 网址 / 请求头)的名字和类型推"),
     "NOT_WIRED": (409, "这个聊天助手的角色聊天站还没接上后台配置", "找后台的人确认接线"),
     "IDEMPOTENCY_KEY_REQUIRED": (409, "发起没带 Idempotency-Key", "每次发起自己生成一个编号放进请求头;网断了重发带同一个"),
     "IDEMPOTENCY_CONFLICT": (409, "同一个 Idempotency-Key、参数不一样", "这是另一件事 —— 换一个新的编号"),
