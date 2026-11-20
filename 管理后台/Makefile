@@ -429,7 +429,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_tool_modelcard_flow.py test_prompt_snapshot_flow.py \
           test_exec_mode_flow.py test_retrieval_runs_flow.py \
           test_raw_log_flow.py test_chat_assistant_flow.py \
-          test_access_api_flow.py test_webhook_flow.py test_opinions_flow.py test_issues_flow.py test_knowledge_revision_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
+          test_access_api_flow.py test_webhook_flow.py test_workflow_start_guide_flow.py test_opinions_flow.py test_issues_flow.py test_knowledge_revision_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
           test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py test_log_policy_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
           test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py \
@@ -444,6 +444,7 @@ E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_workflow_graph_logic.js test_workflow_editor_actions.js \
              test_workflow_new_nodes_panel.js test_workflow_foreach_panel.js \
              test_workflow_http_panel.js test_workflow_parallel_panel.js test_workflow_subworkflow_panel.js \
+             test_workflow_start_tab.js \
              test_log_policy_page_actions.js test_newpage_actions.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
@@ -552,6 +553,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 编排页 · 子工作流的配置面板(只列别的流程的冻结版本、按那一版要的输入配映射、结果字段跟着那一版、上限两项;写出来的图后端校验器认,不起服务)"
 	@node tests/e2e/test_workflow_subworkflow_panel.js
 	@echo ""
+	@echo "▸ 编排页 · 「开始」页签与多开始(照 Dify:三项顺序、当前标「已添加」、点一种换开始方式且互斥提示、空白流程的虚线占位和引导弹窗;不起服务)"
+	@node tests/e2e/test_workflow_start_tab.js
+	@echo ""
 	@echo "▸ 设置页 · 日志采集策略卡(If-Match 是读到的 revision、体是页面填的数)"
 	@node tests/e2e/test_log_policy_page_actions.js
 	@node tests/e2e/test_newpage_actions.js
@@ -582,6 +586,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_chat_assistant_flow.py
 	@./.venv/bin/python tests/e2e/test_access_api_flow.py
 	@./.venv/bin/python tests/e2e/test_webhook_flow.py
+	@./.venv/bin/python tests/e2e/test_workflow_start_guide_flow.py
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py
 	@./.venv/bin/python tests/e2e/test_issues_flow.py
 	@./.venv/bin/python tests/e2e/test_knowledge_revision_flow.py
@@ -840,6 +845,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_workflow_subworkflow_panel 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_workflow_subworkflow_panel.log; exit 1; }
 	@tail -1 /tmp/prog-test_workflow_subworkflow_panel.log
+	@node tests/e2e/test_workflow_start_tab.js > /tmp/prog-test_workflow_start_tab.log 2>&1 \
+	  || { echo "  ❌ test_workflow_start_tab 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_start_tab.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_start_tab.log
 	@node tests/e2e/test_log_policy_page_actions.js > /tmp/prog-test_log_policy_page_actions.log 2>&1 \
 	  || { echo "  ❌ test_log_policy_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_log_policy_page_actions.log; exit 1; }
@@ -884,6 +893,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_webhook_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_webhook_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_webhook_flow.log
+	@./.venv/bin/python tests/e2e/test_workflow_start_guide_flow.py > /tmp/prog-test_workflow_start_guide_flow.log 2>&1 \
+	  || { echo "  ❌ test_workflow_start_guide_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_start_guide_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_workflow_start_guide_flow.log
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py > /tmp/prog-test_opinions_flow.log 2>&1 \
 	  || { echo "  ❌ test_opinions_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_opinions_flow.log; exit 1; }

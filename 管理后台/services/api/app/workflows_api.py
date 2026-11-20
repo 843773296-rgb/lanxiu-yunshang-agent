@@ -1649,6 +1649,11 @@ async def 建工作流(project_id: str, request: Request,
     with 事务() as c:
         定义 = _模板(模板名, ({**_桥工具(c, project_id), "处理要求": _默认处理要求(c, project_id, _模板要求[模板名])}
                              if 模板名 in _模板要求 else None))
+        布局 = {n["id"]: n.get("layout", {"x": 0, "y": 0}) for n in 定义["nodes"]}
+        if 模板名 == "空白":
+            # 11-20 二期 2-3(照 Dify):空白流程的「开始」先显示成虚线占位「点击配置开始节点」,进编排页弹一次「用户输入 / 触发器」二选一。
+            # 这个标只在布局里(和 $注释 / $线 同一个做法),**不进定义、不改执行语义**:定义里的开始照旧按「用户输入」校验和跑,前端选了方式就摘掉
+            布局["$开始待配置"] = True
         c.execute(text("""
             insert into workflows (id, organization_id, project_id, name, purpose,
                 owner, tags, draft_revision, validation_status, status,
@@ -1666,8 +1671,7 @@ async def 建工作流(project_id: str, request: Request,
             values (:i,:o,:p,:w,:d,:l,null, now(), :u, now(), 1)
         """), {"i": did, "o": me.org_id, "p": project_id, "w": wid,
                "d": json.dumps(定义, ensure_ascii=False),
-               "l": json.dumps({n["id"]: n.get("layout", {"x": 0, "y": 0})
-                                for n in 定义["nodes"]}, ensure_ascii=False),
+               "l": json.dumps(布局, ensure_ascii=False),
                "u": me.user_id})
     return {"id": wid, "revision": 1, "模板": 模板名,
             "note": "草稿建好了。**还没校验、没冻结版本、和生产没有任何关系。**"}

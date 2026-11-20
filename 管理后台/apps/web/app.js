@@ -2952,6 +2952,8 @@ function 画_编排页() {
   $("#issues").onclick = () => { 图态.问题开 = !图态.问题开; 图态.底Tab = "问题"; 画_问题(); 摆问题区(); };
   $("#rhist").onclick = () => 弹_运行历史($("#rhist"));
   画_搭建(); 画_底栏(); 画_保存状态(); 画_回放条();
+  // 新建的空白流程第一次进来弹「怎么开始」(照 Dify);只弹一次,关掉了画布上的虚线占位还在,点它再弹
+  if (开始待配置() && !g.开始引导过 && 能改图()) { g.开始引导过 = true; 弹_配置开始(); }
 }
 
 function 画_画布() {
@@ -3162,6 +3164,10 @@ function 次级标签(n) {
   if (n.type === "http_request") {
     const k = 工具连接((n.config || {}).connection_id);
     return `HTTP 请求 · 只读${k ? ` · ${k["名"]}` : ""}` + 在;
+  }
+  if (n.type === "start") {
+    if (开始待配置()) return "开始 · 还没配置怎么开始";
+    return `开始 · ${开始方式名[(n.config || {}).start_mode] || 开始方式名.用户输入}`;
   }
   return (步类型名[n.type] || n.type) + 在;
 }
@@ -3855,18 +3861,15 @@ function 表_设置(n) {
       + `<div class="two"><div>${输入框("", (el) => { const k = el.value.trim(); if (!k || 状[k]) return false; 状[k] = { initial: null }; 重画(); }, "新的状态名,回车加上")}</div></div>`
       + `<div class="k">循环里的步骤在「用到的数据」里能选「循环状态 · 名字」。这一轮没走到「取自」的那一步 → 那一项保持不变。</div>`;
   } else if (n.type === "start") {
-    // 开始方式(11-16,台账第六十九条,照 Dify):用户输入 / 定时触发器,**二选一** —— 定时开头的流程没人在场填东西
-    const 方式 = c.start_mode || "用户输入";
-    体 += `<label class="f">开始方式</label>` + 下拉(方式, [["用户输入", "用户输入:有人在聊天里 / 后台里点,填好内容再跑(最常用)"],
-        ["定时", "定时触发器:到点自动跑生产那一版,不要人填"],
-        ["Webhook", "Webhook:外部系统带访问密钥推一条过来就跑"]], (el) => {
+    // 开始方式(11-16,台账第六十九条,照 Dify):用户输入 / 定时触发器 / Webhook,**三选一** —— 定时开头的流程没人在场填东西。
+    // 换法只在 设开始方式 写一份:这里的下拉、「开始」页签、新建空白时的引导弹窗三处同一个
+    const 待配 = 开始待配置(), 方式 = 待配 ? "" : (c.start_mode || "用户输入");
+    if (待配) 体 += `<div class="note warn">这条流程<b>还没配置怎么开始</b> —— 在下面选一种(画布上虚线那张「点击配置开始节点」也能点)。</div>`;
+    体 += `<label class="f">开始方式</label>` + 下拉(方式, 菜单开始项.map(([值, 名, , , 说, 标]) => [值, `${名}:${说}${标 ? `(${标})` : ""}`]), (el) => {
       if (!el.value) return false;
-      c.start_mode = el.value;
-      if (el.value === "定时") { c.schedule_rule = c.schedule_rule || { 周期: "周", 周几: [0], 时刻: "08:00" }; c.input_schema = 定时输入表(); }
-      else if (只有统计字段(c.input_schema)) c.input_schema = { type: "object", properties: {}, required: [] };
-      if (el.value !== "定时") delete c.schedule_rule;
+      设开始方式(c, el.value);
       重画();
-    }, "请选择") + `<div class="k">一条流程只选一种开始方式(照 Dify);几种都要就复制一条流程。</div>`;
+    }, "请选择") + `<div class="k">一条流程只有一个「开始」、只选一种开始方式 —— 触发器和「用户输入」不能同时存在于同一条流程(照 Dify);几种都要就复制一条流程。</div>`;
     if (方式 === "Webhook") 体 += `<div class="note">${md("外部系统推过来的 JSON 就是下面这张表里的参数(`{参数名: 值}`),类型不对会被拒并点名是哪一项。"
       + "地址和密钥在「**访问 API**」页签:**调试地址只跑草稿**(边改边让对方推一条试),正式地址跑生产那一版。"
       + "以发密钥的那个人的身份跑;**写数据的业务动作前面必须有「人工介入」**,让人核对后再写(检查配置会拦)。")}</div>`;
@@ -4783,6 +4786,59 @@ const 定时输入表 = () => ({ type: "object", properties: {
   统计止: { type: "string", title: "统计止", description: "这一期到哪天(或哪一刻)止,定时自己填" } }, required: ["统计起", "统计止"] });
 const 只有统计字段 = (sch) => { const ks = Object.keys((sch || {}).properties || {}); return ks.length > 0 && ks.every((k) => k === "统计起" || k === "统计止"); };
 const 定时开头 = (g) => { const 起 = g && g.定义 && g.定义.nodes.find((n) => n.type === "start"); return !!(起 && (起.config || {}).start_mode === "定时"); };
+
+/* ── 开始方式三选一(11-20 二期 2-3「开始」页签与多开始,照 Dify)────────────────────
+ * 一条流程只有一个「开始」;「多开始」我们做成**换开始方式**:「开始」页签里点一种,有「开始」就把它换成这种、没有就加一个。
+ * 触发器和「用户输入」不能同时存在于同一条流程 —— 换的时候提示里说明(照 Dify 的互斥文案)。
+ * 换法只写这一份:面板下拉 / 「开始」页签 / 新建空白时的引导弹窗三处都调它。 */
+const 开始方式名 = { 用户输入: "用户输入", 定时: "定时触发器", Webhook: "自定义 Webhook" };
+// 新建空白流程时服务端在布局里打的标(布局.$开始待配置,和 $注释 / $线 同一个做法:不进定义、不改执行语义):
+// 画布上「开始」显示成虚线占位「点击配置开始节点」,进编排页弹一次引导;选了方式就摘掉
+const 开始待配置 = () => !!(图态 && 图态.布局 && 图态.布局.$开始待配置 && 图态.定义 && 图态.定义.nodes.some((n) => n.type === "start"));
+function 设开始方式(c, 值) {
+  c.start_mode = 值;
+  if (值 === "定时") { c.schedule_rule = c.schedule_rule || { 周期: "周", 周几: [0], 时刻: "08:00" }; c.input_schema = 定时输入表(); }
+  else if (只有统计字段(c.input_schema)) c.input_schema = { type: "object", properties: {}, required: [] };
+  if (值 !== "定时") delete c.schedule_rule;
+  if (图态 && 图态.布局) delete 图态.布局.$开始待配置;
+}
+function 选开始方式(值) {
+  if (!能改图() || !开始方式名[值]) return false;
+  const g = 图态, 起 = g.定义.nodes.find((n) => n.type === "start");
+  let id = 起 && 起.id, 提示;
+  if (!起) {
+    const 做 = 改图(`添加「开始」(${开始方式名[值]})`, () => {
+      const n = { id: 图逻辑.新id(g.定义, "start"), type: "start", name: 步类型名.start, config: JSON.parse(JSON.stringify(默认配置("start"))) };
+      设开始方式(n.config, 值); g.定义.nodes.push(n); g.布局[n.id] = { x: 40, y: 120 }; id = n.id;
+    }, { 重绘: false });
+    if (做 === false) return false;
+    提示 = `已添加「开始」:${开始方式名[值]}`;
+  } else {
+    const 原 = (起.config || {}).start_mode || "用户输入", 待配 = 开始待配置();
+    if (原 === 值 && !待配) { 轻提示(`「开始」已经是「${开始方式名[值]}」`); return false; }
+    const 做 = 改图(`开始方式改成「${开始方式名[值]}」`, () => { 设开始方式(起.config = 起.config || {}, 值); }, { 重绘: false });
+    if (做 === false) return false;
+    提示 = 待配 ? `「开始」已配置成「${开始方式名[值]}」` + (值 === "用户输入" ? ",在右侧填使用者要提供什么" : "")
+              : `触发器和「用户输入」不能同时存在于同一条流程(照 Dify)—— 已把「开始」从「${开始方式名[原]}」换成「${开始方式名[值]}」`;
+  }
+  g.选中 = id; g.面板页 = "设置";
+  if (g.画) g.画.选 = new Set([id]);
+  重画全部();
+  轻提示(提示, { 撤销: true });
+  return true;
+}
+/* 新建空白流程进编排页弹一次(照 Dify 的「用户输入 / 触发器」二选一);画布上虚线那张占位卡点一下也弹 */
+function 弹_配置开始() {
+  if (!能改图()) return;
+  弹层("这条流程怎么开始?", `
+    <p class="k">一条流程只有一个「开始」。有人来点、填好内容再跑,选「用户输入」;要它自己跑,选一种触发器 ——
+      触发器和「用户输入」不能同时存在于同一条流程(照 Dify)。以后在「开始」的设置里随时能换。</p>
+    ${菜单开始项.map(([值, 名, , , 说, 标]) => `<button type="button" class="tpl" data-startpick="${esc(值)}" style="width:100%;text-align:left">
+        <b>${esc(名)}</b>${标 ? ` <span class="pill ok">${esc(标)}</span>` : ""}<div class="k">${esc(说)}</div></button>`).join("")}
+    <div class="acts"><button id="sp-later">先不选</button></div>`);
+  document.querySelectorAll("[data-startpick]").forEach((b) => { b.onclick = () => { 关弹层(); 选开始方式(b.dataset.startpick); }; });
+  $("#sp-later").onclick = 关弹层;
+}
 async function 填定时预览(r) {
   const el = $("#sc-prev"); if (!el) return;
   try {

@@ -54,10 +54,23 @@
     ③ open_api.py 加两条:POST /open/v1/apps/{aid}/webhook(生产版,要求生产版 Webhook 开头否则 409 WEBHOOK_NOT_START)、POST /open/v1/apps/{aid}/webhook/debug(跑 graph_drafts 草稿,来源 kind=graph_draft 发起="Webhook 调试")。复用 _认密钥/_过闸/幂等 409/_今天花了/_记一笔,身份=发密钥人(**规划写「门店身份」,但 access_keys 没有门店维度 —— 照访问 API 用发密钥人,已告诉用户**);请求体=扁平 JSON,按 input_schema 逐个核类型,错 → 400 WEBHOOK_PARAM_INVALID 指出参数名,不建运行;缺必填同 400。建运行 WF._受理运行(c,本人,p,定义,来源,输入,f"open:{kid}:{键}")。
     ④ endpoints.py:933 附近加两行 A(...,对外=True,幂等=True,数据出境=True,审计=True) → make gen → make contract。
     ⑤ 前端:wf_canvas.js:208-210 菜单开始项那条改文案;app.js:3859 开始方式下拉加 ["Webhook",…],分支画入参表(同用户输入那套)+ 只读显示两条 URL + 「去版本与发布页发密钥」提示。
-    **12:5x 状态**:全部写完,本地提交 0d55cd87(未推);离线自测 15 条绿、make contract 0。规划文档 2-2 补了进度段(未提交,随下一笔)。
+    ✅ **16:35 已推 b1693209..65aa99c6**(e2e-ci 16:16 退出码 0、ship 全量门禁 0;锁已放、已告 fc)。路上三处坑:
+    ① 第一轮 e2e 在 w1117 跑 → 打的是主检出跑的旧 8801,不算数;e2e 必须主检出 ff 后跑。
+    ② 参数错用了 400 → 契约状态码只有 401/403/404/409/422/429/500,错误体构造拒收、崩成 500;改 422。
+    ③ **06:07 那次 kickstart 留下孤儿 uvicorn 占着 8801**(PPID 1),之后 aimc 一直起不来、worker 没了、healthz 照样 200 → 运行全卡排队。15:5x 停掉孤儿、正常重启。批次脚本 scratchpad/gate_webhook.sh 已加「先停监听进程再 kickstart + 验监听进程是 launchd 后代 + worker 在」(记忆 lanxiu-aimc-kickstart-orphan)。
+    没做(记规划 2-2 进度段):Query / Header 参数表、自定义响应、单独的「接入 Webhook」文档。下一件可接:2-3「开始」页签与多开始,或四期(要和聊天站排期)。
+    (以下是 12:5x 的旧状态)全部写完,本地提交 0d55cd87(未推);离线自测 15 条绿、make contract 0。规划文档 2-2 补了进度段(未提交,随下一笔)。
     e2e-ci 在 gate_lock 里排队(日志 scratchpad/e2e_ci_webhook.log,判绿只认「被包的命令退出码」),fc 先推返修 4 笔(哈希待它告诉)。
     **下一步**:e2e 绿 → rebase 到 fc 新哈希 → 提交规划文档 → ./tools/ship.sh(先确认 agentsite/.venv 链接在、工作区只剩三件运行态);红 → 看日志里 test_webhook_flow 那段。
     ⑥ e2e 新文件 tests/e2e/test_webhook_flow.py 仿 test_access_api_flow.py(外() 59 行 / 等跑完 72 / 收尾 86)+ test_audio_flow.py:486 定时化写法(冻结时同步顶层 input_schema);Makefile test-e2e 与 progress 两处登记;validator 纯逻辑自测放 tests/orchestration/ 同样登记。编辑器 wf_canvas.js:210 现标「暂不做」。改 管理后台/ 推前要 make test-e2e-ci(锁内);fc 在推返修判责(949ed25d),推前先喊它。
+  · 🟢 **11-20 21:0x 用户拍「开始 dify 工作流搭建」→ 做二期 2-3「开始」页签与多开始**(规划 2-3 节,照 Dify;1 人日):
+    做法:**不新建表、不加 DSL 键、不动校验器**。「多开始」= 换开始方式(一条流程只有一个「开始」):wf_canvas.js 菜单开始项 三项 [值, Dify 名, 字, 色, 说明, 角标],
+    「开始」页签点一项 → app.js 选开始方式(有「开始」就 设开始方式 换成那种、没有就加;互斥文案照 Dify;可撤销);面板下拉也走 设开始方式(只写一份)。
+    新建空白流程:workflows_api.建工作流 在**布局**里打 `$开始待配置: true`(和 $注释 / $线 同一个做法,不进定义;定义里开始没写 start_mode = 用户输入,校验照旧);
+    前端 开始待配置() 为真 → 画布虚线占位「点击配置开始节点」(class wfnode2 pending,没出口;点(不拖)弹 弹_配置开始)、步骤列表标「还没配置」、面板下拉「请选择」;进编排页弹一次引导(图态.开始引导过);选了方式 设开始方式 删掉标。
+    测试:tests/e2e/test_workflow_start_tab.js 33 条(vm 跑真函数,本地绿)/ tests/e2e/test_workflow_start_guide_flow.py 4 组(服务端标;**没真跑过**,随 e2e-ci 第一次跑);Makefile 各三处登记。
+    顺手:css_class_check 之前就红(拼接 class 31 > 30 钉的,b1693209 就 31,它只在 test-orchestration 不在门禁)→ 把 wf_canvas.js 菜单项 那处改成两段字面,回到 30。
+    规划文档 2-3 补了进度段。**下一步**:gate_start.sh 批次(锁空 → rebase → 主检出 ff → 停旧 8801 → kickstart → 验进程归属 → e2e-ci → ship);红了先看 test_workflow_start_guide_flow(字段名 问题/级别 照 test_http_node_flow 抄的)。
   · ~~悬而未决:用户那三件~~ **11-20 11:4x 用户拍了两件**:775 个假成员存量「先不清」(只止血,别再提);介绍页 AI 配图「用户确认能商用,照旧用」(别再提、别换图)。只剩「登录后界面用户亲眼看」—— 那是用户自己的动作,不用再问。
   · 11-20 11:2x 推 e0d161d8..39f475d1(fc 981dc5c0 拿旧备份盖掉的 11 节交接补回 + 注释更正)。前两轮没推出:①工作区有自动区刷新,拒跑 ②w1117 的 agentsite/.venv 链接不知被谁清了(fc 说不是它),崩 34 条 → 重建 `ln -s <主检出>/agentsite/.venv agentsite/.venv`。**跑 ship 前先确认两条 .venv 链接在**。
   ~~性能问题:后台派发下拉取 1400 多个详情~~ **11-20 07:0x 查实不存在**:1439 个有版本的工作流里 1434 个已归档,列表不列归档 → 实际约 10 个请求。写了个新接口又撤了,没提交。
@@ -2029,32 +2042,35 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-20 11:27。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-20 20:57。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `HEAD` |
-| 最新提交 | e0d161d8 · 2026-11-20 · 台账第八十二条单开 2.4.6 节、条数挪回 intent,intent 状态改「已否决」 |
-| 代码量 | 1188 个 Python 文件 / 210924 行(不含 .venv) |
+| 分支 | `w1117` |
+| 最新提交 | 65aa99c6 · 2026-11-20 · 工作流二期 Webhook 触发:外部系统带访问密钥推一条就跑,调试地址只跑草稿,写数据前必须过人工 |
+| 代码量 | 1190 个 Python 文件 / 210947 行(不含 .venv) |
 | 验收 | `./check.sh` 共 440 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-UU HANDOFF.md
-M  "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_newpage_actions.js"
+M HANDOFF.md
+ M agentsite/evals/funnel.jsonl
+?? .feynman/nightly-eval.log
+?? agentsite/.venv
+?? backend/.auth_sessions.json.lock
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-e0d161d8 台账第八十二条单开 2.4.6 节、条数挪回 intent,intent 状态改「已否决」
-981dc5c0 日志到期清理:澜绣项目先不开,不再定期回问(用户 11-20 拍)
-70dce541 「复盘」归任务执行(用户 11-20 拍):经营报告技能不再截走「月度复盘」
-fa135101 夜跑运行日志 gz 拼回历史:11-20 那晚被当晚覆盖的部分从 git 里接回
-8134bdb4 夜跑入库:压缩运行日志时接上旧 gz 的历史 —— 11-18「压完就删」的回归
+65aa99c6 工作流二期 Webhook 触发:外部系统带访问密钥推一条就跑,调试地址只跑草稿,写数据前必须过人工
+b1693209 返修评测 P03 准备:店长判企业承担带上成本 150(跟上 949ed25d 新口径,否则准备停在待确认、今晚 P03 白挂)
+68ca843e 场景检查:店长判企业承担时带上预估成本(跟上 949ed25d 的新口径)
+c46a80c2 报修口径自测:「没判责人」那条带上成本 0,别被新加的「企业承担要填成本」顺手挡住
+949ed25d 返修判「企业承担」必须填我方预估成本(用户 11-20 拍),不填停在待确认
 ```
 <!--/AUTO-->
 ## 一句话在做什么

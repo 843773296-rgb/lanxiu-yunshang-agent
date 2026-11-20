@@ -270,6 +270,12 @@ tr.warn-row td{background:#fff7e8}
 .wfnode2.canlink::after{content:"✓ 可连";position:absolute;right:6px;bottom:4px;font-size:10px;color:var(--ok)}
 .wfnode2.nolink{opacity:.55}
 .wfnode2.nolink::after{content:"✕ 不能连";position:absolute;right:6px;bottom:4px;font-size:10px;color:var(--fail)}
+/* 并行与汇总面板里支路卡的「支路名」一行(11-16 写了 class 没配样式,css_class_check 11-20 抓到) */
+.card .row{display:flex;align-items:center;gap:8px;margin:4px 0}
+/* 新建空白流程的「开始」还没配置怎么开始:虚线占位(照 Dify「点击配置开始节点」) */
+.wfnode2.pending{border:2px dashed var(--pri);background:var(--pri-bg);cursor:pointer}
+.wfnode2.pending .t{color:var(--pri)}
+.wfnode2.pending[aria-pressed="true"]{box-shadow:0 0 0 2px var(--pri-bg)}
 .wfnode2 .nh{display:flex;align-items:center;gap:4px;height:22px}
 .wfnode2 .t{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wfnode2 .more{height:22px;width:24px;padding:0;border:0;background:none;font-size:16px;cursor:pointer;color:var(--ink3)}

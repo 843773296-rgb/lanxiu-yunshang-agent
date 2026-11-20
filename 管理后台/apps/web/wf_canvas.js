@@ -205,14 +205,17 @@ const 菜单节点组 = [
   // 11-16 三期 3-1:HTTP 请求做出来了(只许访问登记过的工具连接的白名单地址、一期只开 GET/HEAD、凭据只从连接来)
   ["工具", [["http_request", "HTTP 请求", "H", "紫"], ["list_operator", "列表操作", "列", "青"]]],
 ];
-const 菜单开始项 = [["start", "用户输入", "入", "品"],
-  [null, "定时触发器", "时", "紫", "一条流程只有一个「开始」:选中它,在右侧「开始方式」里选定时"],
-  [null, "自定义 Webhook", "W", "蓝", "一条流程只有一个「开始」:选中它,在右侧「开始方式」里选 Webhook"]];
+// 「开始」页签(11-20 二期 2-3,照 Dify 从上到下:用户输入 → 定时触发器 → 自定义 Webhook)
+// [开始方式值, Dify 名, 图标字, 颜色, 一句话说明, 角标];点一项 = 选开始方式(app.js):没「开始」就加、有就换成这种
+const 菜单开始项 = [["用户输入", "用户输入", "入", "品", "有人在聊天里 / 后台里点,填好内容再跑", "最常用"],
+  ["定时", "定时触发器", "时", "紫", "到点自动跑生产那一版,不要人填", ""],
+  ["Webhook", "自定义 Webhook", "W", "蓝", "外部系统带访问密钥推一条过来就跑", ""]];
 function 菜单项(类型, 名, 字, 色, 没做, 附 = "") {
   const 元信息 = 类型 ? (元(类型) || {}) : {};
   const 能 = 类型 && 元信息["可用"];
   const 为什么 = 没做 || (类型 && !能 ? "还没做" : "");
-  return `<div class="libit ${能 ? "" : "off"}" ${能 ? `data-lib="${esc(类型)}"` : ""} data-pv="${esc(名)}"
+  // class 写成两段整字面(css_class_check 钉着拼出来的 class 的条数)
+  return (能 ? `<div class="libit" data-lib="${esc(类型)}"` : `<div class="libit off"`) + ` data-pv="${esc(名)}"
       data-pvs="${esc(为什么 || 去章节(去粗(元信息["说明"] || "")).slice(0, 120))}" tabindex="${能 ? 0 : -1}">
     ${(图标色[色] || 图标色.蓝)(esc(字))}<b>${esc(类型 && 步类型名[类型] || 名)}</b>${类型 && 步类型名[类型] && 步类型名[类型] !== 名 ? `<span class="k">Dify:${esc(名)}</span>` : ""}${附}
     ${能 ? "" : `<span class="k">${esc(为什么)}</span>`}</div>`;
@@ -241,10 +244,18 @@ function 画_库() {
         ${图标色.蓝("工")}<b>${esc(t["名"])}</b><span class="k">${esc(t["读写"] || "")}</span></div>`).join("");
     if (!(图态.资源.工具 || []).length) 体 = `<div class="k">这个项目还没有登记业务动作。</div>`;
   } else {
-    体 = 菜单开始项.filter((x) => !词 || x[1].includes(词)).map((x) => {
-      const 已有 = x[0] === "start" && 图态.定义.nodes.some((n) => n.type === "start");
-      return 已有 ? 菜单项(null, x[1], x[2], x[3], "已添加(原始开始节点)") : 菜单项(...x);
+    // 当前的开始方式标「已添加」(照 Dify);别的都能点 —— 有「开始」就换成那种(触发器和「用户输入」互斥),没有就加一个
+    const 起 = 图态.定义.nodes.find((n) => n.type === "start");
+    const 当前 = 起 && !开始待配置() ? ((起.config || {}).start_mode || "用户输入") : null;
+    体 = 菜单开始项.filter((x) => !词 || x[1].includes(词)).map(([值, 名, 字, 色, 说, 标]) => {
+      const 角 = 标 ? `<span class="pill ok">${esc(标)}</span>` : "";
+      if (当前 === 值) return `<div class="libit off" data-pv="${esc(名)}" data-pvs="已添加:这条流程现在就是这样开始的" tabindex="-1">
+          ${(图标色[色] || 图标色.蓝)(esc(字))}<b>${esc(名)}</b>${角}<span class="k">已添加</span></div>`;
+      const 说明 = 说 + (起 ? `;点一下把「开始」换成这种 —— 触发器和「用户输入」不能同时存在于同一条流程` : ";点一下加一个这样开头的「开始」");
+      return `<div class="libit" data-start="${esc(值)}" data-pv="${esc(名)}" data-pvs="${esc(说明)}" tabindex="0">
+          ${(图标色[色] || 图标色.蓝)(esc(字))}<b>${esc(名)}</b>${角}</div>`;
     }).join("");
+    体 += `<div class="k">一条流程只有一个「开始」,这里选的是它怎么开始(照 Dify:用户输入和触发器二选一)。</div>`;
   }
   el.innerHTML = `<div class="libtabs" role="tablist">${["节点", "工具", "开始"].map((t) =>
       `<button role="tab" data-libtab="${t}" aria-selected="${t === 页}">${t}</button>`).join("")}</div>
@@ -264,7 +275,12 @@ function 画_库() {
       pv.innerHTML = `<b>${esc(it.dataset.pv)}</b><div class="k">${esc(it.dataset.pvs || "")}</div>`; pv.hidden = false; }, 150); };
     it.onmouseleave = () => { clearTimeout(计时); pv.hidden = true; };
   });
+  el.querySelectorAll("[data-start]").forEach((it) => {
+    it.onclick = () => 选开始方式(it.dataset.start);
+    it.onkeydown = (e) => { if (e.key === "Enter") 选开始方式(it.dataset.start); };
+  });
   el.querySelectorAll(".libit:not(.off)").forEach((it) => {
+    if (it.dataset.start) return;   // 「开始」页签的项不是加节点,上面已经挂好
     const 预设 = it.dataset.tool ? 工具预设(it.dataset.tool) : null;
     // 点一下 = 放到画布中间;按住移动超过 4px 才算拖 —— 一按下就进拖拽的话,单击也会走一遍「拖到画布外」
     let 拖了 = false;
@@ -301,6 +317,13 @@ function 画_节点() {
       失效.has(n.id) ? `<span class="miss" title="它取值的那一步已经被删了">⚠ 原来源已删除</span>` : "",
       坏[n.id] ? `<span class="miss">有要改的</span>` : ""].filter(Boolean).join(" ");
     const 跑 = 图态.运行态 && 图态.运行态[n.id];   // 试运行结果标在图上(10-26 第 4 块)
+    // 新建空白流程的「开始」还没配置怎么开始(布局.$开始待配置):虚线占位「点击配置开始节点」,没有出口 —— 点一下弹「用户输入 / 触发器」(照 Dify)
+    if (n.type === "start" && 开始待配置()) {
+      return `<div class="wfnode2 pending" data-pending="1" data-id="${esc(n.id)}" tabindex="0" role="button" style="left:${p.x}px;top:${p.y}px;height:${h}px"
+          aria-label="点击配置开始节点${选 ? ",已选中" : ""}" aria-pressed="${选 ? "true" : "false"}">
+        <div class="nh"><span class="t">点击配置开始节点</span></div>
+        <div class="k">用户输入 / 定时触发器 / 自定义 Webhook</div></div>`;
+    }
     return `<div class="wfnode2 ${选 ? "sel" : ""} ${坏[n.id] ? "bad" : ""} ${可连}"${跑 ? ` data-run="${esc(跑.状态)}"` : ""} data-id="${esc(n.id)}" tabindex="0" role="button"
         style="left:${p.x}px;top:${p.y}px;height:${h}px"
         aria-label="${esc(业务名(n) + "," + 次级标签(n) + (缺.length ? ",缺 " + 缺.length + " 项" : "") + (选 ? ",已选中" : ""))}">
@@ -670,7 +693,8 @@ function 节点按下(ev, nd) {
       下一帧重画线();
     },
     完: (e, 拖了) => {
-      if (!拖了) { 选节点([id], { 切换: 追加 }); return; }
+      // 点(没拖)在「点击配置开始节点」那张虚线占位上 → 弹「怎么开始」;拖它只是挪位置
+      if (!拖了) { 选节点([id], { 切换: 追加 }); if (nd.dataset.pending && 能改图()) 弹_配置开始(); return; }
       const 后 = 图逻辑.快照(图态.定义, 图态.布局);
       if (历史().记(一起.length > 1 ? `移动 ${一起.length} 步` : `移动「${业务名(节点(id))}」`, 前, 后)) 标脏();
       if (!s.选.has(id)) 选节点([id]); else { 画_节点(); 画_线(); }
