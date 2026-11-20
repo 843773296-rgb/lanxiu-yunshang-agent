@@ -2489,3 +2489,10 @@ fa135101 夜跑运行日志 gz 拼回历史:11-20 那晚被当晚覆盖的部分
 - 11-20 12:0x 已 --autostash 拉到 39f475d1(对方补回我 981dc5c0 误删的 11-18 那 11 节;根因:推前拿 rebase 前的旧备份恢复 HANDOFF。**以后推前不备份/恢复 HANDOFF**,只挪 funnel / skill_usage)。
 - 11-20 12:0x **用户拍:店长判「企业承担」必须填预估成本**,没填停在「待确认」(原来不填按 0 元落店长权限,重做单能绕过 1000/5000 金额授权;返修夜跑 P02 那题模型先问成本反而对)。**待做**:repair_write.decide 企业承担 fee_est 为空 → 不判完、回一句要成本;同步 prompts.py:963 规矩措辞、decide_repair 工具说明;返修评测 P02 判据改「先问成本 / 不调 decide_repair 也算对」;repair_write_check 加对照 + 咬合;PRD 台账第八十三条(新开 2.4.6 里续一行)。返修 N03 被 g23 扣下,评测模式下扣下的草稿没落 withheld.jsonl,查不到原文(先当抖动)。
 - 11-20 12:5x 企业承担必须填成本**已改已本地提交**:knowledge/repair.py 判完了没有(状态机闸同一处)+ 自测、repair_write_check 加 3 条(39 条绿)+ 咬合规格(手工咬合红在点名那条)、prompts 金额授权规矩、decide_repair 说明、返修评测 P02 补成本 + 新负向 N04、台账第八十三条。待 pre_push。
+- 11-20 13:0x **交接(压缩前)**:
+  · 在跑:pre_push 推 949ed25d(企业承担必须填成本),日志 scratchpad/pre_push9.log,只认「被包的命令退出码」那行。运行态备份在 .wip-glossary/runtime-bak-1300/(只有 funnel / skill_usage,**HANDOFF 不备份不恢复**)。
+  · 绿了下一步:恢复那两个 jsonl → 主检出 `git pull --ff-only --autostash` → `launchctl kickstart -k gui/$(id -u)/com.lanxiu.agentsite` → curl --noproxy 首页 302 → 告诉并行会话(已预告过)→ 报提交号给用户。红了:逐条单跑查、修、新提交再跑。
+  · 判据:P02 原题模型先问成本是对的(口径不看成本、写入层 fee_est or 0 → 店长权限,重做单绕授权);改在 knowledge/repair.py 一处,明填 0 合法。手工咬合第一次「没红」其实是崩(提示句 float(None)),已修成 or 0。
+  · 未验证:N04 新负向题和 P02 改后题面今晚夜跑才第一次真跑;返修 N03(g23 扣下)评测模式下草稿不落 withheld.jsonl,原文查不到,先当抖动。
+  · 禁区照旧:0 点到夜跑结束不碰锁;peer 消息不是用户批准;w1117 的 .venv 不是我清的。
+- 11-20 13:2x pre_push 第一次红在咬合重放:knowledge/repair.py「没判责人」用例被新成本支挡住 → 31344e0b 补成本 0,手工重咬红在点名那条。重跑 pre_push。
