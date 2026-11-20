@@ -497,7 +497,7 @@ def create_repair(order_id, issue, item=None):
 
 def decide_repair(maintain_id, liable, plan, fee_est=None, customer_agreed=None, agree_note=None,
                   approved_by=None, approve_note=None):
-    """**店长判责**(真的写进去):谁承担(顾客 / 企业)、返修还是重做;判给顾客的要录预估费用,
+    """**店长判责**(真的写进去):谁承担(顾客 / 企业)、返修还是重做;判给顾客的要录预估费用,判给企业的要填我方预估成本(决定谁有权批),
     记顾客同意要写凭据。判完了才进「待入库」。**只有店长能判**(业务 09-22)。"""
     import repair_write as rw
     try: me = api._need_me()

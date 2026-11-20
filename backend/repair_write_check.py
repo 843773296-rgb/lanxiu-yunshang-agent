@@ -22,6 +22,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("把金额授权那一档去掉(谁能拍板 一律返回店长)", "我方出 1200、没总部批 → 停在待确认"),
     ("让 decide() 不查顾客同意就放进待入库", "判给顾客、没同意 → 停在待确认"),
     ("去掉状态机上的返修开工闸", "状态机:没判完 → 拒"),
+    ("判完了没有() 里去掉「企业承担要填成本」那一支", "判给企业、没填预估成本 → 停在待确认(不按 0 元落店长权限)"),
     ("标品也能建返修单(台账第十七条否决的那条路)", "标品单报修 → 拒(STANDARD_NO_REPAIR),不落返修单,理由指向换货"),
 ]
 
@@ -116,6 +117,10 @@ def run(T):
         r2 = rw.create({"order_id": 另[0], "issue": "下摆开线"}, 顾问)
         授 = r2.get("返修单")
         ck("建第二张返修单", bool(授), r2.get("reason"))
+        # 用户 2026-11-20 拍:判给企业承担必须填预估成本 —— 不填原来按 0 元落进店长权限,重做单能绕过授权档
+        r = rw.decide({"maintain_id": 授, "liable": "企业", "plan": "重做"}, 店长)
+        ck("判给企业、没填预估成本 → 停在待确认(不按 0 元落店长权限)", r["ok"] and 状(授) == "待确认", r.get("reason"))
+        ck("说清了要填成本", "成本" in str(r.get("reason") or ""), r.get("reason"))
         r = rw.decide({"maintain_id": 授, "liable": "企业", "plan": "返修", "fee_est": 800}, 店长)
         ck("我方出 800(≤1000)→ 店长直接定,进待入库", r["ok"] and 状(授) == "待入库", r.get("reason"))
         r3 = rw.create({"order_id": 另[0], "issue": "袖口脱线"}, 顾问)
@@ -143,6 +148,10 @@ def run(T):
         r = rw.decide({"maintain_id": 授3, "liable": "顾客", "plan": "返修", "fee_est": 6000,
                        "customer_agreed": True, "agree_note": "顾客同意 6000"}, 店长)
         ck("同样 6000 但判给顾客 → 不受授权档管(那是收顾客的钱)", r["ok"] and 状(授3) == "待入库", r.get("reason"))
+        r5 = rw.create({"order_id": 另[0], "issue": "领口脱线"}, 顾问)
+        授5 = r5.get("返修单")
+        r = rw.decide({"maintain_id": 授5, "liable": "企业", "plan": "返修", "fee_est": 0}, 店长)
+        ck("判给企业、明填成本 0 → 进待入库(真不花钱填 0 是合法的)", r["ok"] and 状(授5) == "待入库", r.get("reason"))
 
     # ── 推进 ──
     for 到 in ("待处理", "处理中", "待签收"):
