@@ -98,6 +98,7 @@ _缺项说法 = {
     "prompt_version_id": ("还没有选这一步要完成什么(处理要求)",
                           "在右侧「基本」里选一份处理要求。还没有的话,先去「Prompt 管理」写一份并保存版本"),
     "output_schema": ("还没写这一步的结果包含哪些内容", "在右侧「结果」里至少加一项结果"),
+    "code": ("还没写代码", "在右侧「代码」框里写一个 main(**inputs) 函数,返回一个字典"),
     "connection_id": ("还没有选用哪条工具连接去请求",
                       "在右侧「基本」里选一条已登记的工具连接 —— 地址白名单和凭据都挂在连接上;没有的话先到「工具连接」里登记"),
     "tool_version_id": ("还没有选执行哪个业务动作",
@@ -933,6 +934,16 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
             出.append(问(阻断, "RETRIEVE_NO_READY_INDEX", "选的资料库还没有「已就绪」的索引,查不了",
                        "先到「知识库」页给这个资料库建一次索引,回来重新选它;不在没建好的索引上检索 —— 结果会不完整,而那和「库里就这么点」长得一样",
                        node_id=n.get("id"), field_path="config.index_build_id"))
+
+    # ⑤⅞⁺⁺ 代码执行(三期 3-4 最小版,11-20):判据本体在 runtime/代码执行.配置问题(代码非空 / 只 Python / 声明了结果 / 上限不许超 5 秒 64 MB / 变量名合法)
+    for n in 节点们:
+        if n.get("type") != "code":
+            continue
+        import 代码执行 as _CODE
+        for code, 消息, 建议, fp in _CODE.配置问题(n.get("config") or {}):
+            if code == "CODE_EMPTY" and "code" in (DS.找节点("code")["必填"]):
+                continue   # 必填那条已经按 字段提示 报过「还没写代码」,别报两遍
+            出.append(问(阻断, code, 消息, 建议, node_id=n.get("id"), field_path=fp))
 
     # ⑤⅞⁺ 人工介入表单化(四期 4-1,11-20 照 Dify):按钮 id 唯一非空、分支线的 key 要是某个按钮、按钮没接线提醒;字段名唯一非空;说明里 {{x}} 要是材料里有的
     for n in 节点们:

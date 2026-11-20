@@ -1703,6 +1703,20 @@ async def 建工作流(project_id: str, request: Request,
             "note": "草稿建好了。**还没校验、没冻结版本、和生产没有任何关系。**"}
 
 
+def _代码节点只许管理员(me, 新定义, 老定义=None):
+    """「代码执行」步骤只有管理员能加 / 改(三期 3-4,用户 11-15 拍的边界;11-20 落地):比老草稿多出来的 (节点, 代码) 组合,非管理员一律 403。
+    删代码节点、改别的步骤不受影响 —— 普通编排者照旧能在带代码节点的流程上干活,只是碰不了那段代码。
+    存草稿 / 导入新流程 / 导入覆盖草稿三条口都走这一个,少一处就是漏一条塞代码的路。"""
+    if me.role == "admin":
+        return
+    def 码们(定义):
+        return {(n.get("id"), (n.get("config") or {}).get("code")) for n in ((定义 or {}).get("nodes") or []) if isinstance(n, dict) and n.get("type") == "code"}
+    多 = 码们(新定义) - 码们(老定义)
+    if 多:
+        raise _错(403, "CODE_NODE_ADMIN_ONLY", "「代码执行」步骤只有管理员能加或改",
+                  f"这次改动新增 / 改了 {len(多)} 处代码执行步骤({'、'.join(sorted(str(x[0]) for x in 多))});让管理员来加,或换成字段转换 / 列表操作")
+
+
 @router.post(前缀 + "/workflows/import", status_code=201)
 async def 导入工作流(project_id: str, request: Request, me: 身份 = Depends(要权限("改编排草稿"))):
     """从备份导入成一条**新**流程(四期 4-3,11-20):只建草稿,不发布、不动生产。
@@ -1717,6 +1731,7 @@ async def 导入工作流(project_id: str, request: Request, me: 身份 = Depend
             raise _错(422, "BACKUP_INVALID", e.为什么, e.怎么办, field_errors={"备份": e.为什么})
         来源 = (备份.get("来源") or {})
         名 = (体.get("名称") or "").strip() or f"{来源.get('工作流') or '导入的流程'}(导入)"
+        _代码节点只许管理员(me, 定义)
         DS.同步顶层结构(定义)
         wid, did = _新id("wf"), _新id("gd")
         c.execute(text("""
@@ -1755,6 +1770,8 @@ async def 导入覆盖草稿(project_id: str, wid: str, request: Request,
             定义, 布局, 未找到, 改写了 = WB.解析(c, project_id, 体.get("备份"))
         except WB.备份不对 as e:
             raise _错(422, "BACKUP_INVALID", e.为什么, e.怎么办, field_errors={"备份": e.为什么})
+        老 = c.execute(text("select definition from graph_drafts where project_id=:p and workflow_id=:i"), {"p": project_id, "i": wid}).scalar()
+        _代码节点只许管理员(me, 定义, 老 if isinstance(老, dict) else (json.loads(老) if 老 else None))
         DS.同步顶层结构(定义)
         新版 = int(d["revision"]) + 1
         c.execute(text("""update graph_drafts set definition=:d, layout=:l, revision=:r, validation_report=null, updated_at=now()
@@ -1856,6 +1873,7 @@ async def 改图草稿(project_id: str, wid: str, request: Request,
         if 定义 is not None and not isinstance(定义, dict):
             raise _错(422, "VALIDATION", "定义要是一个对象", "检查提交的 JSON 形状")
         if 定义 is not None:
+            _代码节点只许管理员(me, 定义, d["definition"])   # 「代码执行」只有管理员能加 / 改(三期 3-4)
             # 顶层 input/output_schema 改成开始 / 结束节点那份的派生副本(11-16 B-123):编辑器只改节点里的,顶层原来没人同步 →
             # 校验器 / 编译器 / 冻结三处曾各自读顶层而拿到老结构。三处读法已统一到节点,这里再把顶层对齐,两份不再分家
             DS.同步顶层结构(定义)

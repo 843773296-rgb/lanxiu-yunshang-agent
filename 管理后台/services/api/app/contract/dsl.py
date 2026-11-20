@@ -349,14 +349,14 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
            "**「返回成功」和「任务达标」分开记** —— 一个返回了 200 的流程可能什么都没做成"),
 
     N("code", "代码执行",
-      端口=[成功, 失败], 配置=["input_mapping", "output_schema", "sub_limits"],
-      调用外部=False, 实现=未实现,
-      不适用=["timeout_seconds", "retryable_errors", "max_retries"],
-      必填=["input_mapping", "output_schema"],
-      说明="**先不做**(11-16 盘点结论,台账 PRD 2.4.5):六条业务流程没有一步非写代码不可,复杂判断都在业务侧的动作里;"
-           "再遇到「规则拼不出来」先往字段转换 / 列表操作加白名单操作。真要开:沙箱 C1–C5 按设计稿推荐"
-           "(独立容器、网络 / 文件 / 环境变量全关、5 秒 128 MB、只 Python、发布前管理员审)。"
-           "登记在这里是为了编辑器能明说「还没做」、校验器能拦住导入的图里带它(不得摆空按钮冒充可用)"),
+      端口=[成功, 失败], 配置=["code", "language", "input_mapping", "output_schema", "sub_limits"],
+      调用外部=False, 实现=已实现,   # 11-20 夜最小版(用户 11-15 拍「做一个最小版备着」,11-20 拍「今晚做,安全按最严」);规则在 runtime/代码执行.py
+      不适用=["timeout_seconds", "retryable_errors", "max_retries", "bindings"],
+      必填=["code", "output_schema"],
+      说明="一段 Python:`input_mapping` 的变量进(main(**inputs))、`output_schema` 声明的变量出,类型不对这一步失败。"
+           "跑在 macOS sandbox-exec 沙箱里:不联网、不写文件、不读用户目录、不起进程、环境变量清空;限时 ≤5 秒、内存 ≤64 MB(两个数拍脑袋,只许往下配);"
+           "没沙箱的机器直接拒跑,不退回裸 exec。**只有管理员能加 / 改这一步**(存草稿时核,workflows_api._代码节点只许管理员)。"
+           "11-16 盘点时六条业务流程没有一步非写代码不可 —— 它是备着的,遇到「规则拼不出来」先想字段转换 / 列表操作"),
 
     N("subworkflow", "子工作流",
       端口=[成功, 失败], 配置=["workflow_version_id", "input_mapping", "sub_limits"],

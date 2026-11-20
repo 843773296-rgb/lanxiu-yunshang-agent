@@ -429,7 +429,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_tool_modelcard_flow.py test_prompt_snapshot_flow.py \
           test_exec_mode_flow.py test_retrieval_runs_flow.py \
           test_raw_log_flow.py test_chat_assistant_flow.py \
-          test_access_api_flow.py test_webhook_flow.py test_workflow_start_guide_flow.py test_retrieve_node_flow.py test_workflow_export_import_flow.py test_human_form_flow.py test_opinions_flow.py test_issues_flow.py test_knowledge_revision_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
+          test_access_api_flow.py test_webhook_flow.py test_workflow_start_guide_flow.py test_retrieve_node_flow.py test_workflow_export_import_flow.py test_human_form_flow.py test_code_node_flow.py test_opinions_flow.py test_issues_flow.py test_knowledge_revision_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
           test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py test_log_policy_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
           test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py \
@@ -593,6 +593,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_retrieve_node_flow.py
 	@./.venv/bin/python tests/e2e/test_workflow_export_import_flow.py
 	@./.venv/bin/python tests/e2e/test_human_form_flow.py
+	@./.venv/bin/python tests/e2e/test_code_node_flow.py
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py
 	@./.venv/bin/python tests/e2e/test_issues_flow.py
 	@./.venv/bin/python tests/e2e/test_knowledge_revision_flow.py
@@ -919,6 +920,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_human_form_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_human_form_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_human_form_flow.log
+	@./.venv/bin/python tests/e2e/test_code_node_flow.py > /tmp/prog-test_code_node_flow.log 2>&1 \
+	  || { echo "  ❌ test_code_node_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_code_node_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_code_node_flow.log
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py > /tmp/prog-test_opinions_flow.log 2>&1 \
 	  || { echo "  ❌ test_opinions_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_opinions_flow.log; exit 1; }
@@ -1249,6 +1254,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 人工介入表单化:按钮 id 唯一、分支线要挂在按钮上、字段名唯一;挂起载荷带表单、恢复按按钮分路、老写法不受影响"
 	@./.venv/bin/python tests/orchestration/test_human_form.py
+	@echo ""
+	@echo "▸ 代码执行最小版:沙箱四条真攻击(环境变量 / 密钥文件 / 联网 / 死循环)+ 写文件 / 起进程 / 吃内存;配置上限;校验器 / 执行器接线;没沙箱的机器拒跑不退回裸 exec"
+	@./.venv/bin/python tests/orchestration/test_code_node.py
 	@echo ""
 	@echo "▸ 暂停检查点(11-18):节点边界读「要暂停吗」,停在还没跑的那一步、不多调模型;恢复从那一步接着跑;回调抛的异常原样出去"
 	@./.venv/bin/python tests/orchestration/test_pause_checkpoint.py

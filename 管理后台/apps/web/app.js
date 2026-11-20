@@ -2650,7 +2650,7 @@ const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本�
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
   // 11-15 文案对齐 Dify(规划一期第五件最后一项):「按条件分流」→「条件分支」、「人工核对」→「人工介入」(待办页里仍叫核对 —— 那边是处理人的动作)
   condition: "条件分支", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工介入", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值",
-  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代", http_request: "HTTP 请求", parallel: "并行", subworkflow: "子流程" };
+  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代", http_request: "HTTP 请求", parallel: "并行", subworkflow: "子流程", code: "代码执行" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -3191,7 +3191,7 @@ const 字段中文 = { connection_version_id: "用哪个模型", prompt_version_
   output_field: "汇合后叫什么", agent_version_id: "用哪个 Agent", task_binding: "交给它的任务",
   sub_limits: "这一步的上限", bindings: "用到的数据", filter: "过滤", sort: "排序", limit: "只要前几个",
   item_output: "每一项交出什么", item_failure_policy: "某一项失败时", max_items: "最多做几项",
-  connection_id: "用哪条工具连接", method: "方法", path: "路径",
+  connection_id: "用哪条工具连接", method: "方法", path: "路径", code: "代码", language: "语言",
   max_concurrency: "并发上限", wait_policy: "等待策略", workflow_version_id: "用哪一版子流程", input_mapping: "交给子流程什么" };
 const 中文名 = (f) => 字段中文[f] || f;
 
@@ -3362,7 +3362,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "http_request", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor", "foreach", "parallel", "subworkflow"]
+  const 可加 = ["llm", "tool", "http_request", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner", "list_operator", "doc_extractor", "foreach", "parallel", "subworkflow", "code"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -3403,6 +3403,9 @@ function 默认配置(类型) {
            parallel: { branches: [], max_concurrency: 1, wait_policy: "all_required" },
            // 子工作流(11-16 三期 3-3):版本不预填;上限留空 = 跟父流程一样
            subworkflow: { input_mapping: {}, sub_limits: {} },
+           // 代码执行最小版(11-20 三期 3-4):给一个能跑的骨架;结果先空着 —— 检查配置会报「没声明返回什么」,不替人猜
+           code: { language: "python", code: "def main(**inputs):\n    # inputs 里是「输入变量」里配的那几项\n    return {}\n", input_mapping: {},
+                   output_schema: { type: "object", properties: {}, required: [] }, sub_limits: { timeout_seconds: 5, memory_mb: 64 } },
            extractor: { parameters: [{ name: "", type: "string", description: "", required: false }], bindings: {}, instruction: "" },
            classifier: { classes: [{ key: "类别一", 说明: "" }, { key: "类别二", 说明: "" }], bindings: {}, instruction: "" },
            transform: { operations: [], output_schema: { type: "object" } },
@@ -3895,6 +3898,18 @@ function 表_设置(n) {
           <button class="danger" data-k="${挂控件(() => { delete 状[k]; 重画(); })}">删掉</button></div>`).join("")
       + `<div class="two"><div>${输入框("", (el) => { const k = el.value.trim(); if (!k || 状[k]) return false; 状[k] = { initial: null }; 重画(); }, "新的状态名,回车加上")}</div></div>`
       + `<div class="k">循环里的步骤在「用到的数据」里能选「循环状态 · 名字」。这一轮没走到「取自」的那一步 → 那一项保持不变。</div>`;
+  } else if (n.type === "code") {
+    // 代码执行最小版(三期 3-4,11-20;用户 11-15 拍「做一个最小版备着」):只有管理员能加 / 改(服务端存草稿时核);照 Dify:输入变量 / 代码 / 输出变量。
+    // 「同步函数签名至代码」没做(写清);两个上限只许往下配
+    const 上 = c.sub_limits = c.sub_limits || { timeout_seconds: 5, memory_mb: 64 };
+    体 += (我的角色 === "admin" ? "" : `<div class="note warn">「代码执行」只有<b>管理员</b>能加或改代码 —— 你改了这一步存不了草稿(服务端会拒);别的步骤照常。</div>`)
+      + `<label class="f">代码(Python;写一个 main 函数,参数名 = 下面「用到的数据」里的变量名,返回一个字典)</label>
+      <textarea data-k="${挂控件((el) => { c.code = el.value; })}" data-lb="代码" rows="10" spellcheck="false" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre">${esc(c.code || "")}</textarea>
+      <div class="k">跑在沙箱里:<b>不联网、不读写文件、不起进程、没有环境变量</b>;只能算。要取数,用前面的步骤取好再交进来。</div>`
+      + `<label class="f">返回什么(照 Dify 的输出变量:名字 + 类型;代码返回的字典按这里核,类型不对这一步失败)</label>` + 字段表编辑(c.output_schema = c.output_schema || { type: "object", properties: {}, required: [] }, false)
+      + `<div class="two"><div><label class="f">限时(秒,最多 5)</label>${数字框(上.timeout_seconds ?? 5, (v) => { 上.timeout_seconds = v; }, { 整数: true, 最小: 1, 最大: 5 })}</div>
+          <div><label class="f">内存(MB,最多 64)</label>${数字框(上.memory_mb ?? 64, (v) => { 上.memory_mb = v; }, { 整数: true, 最小: 1, 最大: 64 })}</div></div>
+      <div class="k">两个上限是写死的天花板(拍脑袋的数),只能往下配。内存那条在 macOS 上不是硬限制:每 0.1 秒看一眼用量、超了就杀。</div>`;
   } else if (n.type === "retrieve") {
     // 知识检索(三期 3-5,11-20 做通 —— 此前这个节点能加进图、却没有面板,「查哪个资料库」「怎么查」没地方选):
     // 选资料库时顺手记下它最新「已就绪」的索引(检索只在就绪的索引上跑);「召回设置」照 Dify 摆在这儿但**只读** ——
@@ -4247,6 +4262,7 @@ function 表_输入(n) {
   if (n.type === "human") return `<div class="k">审核人会看到这些(左边原文、右边摘要)。「摘要」就是通过时默认的定稿。</div>`
     + 绑定编辑(n, "payload_binding");
   if (n.type === "condition") return `<div class="k">条件用到的值在上面「基本」里每一路单独选。</div>`;
+  if (n.type === "code") return `<div class="k">输入变量:左边是变量名(代码里 main 的参数名),右边选它从哪来。只有这里列的变量会交给代码。</div>` + 绑定编辑(n, "input_mapping");
   if (n.type === "retrieve") return `<div class="k">知识检索只读一项:<b>问题</b>(要查的话)—— 绑开始的某一项,或前面某一步产出的文本。</div>`
     + 绑定编辑(n, "bindings", { properties: { 问题: { type: "string", description: "要查什么" } }, required: ["问题"] });
   if (n.type === "parallel") return `<div class="k">并行这一步自己不取数 —— 每条支路里的步骤各自在自己的「用到的数据」里选(只能选并行外面的步骤,不能选另一条支路的)。</div>`;
@@ -5728,7 +5744,7 @@ function 跑法选择(前缀, 只能演练 = false) {
 }
 function 选的跑法(前缀) { const el = $(`#${前缀}-mode`); return el ? el.value : "正常"; }
 
-const 单测类型 = { llm: "模型", retrieve: "知识检索", tool: "业务动作", http_request: "HTTP 请求" };  // 与 runtime/单步测试.能单测的类型 同一张
+const 单测类型 = { llm: "模型", retrieve: "知识检索", tool: "业务动作", http_request: "HTTP 请求", code: "代码执行" };  // 与 runtime/单步测试.能单测的类型 同一张
 function 单测字段(n) {
   return Object.entries((n.config || {}).bindings || {})
     .filter(([, r]) => !(r && (r.source === "constant" || r.source === "system"))).map(([k]) => k);

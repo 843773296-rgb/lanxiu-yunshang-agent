@@ -669,6 +669,26 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
+            if t == "code":
+                # 代码执行最小版(三期 3-4,11-20):变量按 input_mapping 取好交进沙箱,返回按 output_schema 核;规则全在 runtime/代码执行.py
+                import 代码执行 as _CODE
+                实参, 缺 = 解绑定(cfg.get("input_mapping") or {}, 状态)
+                本步入 = 实参
+                if 缺:
+                    raise 节点失败("BIND_MISSING_AT_RUNTIME", f"这一步要用的变量取不到:{'、'.join(缺)}",
+                                 "产出这些变量的那一步这次没跑到;在右侧「输入变量」里核对来源")
+                try:
+                    出 = _CODE.跑(cfg, 实参, 记事=记事)
+                except _CODE.代码失败 as e:
+                    err = 节点失败(e.code, e.消息, e.建议)
+                    err.出 = e.出
+                    raise err
+                状态["节点"][当前] = 出
+                记一步(当前, 成功, 出=出)
+                下 = 后继[当前].get((DS.成功, None), [])
+                当前 = 下[0] if 下 else 循环回(当前)
+                continue
+
             if t == "list_operator":
                 # 列表操作(11-12,照 Dify):过滤 → 排序 → 取前几个;规则在 runtime/列表操作.py(校验器同一份)
                 值, 缺 = 解绑定(cfg.get("bindings"), 状态)
