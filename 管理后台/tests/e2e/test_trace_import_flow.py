@@ -80,6 +80,10 @@ print("\n▸ ② 列表和调用树")
 c, l = 打("GET", P + "/traces?limit=200&entry_kind=" + quote("聊天站"), "U002")
 行 = [x for x in (l or {}).get("items") or [] if x["id"] == tid]
 ck("运行记录列表按「聊天站」筛得到这一轮,带会话号", 行 and 行[0].get("session_id") == "会话-e2e" and 行[0].get("entry_kind") == "聊天站", 行)
+# 11-21 复审 P2-08:「成功吗」三态 —— 只有明确成功才 True、明确失败才 False、还没结束 / 认不出 → None;并带「结束了吗」
+ck("列表每行带三态「成功吗」(True / False / None)和「结束了吗」,不再把没结束的算成功",
+   行 and 行[0].get("成功吗") in (True, False, None) and "结束了吗" in 行[0]
+   and all((x.get("成功吗") is not None) or (x.get("end_reason") in (None, "") or x.get("end_reason") not in ("completed", "ok", "failed")) for x in (l or {}).get("items") or []), 行 and {k: 行[0].get(k) for k in ("成功吗", "结束了吗", "end_reason")})
 c, d = 打("GET", P + f"/traces/{tid}", "U002")
 ck("没有专项授权的(U002)→ 调用树里**看不到原文**,只有形状", c == 200 and 原文 not in json.dumps(d, ensure_ascii=False)
    and d.get("看得到原文吗") is False, (c, str(d)[:200]))

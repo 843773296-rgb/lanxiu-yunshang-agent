@@ -8058,8 +8058,9 @@ async function 页_调用链(页 = 1) {
             ? ` <span class="pill fail">${r["出错的步数"]} 步出错</span>` : ""}</td>
         <td class="num">${Number(r["token数"]).toLocaleString()}</td>
         <td class="num">${_参考价(r["参考价"])}</td>
-        <td>${r["成功吗"] ? `<span class="pill ok">${esc(r.end_reason || "完成")}</span>`
-                          : `<span class="pill fail">${esc(r.end_reason || "失败")}</span>`}</td>
+        <td>${r["成功吗"] === true ? `<span class="pill ok">${esc(r.end_reason || "完成")}</span>`
+             : r["成功吗"] === false ? `<span class="pill fail">${esc(r.end_reason || "失败")}</span>`
+             : `<span class="pill warn" title="还没结束,或结束原因认不出 —— 不算成功也不算失败">${esc(r.end_reason || (r["结束了吗"] ? "结束原因不明" : "未结束"))}</span>`}</td>
         <td><button data-tr="${esc(r.id)}">看调用树</button></td>
       </tr>`).join("")
     + `</tbody></table>${页码条(d)}<div class="note">${md(d.note || "")}</div>`;

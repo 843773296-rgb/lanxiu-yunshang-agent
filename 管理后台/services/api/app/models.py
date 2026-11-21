@@ -663,6 +663,12 @@ def _建一张(e):
         # 「这个任务的所有 Run 段」—— 预算账本按任务共享,
         # 查「这一本账被哪几段用过」走它。
         Index("ix_traces_task", t.c.project_id, t.c.task_ref)
+        # 11-21(复审 P2-08):调用链列表按「项目 + 入口 + 开始时间倒序」翻页,原来走 ix_traces_task 的位图扫再排序
+        Index("ix_traces_proj_kind_started", t.c.project_id, t.c.entry_kind, t.c.started_at.desc())
+    if 名 in ("spans", "usage_ledger"):
+        # 11-21(复审 P2-08):调用链列表每一行都要数 spans / 汇总 usage_ledger,原来 spans 没有 (project_id, trace_id) 索引 → 每行全表扫,
+        # 50 行就 1.2 秒(空闲时实测);加了之后走索引
+        Index(f"ix_{名}_proj_trace", t.c.project_id, t.c.trace_id)
     if 名 == "workflows":
         # 同一个项目里**同一个技能同时只能被一条工作流接管**(2026-10-24 聊天接管开关)。
         # 用库的部分唯一索引钉住,不只靠接口里的 if:两个人同时拨开两条,两个 if 都会看到「还没有」

@@ -1139,12 +1139,21 @@ async def 发布工作流(project_id: str, wid: str, request: Request,
         单 = AP._出清单(c, project_id, aid, me)
         拦了, 从 = AP._切指针(c, project_id, 单["id"], 环境, me, 体.get("环境revision"))
         跑通模式 = 这一版跑通的模式(c, project_id, vid)
+        定时停了 = None
+        if not 拦了 and 环境 == "production":
+            # 11-21(复审 P1-04,用户拍):发到生产的这一版不是定时开头,而定时开着 → 当场停用并说清;不等到点才被扫描拦
+            s = c.execute(text("select * from workflow_schedules where project_id=:p and workflow_id=:w and schedule_enabled for update"),
+                          {"p": project_id, "w": wid}).mappings().first()
+            if s and not _生产开始规则(c, project_id, _生产版本(c, project_id, wid)):
+                号 = c.execute(text("select version_no from workflow_versions where project_id=:p and id=:v"), {"p": project_id, "v": vid}).scalar()
+                _停定时(c, s, f"发布到生产的第 {号} 版不是定时开头 —— 定时已停用;要定时跑,把开始方式改回定时触发器、发布后重新打开")
+                定时停了 = "这一版不是定时开头,原来开着的定时已停用(到「版本与发布」页能看到为什么)"
     if 拦了:
         raise _错(422, "CANNOT_DEPLOY", "这一版还不能发到" + {"test": "测试", "staging": "预发", "production": "生产"}[环境],
                   "生产要先有人审核这份清单、这一版要整条跑通过一次;按下面每一条处理", field_errors={"闸": 拦了, "清单id": 单["id"]})
     return {"环境": 环境, "清单id": 单["id"], "版本id": vid, "从": 从,
-            "跑通模式": 跑通模式,
-            "note": "已切换。" + ("聊天接管和定时从现在起跑这一版" if 环境 == "production" else "只影响这个环境,生产不变")}
+            "跑通模式": 跑通模式, **({"定时": 定时停了} if 定时停了 else {}),
+            "note": "已切换。" + (("聊天接管和定时从现在起跑这一版" if not 定时停了 else 定时停了) if 环境 == "production" else "只影响这个环境,生产不变")}
 
 
 @router.get(前缀 + "/chat-takeovers")
@@ -1596,6 +1605,8 @@ def _定时发起一期(c, s, 起, 止):
     生产 = _生产版本(c, p, wid)
     if not 生产:
         return "跳过", "到点时这条工作流没有发布到生产(可能被撤下了)—— 定时只跑生产那一版", None
+    if not _生产开始规则(c, p, 生产):
+        return "跳过", "生产那一版不是定时开头(用户输入 / Webhook)—— 不按旧频率发起;定时应已停用", None
     本人 = _成员身份(c, p, s["principal"])
     能, 为什么 = 本人.能("运行编排测试") if 本人 else (False, "")
     if not 能:
@@ -1619,6 +1630,19 @@ def _定时发起一期(c, s, 起, 止):
     return "已发起", "", 回["resource_id"]
 
 
+def _停定时(c, s, 为什么, 现在=None):
+    """把一条定时关掉并记下为什么(生产版改成非定时开头时用;11-21 复审 P1-04)。记进 missed_detail 让「版本与发布」页「最近几期」看得见,再记一条审计。"""
+    from datetime import datetime, timezone
+    现在 = 现在 or datetime.now(timezone.utc)
+    记 = list(s["missed_detail"] or [])
+    记.append({"起": 现在.date().isoformat(), "止": 现在.date().isoformat(), "结果": "停用", "为什么": 为什么, "于": 现在.isoformat()})
+    c.execute(text("""update workflow_schedules set schedule_enabled=false, missed_detail=cast(:m as jsonb), updated_at=now(), revision=revision+1
+                       where project_id=:p and id=:i"""), {"m": json.dumps(记[-30:], ensure_ascii=False), "p": s["project_id"], "i": s["id"]})
+    # 审计记成系统动作(没有点按钮的人):和别处同一个口 _审计,只是身份是个只带三个字段的替身
+    系统 = type("系统身份", (), {"user_id": "system", "org_id": s["organization_id"], "project_id": s["project_id"]})()
+    _审计(c, 系统, "workflow.schedule_disabled", {"workflow_id": s["workflow_id"], "schedule_id": s["id"]}, reason=为什么[:400])
+
+
 def 定时扫一遍(c, 现在, 只看=None):
     """worker 每分钟调一次:到点的发起最近一期,关机错过的更早几期只记下来不补。→ 这一遍做了什么(给日志)。
 
@@ -1634,7 +1658,14 @@ def 定时扫一遍(c, 现在, 只看=None):
     for s in rs:
         规则 = T.校验规则(_定时规则(s))
         # 频率定在生产版的开始节点上(11-16):发了新版、频率变了 → 定时表跟着改,不用人再来点一次保存
-        节点规则 = _生产开始规则(c, s["project_id"], _生产版本(c, s["project_id"], s["workflow_id"]))
+        生产 = _生产版本(c, s["project_id"], s["workflow_id"])
+        节点规则 = _生产开始规则(c, s["project_id"], 生产)
+        if 生产 and not 节点规则:
+            # 11-21(复审 P1-04,用户拍):生产版改成了「用户输入 / Webhook」开头,旧定时**不许再按旧频率发起** ——
+            # 原来只在「找到新的定时规则」时同步,没找到就照旧;发布那一步也会停(发布工作流),这里是第二道
+            _停定时(c, s, "生产那一版已经不是定时开头(改成了用户输入 / Webhook)—— 定时停用;要定时跑,把开始方式改回定时触发器、发布后重新打开", 现在)
+            话.append(f"{s['workflow_id']}:生产版不是定时开头 → 定时停用")
+            continue
         if 节点规则 and (节点规则["周期"], 节点规则["时刻"], _定时细节(节点规则)) != (规则["周期"], 规则["时刻"], _定时细节(规则)):
             c.execute(text("""update workflow_schedules set cadence=:c, cadence_detail=cast(:cd as jsonb), fire_time=:t,
                                      updated_at=now(), revision=revision+1 where project_id=:p and workflow_id=:w"""),

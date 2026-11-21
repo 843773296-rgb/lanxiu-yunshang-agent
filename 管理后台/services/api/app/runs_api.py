@@ -68,6 +68,10 @@ def 脱敏(值):
     return {"__标量__": f"<{type(d).__name__} · {len(str(d))} 字>"}
 
 
+成功的结束原因 = ("completed", "ok", "end_turn")          # end_turn:模型自然停下(SDK 的 stop_reason 直接落了库)
+失败的结束原因 = ("failed", "error", "interrupted")
+
+
 @router.get(前缀 + "/traces")
 def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
             limit: int = Query(30, ge=1, le=200), page: int = Query(1, ge=1),
@@ -120,7 +124,10 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
         # 在这里填 0 的话,列表按金额排序会把「不知道花了多少」的排在最便宜那头。
         d["参考价"] = (float(d["已知金额"]) if not d["金额未知的行数"] else None)
         d["参考价算不出吗"] = bool(d["金额未知的行数"])
-        d["成功吗"] = (d["end_reason"] not in ("failed", "error"))
+        # 11-21(复审 P2-08):只认**明确成功**的结束原因;failed / error / interrupted 是失败;还没结束 / 认不出的 → None(前端显示「未结束」),
+        # 原来「不是 failed/error 就算成功」把 running 和空值都算成了成功。库里现有取值:completed / ok / failed / interrupted / end_turn / 空
+        d["成功吗"] = (True if d["end_reason"] in 成功的结束原因 else False if d["end_reason"] in 失败的结束原因 else None)
+        d["结束了吗"] = bool(d.get("ended_at")) or d["end_reason"] is not None
         出.append(d)
     # 页码分页(Dify 四页对标 DF-03 / §3.2「只取前 100 条且没有下页」,11-03):和运行列表**同一个**信封,不另写一份。
     # 排序加 id 兜底 —— 同一秒开始的两轮,不兜底的话翻页时顺序不定,会重复或漏一条

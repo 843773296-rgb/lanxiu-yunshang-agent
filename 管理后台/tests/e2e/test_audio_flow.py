@@ -588,6 +588,31 @@ c, b = 打("PUT", P + f"/workflows/{wid3}/schedule", 体={"开着": False})
 ck("关掉之后再到点 → 不发起", c == 200 and 扫(到点 + _td(days=9)) == [], (c, b))
 c, b = 打("GET", P + "/schedules")
 ck("「定时」页的列表里有它,标着关着、说法「每天 08:00」", any(x["工作流"] == wid3 and x["开着"] is False and x.get("说法") == "每天 08:00" for x in (b or {}).get("items", [])), b)
+# 11-21 复审 P1-04(用户拍):定时版发布后把生产改成「用户输入」开头,旧定时不许再按旧频率发起 —— 发布那一步当场停用,扫描再拦一道
+c, b = 打("PUT", P + f"/workflows/{wid3}/schedule", 体={"开着": True})
+ck("(P1-04 夹具)定时重新打开", c == 200 and ((b or {}).get("定时") or {}).get("开着"), (c, b))
+c, d3 = 打("GET", P + f"/workflows/{wid3}")
+手动 = json.loads(json.dumps(d3["草稿"]["定义"]))
+for n in 手动["nodes"]:
+    if n["type"] == "start":
+        n["config"] = {"start_mode": "用户输入", "input_schema": {"type": "object", "properties": {"统计起": {"type": "string"}, "统计止": {"type": "string"}}, "required": ["统计起", "统计止"]}}
+c, b = 打("PATCH", P + f"/workflows/{wid3}/draft", 体={"定义": 手动}, 头={"If-Match": str(d3["草稿"]["revision"])})
+c, 版3b = 打("POST", P + f"/workflows/{wid3}/versions", 体={"变更说明": "e2e 改成手动开头"})
+ck("(P1-04 夹具)冻出一版「用户输入」开头", c == 201 and (版3b or {}).get("id"), (c, 版3b))
+c, 发 = 发到生产(wid3, 版3b["id"])
+ck("发布手动版到生产 → 受理,响应里说清「原来开着的定时已停用」", c in (200, 201, 202) and "定时已停用" in json.dumps(发 or {}, ensure_ascii=False), (c, 发))
+s4 = 定时()
+ck("定时现在是关着的,「最近几期」里有一条「停用」写了为什么", (s4.get("定时") or {}).get("开着") is False
+   and any(x.get("结果") == "停用" and "不是定时开头" in (x.get("为什么") or "") for x in (s4.get("定时") or {}).get("记录") or []), s4.get("定时"))
+with _事务() as cx:
+    n0 = cx.execute(_text("select count(*) from execution_runs where project_id=:p and definition_ref->>'id'=:w and definition_ref->>'发起'='定时'"), {"p": 项目, "w": wid3}).scalar()
+    # 就算有人把 schedule_enabled 直接改回 true(绕过接口),扫描那层也拦:生产版不是定时开头 → 停用,不发起
+    cx.execute(_text("update workflow_schedules set schedule_enabled=true where project_id=:p and workflow_id=:w"), {"p": 项目, "w": wid3})
+话 = 扫(到点 + _td(days=20))
+with _事务() as cx:
+    n1 = cx.execute(_text("select count(*) from execution_runs where project_id=:p and definition_ref->>'id'=:w and definition_ref->>'发起'='定时'"), {"p": 项目, "w": wid3}).scalar()
+    开 = cx.execute(_text("select schedule_enabled from workflow_schedules where project_id=:p and workflow_id=:w"), {"p": 项目, "w": wid3}).scalar()
+ck("**定时被硬开回来、到点扫一遍 → 不发起新运行,扫描把它停回去**(第二道)", n1 == n0 and 开 is False and any("不是定时开头" in x for x in 话), (话, n0, n1, 开))
 
 print("\n▸ ⑫ 账号绑定 + 聊天站发起被接管的工作流(用户 10-24 拍「一对一绑定」「打开时聊天站改走工作流」)")
 工号 = "E2E" + uuid.uuid4().hex[:6]
