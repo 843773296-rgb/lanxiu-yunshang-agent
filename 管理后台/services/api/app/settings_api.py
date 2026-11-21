@@ -41,6 +41,7 @@
 """
 import json as _json
 import os
+import re as _re
 import sys
 import uuid
 
@@ -148,7 +149,7 @@ def 成员列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     """
     with 连接() as c:
         行 = [dict(r) for r in c.execute(text("""
-            select id, user_id, role, special_grants, status, created_at
+            select id, user_id, role, special_grants, status, created_at, store_id
               from memberships where project_id=:p
              order by user_id"""), {"p": project_id}).mappings()]
     出 = []
@@ -162,6 +163,8 @@ def 成员列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
             "工号": m["user_id"], "角色": m["role"],
             "角色中文": PM.角色中文.get(m["role"], "?"),
             "状态": m["status"],
+            # 门店(11-21):空 = 不限门店。只管「人工待办看哪些」,不管别的权限
+            "门店": m["store_id"] or None,
             "专项授权": 专 or None,
             "实际能做的": 能,
             # ⚠️ **「有这个角色」不等于「这条能生效」** —— 状态不是 active 的成员
@@ -228,6 +231,13 @@ async def 加成员或改权限(project_id: str, request: Request,
     角色 = (体.get("角色") or 体.get("role") or "").strip()
     专项 = 体.get("专项授权") if "专项授权" in 体 else 体.get("special_grants")
     专项 = list(专项 or [])
+    # 门店(11-21,用户拍「店长只看本店的待办」):给了就存(统一大写),给空串 / null 就清成「不限门店」,**没给这个键就不动**(老调用方不用改)
+    给了门店 = ("门店" in 体) or ("store_id" in 体)
+    门店 = 体.get("门店") if "门店" in 体 else 体.get("store_id")
+    门店 = (str(门店).strip().upper() or None) if 门店 is not None and str(门店).strip() else None
+    if 给了门店 and 门店 and not _re.fullmatch(r"[A-Z0-9_-]{1,32}", 门店):
+        raise _错(422, "VALIDATION", "门店编号只收字母数字(最多 32 位)", "照澜绣的门店编号写,比如 SH001",
+                  field_errors={"门店": "只收字母、数字、下划线、横线"})
     if not 工号:
         raise _错(422, "VALIDATION", "工号必填", "给一个工号",
                   field_errors={"工号": "必填"})
@@ -254,13 +264,13 @@ async def 加成员或改权限(project_id: str, request: Request,
                                  where project_id=:p and user_id=:u"""),
                            {"p": project_id, "u": 工号}).mappings().first()
             if 老:
-                c.execute(text("""update memberships
+                c.execute(text(f"""update memberships
                                      set role=:r, special_grants=cast(:g as jsonb),
                                          status='active', revision=revision+1,
-                                         updated_at=now()
+                                         updated_at=now(){", store_id=:sid" if 给了门店 else ""}
                                    where project_id=:p and id=:i"""),
                           {"r": 角色, "g": _json.dumps(专项, ensure_ascii=False),
-                           "p": project_id, "i": 老["id"]})
+                           "p": project_id, "i": 老["id"], **({"sid": 门店} if 给了门店 else {})})
                 动作, 从 = "membership.update", 老["role"]
             else:
                 # ⚠️ **`status='active'` 不能省。** `deps.取身份()` 的查询带着
@@ -269,21 +279,21 @@ async def 加成员或改权限(project_id: str, request: Request,
                 # (09-29 铺 trainer 的时候栽过一次,那次是「INSERT 成功 ≠ 这一行有用」。)
                 c.execute(text("""insert into memberships
                     (id, user_id, organization_id, project_id, role, status,
-                     special_grants, created_at, created_by, updated_at, revision)
-                    values (:i,:u,:o,:p,:r,'active', cast(:g as jsonb),
+                     special_grants, store_id, created_at, created_by, updated_at, revision)
+                    values (:i,:u,:o,:p,:r,'active', cast(:g as jsonb), :sid,
                             now(), :by, now(), 1)"""),
                           {"i": _新id("mem"), "u": 工号, "o": org, "p": project_id,
-                           "r": 角色, "g": _json.dumps(专项, ensure_ascii=False),
+                           "r": 角色, "g": _json.dumps(专项, ensure_ascii=False), "sid": 门店,
                            "by": me.user_id})
                 动作, 从 = "membership.create", None
             _审计(c, me, 动作,
-                  {"user_id": 工号, "role": 角色, "从": 从, "专项授权": 专项})
+                  {"user_id": 工号, "role": 角色, "从": 从, "专项授权": 专项, **({"门店": 门店} if 给了门店 else {})})
     if 拦了:
         raise _错(422, "CANNOT_GRANT", "这套权限给不了",
                   "按下面每一条处理。**被拦这件事已经记进审计**",
                   field_errors={"闸": 拦了})
     能 = sorted(k for k in PM.能力们 if PM.判(k, 角色, 专项)[0])
-    return {"工号": 工号, "角色": 角色, "专项授权": 专项 or None,
+    return {"工号": 工号, "角色": 角色, "专项授权": 专项 or None, **({"门店": 门店} if 给了门店 else {}),
             "实际能做的": 能,
             "note": ("**`status` 设成了 active** —— 不设的话这一行在表里看着好好的,"
                      "而登录那一步查不到它(那条查询带着 `status='active'`)。"

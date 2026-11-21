@@ -374,22 +374,30 @@ def _挂起(c, job, r, run_id, 定义, 结果, 记事):
         材料 = dict(载.get("材料") or {})
         if 载.get("表单"):
             材料["__表单"] = 载["表单"]
+        # 归哪个门店(11-21,用户拍「店长只看到、只处理本店的单子」):输入 → 材料 → 发起人登记的门店,定不出就空。
+        # 口径在 runtime/门店范围.py(接口层筛的时候用同一份);来源记进 target_ref,排查「店长看不到」不用猜
+        import 门店范围 as _SS
+        输入快照 = r["input_snapshot"] if isinstance(r["input_snapshot"], dict) else (_j.loads(r["input_snapshot"]) if r["input_snapshot"] else {})
+        发起人门店 = c.execute(text("""select store_id from memberships where user_id=:u and (project_id=:p or project_id is null)
+                                        and status='active' order by (project_id is null) limit 1"""),
+                            {"u": r["principal"], "p": job["project_id"]}).scalar() if r["principal"] else None
+        门店, 门店来源 = _SS.取门店(输入快照, 材料, 发起人门店)
         c.execute(text("""
             insert into human_requests (id, organization_id, project_id, execution_run_id,
                 kind, payload_ref, allowed_fields, candidate_roles, status, expires_at,
-                target_ref, risk_note, created_at, created_by, updated_at, revision)
+                target_ref, risk_note, store_id, created_at, created_by, updated_at, revision)
             values (:i,:o,:p,:r,:k,:pl, cast(:af as jsonb), cast(:cr as jsonb), 'pending', :ex,
-                    cast(:t as jsonb), :rn, now(), :u, now(), 1)
+                    cast(:t as jsonb), :rn, :sid, now(), :u, now(), 1)
         """), {"i": hid, "o": job["organization_id"], "p": job["project_id"], "r": run_id,
                "k": 载.get("request_kind") or "核对",
                "pl": _j.dumps(材料, ensure_ascii=False),
                "af": _j.dumps(载.get("allowed_fields") or [], ensure_ascii=False),
                "cr": _j.dumps(载.get("candidate_roles") or [], ensure_ascii=False), "ex": 到期,
-               "t": _j.dumps({"node_id": 等["node_id"], "运行": run_id, "第几次挂起": 第几次,
+               "t": _j.dumps({"node_id": 等["node_id"], "运行": run_id, "第几次挂起": 第几次, "门店": 门店, "门店来源": 门店来源,
                               **({"种类": 载["种类"], "参数摘要": 载.get("参数摘要")} if 载.get("种类") else {})},
                              ensure_ascii=False),
                "rn": "工作流里的人工核对:批准 = 按定稿接着走;退回 = 记下理由结束这一路",
-               "u": 我是谁})
+               "sid": 门店, "u": 我是谁})
         if 载.get("通知连接"):
             # 飞书通知(四期 4-1,用户 11-15 拍「加」;替代 Dify 的 Email):只写哪条流程 / 哪一步 / 谁该处理 / 截止 / 链接,**不带客户数据**。
             # 推不出去只记事件,不影响运行 —— 通知是提醒,待办本身已经在列表里

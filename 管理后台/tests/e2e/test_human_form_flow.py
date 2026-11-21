@@ -28,6 +28,7 @@ sys.path.insert(0, _这)
 from sqlalchemy import text  # noqa: E402
 from db import 事务  # noqa: E402
 import _模型模式 as MM  # noqa: E402
+import _清成员 as 成员  # noqa: E402
 
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
 项目 = os.environ.get("AIMC_PROJECT", "project_lanxiu")
@@ -104,7 +105,7 @@ def main():
     文 = {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}
     模板 = lambda i, 字: {"id": i, "type": "template", "name": i, "config": {"template": 字 + "{{谁}}", "bindings": {"谁": {"source": "node", "node_id": "核", "pointer": "/__action_id"}}}}  # noqa: E731
     定义["nodes"] = [
-        {"id": "start", "type": "start", "config": {"start_mode": "用户输入", "input_schema": {"type": "object", "properties": {"摘要": {"type": "string"}}, "required": ["摘要"]}}},
+        {"id": "start", "type": "start", "config": {"start_mode": "用户输入", "input_schema": {"type": "object", "properties": {"摘要": {"type": "string"}, "门店": {"type": "string"}}, "required": ["摘要"]}}},
         {"id": "核", "type": "human", "name": "店长判责", "config": {
             "request_kind": "核对", "candidate_roles": ["admin"], "expires_at_policy": {"小时": 24, "到期": "fail"},
             "payload_binding": {"摘要": {"source": "input", "pointer": "/摘要"}},
@@ -170,7 +171,53 @@ def main():
     历 = (详 or {}).get("决定历史") or []
     ck("决定历史一条,decision=门店责任;待办状态 approved", len(历) == 1 and 历[0].get("decision") == "门店责任" and ((详 or {}).get("请求") or {}).get("status") == "approved", (历, ((详 or {}).get("请求") or {}).get("status")))
 
-    print("\n▸ ⑥ 收尾")
+    print("\n▸ ⑥ 按门店分开(11-21 用户拍:店长只看到、只处理本店的单子)")
+    尾 = uuid.uuid4().hex[:5].upper()
+    甲 = 成员.记(项目, f"E2EHS1{尾}")   # SH001 的店长(管理员角色才在 candidate_roles 里)
+    乙 = 成员.记(项目, f"E2EHS2{尾}")   # SH002 的店长
+    c1, b1 = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "门店": "sh001"})
+    c2, b2 = 打("POST", P + "/memberships", 体={"工号": 乙, "角色": "admin", "门店": "SH002"})
+    ck("加两个临时成员,各登记一个门店(编号统一成大写)", c1 == 201 and c2 == 201 and (b1 or {}).get("门店") == "SH001" and (b2 or {}).get("门店") == "SH002", (c1, b1, c2, b2))
+    c, m = 打("GET", P + "/memberships")
+    行 = {x["工号"]: x for x in (m or {}).get("成员") or []}
+    ck("成员列表里带门店;老成员没登记 = 不限门店(None)", 行.get(甲, {}).get("门店") == "SH001" and 行.get("U001", {}).get("门店") is None, {k: v.get("门店") for k, v in 行.items() if k in (甲, 乙, "U001")})
+    c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())}, 体={"workflow_id": wid, "输入": {"摘要": "扣子掉了", "门店": "SH001"}})
+    rid2 = (r or {}).get("resource_id")
+    st = 等到(rid2, ("waiting_approval", "failed", "succeeded", "cancelled")) if rid2 else None
+    with 事务() as cx:
+        行2 = cx.execute(text("select id, store_id, target_ref from human_requests where project_id=:p and execution_run_id=:r order by created_at desc limit 1"), {"p": 项目, "r": rid2}).mappings().first()
+    hid2 = 行2["id"] if 行2 else None
+    tr = 行2["target_ref"] if 行2 else {}
+    if isinstance(tr, str):
+        tr = json.loads(tr)
+    ck("输入带 门店=SH001 → 挂起的待办 store_id=SH001,target_ref 记来源「运行的输入」", c == 202 and st == "waiting_approval" and 行2 and 行2["store_id"] == "SH001" and (tr or {}).get("门店来源") == "运行的输入", (c, st, dict(行2) if 行2 else None))
+    c, L = 打("GET", P + "/human-requests?limit=200")
+    ids = [x["id"] for x in (L or {}).get("items") or []]
+    ck("U001 没登记门店 → 看全部:新单(SH001)和旧单(定不出门店)都在,行上带「门店」", hid2 in ids and hid in ids and any(x["id"] == hid2 and x.get("门店") == "SH001" for x in L["items"]) and (L or {}).get("我的门店") is None, (c, len(ids)))
+    c, L = 打("GET", P + "/human-requests?limit=200", 谁=乙)
+    ids乙 = [x["id"] for x in (L or {}).get("items") or []]
+    ck("SH002 的店长:列表里没有 SH001 的单子、也没有定不出门店的旧单;note 写了只列本店", c == 200 and hid2 not in ids乙 and hid not in ids乙 and (L or {}).get("我的门店") == "SH002" and all(x.get("门店") == "SH002" for x in L["items"]), (c, ids乙[:3], (L or {}).get("我的门店")))
+    c, b = 打("GET", P + f"/human-requests/{hid2}", 谁=乙)
+    ck("SH002 的店长开 SH001 的单子 → 404(不说「有这单但不是你的」)", c == 404 and 码(b) == "NOT_FOUND", (c, b))
+    c, b = 打("POST", P + f"/human-requests/{hid2}/decisions", 谁=乙, 头={"Idempotency-Key": str(uuid.uuid4())}, 体={"decision": "门店责任", "request_revision": 1, "edits": {"赔付": "退款"}})
+    ck("SH002 的店长对它做决定 → 404,没记进去", c == 404, (c, b))
+    c, b = 打("GET", P + f"/human-requests/{hid}", 谁=甲)
+    ck("SH001 的店长开定不出门店的旧单 → 404(那种只给不限门店的人)", c == 404, (c, b))
+    c, L = 打("GET", P + "/human-requests?limit=200&mine=true", 谁=甲)
+    ids甲 = [x["id"] for x in (L or {}).get("items") or []]
+    ck("SH001 的店长「只看我能处理的」:有这张新单,列出来的每条「还能处理吗」都是真", c == 200 and hid2 in ids甲 and all(x.get("还能处理吗") for x in L["items"]) and (L or {}).get("只看我能处理的") is True, (c, ids甲[:3]))
+    c, 详 = 打("GET", P + f"/human-requests/{hid2}", 谁=甲)
+    ck("SH001 的店长开详情:门店 SH001、来源「运行的输入」、你能处理吗 = 真", c == 200 and (详 or {}).get("门店") == "SH001" and (详 or {}).get("门店来源") == "运行的输入" and (详 or {}).get("你能处理吗") is True, (c, {k: (详 or {}).get(k) for k in ("门店", "门店来源", "你能处理吗", "为什么")}))
+    rev2 = ((详 or {}).get("请求") or {}).get("revision") or 1
+    c, b = 打("POST", P + f"/human-requests/{hid2}/decisions", 谁=甲, 头={"Idempotency-Key": str(uuid.uuid4())}, 体={"decision": "顾客责任", "request_revision": rev2, "edits": {"赔付": "换货"}})
+    ck("SH001 的店长做决定 → 201,处理人记的是他", c == 201 and (b or {}).get("处理人") == 甲, (c, b))
+    c, b = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "门店": ""})
+    c3, m = 打("GET", P + "/memberships")
+    ck("门店传空串 → 清成不限门店", c == 201 and (b or {}).get("门店") is None and next((x for x in (m or {}).get("成员") or [] if x["工号"] == 甲), {}).get("门店") is None, (c, b))
+    c, b = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "门店": "静安 店"})
+    ck("门店编号写成中文 / 带空格 → 422 说只收字母数字", c == 422, (c, b))
+
+    print("\n▸ ⑦ 收尾")
     收尾()
     ck("工作流已归档", True)
     print()

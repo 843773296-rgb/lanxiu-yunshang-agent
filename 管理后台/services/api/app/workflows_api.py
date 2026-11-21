@@ -1410,11 +1410,11 @@ def _版本定义(v):
 
 def _成员身份(c, project_id, user_id):
     """某个账号在这个项目里的身份;没有成员记录就 None(聊天接管、定时都**以那个人**发起,不拿服务账号顶替)。"""
-    m = c.execute(text("""select user_id, organization_id, role, special_grants from memberships
+    m = c.execute(text("""select user_id, organization_id, role, special_grants, store_id from memberships
                            where user_id=:u and (project_id=:p or project_id is null) and status='active'
                            order by (project_id is null) limit 1"""),
                   {"u": user_id, "p": project_id}).mappings().first()
-    return 身份(m["user_id"], m["organization_id"], project_id, m["role"], m["special_grants"] or []) if m else None
+    return 身份(m["user_id"], m["organization_id"], project_id, m["role"], m["special_grants"] or [], store_id=m["store_id"]) if m else None
 
 
 def _定时出(c, project_id, s, 现在=None):

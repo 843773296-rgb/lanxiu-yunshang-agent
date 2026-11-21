@@ -33,6 +33,13 @@
   · 判据:12 小时任务已完结 —— 远端 45269e05、aimc 在这一版(07:28 核过进程归属 + worker 在)、三份文档已发飞书、两条 cron 已删;w1117 领先远端只有交接 / 汇总文档两笔(2da60b0b、f3f8a3f7),随下次业务提交推,不单独起 ship。
   · 作废:早上 gate_w5 / gate_w6 两轮日志不用再看;「推完要告 fc 远端哈希」已做;「要给用户转放宽补丁命令」作废(用户已亲手跑)。
   · 禁区:今天不再占锁、不写共享库(已答应 fc);代码只写 w1121,w1117 只 ff;不碰 fc 那张表的文件;不替 fc 推;聊天站那一半归 fc 了,别重做。
+  · 🔁 **11:4x fc 转来用户拍板:聊天站人工介入按门店分开,店长只看到、只处理本店的单子,先改后台(我的地界,我接;台账第八十四条已记进 PRD 2.4.6)。** 做法(w1121,待推):
+    ① 迁移 b7d2e9f1a3c5:memberships.store_id / human_requests.store_id 可空文本 + 索引;**12:2x 已锁内 upgrade 到共享库**(线上老代码不读,无害);entities.py 两张表登记 store_id
+    ② 新口径模块 runtime/门店范围.py(纯函数):取门店(输入 → 核对材料 → 发起人门店 → 定不出)/ 看得到吗(不限门店全看;登记了只看本店;定不出门店的单子只给不限门店的人)/ 为什么看不到;worker._挂起 调它定 store_id,来源记进 target_ref.门店来源
+    ③ deps.身份 带 store_id(取身份 / workflows_api._成员身份 都查);human_api 列表 SQL 按门店筛(_门店范围SQL)、详情 / 决定走 _按门店找(不在范围 404,不说有这单)、「他能碰这个对象吗」三处改成 SS.看得到吗;列表加 `?mine=true`(只看我能处理的,Python 里按 还能处理吗 过)+ 返回 我的门店 / 门店
+    ④ settings_api:成员列表带 门店;POST /memberships 收 门店(空串 = 清成不限,不给这个键不动;只收 [A-Z0-9_-]{1,32});前端成员页加「门店」列 + 表单框,待办页加「门店」列 + 「只看我能处理的」勾(存 localStorage)
+    ⑤ 测试:tests/orchestration/test_store_scope.py 7 条(含结构判据:三处都走范围、三处不再写死 True;Makefile 已登记;整套 test-orchestration rc=0)、test_human_form_flow ⑥ +13 条(两个临时店长 E2EHS1/2 + 带门店的运行;**没真跑过**,随第八轮 e2e-ci)
+    判据 / 禁区:fc 的接法(聊天站按登录工号查 staff_bindings,用绑定账号当 X-Dev-User 调这三条接口)和现状一致 —— aimc 现在只有 dev 身份模式,opinions 那条线也是这么接的;**要提醒 fc 两点**:绑定账号在项目里要有成员记录且登记了门店,否则 404 NO_MEMBERSHIP / 看不到;AUTH_MODE 离开 dev 时要换服务令牌。**第八轮 gate_w9.sh 备好**(多一步锁内 alembic upgrade,现在是空操作;ff 后带身份探一下 memberships 不是 500 再跑 e2e)。
   · ✅ **11:17 第七轮已推主干 2acb51fb..1f2a1142**(e2e-ci 10:28 退出码 0、ship 全量门禁 0;aimc 在 1f2a1142、worker 在;锁已放、已告 fc;规划文档已再发飞书)。内容:定时触发器 Cron 模式(2-1)/ 编辑器「更改节点」(1-5 最后一项)/ 编排整套自测两处顺手修 / 规划 1.3、1.4 表标快照。**照 Dify 的工作流规划里我能做的到此全做完**;剩 4-1 聊天站那一半、4-2 标注回复(都归 fc 线)。w1117 = w1121 = origin/main,没有待推。下一步:等用户新指令;fc 来问 4-1 接口就答。
   · **10:06 第六轮 e2e-ci 退出码 2**,只红 test_workflow_start_guide_flow ⑤ 两条:服务端收到的 Cron 是「0+8+*+*+1」一段 —— 测试用 urlencode 把空格编成 `+`,打() 再 quote 一次把 `+` 变 `%2B`,服务端收到字面加号。**不是服务端的错**(浏览器 URLSearchParams 的 `+` 服务端照常解成空格);测试改 `quote_via=urllib.parse.quote`(空格 → %20)。**10:1x 第七轮 gate_w8.sh 起**,这轮把 w1121 的四笔(更改节点 / 规划两表 / 交接 / 测试修)一起带上(status gate_w8.status,日志 e2e_ci_w8 / ship_w8)。
   · **09:47 第六轮 gate_w7.sh 起**(推 2-1 那笔 04f831b1;status gate_w7.status,日志 e2e_ci_w7 / ship_w7;fc 已同意,它不要锁)。**等它跑的时候在 w1121 又做了两笔、没并进 w1117**(ship 跑着不动 w1117):f2b90dd0 编辑器「更改节点」(规划 1-5 最后一项:app.js 可换成的类型 / 更改节点类型 / 弹_更改节点,wf_canvas 节点菜单 retype 项;test_workflow_new_nodes_panel.js ⑤ +11 条,34 绿;css 30/30)、aaa00964 规划 1.3 / 1.4 两表标「11-15 快照」。**这两笔改了 管理后台/ 前端 → 第六轮推完后要再起一轮 gate(e2e-ci + ship)才能推**,先喊 fc。到此规划里我能做的只剩 4-2 标注回复(聊天应用,归 fc 线)。

@@ -148,30 +148,58 @@ def _脱敏参数(载荷):
     return 出
 
 
+import 门店范围 as SS
+
+
+def _门店范围SQL(me):
+    """列表 / 详情 / 决定三处同一段 where(11-21,按门店分开):不限门店的人看全部;登记了门店的只看本店,定不出门店的单子不给他。
+    口径的真相源是 runtime/门店范围.看得到吗 —— 这里只是把它翻成 SQL,test_store_scope 拿两边对照。"""
+    if me.store_id is None:
+        return "", {}
+    return " and upper(trim(coalesce(store_id, ''))) = :my_store ", {"my_store": me.store_id}
+
+
+def _按门店找(c, project_id, req_id, me, 锁=False):
+    """详情 / 决定共用:按 id 取待办,**不在他门店范围内的当不存在(404)**,不说「有这单但不是你的」。"""
+    片, 参 = _门店范围SQL(me)
+    r = c.execute(text(f"""select * from human_requests
+                             where project_id=:p and id=:i and archived_at is null {片} {"for update" if 锁 else ""}"""),
+                  {"p": project_id, "i": req_id, **参}).mappings().first()
+    if not r:
+        raise _错(404, "NOT_FOUND", "没有这条待办", "回待办列表重新进入" + (";你只看得到本店的单子" if me.store_id else ""))
+    return r
+
+
 @router.get(前缀 + "/human-requests")
 def 人工待办列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
-           status: str = Query(None), limit: int = Query(30, ge=1, le=200)):
+           status: str = Query(None), limit: int = Query(30, ge=1, le=200),
+           只看我能处理的: bool = Query(False, alias="mine", description="只列我现在能处理的(网址参数名用英文:中文参数名在网址里要转码,11-03 栽过)")):
     """待办列表。
 
     ⚠️ **这里不给批准入口**(§12.1)—— 批量批准的界面会让人按「全选」,
     而那正是不该发生的事。所以每条只给「去看详情」。
+    11-21 按门店分开:登记了门店的成员只列本店的单子(SQL 里就筛掉,不是列出来再隐藏);
+    `?mine=true` 再按「还能处理吗」过一遍(状态 / 截止 / 候选角色 / 不是自己发起的)—— 这一道在 Python 里算,
+    所以 `total` 是门店范围内的全量、`这一页几条` 是过滤后的。
     """
+    片, 参 = _门店范围SQL(me)
     with 连接() as c:
-        rs = c.execute(text("""
+        rs = c.execute(text(f"""
             select count(*) over () 全量, id, execution_run_id, run_step_id, kind, status, revision,
                    expires_at, candidate_roles, risk_note, target_ref,
-                   tool_version_id, created_at, created_by
+                   tool_version_id, created_at, created_by, store_id
               from human_requests
              where project_id=:p and archived_at is null
-               and (cast(:st as text) is null or status = cast(:st as text))
+               and (cast(:st as text) is null or status = cast(:st as text)) {片}
              order by (status = 'pending') desc, expires_at nulls last, created_at
              limit :n
-        """), {"p": project_id, "st": status, "n": limit}).mappings().all()
+        """), {"p": project_id, "st": status, "n": limit, **参}).mappings().all()
     现 = _现在()
     出 = []
     for r in rs:
         d = dict(r)
         d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
+        d["门店"] = d.get("store_id")
         过 = AP.过期了吗(d["expires_at"], 现)
         # ⚠️ **三档不是两档**:过期 / 没过期 / **没设过期时间**。
         # 把第三档并进「没过期」的坏法:一条忘了设过期的高危请求
@@ -186,8 +214,9 @@ def 人工待办列表(project_id: str, me: 身份 = Depends(要权限("查看�
         #
         # > 同一个问题有两个答案来源 —— 而这次两个来源就隔着一行。
         # > 判据写好了却没被调用,和没写是一样的。
+        # 「他能碰这个对象吗」= 门店范围(11-21):SQL 已经按门店筛过,这里再算一遍是给判据对照用的(两边口径同一份函数)
         能, 为什么 = AP.能处理吗(d, 谁=me.user_id, 他的角色=me.role, 现在=现,
-                           他能碰这个对象吗=True)
+                           他能碰这个对象吗=SS.看得到吗(me.store_id, d.get("store_id")))
         d["还能处理吗"] = 能
         d["为什么不能处理"] = (None if 能 else (为什么 or None))
         # ⚠️ **这条请求有没有人能批** —— 和「你能不能批」是两回事。
@@ -197,12 +226,17 @@ def 人工待办列表(project_id: str, me: 身份 = Depends(要权限("查看�
         d["有人能批吗"] = 有人能批
         if not 有人能批:
             d["没人能批的原因"] = 为啥
+        if 只看我能处理的 and not 能:
+            continue
         出.append(d)
     return {"items": 出, "next_cursor": None,
             "total": (int(rs[0]["全量"]) if rs else 0), "这一页几条": len(出),
+            "只看我能处理的": bool(只看我能处理的),
+            "我的门店": me.store_id,
             "note": ("**列表上没有批准按钮,这是有意的**(§12.1)—— "
                      "批量批准的界面会让人按「全选」,而那正是不该发生的事。"
-                     "要批准请进详情页,那里会显示具体工具、参数和影响对象")}
+                     "要批准请进详情页,那里会显示具体工具、参数和影响对象"
+                     + (f" · 你登记在 {me.store_id} 门店,只列本店的单子" if me.store_id else ""))}
 
 
 @router.get(前缀 + "/human-requests/{req_id}")
@@ -214,11 +248,7 @@ def 待办详情(project_id: str, req_id: str,
     """
     看得到原文 = me.看得到原文吗()
     with 连接() as c:
-        r = c.execute(text("""select * from human_requests
-                             where project_id=:p and id=:i and archived_at is null"""),
-                      {"p": project_id, "i": req_id}).mappings().first()
-        if not r:
-            raise _错(404, "NOT_FOUND", "没有这条待办", "回待办列表重新进入")
+        r = _按门店找(c, project_id, req_id, me)
         ds = c.execute(text("""
             select id, actor, decision, request_revision, reason, at,
                    cast(edited_fields as text) 改了什么
@@ -248,9 +278,10 @@ def 待办详情(project_id: str, req_id: str,
     d = dict(r)
     d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
     能, 为什么 = AP.能处理吗(d, 谁=me.user_id, 他的角色=me.role, 现在=现,
-                       他能碰这个对象吗=True)
+                       他能碰这个对象吗=SS.看得到吗(me.store_id, d.get("store_id")))
     出 = {
         "请求": {k: v for k, v in d.items() if k != "payload_ref"},
+        "门店": d.get("store_id"), "门店来源": (d.get("target_ref") or {}).get("门店来源") if isinstance(d.get("target_ref"), dict) else None,
         # ── §12.1 要的四样 ──────────────────────────────────────
         "具体工具": (dict(工具) if 工具 else None),
         "脱敏参数": (d["payload_ref"] if 看得到原文 else _脱敏参数(d["payload_ref"])),
@@ -335,12 +366,7 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
 
     现 = _现在()
     with 事务() as c:
-        r = c.execute(text("""select * from human_requests
-                             where project_id=:p and id=:i and archived_at is null
-                             for update"""),
-                      {"p": project_id, "i": req_id}).mappings().first()
-        if not r:
-            raise _错(404, "NOT_FOUND", "没有这条待办", "回待办列表重新进入")
+        r = _按门店找(c, project_id, req_id, me, 锁=True)
         d = dict(r)
         d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
         if 自定义按钮:
@@ -380,11 +406,10 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
                       f"这条请求已经被改过了(你拿到的是 {给的rev},现在是 {d['revision']})",
                       f"**另一个审批者已经处理过了**,当前状态是「{d['status']}」。"
                       f"刷新详情页看最新的再决定 —— 不要用旧 revision 覆盖")
-        # ⚠️ `他能碰这个对象吗`:这一版没有对象级 ACL,所以**显式传 True 并说明**。
-        # 传 None 会被 `能处理吗` 拒掉(它不默认有),而那是对的默认 ——
-        # 这里是明知故为,写下来才和「忘了判」分得开。
+        # `他能碰这个对象吗` = 门店范围(11-21 起有了对象级范围):_按门店找 已经按门店筛过(不在范围 404),
+        # 这里再算一遍是**同一份函数**(runtime/门店范围.看得到吗),两处口径不会分叉。原来这里写死 True 并说明「没有对象级 ACL」。
         能, 为什么 = AP.能处理吗(d, 谁=me.user_id, 他的角色=me.role, 现在=现,
-                           他能碰这个对象吗=True, 是模型吗=False)
+                           他能碰这个对象吗=SS.看得到吗(me.store_id, d.get("store_id")), 是模型吗=False)
         if not 能:
             raise _错(409 if d["status"] in AP.终态 else 403,
                       "CANNOT_DECIDE", 为什么.split("——")[0].strip()[:200], 为什么[:600])

@@ -33,9 +33,11 @@ def _错(http, code, message, 建议, **kw):
 
 
 class 身份:
-    def __init__(self, user_id, org_id, project_id, role, grants):
+    def __init__(self, user_id, org_id, project_id, role, grants, store_id=None):
         self.user_id, self.org_id, self.project_id = user_id, org_id, project_id
         self.role, self.grants = role, list(grants or [])
+        # 门店(11-21):成员表里登记的;空 = 不限门店。只有人工待办那三条接口按它筛(runtime/门店范围.看得到吗)
+        self.store_id = (str(store_id).strip().upper() or None) if store_id is not None and str(store_id).strip() else None
 
     def 能(self, 能力):
         return PM.判(能力, self.role, self.grants)
@@ -65,7 +67,7 @@ async def 取身份(project_id: str,
                   "开发模式请带请求头 X-Dev-User:<工号>。生产要接 OIDC")
     with 连接() as c:
         r = c.execute(text("""
-            select m.user_id, m.organization_id, m.project_id, m.role, m.special_grants
+            select m.user_id, m.organization_id, m.project_id, m.role, m.special_grants, m.store_id
               from memberships m
              where m.user_id = :u
                and (m.project_id = :p or m.project_id is null)
@@ -83,7 +85,7 @@ async def 取身份(project_id: str,
         if not proj:
             raise _错(404, "NO_PROJECT", "项目不存在", "回到项目列表重新选")
     return 身份(r["user_id"], r["organization_id"], project_id, r["role"],
-                r["special_grants"] or [])
+                r["special_grants"] or [], store_id=r["store_id"])
 
 
 def 要权限(能力):

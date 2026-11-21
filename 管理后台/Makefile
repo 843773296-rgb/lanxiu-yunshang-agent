@@ -1323,6 +1323,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 定时触发的时间口径:上一次该跑到这一次该跑之间(每天 / 每周几 / 每月几号含末 / 每小时;老三种和原来一样);同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py
 	@echo ""
+	@echo "▸ 人工待办按门店分开(11-21):一张单子归哪个门店(输入 → 材料 → 发起人)、谁看得到哪些(不限门店看全部;登记了只看本店;定不出门店的只给不限门店的人)"
+	@./.venv/bin/python tests/orchestration/test_store_scope.py
+	@echo ""
 	@echo "▸ 出网策略(三期 HTTP 请求的地基):只读方法、连接白名单、解析落内网 / 云元数据就拒、不跟重定向、15 秒 1 MB;**假 DNS 注入,不靠本机网络**"
 	@./.venv/bin/python tests/orchestration/test_outbound_policy.py
 	@echo ""

@@ -7361,18 +7361,23 @@ async function 页_人工待办() {
       <div class="sub">${md(`不可逆写入要人点头。**列表上没有批准按钮,这是有意的。**`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  // 「只看我能处理的」(11-21,按门店分开那一拍的第三样):记在本机,刷新还在;门店范围本身服务端就筛了,这里只是再按「还能处理吗」过一遍
+  const 只看我的 = (() => { try { return localStorage.getItem("aimc.human.onlyMine") === "1"; } catch (e) { return false; } })();
   let d, 转;
-  try { [d, 转] = await Promise.all([请求(`${P()}/human-requests`), 请求(`${P()}/chat-handoffs?page_size=100`)]); }
+  try { [d, 转] = await Promise.all([请求(`${P()}/human-requests${只看我的 ? "?mine=true" : ""}`), 请求(`${P()}/chat-handoffs?page_size=100`)]); }
   catch (e) { const s = 错误块(e, 页_人工待办); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
   const 转栏 = 画_聊天转人工(转.items);
+  const 过滤条 = `<div class="k" style="margin:6px 0"><label><input type="checkbox" id="hr-mine" ${只看我的 ? "checked" : ""}> 只看我能处理的</label>
+      ${d["我的门店"] ? ` · 你登记在 <b>${esc(d["我的门店"])}</b> 门店,这里只列本店的单子` : ` · 你没登记门店,看全部门店的单子`}</div>`;
+  const 挂过滤 = () => { const c = $("#hr-mine"); if (c) c.onchange = () => { try { localStorage.setItem("aimc.human.onlyMine", c.checked ? "1" : "0"); } catch (e) { /* 存不了就只管这一次 */ } 页_人工待办(); }; };
   if (!d.items.length) {
-    $("#main").innerHTML = 头 + 转栏 + 状态("", "没有待批准的写入",
-      "Agent 请求不可逆写入时会在这里出现。").html;
-    挂_聊天转人工();
+    $("#main").innerHTML = 头 + 转栏 + 过滤条 + 状态("", 只看我的 ? "没有你能处理的待办" : "没有待批准的写入",
+      只看我的 ? "取消勾选能看到门店范围内的全部待办(包括别人才能处理的)。" : "Agent 请求不可逆写入时会在这里出现。").html;
+    挂_聊天转人工(); 挂过滤();
     return;
   }
-  $("#main").innerHTML = 头 + 转栏 + `<table><thead><tr>
-      <th>要做什么</th><th>状态</th><th>截止</th><th>你能处理吗</th><th></th>
+  $("#main").innerHTML = 头 + 转栏 + 过滤条 + `<table><thead><tr>
+      <th>要做什么</th><th>门店</th><th>状态</th><th>截止</th><th>你能处理吗</th><th></th>
     </tr></thead><tbody>`
     + d.items.map((r) => `<tr>
         <td>${r.risk_note ? md(r.risk_note) : esc(r.kind || r.id)}
@@ -7380,6 +7385,7 @@ async function 页_人工待办() {
           ${r["有人能批吗"] === false
             ? `<div class="k"><span class="pill fail">没人能批</span>
                  ${md(r["没人能批的原因"] || "")}</div>` : ""}</td>
+        <td class="k">${r["门店"] ? esc(r["门店"]) : `<span title="挂起时从输入 / 材料 / 发起人都定不出门店;只有不限门店的人看得到">—</span>`}</td>
         <td><span class="pill ${r.status === "pending" ? "warn"
               : r.status === "approved" ? "ok" : ""}" title="${esc(r.status)}">${esc(_英转中[r.status] || r.status)}</span></td>
         <td class="k">${r.expires_at
@@ -7395,7 +7401,7 @@ async function 页_人工待办() {
   $("#main").querySelectorAll("[data-hr]").forEach((b) => {
     b.onclick = () => { location.hash = "#/human/" + encodeURIComponent(b.dataset.hr); };
   });
-  挂_聊天转人工();
+  挂_聊天转人工(); 挂过滤();
 }
 
 /* 聊天转人工(11-09):店长助手这一轮交给人处理的问题。列表不带原话,有受理权限的人点开才看;只能处理一次。 */
@@ -10430,10 +10436,11 @@ function 挂工具组详情事件(gid, d, 版本们) {
  * 写「新增」会让人以为改权限要去别处找。
  */
 const 成员动作 = {
-  async 保存(工号, 角色, 专项授权) {
-    return await 请求(`${P()}/memberships`,
-      { method: "POST",
-        body: JSON.stringify({ 工号, 角色, 专项授权: 专项授权 || [] }) });
+  // 门店(11-21):传 undefined = 不动这一项;传 "" = 清成「不限门店」;传编号 = 登记到那个门店
+  async 保存(工号, 角色, 专项授权, 门店) {
+    const 体 = { 工号, 角色, 专项授权: 专项授权 || [] };
+    if (门店 !== undefined) 体.门店 = 门店;
+    return await 请求(`${P()}/memberships`, { method: "POST", body: JSON.stringify(体) });
   },
 };
 if (typeof globalThis !== "undefined") globalThis.成员动作 = 成员动作;
@@ -10470,6 +10477,9 @@ function 页_成员表单(d, 预填) {
     <p><label>角色<br><select id="m-role">${角色们.map((r) =>
       `<option value="${esc(r["值"])}"${r["值"] === p["角色"] ? " selected" : ""}
         >${esc(r["中文"])}（${esc(r["值"])}）</option>`).join("")}</select></label></p>
+    <p><label>门店（照澜绣的门店编号,如 SH001;<b>留空 = 不限门店</b>）<br><input id="m-store" style="width:min(220px,80%)"
+      value="${esc(p["门店"] || "")}" placeholder="不限门店"></label>
+      <span class="k">只管一件事:人工待办他看哪些 —— 登记了门店就只看本店的单子;聊天站里店长处理待办走的也是这条范围。</span></p>
     <p>专项授权（<b>只列这个角色可授权的那几条</b>,换角色会跟着变）<br>
       <span id="m-grants">${授权框html(d, 初角, 已有)}</span></p>
     <p><button class="pri" id="m-go">保存</button>
@@ -10519,7 +10529,7 @@ function 挂成员事件(d) {
     $("#m-go").disabled = true;
     if ($("#mmsg")) $("#mmsg").innerHTML = `<div class="state"><p>保存中…</p></div>`;
     try {
-      const r = await 成员动作.保存(uid, $("#m-role").value, 专);
+      const r = await 成员动作.保存(uid, $("#m-role").value, 专, $("#m-store") ? ($("#m-store").value || "").trim() : undefined);
       // 11-08 UI 检查:原来先写结果、再整页重画 —— 结果刚出来就被刷掉,点完看不到任何反馈。改成先重画、再写结果
       await 页_成员与权限();
       if ($("#mmsg")) {
@@ -10551,12 +10561,13 @@ async function 页_成员与权限() {
     try {
       ((await 请求(`${P()}/staff-bindings`)).items || []).forEach((x) => { 绑[x["账号"]] = x["澜绣工号"]; });
     } catch (e) { /* 读不到绑定不挡成员列表;那一栏显示「读不到」 */ 绑.__坏 = true; }
-    $("#list").innerHTML = `<table><thead><tr><th>工号</th><th>角色</th>
+    $("#list").innerHTML = `<table><thead><tr><th>工号</th><th>角色</th><th>门店</th>
       <th>这条生效吗</th><th>专项授权</th><th>实际能做的</th><th>绑的澜绣员工</th><th>改</th>
       </tr></thead><tbody>`
       + d["成员"].map((r) => `<tr>
         <td><b>${esc(r["工号"])}</b></td>
         <td>${esc(r["角色中文"] || r["角色"])}<div class="k">${esc(r["角色"])}</div></td>
+        <td>${r["门店"] ? esc(r["门店"]) : `<span class="k" title="没登记门店 = 不限门店,人工待办看全部">不限</span>`}</td>
         <td>${r["这条生效吗"] ? `<span class="pill">生效</span>`
               : `<span class="pill warn">不生效(登录那一步查不到)</span>`}</td>
         <td class="k">${esc((r["专项授权"] || []).join("、") || "—")}</td>
