@@ -594,8 +594,10 @@ ck("(P1-04 夹具)定时重新打开", c == 200 and ((b or {}).get("定时") or 
 c, d3 = 打("GET", P + f"/workflows/{wid3}")
 手动 = json.loads(json.dumps(d3["草稿"]["定义"]))
 for n in 手动["nodes"]:
-    if n["type"] == "start":
-        n["config"] = {"start_mode": "用户输入", "input_schema": {"type": "object", "properties": {"统计起": {"type": "string"}, "统计止": {"type": "string"}}, "required": ["统计起", "统计止"]}}
+    if n["type"] == "start":   # 手动版不要任何输入:发到生产前那一步「跑通这一版」是空输入跑的,要了必填就跑不通
+        n["config"] = {"start_mode": "用户输入", "input_schema": {"type": "object", "properties": {}, "required": []}}
+    if n["type"] == "template":   # 拼一句的两项改成常量,不再从输入取
+        n["config"]["bindings"] = {"起": {"source": "constant", "value": "手动"}, "止": {"source": "constant", "value": "手动"}}
 c, b = 打("PATCH", P + f"/workflows/{wid3}/draft", 体={"定义": 手动}, 头={"If-Match": str(d3["草稿"]["revision"])})
 c, 版3b = 打("POST", P + f"/workflows/{wid3}/versions", 体={"变更说明": "e2e 改成手动开头"})
 ck("(P1-04 夹具)冻出一版「用户输入」开头", c == 201 and (版3b or {}).get("id"), (c, 版3b))

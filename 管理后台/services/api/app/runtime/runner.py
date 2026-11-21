@@ -465,7 +465,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     "expires_at_policy": cfg.get("expires_at_policy"), "材料": 载荷,
                     "表单": 表单, "通知连接": cfg.get("notify_connection_id"), "步骤名": n.get("name")})
 
-            if t in ("llm", "retrieve", "tool", "agent", "http_request", "subworkflow"):
+            if t in ("llm", "retrieve", "tool", "agent", "http_request", "subworkflow", "markdown_export"):   # 走适配器的类型;漏登一个就 NODE_NOT_RUNNABLE(11-21 Markdown 导出第一次 e2e 栽在这)
                 # Agent 步骤恢复时**不能**把回执直接当这一步的输出(11-06):回执只是它中途一次工具调用的结果,
                 # 它拿到之后还要接着想 —— 交回 Agent 适配器(带着它自己的检查点)接着跑,见下面 t == "agent" 那一支
                 if 当前 in 注入 and t != "agent":
