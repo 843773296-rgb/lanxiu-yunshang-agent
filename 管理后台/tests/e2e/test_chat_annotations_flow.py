@@ -142,7 +142,7 @@ c, r = 打("POST", P + "/chat-annotations", 甲, 体={"trace_id": 知, "standard
 aid = (r or {}).get("id")
 ck("合格的 → 201 启用;提问 / 角色 / 工具清单**从 trace 取**,不信调用方塞的;note 说总开关还没开", c == 201 and aid and r.get("status") == "启用"
    and r.get("question") == "香云纱能不能机洗?" and r.get("assistant_role") == "门店顾问" and r.get("tools_used") == ["ToolSearch", "kb_read", "kb_combo"]
-   and r.get("note") == "工艺手册第三章" and r.get("开关") is False and r.get("revision") == 1, (c, r))
+   and r.get("note") == "工艺手册第三章" and r.get("开关") is False and r.get("revision") == 1 and "总开关还没开" in (r.get("提示") or ""), (c, r))
 c, r = 打("POST", P + "/chat-annotations", 甲, 体={"trace_id": 知, "standard_answer": "再标一次"})
 ck("同一轮再标 → 409 CHAT_ANNOTATION_EXISTS,指向已有那条", c == 409 and (r or {}).get("code") == "CHAT_ANNOTATION_EXISTS" and aid in json.dumps(r or {}), (c, r))
 c, r = 打("POST", P + "/chat-annotations", 甲, 体={"trace_id": 知})
@@ -177,9 +177,8 @@ c, a = 打("GET", P + "/chat-annotations/active", "U003")
 ck("没「运行评测」的(viewer)拿不到清单 → 403", c == 403, (c, a))
 c, au = 打("GET", P + "/audit-events?limit=100", "U001")
 if c == 200:
-    # 审计接口的列表键名不猜:在响应里找「元素是带 action 的字典」的那个列表
-    列 = next((v for v in (au or {}).values() if isinstance(v, list) and v and isinstance(v[0], dict) and "action" in v[0]), [])
-    动作 = [e.get("action") for e in 列]
+    # 审计接口(settings_api.审计记录)回「记录」[{做了什么…}] 和「这个范围里的动作分布」[{动作, 次数}]
+    动作 = [e.get("做了什么") for e in (au or {}).get("记录") or []] + [e.get("动作") for e in (au or {}).get("这个范围里的动作分布") or []]
     ck("审计里有 chat_annotation.switch 和 chat_annotation.create", "chat_annotation.switch" in 动作 and "chat_annotation.create" in 动作, 动作[:12])
 else:
     print(f"  ℹ️ 审计接口 {c},这条没验到(不算过)")

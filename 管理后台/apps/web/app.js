@@ -8213,7 +8213,7 @@ function 挂标注块(d, tid) {
     try {
       const r = await 请求(`${P()}/chat-annotations`, { method: "POST",
         body: JSON.stringify({ trace_id: tid, standard_answer: 答, note: $("#ann-note").value.trim() || null }) });
-      $("#ann-msg").textContent = r.note || "已存";
+      $("#ann-msg").textContent = r["提示"] || "已存";
       await 页_调用树(tid);
     } catch (e) {
       const b = e.体 || {};
