@@ -12,6 +12,18 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### ⏱️ 12 小时长任务清单(11-21 18:50 → 11-22 06:50)· 标注回复夜(Fable 5.1)
+
+> 用户 18:4x「那开始做标注回复的后台那一半」→ 18:5x「12小时长时间任务开启」「需要拍板的可以先拍」→ **拍板(18:5x)**:① 哪些问答不许标:**按那一轮调过的工具自动判** —— 只调了知识类工具(domains.knowledge 里的只读那些)或一个工具没调的才能标;调过取数(客户 / 订单 / 库存 / 任务…)或任何写工具的拦住,按钮灰掉写原因;② 谁能标:**「改 Prompt/知识候选」权限**;③ 生效:**项目总开关默认关,开了后保存即生效**,不走冻结 / 审核,每次命中记一笔,能单条停用;④ 今晚还做(三件都要):试跑一次 tools/weekly_review.sh(只试跑,定时还是用户亲手装)/ 用演示门店以管理员身份启用「经营日报草稿」定时(明早 08:00 跑一次)/ 标注**匹配那一半(聊天站)**等 fc 推完它的 app.py / station.html 后接着做(碰之前再喊 fc)。
+> **守则**:同 11-20 那夜 —— 代码只写 w1121,w1117 只 `merge --ff-only`;**0 点到夜跑结束(约 05:10)不占锁、不写共享库**;每批 = `scratchpad/gate_wN.sh` 形状(锁空 → w1117 rebase → 锁内 alembic upgrade head(显式 DATABASE_URL)→ 主检出 ff → 停 8801 → kickstart aimc → 验归属 → 锁内 e2e-ci → w1117 里 ship);只认「被包的命令退出码」;迁移目录外不写 ALTER TABLE;占锁前喊 fc;每小时 :17 有 session 内提醒 **fc647c85**(06:5x 汇总发飞书后 CronDelete)。18:5x 已告 fc 今晚计划。
+
+1. ⬜ 标注回复 · 后台一半:迁移(chat_annotations 表 + projects.chat_annotation_enabled)→ chat_annotations_api.py(列表 / 可标注判定 / 建 / 改 / 归档 / 总开关 / 命中上报 / 给聊天站的启用清单)→ endpoints.py + entities.py + models.py + 开关们 登记 → make gen / contract → runs_api 运行详情带「标注」块 → 前端 调用树页「标注成标准答案」+ 新页「标注回复」(总开关 + 表)→ 测试 test_chat_annotations.py(纯函数 + 登记)/ test_chat_annotations_flow.py(e2e)→ Makefile 登记 → 规划 4-2 进度段 + PRD 台账第八十九条 → 批次(锁内 upgrade + e2e-ci + ship)→ 推 → 发飞书。
+   · **19:0x 摸底(别重摸)**:聊天站每轮 trace 的根 span 是 `invoke_agent <角色>`,入 `{"提问","角色"}`、出 `{"回答"}`;工具步 stage = `execute_tool <工具名>`(ToolSearch / Skill 是元工具,不算取数);工具归属表在 backend/domains.py `领域`(knowledge 那组里 set_piece_ratio / set_grade_diff / review_motif 是写,要按 api.WRITE_TOOLS 剔;get_review_queue / pattern_queue / grading_audit 是队列取数,也拦 —— 「知识类」= kb_* 那些);原文权限 `me.看得到原文吗()`(deps.py:45,runs_api:175 已在用);审计开关表 `开关们` 在 workflows_api.py:3328(新加 "chat_annotation.switch");列类型靠 entities 字段名后缀 / models.py 的类型表(byte_count 样板);接口登记 endpoints.py A() 读=`读` 写=`写`,`/traces/{id}` 在 532–534 行;前端菜单表 app.js:127–136(`["#/traces","调用链",true,true]` 形状),路由 switch 在 ~11967;Makefile:E2E_CI 列表 421–432 + 单条 target(600 样板)+ 进度报告段(935 样板)+ test-orchestration 1335 样板;tools/test_registry_check.py 要每份测试进名单;e2e 身份 X-Dev-User(U001 管理员 / U002 普通),memberships 没有 grants 列(权限看 role → deps)。**表设计**:chat_annotations(id, organization_id, project_id, trace_id 唯一/项目, assistant_role, question, standard_answer, note, tools_used jsonb, status 启用/停用, hit_count, last_hit_at, revision, created_by, created_at, updated_at, archived_at)+ projects.chat_annotation_enabled boolean 默认 false。**接口**:GET /chat-annotations(?status=,带「开关」)/ POST(体 trace_id + standard_answer + note;服务端从 trace 取提问 / 角色 / 工具;拦 → 422 CHAT_ANNOTATION_REALTIME 列出工具;重复 → 409;要 看得到原文吗 否则 403)/ PATCH {id}(If-Match revision;answer / note / status)/ DELETE {id}(归档)/ PUT /chat-annotations/switch(总开关,审计 + 开关们)/ POST {id}/hits(聊天站上报命中,权限 运行评测 同 trace-imports)。运行详情响应加「标注」块 {可以吗, 原因, 调过的工具, 已有};拦截规则写成纯函数 `可标注吗(工具们)` 放 chat_annotations_api.py 顶部,runs_api import 它。
+2. ⬜ 试跑 tools/weekly_review.sh 一次(不占锁;看 .feynman/weekly-review.log 和辅助目录的报告;出问题修脚本 / 提示词)。
+3. ⬜ 用演示门店启用「经营日报草稿」:以管理员身份走 选模板 → 选模型 → 冻结 → 审核 → 发生产 → 开定时(设定时的那个人要登记演示门店);明早 08:00 后看 workflow_documents 有没有那份文件。要动共享库(建流程 / 版本),**只在非夜跑窗口做**。
+4. ⬜ 标注匹配那一半(聊天站):等 fc 推完告哈希 → 主检出 ff → 读 agentsite 里聊天入口(sdk.py / app.py)→ 新问题先拿启用的标注清单问一次模型「和哪条同义」→ 命中直接回标注答案并 POST 命中上报;实时类问题不走(服务端已拦在标注时)。要动 agentsite,碰前喊 fc。
+5. ⬜ 06:5x 汇总发飞书(文件名带「澜绣云裳agent」)、刷交接、CronDelete fc647c85。
+
 ### ⏱️ 12 小时长任务清单(11-20 21:30 → 11-21 09:30)· 照 Dify 的工作流收尾夜(Fable 5.1)
 
 > 用户 21:3x:「做一个12小时的长时间任务」→「先确定有什么需要我拍板的」→ **拍板(21:4x)**:① 四期「人工介入表单化」做**后台一半**,聊天站那一半去找聊天站会话排期 —— **查实现在没有会话管聊天站**(c2 是介绍页、fc 是评测线,c2 已回「发错对象」);谁接要你定,早上汇总里问;② 「代码执行」最小版**今晚做**,安全细节按最严的那边定;③ Webhook 三个尾巴**都补**(接入文档 / 网址 + 请求头参数表 / 自定义返回内容);④ 清单做完接着做《还债与收尾计划》里不用拍板的。
@@ -33,7 +45,7 @@
   · 判据:远端 = dec5f75b = 主检出 = w1117 = w1121;共享库 alembic head 0b610a1aa99b;/traces 空闲 0.09 秒(索引生效)。
   · 作废:第十到十三轮四次红因(模型没登记门店索引 / NODE_NOT_RUNNABLE 放行表 / P1-04 夹具必填 / 取消 e2e 时序偶发 / 散落 ALTER 棘轮)全修了,日志不用再看。
   · 禁区:代码只写 w1121(14:0x 手滑写主检出一次);六项块里不放工作记录;迁移目录外不写 ALTER TABLE(连 SQL 字串里的注释也不写那几个字);fc 接下来要动 app.py / station.html,我**今天不再碰这两个文件**;占锁前喊 fc。
-  · 下一步第一个动作:(18:3x 已汇报、规划 / PRD 已发飞书)用户问「还有什么任务」→ 答:没有排定的活;规划里剩 4-2 标注回复(聊天应用,2 人日,10-27 拍第 7 条;后台那一半不碰 agentsite 可先做,匹配那一半要等 fc 推完 app.py)、1-5 小尾巴(写类动作重试前按幂等键查桥 —— 桥工具在适配器里挂起不在进程里重试,现在碰不到)、规划 1.3 / 1.4 两张 11-15 快照表没改成现状(只是文档)。等用户拍要不要开 4-2。
+  · 下一步第一个动作:(19:0x)按顶部「12 小时长任务清单(11-21)」第 1 项做标注回复后台一半,**还一行代码没写**,设计和摸底都在第 1 项的子条里;先写迁移(下一个 revision 接在 0b610a1aa99b 后)→ api → 登记 → 前端 → 测试。fc 19:0x 回:它只动 agentsite/app.py + station.html + 新检查脚本,sdk.py 不碰,推完报哈希;21:00 锁归我。
   · 悬而未决:① 经营日报草稿由谁、哪家店先启用(用户定);② 周审查 plist 用户亲手装前要手动跑一次;③ 核对中的卡怎么收尾(人核完在待办里处理,卡本身不自动变);④ 人工介入超时出口在聊天站那半的呈现(fc 做)。
 - **11-21 白天逐项记录(14:1x 刷六项时误删、从 96a113aa 救回;最新的在上)**:
   · **14:1x 台账八十六后半 + 八十七(w1121,待推)**:工作流模板多一个「经营日报草稿」(workflows_api._经营日报草稿:定时开始每天 08:00 → 取经营数据 kind=日 date=统计起 → 写报告正文 store_report_write → Markdown 导出(标题 经营日报、统计起止绑开始)→ 结束;**不存澜绣报告表、不确认、不派单**;模板只预填草稿,和「经营报告」一样唯一阻断是没选模型;test_markdown_export ⑤ +4,19 绿)。**用户启用时要做的**:新建流程选「经营日报草稿」→ 选模型 → 冻结 → 审核 → 发布到生产 → 「版本与发布」页打开定时(以店长身份,他的成员记录登记了门店 → 文档归那家店);先一个门店。项目周审查:tools/weekly_review.sh(claude -p 只放行 Read / Grep / Glob / 只读 git;报告由脚本落盘回读核过才算成;日志 .feynman/weekly-review.log)+ tools/weekly_review_prompt.md(步骤 + 模板,照辅助目录方案 §4.3 / §5.3)+ tools/launchd/com.lanxiu.weekly-review.plist(每周一 07:30;**用户亲手装**,装法在 plist 注释里)。**脚本没真跑过一次**(会起一个 claude 进程跑好几分钟、花 token;手动 `./tools/weekly_review.sh` 验一次再装 plist)。
