@@ -163,11 +163,31 @@ ck("能撤销(是一次真编辑)", 跑(`图态.脏`) === true && (跑(`撤销()
 h = 面板();
 ck("Cron 模式面板:开关选中「Cron 表达式」、有表达式输入框和例子、没有「多久跑一次」", /aria-selected="true"[^>]*>Cron 表达式</.test(h) && /Cron 表达式\(分 时 日 月 周/.test(h) && /0 8 \* \* 1/.test(h) && !/多久跑一次/.test(h), h.slice(0, 600));
 let kv = /data-k="(\d+)" data-lb="可视化模式"/.exec(h);
+造过.length = 0;
 跑(`控件表[${kv[1]}]()`);
 c = 起().config;
-ck("切回可视化:回到默认每周一 08:00(表达式没了)", c.schedule_rule.周期 === "周" && c.schedule_rule.时刻 === "08:00" && !("表达式" in c.schedule_rule), c.schedule_rule);
-跑(`控件表[${kv[1]}]()`);
-ck("已经是可视化再点可视化 → 不算一次编辑", 跑(`图态.编辑序号`) === (跑(`图态.编辑序号`)));
+let 弹文 = 造过.map((e) => e.innerHTML).join("\n");
+ck("Cron 切回可视化会丢表达式 → 先弹确认(11-21 复审 P1-03),规则还没动", c.schedule_rule.周期 === "cron" && /切回可视化模式/.test(弹文) && /0 8 \* \* 1/.test(弹文) && /id="sm-ok"/.test(弹文), 弹文.slice(0, 300));
+跑(`切定时模式(节点("start").config.schedule_rule, "可视化", { 已确认: true })`);
+c = 起().config;
+ck("确认后:回到默认每周一 08:00(表达式没了)", c.schedule_rule.周期 === "周" && c.schedule_rule.时刻 === "08:00" && !("表达式" in c.schedule_rule), c.schedule_rule);
+ck("已经是可视化再点可视化 → 不动、返回 false", 跑(`切定时模式(节点("start").config.schedule_rule, "可视化")`) === false && 起().config.schedule_rule.周期 === "周");
+
+console.log("\n▸ ⑧ 有损转换不许静默换(11-21 复审 P1-03:「每月 31 号」转 Cron 四月会跳过)");
+跑(`节点("start").config.schedule_rule = { 周期: "月", 几号: [31], 时刻: "08:00" };
+图态.定时预览 = { 键: JSON.stringify(节点("start").config.schedule_rule), 说法: "每月 31 号 08:00", 下次: "2026-04-30T08:00:00+08:00",
+  接下来: [{ 时刻: "2026-04-30T08:00:00+08:00", 统计起: "2026-03-31", 统计止: "2026-04-29" }], 等价Cron: "0 8 31 * *", 等价Cron说明: "31 号在可视化里碰上小月会落到月末跑,Cron 里是那个月没这天就跳过 —— 两种不等价" }`);
+造过.length = 0;
+ck("有损 → 返回 false、规则不动、弹出对比层(两边都有「接下来 5 次」、说明、两个按钮)", 跑(`切定时模式(节点("start").config.schedule_rule, "cron")`) === false && 起().config.schedule_rule.周期 === "月"
+   && (弹文 = 造过.map((e) => e.innerHTML).join("\n"), /不等价/.test(弹文) && /2026-04-30/.test(弹文) && /0 8 31 \* \*/.test(弹文) && /id="sm-keep"/.test(弹文) && /接受 Cron 的新语义/.test(弹文)), 弹文.slice(0, 400));
+跑(`切定时模式(节点("start").config.schedule_rule, "cron", { 已确认: true })`);
+ck("接受新语义后才换成 Cron「0 8 31 * *」", 起().config.schedule_rule.周期 === "cron" && 起().config.schedule_rule.表达式 === "0 8 31 * *", 起().config.schedule_rule);
+跑(`撤销(); 图态.定时预览 = { 键: JSON.stringify(节点("start").config.schedule_rule), 说法: "每月 最后一天 08:00", 接下来: [], 等价Cron: "", 等价Cron说明: "Cron 写不出「最后一天」。要无损请保留可视化模式" }`);
+造过.length = 0;
+ck("只有「末」:Cron 写不出 → 也弹层,按钮写「切到 Cron,表达式自己写」,不悄悄换成 1 号", 跑(`切定时模式(节点("start").config.schedule_rule, "cron")`) === false
+   && (弹文 = 造过.map((e) => e.innerHTML).join("\n"), /写不出/.test(弹文) && /表达式自己写/.test(弹文)), 弹文.slice(0, 300));
+跑(`节点("start").config.schedule_rule = { 周期: "周", 周几: [0], 时刻: "08:00" }; 图态.定时预览 = { 键: JSON.stringify(节点("start").config.schedule_rule), 说法: "每周一 08:00", 接下来: [], 等价Cron: "0 8 * * 1", 等价Cron说明: "" }`);
+ck("无损(每周一)照旧直接换,不弹", 跑(`切定时模式(节点("start").config.schedule_rule, "cron")`) === true && 起().config.schedule_rule.表达式 === "0 8 * * 1");
 
 console.log();
 if (挂.length) { console.log(`❌ ${挂.length} 条没过:${挂.join(" / ")}`); process.exit(1); }

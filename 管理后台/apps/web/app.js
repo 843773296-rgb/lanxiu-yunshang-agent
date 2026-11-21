@@ -5073,17 +5073,45 @@ function 弹_配置开始() {
   $("#sp-later").onclick = 关弹层;
 }
 /* 切「可视化 / Cron」模式(11-21 规划 2-1):可视化 → Cron 带上服务端算的等价表达式(预览缓存里有;没有就空着让人写);Cron → 可视化回到默认「每周一 08:00」 */
-function 切定时模式(r, 到) {
-  if (到 === "cron" && r.周期 === "cron") return;
-  if (到 !== "cron" && r.周期 !== "cron") return;
+/* 11-21 复审 P1-03:转换**不是无损的就不许静默换** —— 「每月 31 号」转成 Cron 后四月会跳过,原来只弹个轻提示就换了。
+ * 服务端 可视化转cron 给说明(非空 = 有损)/ 表达式可能是 null(只有「末」);有损 → 弹层把两边「接下来 5 次」摆出来让人选;
+ * Cron 切回可视化会丢表达式、回到默认「每周一 08:00」→ 也要确认。无损(日 / 时 / 周 / 1–28 号)照旧直接换。 */
+function 切定时模式(r, 到, { 已确认 = false } = {}) {
+  if (到 === "cron" && r.周期 === "cron") return false;
+  if (到 !== "cron" && r.周期 !== "cron") return false;
   const 缓 = 图态 && 图态.定时预览 && 图态.定时预览.键 === JSON.stringify(r) ? 图态.定时预览 : null;
+  const 有损 = 到 === "cron" ? !!(缓 && (缓.等价Cron说明 || !缓.等价Cron)) : !!(r.表达式 || "").trim();
+  if (有损 && !已确认) { 弹_切定时模式(r, 到, 缓); return false; }
   改图(到 === "cron" ? "定时改用 Cron 表达式" : "定时改用可视化", () => {
     for (const k of Object.keys(r)) delete r[k];
     if (到 === "cron") { r.周期 = "cron"; r.表达式 = (缓 && 缓.等价Cron) || ""; }
     else { r.周期 = "周"; r.周几 = [0]; r.时刻 = "08:00"; }
   });
-  if (到 === "cron" && 缓 && 缓.等价Cron说明) 轻提示(缓.等价Cron说明);
   重画();
+  return true;
+}
+function 弹_切定时模式(r, 到, 缓) {
+  const 次 = (xs) => (xs || []).length ? `<ul class="k">${xs.map((x) => `<li>${时间(x["时刻"])}(统计 ${esc(x["统计起"])}${x["统计起"] !== x["统计止"] ? ` ~ ${esc(x["统计止"])}` : ""})</li>`).join("")}</ul>` : `<div class="k">(算不出接下来几次)</div>`;
+  if (到 !== "cron") {
+    弹层("切回可视化模式?", `<p>现在的 Cron 表达式 <code>${esc(r.表达式 || "")}</code>${缓 && 缓.说法 ? `(${esc(缓.说法)})` : ""} 会丢掉,可视化模式从默认的<b>每周一 08:00</b>重新选。能撤销。</p>
+      <div class="acts"><button class="pri" id="sm-ok">切回可视化</button> <button id="sm-no">保留 Cron</button></div>`);
+    $("#sm-ok").onclick = () => { 关弹层(); 切定时模式(r, "可视化", { 已确认: true }); };
+    $("#sm-no").onclick = 关弹层;
+    return;
+  }
+  const 表 = 缓 && 缓.等价Cron;
+  弹层("换成 Cron 表达式会改变跑的时间", `
+    <p class="warn">${esc((缓 && 缓.等价Cron说明) || "这条规则 Cron 写不出来")}</p>
+    <div class="two"><div class="card"><h4>现在(可视化):${esc((缓 && 缓.说法) || "")}</h4>接下来 5 次:${次(缓 && 缓.接下来)}</div>
+      <div class="card"><h4>换成 Cron:${表 ? `<code>${esc(表)}</code>` : "(写不出,留空自己写)"}</h4><div id="sm-cron-next">接下来 5 次:<span class="k">读取中…</span></div></div></div>
+    <div class="acts"><button class="pri" id="sm-keep">保留可视化(不换)</button> <button id="sm-ok">${表 ? "接受 Cron 的新语义" : "切到 Cron,表达式自己写"}</button></div>`);
+  $("#sm-keep").onclick = 关弹层;
+  $("#sm-ok").onclick = () => { 关弹层(); 切定时模式(r, "cron", { 已确认: true }); };
+  if (表) {
+    请求(`${P()}/schedule-preview?${new URLSearchParams({ 周期: "cron", 表达式: 表 })}`)
+      .then((d) => { const el = $("#sm-cron-next"); if (el) el.innerHTML = `接下来 5 次:${次(d["接下来"])}`; })
+      .catch((e) => { const el = $("#sm-cron-next"); if (el) el.innerHTML = `<span class="ferr">${esc("算不出:" + e.message)}</span>`; });
+  }
 }
 /* 预览的结果留一份在 图态.定时预览(键 = 规则的 JSON):画布上「开始」卡要同步显示「下次 …」(照 Dify 卡片上的「下次执行时间」),画卡是同步的、不能等接口 */
 async function 填定时预览(r) {
@@ -5094,7 +5122,7 @@ async function 填定时预览(r) {
     if (r.周期 === "月") q.set("几号", (r.几号 || [1]).join(","));
     const d = await 请求(`${P()}/schedule-preview?${q}`);
     if (图态) {
-      图态.定时预览 = { 键: JSON.stringify(r), 说法: d["说法"], 下次: ((d["接下来"] || [])[0] || {})["时刻"] || null, 等价Cron: d["等价Cron"] || "", 等价Cron说明: d["等价Cron说明"] || "" };
+      图态.定时预览 = { 键: JSON.stringify(r), 说法: d["说法"], 下次: ((d["接下来"] || [])[0] || {})["时刻"] || null, 接下来: d["接下来"] || [], 等价Cron: d["等价Cron"] || "", 等价Cron说明: d["等价Cron说明"] || "" };
       if (typeof 画_节点 === "function" && 图态.画) 画_节点();
     }
     el.innerHTML = `<b>${esc(d["说法"])}</b> · 接下来 5 次(北京时间):${(d["接下来"] || []).map((x) =>
