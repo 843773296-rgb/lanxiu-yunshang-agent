@@ -197,6 +197,13 @@ export const ENDPOINTS = [
   { method: "POST", path: "/applications/{id}/runs", summary: "按环境绑定执行", capability: "查看有权配置", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/traces", summary: "运行记录列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/traces/{id}", summary: "运行详情(脱敏)", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/chat-annotations", summary: "聊天标注列表", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/chat-annotations/active", summary: "启用中的标注(给聊天站)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/chat-annotations", summary: "标一轮问答成标准答案", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/chat-annotations/{id}", summary: "改标注(答案 / 备注 / 启用停用)", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/chat-annotations/{id}/archive", summary: "归档标注", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "PUT", path: "/chat-annotations/switch", summary: "标注回复项目总开关", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/chat-annotations/{id}/hits", summary: "聊天站上报一次命中", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/trace-imports", summary: "聊天站推一轮执行记录进来", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/trace-incidents", summary: "执行故障上报:换模型也没用、要平台管理员处理的", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/trace-incidents/{id}/handle", summary: "把一张执行故障单标成已处理", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -378,4 +385,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 290 条接口 · 24 条异步 · 34 条要幂等键 · 44 条要 If-Match */
+/** 共 297 条接口 · 24 条异步 · 34 条要幂等键 · 46 条要 If-Match */

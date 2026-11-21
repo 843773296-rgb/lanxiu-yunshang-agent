@@ -134,6 +134,7 @@ const 导航 = [
   ["#/monitoring", "监测", true, true],
   ["#/alerts", "告警", true, true],
   ["#/traces", "调用链", true, true],
+  ["#/annotations", "标注回复", true, true],
   ["#/outputs", "产出监督", true, true],
   ["#/health", "智能体健康", true, true],
   ["#/usage", "用量与成本", true, true],
@@ -8151,6 +8152,7 @@ async function 页_调用树(tid) {
           + `</tbody></table>`
         : `<div class="state">这次运行没有用量记录</div>`)
     + 画逐句核对(d["结论"], 脱)
+    + 画标注块(d["标注"])
     + `<h2>每一步</h2>`
     + (d["步们"] || []).map((s2, i) => `<div class="card">
         <div class="k">${i + 1}. ${esc(s2.stage)}
@@ -8159,6 +8161,120 @@ async function 页_调用树(tid) {
             脱 ? {入: s2["入_形状"], 出: s2["出_形状"], 错: s2["错_形状"]}
                : {入: s2["入"], 出: s2["出"], 错: s2["错"]}, null, 1))}</pre>
       </div>`).join("");
+  挂标注块(d, tid);
+}
+
+/* ── 标注回复(11-21;用户 10-27 拍第 7 条)──────────────────────────────
+ * 日志里一轮聊天站问答 → 点「标注成标准答案」写一条;项目总开关开了之后,聊天站对新问题先问模型「和哪条标注同义」,命中直接回。
+ * 三条口径(用户 11-21 拍):能不能标由服务端按那一轮调过的工具判(取数 / 写工具的不许,原因写在块里);
+ * 要「改 Prompt/知识候选」权限 + 看得到提问原文;总开关默认关、开了保存即生效。这里只画,规则不在前端。 */
+function 画标注块(标) {
+  if (!标) return "";   // 不是聊天站的一轮,服务端不给这块
+  let 体;
+  if (标["已有"]) {
+    const a = 标["已有"];
+    体 = `<div class="card"><div class="k"><span class="pill ${a.status === "启用" ? "ok" : ""}">${esc(a.status)}</span>
+        已标成标准答案 · 命中 ${Number(a.hit_count || 0)} 次 · ${esc(a.created_by || "")}
+        <a href="#/annotations" style="margin-left:8px">去「标注回复」页改 →</a></div>
+      <pre class="k" data-raw="原文">${esc(a.standard_answer || "")}</pre>
+      ${a.note ? `<div class="k">备注:${esc(a.note)}</div>` : ""}</div>`;
+  } else if (!标["可以吗"]) {
+    体 = `<div class="state">这一轮**不能标**:${md(标["原因"] || "")}
+      ${(标["调过的工具"] || []).length ? `<div class="k">调过的工具:${esc((标["调过的工具"] || []).join("、"))}</div>` : ""}</div>`;
+  } else if (!标["有权标吗"]) {
+    体 = `<div class="state">这一轮可以标,但你标不了:${esc(标["没权的原因"] || "")}</div>`;
+  } else {
+    体 = `<div class="card" id="ann-form">
+      <div class="k">这一轮只调了知识类工具${(标["调过的工具"] || []).length ? `(${esc((标["调过的工具"] || []).join("、"))})` : "(一个工具没调)"},
+        可以标成标准答案。以后同义的新问题会**直接回这条**、不再调模型 —— 所以只标那种答案不随数据变的问题。</div>
+      <button id="ann-open">标注成标准答案</button>
+      <div id="ann-edit" hidden>
+        <textarea id="ann-answer" rows="8" style="width:100%" placeholder="标准答案(默认带入这一轮的回答,改到满意再保存)"></textarea>
+        <input id="ann-note" style="width:100%;margin-top:6px" placeholder="备注(可不填):为什么这样答、哪天核的">
+        <div style="margin-top:6px"><button class="pri" id="ann-save">保存</button> <button id="ann-cancel">取消</button>
+          <span class="k" id="ann-msg"></span></div>
+      </div></div>`;
+  }
+  return `<h2>标注回复</h2>` + 体;
+}
+function 挂标注块(d, tid) {
+  const 开 = $("#ann-open");
+  if (!开) return;
+  // 默认带入这一轮的回答:根步骤(invoke_agent …)的 出.回答;看不到原文的人根本进不到这个分支(服务端 有权标吗 已含原文授权)
+  const 根 = (d["步们"] || []).find((s) => !s.parent_span_id && String(s.stage || "").startsWith("invoke_agent"));
+  let 回答 = "";
+  try { const o = 根 && 根["出"]; const j = typeof o === "string" ? JSON.parse(o) : o; 回答 = (j && j["回答"]) || ""; } catch (e) { 回答 = ""; }
+  开.onclick = () => { $("#ann-edit").hidden = false; 开.hidden = true; $("#ann-answer").value = 回答; $("#ann-answer").focus(); };
+  $("#ann-cancel").onclick = () => { $("#ann-edit").hidden = true; 开.hidden = false; };
+  $("#ann-save").onclick = async () => {
+    const 答 = $("#ann-answer").value.trim();
+    if (!答) { $("#ann-msg").textContent = "标准答案不能空"; return; }
+    $("#ann-save").disabled = true;
+    try {
+      const r = await 请求(`${P()}/chat-annotations`, { method: "POST",
+        body: JSON.stringify({ trace_id: tid, standard_answer: 答, note: $("#ann-note").value.trim() || null }) });
+      $("#ann-msg").textContent = r.note || "已存";
+      await 页_调用树(tid);
+    } catch (e) {
+      const b = e.体 || {};
+      $("#ann-msg").textContent = `${b.code || "出错"}:${e.message}${b.advice ? " —— " + b.advice : ""}`;
+      $("#ann-save").disabled = false;
+    }
+  };
+}
+
+async function 页_标注回复(页 = 1) {
+  const 头 = `<div class="crumb">日志与监测 / 标注回复</div>
+    <div class="head"><div><h1>标注回复</h1>
+      <div class="sub">${md("日志里标出来的**标准答案**。总开关开着时,聊天站对新问题先比对这些标注,命中直接回、不再调模型。"
+        + "**实时数据的问题(查客户 / 订单 / 库存 / 任务…)标不了** —— 在调用树页点「标注」时服务端按那一轮调过的工具判。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/chat-annotations?limit=50&page=${页}`); }
+  catch (e) { const s = 错误块(e, 页_标注回复); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 开 = !!d["开关"];
+  const 开关块 = `<div class="card"><div class="k"><span class="pill ${开 ? "ok" : "warn"}">${开 ? "总开关:开" : "总开关:关"}</span>
+      ${开 ? "「启用」的标注聊天站都会拿去比对" : "关着时这些标注一条都不生效(默认关;打开要「改 Prompt/知识候选」权限)"}
+      <button id="ann-switch" style="margin-left:8px">${开 ? "关掉" : "打开"}</button> <span class="k" id="ann-switch-msg"></span></div></div>`;
+  const 表 = !d.items.length
+    ? 状态("", "还没有标注", "到「调用链」里点开聊天站的一轮,只调了知识类工具的那种能「标注成标准答案」。").html
+    : `<table><thead><tr><th>角色</th><th>提问</th><th>标准答案</th><th>状态</th><th class="num">命中</th><th>更新</th><th></th></tr></thead><tbody>`
+      + d.items.map((a) => `<tr data-id="${esc(a.id)}" data-rev="${esc(String(a.revision || 0))}">
+          <td class="k">${esc(a.assistant_role || "—")}</td>
+          <td>${a.question != null ? esc(String(a.question).slice(0, 80)) : `<span class="k" title="${esc(a["原文要授权"] || "")}">(原文要授权 · ${Number(a["提问长度"] || 0)} 字)</span>`}</td>
+          <td class="ann-answer-cell"><span class="k">${esc(String(a.standard_answer || "").slice(0, 120))}</span></td>
+          <td><span class="pill ${a.status === "启用" ? "ok" : ""}">${esc(a.status)}</span></td>
+          <td class="num">${Number(a.hit_count || 0)}</td>
+          <td class="k">${esc(String(a.updated_at || a.created_at || "").slice(5, 16).replace("T", " "))}</td>
+          <td><button data-act="toggle">${a.status === "启用" ? "停用" : "启用"}</button>
+              <button data-act="edit">改</button>
+              <button data-act="archive">归档</button></td>
+        </tr>`).join("")
+      + `</tbody></table>${页码条(d)}`;
+  $("#main").innerHTML = 头 + 开关块 + 表 + `<div class="note">${md(d.note || "")}</div>`;
+  挂页码($("#main"), (n) => 页_标注回复(n));
+  $("#ann-switch").onclick = async () => {
+    $("#ann-switch").disabled = true;
+    try { const r = await 请求(`${P()}/chat-annotations/switch`, { method: "PUT", body: JSON.stringify({ enabled: !开 }) });
+          $("#ann-switch-msg").textContent = r.note || ""; await 页_标注回复(页); }
+    catch (e) { const b = e.体 || {}; $("#ann-switch-msg").textContent = `${b.code || "出错"}:${e.message}`; $("#ann-switch").disabled = false; }
+  };
+  $("#main").querySelectorAll("tr[data-id] button[data-act]").forEach((b) => {
+    const tr = b.closest("tr"), id = tr.dataset.id, rev = tr.dataset.rev;
+    const 发 = async (方法, 路, 体) => {
+      try { await 请求(`${P()}/chat-annotations/${encodeURIComponent(id)}${路}`, { method: 方法, headers: { "If-Match": String(rev) }, body: 体 ? JSON.stringify(体) : undefined }); await 页_标注回复(页); }
+      catch (e) { const bb = e.体 || {}; $("#ann-switch-msg").textContent = `${bb.code || "出错"}:${e.message}${bb.advice ? " —— " + bb.advice : ""}`; }
+    };
+    if (b.dataset.act === "toggle") b.onclick = () => 发("PATCH", "", { status: b.textContent === "停用" ? "停用" : "启用" });
+    if (b.dataset.act === "archive") b.onclick = () => 发("POST", "/archive");
+    if (b.dataset.act === "edit") b.onclick = () => {
+      const cell = tr.querySelector(".ann-answer-cell"), 原 = (d.items.find((x) => x.id === id) || {}).standard_answer || "";
+      cell.innerHTML = `<textarea rows="6" style="width:100%">${esc(原)}</textarea>
+        <div><button class="pri" data-save>保存</button> <button data-cancel>取消</button></div>`;
+      cell.querySelector("[data-save]").onclick = () => 发("PATCH", "", { standard_answer: cell.querySelector("textarea").value.trim() });
+      cell.querySelector("[data-cancel]").onclick = () => 页_标注回复(页);
+    };
+  });
 }
 
 /* ── 产出监督(2026-10-10)──────────────────────────────────────────────
@@ -11966,6 +12082,7 @@ async function 路由() {
     if (h === "#/tryout") return await 页_单条试跑();
     if (h === "#/traces") return await 页_调用链();
     if (h.startsWith("#/trace/")) return await 页_调用树(decodeURIComponent(h.slice(8)));
+    if (h === "#/annotations") return await 页_标注回复();
     if (h === "#/health") return await 页_智能体健康();
     if (h === "#/outputs") return await 页_产出监督();
     if (h.startsWith("#/output/")) return await 页_产出详情(decodeURIComponent(h.slice(9)));

@@ -222,6 +222,11 @@ def 运行详情(project_id: str, trace_id: str,
     出 = {"trace": tr, "步们": 步们, "步数": len(步们), "结论": _结论给谁看(核, 看得到原文),
          "用量": [dict(x) for x in 账],
          "看得到原文吗": 看得到原文}
+    if tr.get("entry_kind") == 聊天站来源:
+        # 标注回复(11-21):聊天站的一轮才有「标注」块 —— 能不能标、为什么、已标的那条。规则在 chat_annotations_api.可标注吗,这里不重写
+        from chat_annotations_api import 标注块
+        with 连接() as c:
+            出["标注"] = 标注块(c, project_id, trace_id, me, ss)
     out_note = []
     if not 看得到原文:
         out_note.append(

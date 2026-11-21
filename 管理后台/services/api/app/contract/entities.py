@@ -83,7 +83,7 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     E("projects", "项目", 组织级, 可改,
       ["organization_id", "name", "owner", "status", "retention_policy",
        "timezone", "budget", "allowed_providers", "data_egress_policy", "kind_code",
-       "retention_policy_revision"],
+       "retention_policy_revision", "chat_annotation_enabled"],
       ["项目必须属于一个组织",
        "retention_policy_revision 是日志采集策略自己的乐观锁(11-20):原来借项目的 revision,"
        "改项目别的设置会让策略页 409、改策略又会让项目设置页 409 —— 两件不相干的事互相打架",
@@ -1566,6 +1566,18 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "文件名 / 对象键**服务端生成**,不接受调用方给路径;同一期重做出一份新的,不覆盖旧的(旧的还是证据)",
        "下载 = 交出系统 → 逐次审计;按项目隔离,登记了门店的成员只拿得到本店(store_id)或不限门店的文档"],
       依赖=["execution_runs"]),
+
+    # 标注回复(11-21,用户 10-27 拍第 7 条 / 11-21 拍口径):日志里某一轮问答点「标注」写一条标准答案,
+    # 聊天站开了总开关后,新问题先问模型「和哪条标注同一个意思」,命中直接回标注答案
+    E("chat_annotations", "聊天标注", 项目级, 可改,
+      ["trace_id", "assistant_role", "question", "standard_answer", "note", "tools_used", "status",
+       "hit_count", "last_hit_at"],
+      ["**一轮问答只能标一条**(project_id + trace_id 唯一):要改就改那一条,不另起",
+       "**实时数据的问题不许标**(用户 10-27):服务端按那一轮调过的工具判 —— 只调了知识类只读工具或一个工具没调的才能标,"
+       "调过取数(客户 / 订单 / 库存 / 任务…)或写工具的 422;tools_used 存下当时的工具清单当证据,规则在 chat_annotations_api.可标注吗",
+       "question / standard_answer 是**原文**:建的时候要有「查看敏感输入」授权,列表默认按同一条授权脱敏",
+       "status 只有 启用 / 停用;归档走 archived_at。生效还要看 projects.chat_annotation_enabled 总开关(默认关)",
+       "不挂 traces 的外键:trace 骨架 30 天后只删原文不删行,但标注要比日志活得久"]),
 
     # ⑤ 人工介入
     E("human_requests", "人工请求", 子对象, 可改,

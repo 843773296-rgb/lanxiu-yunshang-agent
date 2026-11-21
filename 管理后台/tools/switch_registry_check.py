@@ -24,7 +24,7 @@ import sys
 这 = os.path.dirname(os.path.abspath(__file__))
 默认目录 = os.path.join(os.path.dirname(这), "services", "api", "app")
 # 写开关的 SQL 长什么样:对列 / 表的**写**,读不算
-写开关 = re.compile(r"(chat_takeover_enabled\s*=|schedule_enabled\s*=|insert\s+into\s+(environment_bindings|workflow_schedules)"
+写开关 = re.compile(r"(chat_takeover_enabled\s*=|schedule_enabled\s*=|chat_annotation_enabled\s*=|insert\s+into\s+(environment_bindings|workflow_schedules)"
                    r"|update\s+environment_bindings|production_version_no\s*=)", re.I)
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 

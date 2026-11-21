@@ -23704,5 +23704,17 @@
    }
   ],
   "预期红": "「我帮您问一下:能不能少点」是替顾客去问第三方"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_chat_annotations.py",
+  "改坏": "「哪些问答不许标」的规则被拆掉:可标注吗 对什么工具都放行(调过 get_order / 写工具的也能标成固定答案 —— 用户 10-27 拍「实时数据的问题不许走标注」就空了)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/chat_annotations_api.py",
+    "old": "    if not 取数或写 and not 不认识:\n        return True, None",
+    "new": "    if True:\n        return True, None"
+   }
+  ],
+  "预期红": "混了取数 / 写 / 队列 / 统计工具 → 不能,原因里点名那个工具"
  }
 ]
