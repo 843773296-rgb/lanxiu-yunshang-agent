@@ -71,9 +71,27 @@ def 一轮(工具们, 提问="香云纱能不能机洗?", 回答="不能机洗�
 尾 = uuid.uuid4().hex[:6].upper()
 甲 = 成员.记(项目, f"E2EANA{尾}")   # admin + 查看敏感输入:能标
 乙 = 成员.记(项目, f"E2EANE{尾}")   # editor 没原文授权:有「改 Prompt」权限但看不到提问 → 标不了,拨开关可以
-c1, _ = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "专项授权": ["查看敏感输入/独立测试答案"]})
+c1, b1 = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin"})
 c2, _ = 打("POST", P + "/memberships", 体={"工号": 乙, "角色": "editor"})
-assert c1 == 201 and c2 == 201, (c1, c2)
+assert c1 == 201 and c2 == 201, (c1, b1, c2)
+
+
+def _授原文(工号):
+    """夹具:直接在库里给临时成员「查看敏感输入」。走接口给不了 —— 权限规则是「不能通过邀请获得自己没有的权限」,
+    而 U001(admin)自己没有这条专项(admin 对它是「可授权」档、默认关),第一次 e2e 就红在这(11-21 第十五轮)。
+    种子里有原文权限的只有 U004(annotator,没「改 Prompt」),所以「能标注的人」只能夹具造。只改 E2E 开头的工号。"""
+    assert str(工号).startswith("E2E"), 工号
+    from sqlalchemy import create_engine, text as _t
+    url = os.environ.get("DATABASE_URL") or f"postgresql+psycopg://{os.environ.get('USER')}@localhost:5432/aimc_dev"
+    with create_engine(url).begin() as c:
+        n = c.execute(_t("update memberships set special_grants = cast(:g as jsonb) where project_id=:p and user_id=:u and user_id like 'E2E%'"),
+                      {"g": json.dumps(["查看敏感输入/独立测试答案"]), "p": 项目, "u": 工号}).rowcount
+    assert n == 1, (工号, n)
+
+
+_授原文(甲)
+c, mm = 打("GET", P + f"/traces?limit=1", 甲)
+assert c == 200, (c, mm)
 
 print("▸ ① 运行详情带「标注」块")
 知 = 一轮(["ToolSearch", "kb_read", "kb_combo"])
