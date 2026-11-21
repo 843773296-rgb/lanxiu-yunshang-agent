@@ -3444,6 +3444,57 @@ function 加节点(类型, 接 = null) {
   if (id && 节点(id)) { if (g.画) g.画.选 = new Set([id]); if (g.页签 === "搭建") 画_搭建(); }
 }
 
+/* 更改节点(11-21,规划 1-5 节点菜单最后一项,照 Dify「更改节点:换类型不断线」):
+ * 同一张卡换成别的类型 —— 进来的线全保留;出去的线按新类型的出口对得上的留(「完成后」「失败时」这两种大多数类型都有),
+ * 对不上的(分支 / 支路 / 循环体这类)删掉并说清删了几条;配置换成新类型的默认配置(两种类型的配置不通用,硬留只会留一堆检查配置报红的旧键);
+ * 名字:还是类型默认名的就跟着换,人改过的保留。「开始」「输出」不能换(一张图各只有一个、位置特殊)。可撤销。 */
+const 不能换类型 = new Set(["start", "end"]);
+function 可换成的类型(n) {
+  const 出 = [];
+  (typeof 菜单节点组 !== "undefined" ? 菜单节点组 : []).forEach(([, 项]) => 项.forEach(([t, 名]) => {
+    if (!t || t === n.type || 不能换类型.has(t)) return;
+    const 可 = (元(t) || {})["可用"] && !(t === "code" && typeof 我的角色 !== "undefined" && 我的角色 !== "admin");
+    if (可) 出.push([t, 步类型名[t] || 名]);
+  }));
+  return 出;
+}
+function 更改节点类型(id, 新类型) {
+  const g = 图态, n = 节点(id);
+  if (!能改图() || !n || 不能换类型.has(n.type) || 不能换类型.has(新类型) || n.type === 新类型) return false;
+  if (!可换成的类型(n).some(([t]) => t === 新类型)) { 轻提示(`不能换成「${步类型名[新类型] || 新类型}」`); return false; }
+  const 旧名 = 步类型名[n.type] || n.type;
+  let 删了 = [];
+  const 做 = 改图(`「${业务名(n)}」换成「${步类型名[新类型]}」`, () => {
+    const 旧类型 = n.type;
+    n.type = 新类型;
+    n.config = JSON.parse(JSON.stringify(默认配置(新类型)));
+    if (!n.name || n.name === 步类型名[旧类型]) n.name = 步类型名[新类型];
+    const 新口 = 图逻辑.出口们(n, 元);
+    删了 = (g.定义.edges || []).filter((e) => e.source === id && !新口.some((o) => 图逻辑.同口(e, o)));
+    g.定义.edges = (g.定义.edges || []).filter((e) => !删了.includes(e));
+    g.选中 = id; g.面板页 = "设置";
+  }, { 重绘: false });
+  if (做 === false) return false;
+  if (g.画) g.画.选 = new Set([id]);
+  if (g.页签 === "搭建") 画_搭建();
+  const 引 = 引用了它的(id);
+  轻提示(`已把「${旧名}」换成「${步类型名[新类型]}」,进来的线都保留` + (删了.length ? `;新类型没有「${删了.map((e) => 图逻辑.口名(e)).join("」「")}」出口,删了 ${删了.length} 条线` : "")
+    + (引.length ? `;有 ${引.length} 步取它的结果,结果字段变了要重新核对` : ""), { 撤销: true });
+  return true;
+}
+function 弹_更改节点(id) {
+  const n = 节点(id);
+  if (!能改图() || !n) return;
+  if (不能换类型.has(n.type)) { 轻提示(`「${业务名(n)}」不能换类型(一条流程只有一个「${步类型名[n.type]}」)`); return; }
+  const 可 = 可换成的类型(n);
+  弹层(`「${esc(业务名(n))}」换成哪一类步骤?`, `
+    <p class="k">换类型会保留进来的线和位置;出去的线按新类型的出口对得上的保留;这一步的配置换成新类型的默认配置(两种类型的设置不通用)。能撤销。</p>
+    <div class="two">${可.map(([t, 名]) => `<button type="button" class="tpl" data-retype="${esc(t)}"><b>${esc(名)}</b><div class="k">${esc(去章节(去粗((元(t) || {})["说明"] || "")).slice(0, 80))}</div></button>`).join("")}</div>
+    <div class="acts"><button id="rt-no">先不换</button></div>`);
+  document.querySelectorAll("[data-retype]").forEach((b) => { b.onclick = () => { 关弹层(); 更改节点类型(id, b.dataset.retype); }; });
+  $("#rt-no").onclick = 关弹层;
+}
+
 function 引用了它的(id) {
   // 别的步骤里有没有「取这一步的结果」—— 结构化引用一律是 {source:"node", node_id:id, …}
   const 找 = (v) => v && typeof v === "object"

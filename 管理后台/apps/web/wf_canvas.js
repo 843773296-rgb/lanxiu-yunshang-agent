@@ -1019,6 +1019,8 @@ function 节点菜单(id, 锚) {
     改 ? ["pos", "位置与对齐"] : null,
     改 && n.type !== "end" ? ["side", 出口边(id) === "下" ? "出口放回右边" : "出口改到下边"] : null,
     改 ? ["rename", "改名称"] : null,
+    // 照 Dify「更改节点」(11-21 规划 1-5 最后一项):换类型不断线;「开始」「输出」不给这一项
+    改 && n.type !== "start" && n.type !== "end" && typeof 弹_更改节点 === "function" ? ["retype", "更改节点(换类型,线保留)"] : null,
     改 && n.type !== "start" ? ["reset", "重置配置"] : null,
     改 && n.type !== "start" ? ["del", "删除"] : null,
   ].filter(Boolean);
@@ -1041,6 +1043,7 @@ function 节点菜单(id, 锚) {
       if (k === "side") 改图(出口边(id) === "下" ? "出口放回右边" : "出口改到下边", () => {
         const p = 图态.布局[id] = { ...位(id) }; if (出口边(id) === "下") delete p.出口边; else p.出口边 = "下"; });
       if (k === "rename") 重命名节点(id);
+      if (k === "retype") 弹_更改节点(id);
       if (k === "reset") 弹_重置配置(id);
       if (k === "del") 弹_删除([id]);
       const nd = document.querySelector(`.wfnode2[data-id="${CSS.escape(id)}"]`); if (nd && k !== "del") nd.focus();

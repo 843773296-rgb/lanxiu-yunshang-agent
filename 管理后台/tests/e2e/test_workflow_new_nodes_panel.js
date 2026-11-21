@@ -132,6 +132,32 @@ const 源 = 跑(`JSON.stringify(上游字段("end").map((x) => x[0]))`);
 ck("结束能选 列表操作 → 结果 / 个数 / 第一个 / 最后一个", ["n:lo:结果", "n:lo:个数", "n:lo:第一个", "n:lo:最后一个"].every((k) => 源.includes(k)), 源);
 ck("结束能选 文档提取器 → 文本 / 文件名", ["n:doc:文本", "n:doc:文件名"].every((k) => 源.includes(k)), 源);
 
+console.log("\n▸ ⑤ 更改节点(11-21 规划 1-5 节点菜单最后一项,照 Dify:换类型不断线)");
+const 提示文 = () => (池.get("wf-toast") || {}).innerHTML || "";
+跑(`图态.节点库.push({ 名: "template", 端口: ["success", "error"], 可用: true, 必填: ["template"] }, { 名: "condition", 端口: ["branch"], 可用: true, 必填: [] },
+    { 名: "code", 端口: ["success", "error"], 可用: true, 必填: ["code"] }); 图态.画 = null;`);
+const 可换 = 跑(`可换成的类型(节点("doc")).map((x) => x[0])`);
+ck("能换的类型:有模板转换 / 条件分支;没有它自己、「开始」「输出」;代码执行非管理员不给", 可换.includes("template") && 可换.includes("condition")
+   && !可换.includes("doc_extractor") && !可换.includes("start") && !可换.includes("end") && !可换.includes("code"), 可换);
+ck("文档提取器换成模板转换 → true", 跑(`更改节点类型("doc", "template")`) === true);
+let dn = 跑(`节点("doc")`);
+ck("类型变了、配置换成模板转换的默认配置、名字还是默认名的跟着换", dn.type === "template" && JSON.stringify(dn.config) === 跑(`JSON.stringify(默认配置("template"))`) && dn.name === "模板转换", dn);
+let es = 跑(`图态.定义.edges`);
+ck("进来的 lo→doc 和出去的「完成后」doc→end 两条线都保留", es.some((e) => e.source === "lo" && e.target === "doc") && es.some((e) => e.source === "doc" && e.target === "end" && e.port === "success"), es);
+ck("提示说「保留」、没说删线;标脏、选中它", /保留/.test(提示文()) && !/删了/.test(提示文()) && 跑(`图态.脏`) === true && 跑(`图态.选中`) === "doc", 提示文());
+跑(`撤销()`);
+ck("撤销 → 回到文档提取器,线原样", 跑(`节点("doc").type`) === "doc_extractor" && 跑(`图态.定义.edges.length`) === 3);
+跑(`节点("doc").name = "抽文件"; 更改节点类型("doc", "template")`);
+ck("人改过的名字保留", 跑(`节点("doc").name`) === "抽文件" && 跑(`节点("doc").type`) === "template");
+跑(`撤销()`);
+ck("换成条件分支 → 它没有「完成后」出口,doc→end 删掉、进线保留,提示说删了 1 条线",
+   跑(`更改节点类型("doc", "condition")`) === true && !跑(`图态.定义.edges`).some((e) => e.source === "doc") && 跑(`图态.定义.edges`).some((e) => e.target === "doc") && /删了 1 条线/.test(提示文()), 提示文());
+ck("「开始」不能换、不能换成「输出」、换成自己不动、认不出的类型不动",
+   跑(`更改节点类型("start", "template")`) === false && 跑(`更改节点类型("lo", "end")`) === false && 跑(`更改节点类型("lo", "list_operator")`) === false && 跑(`更改节点类型("lo", "wasm")`) === false);
+跑(`我的角色 = "viewer"`);
+ck("只读角色不能换", 跑(`更改节点类型("lo", "template")`) === false && 跑(`节点("lo").type`) === "list_operator");
+跑(`我的角色 = "editor"`);
+
 console.log(`\n${挂.length ? "❌ " + 挂.length + " 条挂了" : "✅ 新节点配置面板 " + 过 + " 条过"}`);
 挂.forEach((x) => console.log("   · " + x));
 process.exit(挂.length ? 1 : 0);
