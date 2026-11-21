@@ -53,7 +53,9 @@ def ck(名, 真, 补=""):
 
 def 要查的文件():
     出 = []
-    for base in (根, os.path.join(仓库根, ".github")):
+    # 11-21 晚加仓库根 tools/:周审查脚本 tools/weekly_review.sh 第一次试跑就挂在中文变量名上 —— launchd 用的正是 bash 3.2,
+    # 而这条检查原来只扫 管理后台/ 和 .github/,根目录 tools/ 下那十几个 .sh 一直在视野外(第四次踩同一个坑)
+    for base in (根, os.path.join(仓库根, ".github"), os.path.join(仓库根, "tools")):
         for dp, dn, fn in os.walk(base):
             dn[:] = [x for x in dn if x not in
                      (".venv", "__pycache__", "node_modules", ".git", ".models")]
