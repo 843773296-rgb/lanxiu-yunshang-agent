@@ -136,6 +136,26 @@ o2 = RN.跑一张图(计划老, {"摘要": "x"}, 适配器={}, 记事=lambda k, 
                恢复={**存(o1), "结果": {"决定": "approve", "定稿": "x", "处理人": "U1", "理由": ""}})
 ck("approve → 走成功口到甲路", o2.get("执行状态") == "succeeded" and (o2.get("输出") or {}).get("text") == "顾客:approve", 1, (o2.get("执行状态"), o2.get("输出")))
 
+print("▸ ⑥ 到期走「超时」出口(11-21 用户拍,照 Dify):接了线从那条走;没接线这一步失败")
+超图 = copy.deepcopy(好图)
+超图["nodes"].append({"id": "超路", "type": "template", "name": "超路", "config": {"template": "超时:{{谁}}", "bindings": {"谁": {"source": "node", "node_id": "核", "pointer": "/__action_id"}}}})
+超图["nodes"][[n["id"] for n in 超图["nodes"]].index("汇")]["config"]["candidates"].append({"source": "node", "node_id": "超路", "pointer": "/文本"})
+超图["edges"] += [{"source": "核", "target": "超路", "port": "timeout"}, {"source": "超路", "target": "汇", "port": "success"}]
+问 = 校(超图)
+ck("「超时」口是登记过的端口:接线不报 EDGE_UNKNOWN_PORT / 阻断", "EDGE_UNKNOWN_PORT" not in 码们(问) and not 码们(问, V.阻断), 1, 码们(问))
+计划超 = CP.编译(超图, 依赖存在=lambda 种类, i: True)
+t1 = RN.跑一张图(计划超, {"摘要": "袖子短了"}, 适配器={}, 记事=lambda k, v: None, run_id="hf3")
+t2 = RN.跑一张图(计划超, {"摘要": "袖子短了"}, 适配器={}, 记事=lambda k, v: None, run_id="hf3",
+               恢复={**存(t1), "结果": {"决定": RN.超时决定, "超时": True, "__action_id": RN.超时决定, "处理人": None, "理由": "过了截止时间没人处理"}})
+ck("到期 → 走超路,输出带 超时:__timeout__;核这一步 branch_key=__timeout__,两条按钮路 skipped",
+   t2.get("执行状态") == "succeeded" and (t2.get("输出") or {}).get("text") == "超时:__timeout__"
+   and {s["node_id"]: s for s in t2.get("步骤") or []}.get("核", {}).get("branch_key") == RN.超时决定
+   and all({s["node_id"]: s for s in t2.get("步骤") or []}.get(k, {}).get("status") == "skipped" for k in ("甲路", "乙路")), 1, (t2.get("执行状态"), t2.get("输出"), t2.get("完成原因")))
+t3 = RN.跑一张图(计划, {"摘要": "袖子短了"}, 适配器={}, 记事=lambda k, v: None, run_id="hf1",
+               恢复={**存(r1), "结果": {"决定": RN.超时决定, "超时": True, "__action_id": RN.超时决定, "处理人": None, "理由": ""}})
+ck("没接「超时」线的图到期 → 这一步失败 HUMAN_REVIEW_EXPIRED(不猜着走别的口)", t3.get("执行状态") == "failed" and (t3.get("完成原因") or "").startswith("HUMAN_REVIEW_EXPIRED")
+   or ({s["node_id"]: s for s in t3.get("步骤") or []}.get("核", {}).get("error_code") == "HUMAN_REVIEW_EXPIRED"), 1, (t3.get("执行状态"), t3.get("完成原因"), [(s["node_id"], s.get("status"), s.get("error_code")) for s in t3.get("步骤") or []]))
+
 print()
 if 挂:
     print(f"❌ {len(挂)} 条没过:{挂}")

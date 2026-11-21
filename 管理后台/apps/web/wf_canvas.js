@@ -334,7 +334,7 @@ function 画_节点() {
         ${改 || n.type !== "start" ? `<button class="more" data-more="${esc(n.id)}" aria-label="更多操作" title="更多操作" tabindex="-1">⋯</button>` : ""}</div>
       <div class="k">${esc(次级标签(n))}</div><div class="tags">${标}</div>
       ${n.type === "start" ? "" : `<span class="wfport in" data-in="${esc(n.id)}" title="入口" aria-hidden="true"></span>`}
-      ${口们.map((o, i) => `<button class="wfport out ${下 ? "down" : ""} ${o.port === "error" ? "err" : ""}" data-out="${esc(n.id)}" data-oi="${i}"
+      ${口们.map((o, i) => `<button class="wfport out ${下 ? "down" : ""} ${(o.port === "error" || o.port === "timeout") ? "err" : ""}" data-out="${esc(n.id)}" data-oi="${i}"
           style="${下 ? `left:${(画布.W * (i + 1) / (口们.length + 1)) - 12}px;top:${h - 12}px` : `top:${画布.头 + i * 画布.口距}px`}"
           aria-label="${esc(业务名(n))} 的出口:${esc(o.名)}${(g.定义.edges || []).some((e) => e.source === n.id && 图逻辑.同口(e, o)) ? "(已连接)" : "(未连接)"}"
           ${改 ? "" : "disabled"}><i></i><span class="pl">${esc(o.名)}</span></button>`).join("")}
@@ -413,7 +413,7 @@ function 画_线(拖中 = null) {
     const 折 = 折们[键], d = 线路径(p, q, 折), 选 = s.线 === 键;
     const 标 = e.port === "branch" ? (e.branch_key === "else" ? "都不满足" : e.branch_key) : e.port === "parallel" ? (e.branch_key || "") : (e.port === "error" ? "失败时" : "");
     const 中 = 折 && 折.length ? 折[Math.floor(折.length / 2)] : { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-    return `<g class="edge ${选 ? "sel" : ""} ${e.port === "error" ? "err" : ""}">
+    return `<g class="edge ${选 ? "sel" : ""} ${(e.port === "error" || e.port === "timeout") ? "err" : ""}">
         <path class="hit" d="${d}" data-edge="${esc(键)}"/>
         <path class="vis" d="${d}"/>
         ${标 ? `<text x="${中.x}" y="${中.y - 6}" text-anchor="middle">${esc(标)}</text>` : ""}

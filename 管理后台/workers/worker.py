@@ -1037,7 +1037,7 @@ def _跑一张工作流(c, job, 打点):
     if 快照:
         等 = 快照.get("等待") or {}
         if 等.get("种类") == "human":
-            hr = c.execute(text("""select id, payload_ref from human_requests
+            hr = c.execute(text("""select id, payload_ref, status from human_requests
                                     where project_id=:p and execution_run_id=:r
                                       and target_ref->>'node_id' = :n
                                     order by created_at desc limit 1"""),
@@ -1045,29 +1045,36 @@ def _跑一张工作流(c, job, 打点):
             材料 = (_j.loads(hr["payload_ref"]) if hr and hr["payload_ref"] else {}) or {}
             # 表单化(四期 4-1):配了按钮的待办,决定记的是按钮 id;恢复时认 approved / rejected / 这条待办自己的按钮 id
             按钮们 = [a.get("id") for a in ((材料.get("__表单") or {}).get("按钮") or []) if isinstance(a, dict) and a.get("id")]
-            dec = hr and c.execute(text("""select actor, decision, reason,
-                                                  cast(edited_fields as text) ed
-                                             from human_decisions
-                                            where project_id=:p and human_request_id=:h
-                                              and (decision in ('approved', 'rejected') or decision = any(:ids))
-                                            order by at desc, id desc limit 1"""),
-                                   {"p": job["project_id"], "h": hr["id"], "ids": 按钮们}).mappings().first()
-            if not dec:
-                raise 干不了("RESUME_WITHOUT_DECISION",
-                              {"为什么": "运行被排回队列,但停着的那一步还没有批准 / 退回的决定 —— 不猜"})
-            改 = _j.loads(dec["ed"]) if dec["ed"] else {}
-            自定义 = dec["decision"] not in ("approved", "rejected")
-            结果 = {"决定": dec["decision"] if 自定义 else ("approve" if dec["decision"] == "approved" else "reject"),
-                    # 定稿 = 人改过的那一版;没改就是给他看的那份摘要
-                    "定稿": 改.get("定稿", 材料.get("摘要")),
-                    "理由": dec["reason"] or "", "处理人": dec["actor"], "改了": sorted(改),
-                    "__action_id": dec["decision"]}   # 照 Dify 的输出名:人点的那个按钮
-            # 核对人填的**其余字段**也往下传(10-24 录音加回电:「派回电 / 回电负责人 / 回电截止」)——
-            # 原来只传定稿,勾了回电、填了负责人,下游一样都拿不到。哪些能填由请求的 allowed_fields 管(human_api 查编辑);
-            # 决定 / 处理人 / 理由这几个保留键不许被覆盖 —— 否则核对人能在编辑里写一个「决定: approve」
-            for _k, _v in 改.items():
-                if _k not in 结果 and _k != "定稿":
-                    结果[_k] = _v
+            if hr and hr["status"] == "expired":
+                # 到期走「超时」出口(11-21):没有决定行,结果就是「超时」—— runner 只认这个决定走 timeout 口,没接线就在那一步失败
+                结果 = {"决定": "__timeout__", "超时": True, "定稿": 材料.get("摘要"), "理由": "过了截止时间没人处理",
+                        "处理人": None, "改了": [], "__action_id": "__timeout__"}
+                恢复 = {**快照, "结果": 结果}
+                打点("从检查点恢复", {"从": 快照["从"], "等的是": "human(到期走超时出口)"})
+            else:
+                dec = hr and c.execute(text("""select actor, decision, reason,
+                                                      cast(edited_fields as text) ed
+                                                 from human_decisions
+                                                where project_id=:p and human_request_id=:h
+                                                  and (decision in ('approved', 'rejected') or decision = any(:ids))
+                                                order by at desc, id desc limit 1"""),
+                                       {"p": job["project_id"], "h": hr["id"], "ids": 按钮们}).mappings().first()
+                if not dec:
+                    raise 干不了("RESUME_WITHOUT_DECISION",
+                                  {"为什么": "运行被排回队列,但停着的那一步还没有批准 / 退回的决定 —— 不猜"})
+                改 = _j.loads(dec["ed"]) if dec["ed"] else {}
+                自定义 = dec["decision"] not in ("approved", "rejected")
+                结果 = {"决定": dec["decision"] if 自定义 else ("approve" if dec["decision"] == "approved" else "reject"),
+                        # 定稿 = 人改过的那一版;没改就是给他看的那份摘要
+                        "定稿": 改.get("定稿", 材料.get("摘要")),
+                        "理由": dec["reason"] or "", "处理人": dec["actor"], "改了": sorted(改),
+                        "__action_id": dec["decision"]}   # 照 Dify 的输出名:人点的那个按钮
+                # 核对人填的**其余字段**也往下传(10-24 录音加回电:「派回电 / 回电负责人 / 回电截止」)——
+                # 原来只传定稿,勾了回电、填了负责人,下游一样都拿不到。哪些能填由请求的 allowed_fields 管(human_api 查编辑);
+                # 决定 / 处理人 / 理由这几个保留键不许被覆盖 —— 否则核对人能在编辑里写一个「决定: approve」
+                for _k, _v in 改.items():
+                    if _k not in 结果 and _k != "定稿":
+                        结果[_k] = _v
         elif 等.get("种类") == "pause":
             结果 = None          # 暂停没有外部结果;runner 看到 pause 不注入,从那一步重新跑
         else:
@@ -2276,11 +2283,16 @@ def 扫过期核对(c):
     停着的那一步记失败(HUMAN_REVIEW_EXPIRED)。不写任何东西;想补就重新发起一次。
 
     `for update skip locked`:两个 worker 同时扫,同一条只被收一次。返回收了几条。
+
+    11-21 用户拍(照 Dify 的超时出口):停着的那一步在图里**接了「超时」出口**的,到期不结束运行 —— 待办记「已过期」,
+    运行排回队列,runner 从「超时」口接着走(决定 = __timeout__);没接线的照旧收成 expired。看的是挂起时存下的那份定义(resume_snapshot.定义),
+    不是草稿:挂起后图被改了也按当时那份走。
     """
     import json as _j
+    import run_resume as _RR
     rs = c.execute(text("""
         select h.project_id, h.organization_id, h.id hid, h.execution_run_id rid,
-               h.target_ref->>'node_id' node
+               h.target_ref->>'node_id' node, r.resume_snapshot snap
           from human_requests h
           join execution_runs r on r.project_id=h.project_id and r.id=h.execution_run_id
          where h.status='pending' and h.expires_at is not null and h.expires_at < now()
@@ -2290,6 +2302,19 @@ def 扫过期核对(c):
         p = {"p": x["project_id"], "h": x["hid"], "r": x["rid"], "n": x["node"]}
         c.execute(text("""update human_requests set status='expired', updated_at=now(), revision=revision+1
                            where project_id=:p and id=:h"""), p)
+        snap = x["snap"] if isinstance(x["snap"], dict) else (_j.loads(x["snap"]) if x["snap"] else {})
+        边们 = ((snap or {}).get("定义") or {}).get("edges") or []
+        if any(e.get("source") == x["node"] and e.get("port") == "timeout" for e in 边们):
+            seq = c.execute(text("""select coalesce(max(seq), 1) + 1 from run_events
+                                     where project_id=:p and execution_run_id=:r"""), p).scalar()
+            c.execute(text("""insert into run_events (id, organization_id, project_id, execution_run_id, seq,
+                                  event_type, payload, occurred_at, created_at, created_by)
+                              values (:i, :o, :p, :r, :s, 'human.timeout', cast(:pl as jsonb), now(), now(), :u)"""),
+                      {**p, "i": _新("re"), "o": x["organization_id"], "s": seq, "u": 我是谁,
+                       "pl": _j.dumps({"node_id": x["node"], "待办": x["hid"], "为什么": "人工核对过了截止时间没人处理 —— 这一步接了「超时」出口,从那条线接着走;待办记「已过期」,什么都没写"},
+                                        ensure_ascii=False)})
+            _RR.排恢复(c, project_id=x["project_id"], run_id=x["rid"], 为什么=f"人工核对 {x['hid']} 到期,走「超时」出口", 谁=我是谁)
+            continue
         c.execute(text("""update execution_runs set status='expired', completion_reason='HUMAN_REVIEW_EXPIRED',
                                  ended_at=now(), updated_at=now(), revision=revision+1
                            where project_id=:p and id=:r"""), p)

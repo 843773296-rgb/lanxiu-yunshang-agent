@@ -80,7 +80,7 @@ ck("「加一个按钮」→ actions 多一个 按钮1", JSON.stringify(cfg("h")
 按(面板("h"), "加一个按钮")();
 ck("再加 → 按钮2(不重名)", (cfg("h").actions || []).map((a) => a.id).join() === "按钮1,按钮2", cfg("h").actions);
 let 口 = 跑(`图逻辑.出口们(节点("h"), 元)`);
-ck("画布出口:每个按钮一个「分支」口 + 失败时", JSON.stringify(口.map((o) => [o.port, o.branch_key])) === JSON.stringify([["branch", "按钮1"], ["branch", "按钮2"], ["error", null]]), 口);
+ck("画布出口:每个按钮一个「分支」口 + 超时(11-21 照 Dify)+ 失败时", JSON.stringify(口.map((o) => [o.port, o.branch_key])) === JSON.stringify([["branch", "按钮1"], ["branch", "按钮2"], ["timeout", null], ["error", null]]), 口);
 跑(`图态.定义.edges = 图态.定义.edges.filter((e) => e.source !== "h").concat([{ source: "h", target: "c", port: "branch", branch_key: "按钮1" }, { source: "h", target: "甲", port: "branch", branch_key: "按钮2" }])`);
 let r = 跑(`图逻辑.人工按钮改名(图态.定义, "h", "按钮1", "顾客责任")`);
 ck("改按钮标识 → 挂在它上面的线跟着改", r.可以 === true && 跑(`图态.定义.edges.filter((e) => e.source === "h").map((e) => e.branch_key).join()`) === "顾客责任,按钮2", r);

@@ -44,7 +44,10 @@
     }
     if (n.type === "human" && ((n.config || {}).actions || []).some((a) => a && a.id)) {   // 11-20 四期 4-1:配了按钮 → 每个按钮一个出口
       return [...((n.config || {}).actions || []).filter((a) => a && a.id).map((a) => ({ port: "branch", branch_key: a.id, 名: a.文字 || a.id })),
-              { port: "error", branch_key: null, 名: "失败时" }];
+              { port: "timeout", branch_key: null, 名: "超时" }, { port: "error", branch_key: null, 名: "失败时" }];
+    }
+    if (n.type === "human") {   // 11-21 用户拍(照 Dify):人工介入多一个「超时」出口 —— 到期没人处理接了线就走它,没接这次运行照旧失败
+      return [{ port: "success", branch_key: null, 名: "完成后" }, { port: "timeout", branch_key: null, 名: "超时" }, { port: "error", branch_key: null, 名: "失败时" }];
     }
     if (n.type === "parallel") {   // 11-16 并行与汇总:每条支路一个出口(支路名就是出口名)/ 全部做完后 / 失败时
       return [...((n.config || {}).branches || []).filter((b) => b && b.key).map((b) => ({ port: "parallel", branch_key: b.key, 名: `支路 · ${b.key}` })),
@@ -60,7 +63,7 @@
   逻.口名 = function (e) {
     if (e.port === "branch") return 逻.分支名(e.branch_key);
     if (e.port === "parallel") return `支路 · ${e.branch_key || "(没起名)"}`;
-    return { error: "失败时", loop_body: "进循环体", loop_exit: "循环结束后" }[e.port] || "完成后";
+    return { error: "失败时", timeout: "超时", loop_body: "进循环体", loop_exit: "循环结束后" }[e.port] || "完成后";
   };
 
   // ── 走图 ─────────────────────────────────────────────────────────

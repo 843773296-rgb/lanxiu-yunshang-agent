@@ -3861,7 +3861,7 @@ function 表_设置(n) {
         const h = Number(el.value);
         c.expires_at_policy = h > 0 ? { 小时: h, 到期: "fail" } : undefined;
       }, "例如 48")
-      + `<div class="k">到点没人处理:这次运行结束、记「已过期」,不写任何东西;想补就重新发起一次。</div>`;
+      + `<div class="k">到点没人处理:待办记「已过期」,不写任何东西。<b>接了下面「下一步」里的「超时」出口</b>(照 Dify),就从那条线接着走(比如通知总部、改派);没接,这次运行结束,想补就重新发起一次。</div>`;
     // 表单化(四期 4-1,11-20 照 Dify):说明(Markdown,可 {{材料键}})/ 要人填的字段 / 按钮(每个一个出口)/ 到这一步推飞书
     体 += `<label class="f">给核对人看的说明(照 Dify 的表单内容;可以写 {{材料键}} 带进「用到的数据」里的值)</label>
       <textarea data-k="${挂控件((el) => { c.form_markdown = el.value; })}" data-lb="说明" rows="3" placeholder="例如:客户 {{客户}} 的差评:{{摘要}}。请判断责任方。">${esc(c.form_markdown || "")}</textarea>`;
@@ -4214,7 +4214,7 @@ function 表_设置(n) {
         图逻辑.连(图态.定义, n.id, o, el.value);
         if (v.替换) 轻提示(`已把「${o.名}」的下一步从「${业务名(节点(v.替换.target))}」改为「${业务名(节点(el.value))}」`, { 撤销: true });
         重画();
-      }, o.port === "error" ? "失败就结束这次运行" : "(不接)")}</div>`;
+      }, o.port === "error" ? "失败就结束这次运行" : o.port === "timeout" ? "(不接:到期这次运行结束)" : "(不接)")}</div>`;
     }).join("") + `</div>`;
   }
   return 体;

@@ -218,7 +218,42 @@ def main():
     c, b = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "门店": "静安 店"})
     ck("门店编号写成中文 / 带空格 → 422 说只收字母数字", c == 422, (c, b))
 
-    print("\n▸ ⑦ 收尾")
+    print("\n▸ ⑦ 到期走「超时」出口(11-21 用户拍,照 Dify):接了线,到期不失败、从那条线接着走")
+    c, w2 = 打("POST", P + "/workflows", 体={"名称": f"e2e 人工超时 {uuid.uuid4().hex[:6]}", "模板": "空白"})
+    wid2 = (w2 or {}).get("id")
+    建的.append(wid2)
+    c, d2 = 打("GET", P + f"/workflows/{wid2}")
+    定义2 = json.loads(json.dumps(定义, ensure_ascii=False))
+    核 = next(n for n in 定义2["nodes"] if n["id"] == "核")
+    核["config"]["expires_at_policy"] = {"小时": 0.0004, "到期": "fail"}   # 约 1.4 秒就到期
+    定义2["nodes"].append(模板("超路", "超时:"))
+    next(n for n in 定义2["nodes"] if n["id"] == "汇")["config"]["candidates"].append({"source": "node", "node_id": "超路", "pointer": "/文本"})
+    定义2["edges"] += [{"source": "核", "target": "超路", "port": "timeout"}, {"source": "超路", "target": "汇", "port": "success"}]
+    c, b = 打("PATCH", P + f"/workflows/{wid2}/draft", 体={"定义": 定义2}, 头={"If-Match": str(d2["草稿"]["revision"])})
+    c2, vb = 打("POST", P + f"/workflows/{wid2}/validate")
+    阻 = [p.get("code") for p in (vb or {}).get("问题", []) if p.get("级别") == "blocking"]
+    ck("带「超时」线的草稿存得了、检查配置无阻断(超时是登记过的端口)", c == 200 and c2 == 200 and 阻 == [], (c, b, c2, 阻))
+    c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())}, 体={"workflow_id": wid2, "输入": {"摘要": "没人管", "门店": "SH001"}})
+    rid3 = (r or {}).get("resource_id")
+    st = 等到(rid3, ("waiting_approval", "failed", "succeeded", "cancelled")) if rid3 else None
+    ck("先停在等人核对", c == 202 and st == "waiting_approval", (c, st))
+    time.sleep(2.0)   # 过了截止时间;worker 每轮先 扫过期核对(待办记 expired + 排恢复),再处理恢复任务
+    st = 等到(rid3, ("succeeded", "failed", "cancelled", "expired"), 最多=12)
+    with 事务() as cx:
+        行3 = cx.execute(text("select output_ref from execution_runs where project_id=:p and id=:i"), {"p": 项目, "i": rid3}).mappings().first()
+        待3 = cx.execute(text("select status from human_requests where project_id=:p and execution_run_id=:r order by created_at desc limit 1"), {"p": 项目, "r": rid3}).scalar()
+        步3 = cx.execute(text("select node_id, status, branch_key from run_steps where project_id=:p and execution_run_id=:r order by created_at"), {"p": 项目, "r": rid3}).mappings().all()
+        事3 = [x[0] for x in cx.execute(text("select event_type from run_events where project_id=:p and execution_run_id=:r order by seq"), {"p": 项目, "r": rid3}).all()]
+    出3 = (行3 or {}).get("output_ref") or {}
+    if isinstance(出3, str):
+        出3 = json.loads(出3)
+    ck("到期后运行**没失败**,从「超时」口接着走到结束,输出 超时:__timeout__;待办记「已过期」;事件里有 human.timeout",
+       st == "succeeded" and 出3.get("text") == "超时:__timeout__" and 待3 == "expired" and "human.timeout" in 事3
+       and any(x["node_id"] == "核" and x["branch_key"] == "__timeout__" for x in 步3), (st, 出3, 待3, 事3, [dict(x) for x in 步3]))
+    c, L = 打("GET", P + "/human-requests?limit=200&status=expired")
+    ck("过期的待办在列表里能按 status=expired 筛到,「还能处理吗」为否", c == 200 and any(x["execution_run_id"] == rid3 and not x.get("还能处理吗") for x in (L or {}).get("items") or []), (c, len((L or {}).get("items") or [])))
+
+    print("\n▸ ⑧ 收尾")
     收尾()
     ck("工作流已归档", True)
     print()

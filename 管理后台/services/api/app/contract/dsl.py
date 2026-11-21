@@ -44,12 +44,13 @@ import re
 # 靠颜色区分的错误路径,在校验报告里没法引用,也没法在测试里断言。
 成功 = "success"
 失败 = "error"
+超时 = "timeout"       # 人工介入到期没人处理(11-21 用户拍,照 Dify 的超时出口):接了线就走这条,没接这次运行照旧失败
 分支 = "branch"        # 条件分支:每条分支一个出端口,ELSE 也是一个
 循环体 = "loop_body"   # 有界循环 / 列表迭代:进子图
 循环出 = "loop_exit"
 支路 = "parallel"      # 并行:每条支路一个出端口
 
-端口们 = (成功, 失败, 分支, 循环体, 循环出, 支路)
+端口们 = (成功, 失败, 分支, 循环体, 循环出, 支路, 超时)
 
 # ── 节点通用字段(规格 §6 开头那一段)──────────────────────────────
 节点通用字段 = [
@@ -243,7 +244,8 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
     N("human", "人工输入/审核",
       # 11-20 四期 4-1 照 Dify 表单化:form_markdown(说明,可 {{材料键}})/ form_fields([{name,title,type:段落|下拉|是否,options,required}])/
       # actions([{id,文字,样式}],每个按钮一个「分支」出口;不配就是原来的 通过 / 退回 走 成功 口)/ notify_connection_id(到这一步推一条飞书通知的工具连接)
-      端口=[成功, 失败, 分支], 配置=["request_kind", "payload_binding", "allowed_fields",
+      # 超时(11-21 用户拍,照 Dify):到期没人处理 → 接了「超时」口就从那条线接着走(待办记「已过期」),没接这次运行照旧失败(扫过期核对)
+      端口=[成功, 失败, 分支, 超时], 配置=["request_kind", "payload_binding", "allowed_fields",
                                   "candidate_roles", "expires_at_policy",
                                   "form_markdown", "form_fields", "actions", "notify_connection_id"],
       调用外部=False, 实现=已实现,
