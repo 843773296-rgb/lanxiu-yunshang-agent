@@ -116,11 +116,11 @@ def main():
        and ((d3 or {}).get("草稿") or {}).get("定义") == 草3.get("定义"), (c, b))
 
     print("\n▸ ⑤ 定时预览接口认 Cron(11-21 规划 2-1;验收「每周一 8:00」→ 5 次全是周一)")
-    c, pv = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "cron", "表达式": "0 8 * * 1"}))
+    c, pv = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "cron", "表达式": "0 8 * * 1"}, quote_via=urllib.parse.quote))
     次 = (pv or {}).get("接下来") or []
     ck("Cron「0 8 * * 1」→ 200,说法「每周一 08:00」,5 次全是周一", c == 200 and pv.get("说法") == "每周一 08:00" and len(次) == 5
        and all(datetime.fromisoformat(x["时刻"]).weekday() == 0 for x in 次), (c, pv))
-    c, pv = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "cron", "表达式": "0 8 31 2 *"}))
+    c, pv = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "cron", "表达式": "0 8 31 2 *"}, quote_via=urllib.parse.quote))
     ck("永不到点的 Cron → 422 说人话", c == 422 and "一次都不会到点" in json.dumps(pv, ensure_ascii=False), (c, pv))
     c, pv = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "周", "周几": "0", "时刻": "08:00"}))
     ck("可视化预览顺带回等价 Cron「0 8 * * 1」", c == 200 and (pv or {}).get("等价Cron") == "0 8 * * 1", (c, pv))
