@@ -23615,8 +23615,8 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "    if _called(calls or [], \"kb_read\"):\n        return None\n    return ('顾客在谈价钱",
-    "new": "    return ('顾客在谈价钱"
+    "old": "    if _called(calls or [], \"kb_read\"):\n        return None\n    # 放宽(用户 11-20 执行 tools/放宽补丁/返修费_问一下与话术闸.py):这一轮查的是返修",
+    "new": "    # 放宽(用户 11-20 执行 tools/放宽补丁/返修费_问一下与话术闸.py):这一轮查的是返修"
    }
   ],
   "预期红": "**反向** · 读过话术(这一轮调了 kb_read)→ 放过"
