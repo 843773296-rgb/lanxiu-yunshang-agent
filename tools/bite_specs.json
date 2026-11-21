@@ -23716,5 +23716,41 @@
    }
   ],
   "预期红": "混了取数 / 写 / 队列 / 统计工具 → 不能,原因里点名那个工具"
+ },
+ {
+  "script": "agentsite/human_requests_check.py",
+  "改坏": "决定时把 X-Dev-User 换成服务账号",
+  "file": [
+   {
+    "path": "agentsite/human_requests.py",
+    "old": "    码, d = _调(\"POST\", \"/human-requests/\" + quote(rid, safe=\"\") + \"/decisions\", 账号,\n",
+    "new": "    码, d = _调(\"POST\", \"/human-requests/\" + quote(rid, safe=\"\") + \"/decisions\", 服务身份,\n"
+   }
+  ],
+  "预期红": "决定以**绑定账号**的身份发出(不是服务账号 U001)"
+ },
+ {
+  "script": "agentsite/human_requests_check.py",
+  "改坏": "409 CANNOT_DECIDE 和 REVISION_CONFLICT 说成同一句",
+  "file": [
+   {
+    "path": "agentsite/human_requests.py",
+    "old": "        return {\"code\": c, \"error\": \"这张待办已经结束了(过期或已经有人处理过),不能再处理\",\n",
+    "new": "        return {\"code\": c, \"error\": \"别人刚处理过这张待办\",\n"
+   }
+  ],
+  "预期红": "409 CANNOT_DECIDE(已过期)→ 说「已经结束、不能再处理」,不说成别人刚改过"
+ },
+ {
+  "script": "agentsite/human_requests_check.py",
+  "改坏": "决定不带页面给的 revision(改成代理自己重读)",
+  "file": [
+   {
+    "path": "agentsite/human_requests.py",
+    "old": "               体={\"decision\": 决, \"request_revision\": rev, \"edits\": edits,\n",
+    "new": "               体={\"decision\": 决, \"request_revision\": (_调(\"GET\", \"/human-requests/\" + quote(rid, safe=\"\"), 账号)[1].get(\"请求\") or {}).get(\"revision\"), \"edits\": edits,\n"
+   }
+  ],
+  "预期红": "决定带的是**页面看到的那一版** revision(过期版本照样送去让后台拦)"
  }
 ]

@@ -390,6 +390,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
     <button id="gallery">☰ 全部助手</button>
     <!-- 意见与建议(11-04,意见收集 PRD §3.1):和具体哪条回答无关的建议从这里提;「我的意见」也在这里看进度 -->
     <button id="opbtn">✉ 意见与建议</button>
+    <!-- 人工待办(11-22,四期 4-1 聊天站一半):管理后台的人工介入单在这里看、填、点按钮;以登录工号绑定的后台账号去办 -->
+    <button id="hrbtn">🔔 人工待办</button>
   </header>
   <div id="convs"></div>
   <!-- 平台入口放在左栏**底部**(用户 2026-09-24 要「从左侧侧边栏进」)。
@@ -1312,6 +1314,83 @@ async function 提建议(){
   }
   $("#op-why").textContent = (r.error || "没提上") + (r.怎么办 ? ":" + r.怎么办 : "");   // 失败不装作成功
 }
+/* ── 人工待办(11-22,四期 4-1 聊天站一半)────────────────────────────────
+ * 列表 / 表单都来自管理后台的真返回值(聊天站 human_requests.py 以登录工号绑定的后台账号去取)。
+ * ⚠️ 按钮亮不亮只看「能处理吗」;**点下去管理后台按那个账号再判一次**(门店 / 角色 / 过期 / 版本)。
+ * ⚠️ 已过期 / 已处理 → 只读:显示说明和已填内容,不画按钮(一个点了必失败的按钮比没有按钮糟)。
+ * ⚠️ revision 带的是**这次打开看到的那一版** —— 别人先处理了,提交会被 409 拦下并提示刷新,不会盖掉别人。 */
+async function 开人工待办(状态){
+  const ov = $("#od"), bx = $("#odp");
+  ov.classList.add("on");
+  const 过期页 = 状态 === "expired";
+  bx.innerHTML = `<button id="odclose">关闭</button><h3>人工待办</h3>
+    <div class="sub"><button id="hr-mine" ${过期页 ? "" : "disabled"}>我能处理的</button> <button id="hr-exp" ${过期页 ? "disabled" : ""}>已过期的</button></div>
+    <div id="hr-list" class="sub">在取…</div>`;
+  $("#odclose").onclick = closeOrder;
+  $("#hr-mine").onclick = () => 开人工待办();
+  $("#hr-exp").onclick = () => 开人工待办("expired");
+  const d = await fetch("/api/human-requests" + (过期页 ? "?status=expired" : "")).then(x => x.json()).catch(e => ({error: String(e)}));
+  const 框 = $("#hr-list"); if(!框) return;
+  if(!d.ok){ 框.innerHTML = `<b>${esc(d.error || "取不到")}</b>${d.怎么办 ? "<br>" + esc(d.怎么办) : ""}<br><small>这是取不到,不是「没有待办」</small>`; return; }
+  if(!(d.items || []).length){ 框.textContent = 过期页 ? "没有已过期的待办" : "现在没有要你处理的待办"; return; }
+  框.innerHTML = (d.我的门店 ? `<div class="note">你登记在 ${esc(d.我的门店)} 门店,只列本店的单子</div>` : "")
+    + d.items.map(x => `<div class="kv"><span>${esc(String(x.截止 || "").slice(5, 16).replace("T", " ") || "—")}</span><span>`
+    + `<b>${esc(x.类型 || "待办")}</b> · ${esc(x.id || "")}${x.门店 ? " · " + esc(x.门店) : ""}${x.风险说明 ? "<br><small>" + esc(x.风险说明) + "</small>" : ""}`
+    + ` <button data-hropen="${esc(x.id || "")}">${过期页 ? "查看" : "去处理"}</button></span></div>`).join("");
+  框.querySelectorAll("[data-hropen]").forEach(b => { b.onclick = () => 开一张待办(b.dataset.hropen); });
+}
+function 待办控件(f, 值){
+  const n = esc(f.name), 题 = esc(f.title || f.name) + (f.required ? "(必填)" : "");
+  const v = 值 == null ? "" : String(值);
+  if(f.type === "select" && Array.isArray(f.options))
+    return `<label class="sub">${题}<select data-hrf="${n}"><option value="">请选择…</option>${f.options.map(o => { const ov = typeof o === "object" && o ? (o.value ?? o.label) : o; const ol = typeof o === "object" && o ? (o.label ?? o.value) : o;
+      return `<option value="${esc(String(ov))}" ${String(ov) === v ? "selected" : ""}>${esc(String(ol))}</option>`; }).join("")}</select></label>`;
+  if(f.type === "paragraph" || f.type === "textarea")
+    return `<label class="sub">${题}<textarea data-hrf="${n}" rows="3" style="width:100%">${esc(v)}</textarea></label>`;
+  return `<label class="sub">${题}<input data-hrf="${n}" type="${f.type === "number" ? "number" : "text"}" value="${esc(v)}" style="width:100%"></label>`;
+}
+async function 开一张待办(rid){
+  const bx = $("#odp");
+  bx.innerHTML = `<button id="odclose">关闭</button><h3>${esc(rid)}</h3><div class="sub">在取…</div>`;
+  $("#odclose").onclick = closeOrder;
+  const d = await fetch("/api/human-request?id=" + encodeURIComponent(rid)).then(x => x.json()).catch(e => ({error: String(e)}));
+  if(!d.ok){
+    bx.innerHTML = `<button id="odclose">关闭</button><h3>打不开这张待办</h3><div class="sub"><b>${esc(d.error || "")}</b><br>${esc(d.怎么办 || "")}</div>
+      <button id="hr-back">回列表</button>`;
+    $("#odclose").onclick = closeOrder; $("#hr-back").onclick = () => 开人工待办(); return;
+  }
+  const 表 = d.表单 || {说明: "", 字段: [], 按钮: []};
+  const 已填 = Object.entries(d.已填 || {}).map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><span style="white-space:pre-wrap">${esc(typeof v === "object" ? JSON.stringify(v, null, 1) : String(v))}</span></div>`).join("");
+  const 键 = 新键();     // 这次打开表单一个键:双击 / 网络重试只记一条决定
+  const 按钮们 = (表.按钮 || []).length ? 表.按钮 : [{id: "approved", 文字: "通过", 样式: "primary"}, {id: "rejected", 文字: "驳回", 样式: "danger"}];
+  bx.innerHTML = `<button id="odclose">关闭</button>
+    <h3>${esc(d.类型 || "待办")} · ${esc(d.id)}</h3>
+    <div class="sub">状态 <b>${esc(d.状态 || "")}</b>${d.截止 ? " · 截止 " + esc(String(d.截止).slice(0, 16).replace("T", " ")) : ""}${d.门店 ? " · " + esc(d.门店) : ""} · 以 ${esc(d.以谁的身份 || "")} 的身份处理</div>
+    ${表.说明 ? `<div class="note" style="white-space:pre-wrap">${esc(表.说明)}</div>` : ""}
+    ${已填 ? `<h4>要核对的内容</h4>${已填}` : ""}
+    ${d.能处理吗 ? `<div class="apvact">
+        ${(表.字段 || []).map(f => 待办控件(f, (d.已填 || {})[f.name])).join("")}
+        <textarea id="hr-why" rows="2" placeholder="理由(驳回必填)" style="width:100%"></textarea>
+        <div class="row">${按钮们.map(a => `<button data-hrdo="${esc(a.id)}" class="${a.样式 === "danger" ? "no" : "ok"}">${esc(a.文字 || a.id)}</button>`).join(" ")}
+          <span class="sub" id="hr-msg"></span></div></div>`
+      : `<div class="note">${esc(d.为什么 || "这张待办现在不能处理")} —— 只能看,不能再点</div>`}
+    <button id="hr-back">回列表</button>`;
+  $("#odclose").onclick = closeOrder; $("#hr-back").onclick = () => 开人工待办();
+  bx.querySelectorAll("[data-hrdo]").forEach(b => { b.onclick = async () => {
+    const 决定 = b.dataset.hrdo, 理由 = ($("#hr-why").value || "").trim(), 说 = $("#hr-msg");
+    const 缺 = (表.字段 || []).filter(f => f.required && !String((bx.querySelector(`[data-hrf="${CSS.escape(f.name)}"]`) || {}).value || "").trim());
+    if(缺.length){ 说.textContent = "还没填:" + 缺.map(f => f.title || f.name).join("、"); return; }
+    if(决定 === "rejected" && !理由){ 说.textContent = "驳回要写理由 —— 发起人要照着改"; return; }
+    const edits = {};
+    bx.querySelectorAll("[data-hrf]").forEach(e => { if(String(e.value).trim() !== "") edits[e.dataset.hrf] = e.type === "number" ? Number(e.value) : e.value; });
+    bx.querySelectorAll("[data-hrdo]").forEach(x => x.disabled = true); 说.textContent = "在提交…";
+    const r = await fetch("/api/human-request/decide", {method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({id: d.id, decision: 决定, revision: d.revision, edits, reason: 理由, key: 键})}).then(x => x.json()).catch(e => ({error: "没提交上:" + e + "(这是网络问题,单子状态没变)"}));
+    if(r.ok){ 开一张待办(d.id); return; }      // 重新取一遍:显示管理后台记下之后的真状态,不是页面自己改的字
+    说.textContent = (r.error || "没办成") + (r.怎么办 ? ":" + r.怎么办 : "");   // 失败不装作成功
+    if(r.code !== "CANNOT_DECIDE" && r.code !== "REVISION_CONFLICT") bx.querySelectorAll("[data-hrdo]").forEach(x => x.disabled = false);
+  }; });
+}
 /* 店长复核样本(用户 11-04 拍「总部运营提、店长复核」「在聊天站里复核」)。页面只按角色决定**显不显示**这一块 ——
  * 能不能复核由聊天站和管理后台各判一遍(是不是店长、门店对不对得上、是不是本人),页面藏起来不是拦住。 */
 async function 画待复核(){
@@ -2028,6 +2107,7 @@ $("#evt1").onclick = () => { EVTAB = "证据"; drawEv(); };
 $("#evt2").onclick = () => { EVTAB = "子助手"; drawEv(); };
 $("#gallery").onclick = () => { PICKING = true; drawStream(); };
 $("#opbtn").onclick = openOpinions;
+$("#hrbtn").onclick = () => 开人工待办();
 $("#send").onclick = ask;
 $("#stop").onclick = () => { if(RUNNING) RUNNING.abort(); };
 $("#q").addEventListener("input", grow);

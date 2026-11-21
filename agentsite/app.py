@@ -364,6 +364,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"error": "缺确认卡编号"}, code=400)
             码, d = _ac.完整结果(aid, me)
             return self._send(d, code=码)
+        if p in ("/api/human-requests", "/api/human-request"):
+            # 人工待办(四期 4-1 聊天站一半,11-22):以登录工号绑定的管理后台账号去取 —— 门店范围 / 能不能批都由管理后台判。
+            # ⚠️ 必须写在下面那行转发之前,否则被当成后台(8760)的接口转走
+            import human_requests as _hr
+            q = parse_qs(urlparse(self.path).query)
+            if p == "/api/human-requests":
+                码, d = _hr.列表(_who(self), 状态=(q.get("status") or [""])[0].strip() or None)
+            else:
+                码, d = _hr.详情(_who(self), (q.get("id") or [""])[0])
+            return self._send(d, code=码)
         if p.startswith("/api/") or p.startswith("/img/") or p.startswith("/pattern/"): return self._proxy("GET")
         if p == "/report.pdf":
             # 报告导出 PDF(用户 10-10)。**先拿店长自己的 cookie 向后台取这一份** ——
@@ -619,6 +629,13 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     r["门店留档"] = f"没留下:后台连不上({type(e).__name__})"
             return self._send(r, code=(200 if r.get("ok") else 502))
+        if p == "/api/human-request/decide":
+            # 人工待办的按钮(11-22):决定原样透传(按钮 id),revision 用页面看到的那一版,幂等键页面每次打开表单生成一个
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            import human_requests as _hr
+            码, d = _hr.决定(_who(self), body)
+            return self._send(d, code=码)
         if p == "/api/answer-feedback":
             # 每条回答都能评好 / 不好(DF-03 第 2 步,11-04):只认这一轮会话的主人,带提问人工号转给管理后台
             try: body = json.loads(raw or b"{}")

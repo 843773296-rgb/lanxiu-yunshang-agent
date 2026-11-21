@@ -453,6 +453,7 @@ run "聊天里的客户转移卡片 · 照审批单本身画、去后台 / 看�
 run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值手抄官方价,不从价目表现算)" ./agentsite/.venv/bin/python agentsite/cost_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "工作流接管 · 聊天站这一半(被接管的技能调不动 / 拉不到清单的退路 / 每个角色都能发起)" ./agentsite/.venv/bin/python agentsite/takeover_check.py
+run "聊天站人工待办 · 以登录工号绑定的后台账号办 / 四种点不了分开说 / 按钮 · 版本 · 幂等键原样透传(四期 4-1 聊天站一半,11-22)" ./agentsite/.venv/bin/python agentsite/human_requests_check.py
 run "URL 查询参数名 · 不许中文字面量(11-03:中文参数名原样发出,管理后台回 400;试纸是出事那一行)" python3 tools/url_ascii_check.py
 run "聊天站内部口 · 凭证 / 只收本机 / 身份现查 / 会话归密钥 / 访问 API 那一轮写工具不挂(11-03)" ./agentsite/.venv/bin/python agentsite/internal_call_check.py
 run "意见 · 只认这一轮的提问人(失败的也认得出)/ 提问人从登录身份取 / 没凭证不发 / 三份分类一致(11-04)" ./agentsite/.venv/bin/python agentsite/answer_feedback_check.py

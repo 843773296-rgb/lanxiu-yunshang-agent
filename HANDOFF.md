@@ -2619,3 +2619,43 @@ a6cbf89d 开关登记表加「定时(系统停用)」:workflow.schedule_disabled
 - **之后接的三件**(并行会话转用户拍「让测评线参与」):① 人工介入聊天站一半(接口形状在《工作流整体与详细规划-照Dify-20261115》4-1 进度段)→ ② 默认模型接聊天站(先复测再动 sdk.py)→ ③ 我地界 11③④ / 6(见《夜间汇总-20261121》第四节)。
 - **未验证**:repo_consistency 那 2 条「对照红」推断是同一根因(规格指着未提交代码),提交后应消失,要在新 ship 里看。
 - **别做**:别恢复 HANDOFF 旧副本;别复用日志名;夜跑 11-21 是周六档只 2 套,不是故障。
+- 09:18 **已推** 45269e05..2acb51fb(7a26c749 补丁备好 / 91af8d9e 跟进脚本 / f36dd0cd 放宽+回归+咬合 / 2acb51fb 咬合规格跟上),ship-20261121-0831b.log 被包的命令退出码 0;主检出 ff、8770 kickstart 302。下一件:人工介入聊天站一半。
+- 09:47 交接刷新:并行会话占锁约 70 分钟(Cron 触发器 + 编排自测),我不写共享库;这段时间只读代码、设计人工介入聊天站一半(先找聊天站现在怎么调 aimc 的 human-requests、有没有待办入口)。
+
+### 11-21 09:2x 人工介入聊天站一半 · 调查结论(只读助手查的,行号见下,未逐条复核)
+- aimc(A=管理后台/services/api/app):列表 A/human_api.py:151(只有 status/limit,无「我的」过滤,每条带 还能处理吗);详情 :208(`核对材料.__表单` 只在能处理的人拿全文);决定 :294(Idempotency-Key 必填;decision=按钮 id;request_revision 或 If-Match;驳回要理由;edits 按 allowed_fields 白名单)。
+- 鉴权 A/deps.py:49:X-Dev-User → memberships(**无门店维度**);审批工具动作 只 approver / 带授权的 admin(perms.py:98);candidate_roles 默认 [approver,admin](W/worker.py:312)。**project_lanxiu 的 U001 推断提交会 403**(未查库核)。
+- 聊天站身份:cookie lx_token → 后台 /api/me → {no,name,role,shop}(S/app.py:138/205);调 aimc 现用固定 U001(S/app.py:1164)。现成映射 aimc `staff_bindings`(工号↔aimc 账号,A/workflows_api.py:1176)。
+- **我倾向的做法(待用户拍门店那条)**:聊天站按登录工号查 staff_bindings → 以**绑定的 aimc 账号**作 X-Dev-User 调列表 / 详情 / 决定(决定行记真人、权限即后台同一套,不改 aimc);没绑定就说「去后台待办处理」。前端复用 station.html:913 apvCard 样式。
+- 悬而未决:门店维度(aimc 待办不带门店,店长 A 会看到 B 店的)—— 已问用户。
+- 09:5x **用户拍:聊天站人工介入按门店分开,先改后台**(AskUserQuestion 原选项「要分,先改后台」)。已请并行会话做后台三样(待办记门店 / 三接口按门店筛拒 / 列表「我能处理的」过滤)+ 记台账;它回接口形状后我做聊天站一半(staff_bindings → 绑定账号作 X-Dev-User)。**现在转做 ② 默认模型接聊天站**(还债表 row 18,先复测、再动 agentsite/sdk.py)。远端 1f2a1142,锁空,并行会话不占锁。
+- 12:15 并行会话:门店三样后台已写完,正落迁移(memberships / human_requests 加 store_id 可空)+ ship 约 70 分钟,推完给接口形状。我这段只读、不写库;下一步做默认模型接聊天站(先找还债表 row 18 原文 + agentsite/sdk.py 模型选择处)。
+
+### 11-21 12:2x 人工介入按门店 · 后台接口形状(并行会话给的,w1117 944de18b,批次 12:17 起 ship,远端哈希待它报)
+- 成员 GET/POST /memberships 多 "门店"(null=不限;大写 [A-Z0-9_-]{1,32};空串=清成不限;不给键=不动)。
+- 列表 GET /human-requests:登记了门店的人只见本店(定不出门店的不给;不限门店的全看);每条多 "门店";响应多 "我的门店" / "只看我能处理的";`?mine=true` 只列「还能处理吗」为真。
+- 详情 GET /human-requests/{id}、决定 POST …/decisions:不在门店范围 → **404 NOT_FOUND**(不说有这单);详情多 "门店" / "门店来源";决定其余不变(Idempotency-Key 必填、request_revision、decision=按钮 id、edits)。
+- 归属在挂起时定:运行输入 门店/门店编号/store_id/shop_id/X-Shop → 核对材料同名键 → 发起人成员表门店 → 空。口径 `管理后台/services/api/app/runtime/门店范围.py` 的 `看得到吗(我的门店, 单子门店)`,**聊天站要判就 import 它,别另写**。
+- 聊天站接法(并行会话认可):登录工号 → staff_bindings → 绑定 aimc 账号作 X-Dev-User。**404 要分两种提示**:NO_MEMBERSHIP(绑定账号在 project_lanxiu 没成员记录 → 找管理员登记)vs NOT_FOUND(不在本店范围 / 单子没了)。没绑定 → 「去后台待办处理」。AUTH_MODE 离开 dev 时换服务令牌(以后一起改)。
+- **下一步第一个动作**:等它报远端哈希 → 主检出 ff → 在 agentsite 加三条代理接口(列表 mine=true / 详情 / 决定,沿 app.py:1164 `_评一次检索` 的写法:先读 revision、带 Idempotency-Key、409/404 照实说)+ station.html 表单卡(复用 913 apvCard 样式:说明、字段控件、按钮)+ 检查(自造三种 404 / 409 / 按钮 id 透传)+ 咬合。② 默认模型接聊天站排在它之后。
+- 13:20 并行会话:用户拍四件(台账 85–88);其中**人工介入到期加「超时」出口** → 聊天站待办会出现「已过期」状态,它做完给形状;它还要动 agentsite/action_confirm.py + backend/pending_actions.py(复审 P0-01/P1-02),我这两文件无未提交改动、不冲突。聊天站表单卡要给「已过期」一个只读样子(不显示按钮)。
+- 13:28 超时出口形状(并行会话 w1121 本地,随下轮推):到期 → human_requests.status='expired';决定接口对它 **409 CANNOT_DECIDE**(终态,聊天站要说「已过期,不能再处理」,别说成「别人刚改过」那种 409);详情 __表单 原样在 → 卡只读显示说明 + 已填内容、无按钮;列表可 ?status=expired。门店形状不变。仍等两轮远端哈希再 ff 主检出开工。
+- 13:31 ⚠️ 并行会话正在改 agentsite/app.py + agentsite/web/station.html + action_confirm.py + pending_actions.py(复审 P0-01/P1-02)。**我的聊天站一半也要动 app.py / station.html → 等它推完、ff 之后再开工,别并行改同一文件**。
+- 14:22 并行会话第十轮 ship 红(迁移索引没登模型,已补),远端仍 1f2a1142;第十一轮 14:2x 起约 75 分钟(锁内再落两条迁移)。我不写共享库,等它报哈希 → ff → 开工聊天站一半。
+- 16:37 并行会话第十三轮又红(确认卡在迁移目录外 ALTER TABLE,改成另存表),远端仍 1f2a1142;第十四轮 16:36 起约 80 分钟。我照旧不写共享库,等哈希 → ff → 开工聊天站一半(交接 12:2x 那段是接口形状 + 第一个动作)。
+- 18:10 **远端 dec5f75b**(并行会话推完:门店 / 超时出口 / 确认卡四态 + GET /api/action/result / station.html 两种卡状态;alembic head 0b610a1aa99b)。工 已 rebase 到它。**app.py / station.html 现在归我**(对方今天不碰)。下一步第一个动作 = 照 12:2x 那段做聊天站一半:先读 app.py 里 /api/action/result 与 _评一次检索 的写法 + station.html 确认卡四态,再加三条代理接口 + 表单卡(含已过期只读、409 CANNOT_DECIDE 与 REVISION_CONFLICT 分开说、404 NO_MEMBERSHIP / NOT_FOUND 分开说)。占锁前喊并行会话。
+- 21:52 并行会话今晚做「标注回复」:后台一半在 管理后台/;**匹配那一半要动 agentsite/app.py 或 sdk.py,等我推完聊天站改动、报哈希后它才碰**。它约 21:00 占锁跑一轮(会先喊);0 点到夜跑结束不占锁。我这边聊天站一半还没动代码(只 rebase 到 dec5f75b)。
+- 22:12 并行会话第十五轮占锁(迁移 7fd4c1f6ee18:chat_annotations 表 + projects 一列),约 23:3x 推完;0 点后它不占锁,而 **0 点到夜跑结束我也不占锁** → 聊天站一半今晚只写代码、跑不占锁的单项检查,门禁 + 推送排到明早夜跑结束后。
+- 22:31 并行会话今晚不推:gate_w18 只跑到 e2e-ci,0 点前放锁;**明早 05:15 后它先推(gate_w19),推完报哈希,我再 rebase + 跑我的门禁**。aimc 跑 b90555ff(共享库 head 7fd4c1f6ee18)。
+- 11-22 07:5x **聊天站人工待办一半开写(未提交)**:新文件 agentsite/human_requests.py(以登录工号查 /staff-bindings〔服务账号读〕→ 绑定账号作 X-Dev-User 调列表 mine=true / ?status=expired、详情、决定;四种点不了分开说:404 NO_MEMBERSHIP / 404 NOT_FOUND / 409 CANNOT_DECIDE / 409 REVISION_CONFLICT;revision 用页面看到的那一版、不替它重读;幂等键 chat:工号:单号:页面键)。app.py 已接三条路由(GET /api/human-requests、GET /api/human-request?id=、POST /api/human-request/decide,GET 两条在 _proxy 那行之前)。**下一步第一个动作**:station.html 左栏 opbtn 后加「人工待办」按钮 + 弹窗(#od/#odp,列表 → 详情表单:说明 / 字段控件 / 按钮;已过期或能处理吗=false 只读无按钮)→ 写 agentsite/human_requests_check.py(venv python;起假 aimc 线程 HTTP 服务 + 真起 app.H,验四种错误分开说、按钮 id / revision / 幂等键透传、X-Dev-User 是绑定账号不是 U001、没绑定不调)+ 挂 check.sh + bite_specs 2–3 条 → js_check / fetch_route_check / 单项不占锁跑。并行会话 07:5x 起 ship 约 08:4x 报哈希;我 rebase 后 ship(日志用 ship-20261122-xxxx),估 11:3x 报它哈希,它等我哈希才动 agentsite 做标注匹配。
+- 11-22 08:2x **聊天站人工待办已本地提交 63cf7db9(未推)**:human_requests.py / human_requests_check.py(19 条绿,venv python)/ app.py 三路由(POST /api/human-request/decide 放在 /api/answer-feedback 前 —— 放 rate-rag 前会顶掉 fetch_route_check 那条咬合〔bite_specs 第 830 条〕的锚点)/ station.html 左栏 hrbtn / check.sh 第 456 行 / bite_specs 末尾 3 条。
+  · 未验证:那 3 条新咬合的重放(后台任务 btl8uq5lh,`bite_run --specs scratchpad/hr_specs.json`)结果没看到;重放中途我挪过 app.py 的 POST 分支(不影响这三条,它们只改 human_requests.py),没出结果或不确定就重跑一次。js_smoke 没跑(8770 还是旧代码)。
+  · 判据:revision 故意用页面看到的那一版、不在代理里重读(重读 = 乐观锁失效);没绑定不拿服务账号 U001 顶替。
+  · 禁区:并行会话 ship 期间不占锁;agentsite/evals/funnel.jsonl 不提交;别恢复 HANDOFF 旧副本。
+  · **下一步第一个动作**:看 btl8uq5lh 结果(三条都要「红在指定那条」)→ 等并行会话报哈希(约 08:4x)→ `git pull --rebase --autostash`(或 fetch + rebase origin/main)→ 告诉它我要占锁 → `./tools/ship.sh > scratchpad/ship-20261122-a.log`(日志名不复用)→ 只认「被包的命令退出码」→ 绿:主检出 `git merge --ff-only` + `git merge-base --is-ancestor` 核 → `launchctl kickstart -k gui/$(id -u)/com.lanxiu.agentsite` + `curl --noproxy '*'` 看 302 → 把提交号报给用户和并行会话(它等这个号做标注匹配,要动 agentsite)。
+  · 之后:② 默认模型接聊天站(先复测再动 sdk.py)③ 11③④ / 6。
+  · 08:3x 悬而未决:btl8uq5lh 的输出被 tail 吃到最后才落盘,文件里现在只有 grep 那行 —— 等它的完成通知再读,别以为它卡了另起一份。
+  · 08:5x 三条新咬合重放全过(红在指定那条,被包的命令退出码 0)。
+- 09:0x rebase 到 e21d0b1f(bite_specs 末尾冲突:取远端 + 追加我 3 条,diff 只 +36 行)→ 本地 34e8be71;**ship 已起**(后台 bx13687ry,日志 scratchpad/ship-20261122-0905a.log),已告并行会话占锁。下一步:通知到 → 只认日志里「被包的命令退出码」→ 绿则主检出 ff + merge-base 核 + kickstart 8770 + curl 302 + 报哈希给用户和并行会话;红看 ❌ 行。
+- 09:1x 第一次 ship 拒跑:HANDOFF.md 没提交 = 工作区脏(ship 只挪三件运行态)→ 并进本地提交后重跑,日志 ship-20261122-0915b.log。
+- 09:2x 第二次 ship 红:intent_check 对照就红 = 《待办清单》里检查脚本数 410→411 没重新生成(我新加了一个检查)。make_todo + sync_docs 后只有待办清单变了,并进本地提交,第三次 ship 日志 ship-20261122-0925c.log。
