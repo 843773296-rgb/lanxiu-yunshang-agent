@@ -926,6 +926,15 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
             出.append(问(阻断, "REF_NOT_FOUND", "选的工具连接已经用不了:被删了、归档了,或者不在这个项目里",
                        "在右侧「基本」里重新选一条工具连接", node_id=n.get("id"), field_path="config.connection_id"))
 
+    # ⑤⅞⁻ Markdown 导出(11-21):正文必须绑上 —— 一步没有正文的导出会存一份空文件,看着像「报告出来了」
+    for n in 节点们:
+        if n.get("type") != "markdown_export":
+            continue
+        绑 = (n.get("config") or {}).get("bindings") or {}
+        if not isinstance(绑.get("正文"), dict) or not 绑.get("正文"):
+            出.append(问(阻断, "MARKDOWN_BODY_MISSING", "还没说要把什么存成文件",
+                       "在右侧「用到的数据」里把「正文」绑到前面产出报告正文的那一步(模型 / 模板转换)", node_id=n.get("id"), field_path="config.bindings.正文"))
+
     # ⑤⅞ 知识检索节点(三期 3-5,11-20 做通):要查什么得绑上;选了资料库但没有就绪的索引要说出来(不在没建好的索引上检索)
     for i, n in enumerate(节点们):
         if n.get("type") != "retrieve":

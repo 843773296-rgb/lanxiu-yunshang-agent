@@ -665,6 +665,9 @@ def _建一张(e):
         Index("ix_traces_task", t.c.project_id, t.c.task_ref)
         # 11-21(复审 P2-08):调用链列表按「项目 + 入口 + 开始时间倒序」翻页,原来走 ix_traces_task 的位图扫再排序
         Index("ix_traces_proj_kind_started", t.c.project_id, t.c.entry_kind, t.c.started_at.desc())
+    if 名 == "human_requests":
+        # 11-21 门店分开:列表按 (project_id, store_id) 筛 —— 迁移 b7d2e9f1a3c5 建的那条索引,这里登记一份,alembic check 才对得上
+        Index("ix_human_requests_proj_store", t.c.project_id, t.c.store_id)
     if 名 in ("spans", "usage_ledger"):
         # 11-21(复审 P2-08):调用链列表每一行都要数 spans / 汇总 usage_ledger,原来 spans 没有 (project_id, trace_id) 索引 → 每行全表扫,
         # 50 行就 1.2 秒(空闲时实测);加了之后走索引

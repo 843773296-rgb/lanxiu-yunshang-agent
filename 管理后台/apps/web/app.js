@@ -2650,7 +2650,7 @@ const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本�
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
   // 11-15 文案对齐 Dify(规划一期第五件最后一项):「按条件分流」→「条件分支」、「人工核对」→「人工介入」(待办页里仍叫核对 —— 那边是处理人的动作)
   condition: "条件分支", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工介入", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值",
-  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代", http_request: "HTTP 请求", parallel: "并行", subworkflow: "子流程", code: "代码执行" };
+  list_operator: "列表操作", doc_extractor: "文档提取器", foreach: "迭代", http_request: "HTTP 请求", parallel: "并行", subworkflow: "子流程", code: "代码执行", markdown_export: "Markdown 导出" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -3189,7 +3189,7 @@ function 缺项(n) {
     return v === undefined || v === null || v === "" || (typeof v === "object" && !Object.keys(v).length);
   });
 }
-const 字段中文 = { connection_version_id: "用哪个模型", prompt_version_id: "这一步要完成什么(处理要求)",
+const 字段中文 = { title: "标题", file_prefix: "文件名前缀", template_version: "模板版本", connection_version_id: "用哪个模型", prompt_version_id: "这一步要完成什么(处理要求)",
   output_schema: "结果包含哪些内容", tool_version_id: "执行哪个业务动作", input_schema: "用户需要提供什么",
   branches: "满足什么条件", else_policy: "都不满足时怎么办", request_kind: "核对类型",
   candidate_roles: "谁来处理", expires_at_policy: "多久没处理就结束", operations: "怎么整理",
@@ -3410,6 +3410,7 @@ function 默认配置(类型) {
            // 子工作流(11-16 三期 3-3):版本不预填;上限留空 = 跟父流程一样
            subworkflow: { input_mapping: {}, sub_limits: {} },
            // 代码执行最小版(11-20 三期 3-4):给一个能跑的骨架;结果先空着 —— 检查配置会报「没声明返回什么」,不替人猜
+           markdown_export: { bindings: {}, title: "" },   // 11-21:正文在「用到的数据」里绑;标题不填就用流程名
            code: { language: "python", code: "def main(**inputs):\n    # inputs 里是「输入变量」里配的那几项\n    return {}\n", input_mapping: {},
                    output_schema: { type: "object", properties: {}, required: [] }, sub_limits: { timeout_seconds: 5, memory_mb: 64 } },
            extractor: { parameters: [{ name: "", type: "string", description: "", required: false }], bindings: {}, instruction: "" },
@@ -3967,6 +3968,12 @@ function 表_设置(n) {
       + `<div class="two"><div><label class="f">限时(秒,最多 5)</label>${数字框(上.timeout_seconds ?? 5, (v) => { 上.timeout_seconds = v; }, { 整数: true, 最小: 1, 最大: 5 })}</div>
           <div><label class="f">内存(MB,最多 64)</label>${数字框(上.memory_mb ?? 64, (v) => { 上.memory_mb = v; }, { 整数: true, 最小: 1, 最大: 64 })}</div></div>
       <div class="k">两个上限是写死的天花板(拍脑袋的数),只能往下配。内存那条在 macOS 上不是硬限制:每 0.1 秒看一眼用量、超了就杀。</div>`;
+  } else if (n.type === "markdown_export") {
+    体 += `<div class="note">${md("把前面某一步产出的**正文**存成一份 .md 文件:文件名服务端生成(标题_门店_统计日期_运行短号.md),写完**回读核哈希**才算存成;下载按项目和门店范围授权、逐次记审计。它只存文件,**不发消息、不派单**。")}</div>`;
+    体 += `<label class="f">标题(进文件名;不填用流程名)</label>` + 输入框(c.title || "", (el) => { c.title = el.value.trim() || undefined; }, "例如 经营日报")
+      + `<label class="f">文件名前缀(不填用标题)</label>` + 输入框(c.file_prefix || "", (el) => { c.file_prefix = el.value.trim() || undefined; }, "例如 经营日报")
+      + `<label class="f">模板版本(记在文档上,方便以后知道这份是按哪版模板写的)</label>` + 输入框(c.template_version || "", (el) => { c.template_version = el.value.trim() || undefined; }, "例如 v1")
+      + `<div class="k">正文、标题、统计起止、门店从哪来 —— 在下面「用到的数据」里绑。</div>`;
   } else if (n.type === "retrieve") {
     // 知识检索(三期 3-5,11-20 做通 —— 此前这个节点能加进图、却没有面板,「查哪个资料库」「怎么查」没地方选):
     // 选资料库时顺手记下它最新「已就绪」的索引(检索只在就绪的索引上跑);「召回设置」照 Dify 摆在这儿但**只读** ——
@@ -4262,6 +4269,8 @@ function 结果字段名(n) {
   if (n.type === "http_request") return ["status_code", "headers", "body", "json", "url", "execution_mode"];
   // 知识检索固定返回(workers/worker.py _retrieve 的结果形状;mock 跑法同形、全空)
   if (n.type === "retrieve") return ["片段", "证据", "召回数", "选了几片", "原问", "改写", "试跑id", "execution_mode"];
+  // Markdown 导出固定返回(workers/worker.py _markdown_export 的结果形状)
+  if (n.type === "markdown_export") return ["document_id", "file_name", "content_hash", "byte_count", "title", "门店", "下载", "execution_mode"];
   if (n.type === "condition") return ["branch"];
   if (n.type === "merge") return [c.output_field || "out"];
   if (n.type === "tool") {
@@ -4333,6 +4342,9 @@ function 表_输入(n) {
   if (n.type === "code") return `<div class="k">输入变量:左边是变量名(代码里 main 的参数名),右边选它从哪来。只有这里列的变量会交给代码。</div>` + 绑定编辑(n, "input_mapping");
   if (n.type === "retrieve") return `<div class="k">知识检索只读一项:<b>问题</b>(要查的话)—— 绑开始的某一项,或前面某一步产出的文本。</div>`
     + 绑定编辑(n, "bindings", { properties: { 问题: { type: "string", description: "要查什么" } }, required: ["问题"] });
+  if (n.type === "markdown_export") return `<div class="k">要存成文件的<b>正文</b>(必填)从哪来 —— 一般是模型或模板转换产出的文本;可选:标题、统计起 / 统计止(定时开头的流程绑开始的那两项)、门店(决定哪家店的人能看到)。</div>`
+    + 绑定编辑(n, "bindings", { properties: { 正文: { type: "string", description: "报告正文(Markdown)" }, 标题: { type: "string", description: "文件标题,进文件名" },
+        统计起: { type: "string", description: "统计哪一段,起" }, 统计止: { type: "string", description: "统计哪一段,止" }, 门店: { type: "string", description: "门店编号,如 SH001" } }, required: ["正文"] });
   if (n.type === "parallel") return `<div class="k">并行这一步自己不取数 —— 每条支路里的步骤各自在自己的「用到的数据」里选(只能选并行外面的步骤,不能选另一条支路的)。</div>`;
   if (n.type === "subworkflow") {   // 交给子流程什么:按它那一版「要用户给什么」逐项选来源(契约行由它生成、名字只读,必填的不能删)
     const v = 子流程版本((n.config || {}).workflow_version_id);
@@ -6254,9 +6266,23 @@ async function 页_桥请求详情(cid) {
       : `<div class="k">还没有回执。</div>`}`;
 }
 
+/* 这次运行产出的文件(11-21,「Markdown 导出」节点):列表 + 下载;没有就不画(不是每条流程都导出) */
+async function 画_文件产物(rid) {
+  let d;
+  try { d = await 请求(`${P()}/workflow-documents?run_id=${encodeURIComponent(rid)}`); } catch (e) { return; }
+  const el = $("#docbox"); if (!el || !(d.items || []).length) return;
+  el.innerHTML = `<h2>产出的文件</h2><table><thead><tr><th>文件</th><th>统计期</th><th>门店</th><th>大小</th><th>状态</th><th></th></tr></thead><tbody>`
+    + d.items.map((x) => `<tr><td><b>${esc(x.file_name || x.title || x.id)}</b><div class="k">${esc(x.id)} · 哈希 ${esc(String(x.content_hash || "").slice(0, 12))}…</div></td>
+        <td class="k">${esc(((x.period_detail || {}).起 || "—") + ((x.period_detail || {}).止 && (x.period_detail || {}).止 !== (x.period_detail || {}).起 ? " ~ " + (x.period_detail || {}).止 : ""))}</td>
+        <td class="k">${esc(x.store_id || "不限")}</td><td class="num">${Number(x.byte_count || 0).toLocaleString()} 字节</td>
+        <td>${x.status === "已存" ? `<span class="pill ok">已存(回读核过)</span>` : `<span class="pill warn">${esc(x.status || "")}</span>`}</td>
+        <td>${x["下载"] ? `<a href="${esc(x["下载"])}" target="_blank"><button>下载 .md</button></a>` : `<span class="k">没存成,不给下载</span>`}</td></tr>`).join("")
+    + `</tbody></table><div class="k">下载 = 交出系统,每次都记审计;「生成了」和「存成了」是两件事,只有存成的才有下载。</div>`;
+}
 async function 页_运行详情(rid) {
   const d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`);
   const 步 = d["步骤"] || [];
+  画_文件产物(rid);
   $("#main").innerHTML = `
     <div class="crumb">工作室 / <a href="#/studio/workflow">工作流</a> / 运行 ${esc(rid)}</div>
     <div class="head"><div><h1>运行详情</h1>
@@ -6266,6 +6292,7 @@ async function 页_运行详情(rid) {
     </div>
     <div id="rcmsg"></div>
     ${业务结果块(d)}
+    <div id="docbox"></div>
     ${回复气泡(d)}
     <div class="cards">
       <div class="card"><div class="kpi">${esc(d["执行状态中文"])}</div>

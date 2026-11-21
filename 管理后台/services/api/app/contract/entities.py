@@ -1557,6 +1557,16 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "禁止自动重复不可逆动作 —— 但也不许把它显示成「已结束」"],
       依赖=["run_steps", "tool_versions"]),
 
+    # ④⅞ 工作流产出的文档(11-21,Markdown 导出节点)
+    E("workflow_documents", "工作流文档", 项目级, 可改,
+      ["execution_run_id", "node_id", "workflow_version_id", "kind", "title", "file_name", "content_type",
+       "byte_count", "content_hash", "object_key", "status", "period_detail", "template_version", "owner", "store_id",
+       "generated_at", "stored_at"],
+      ["**「生成了」和「存成了」是两件事**:generated_at 是正文算出来的时刻,stored_at 是回读核过哈希的时刻;只有 status=已存 的才能下载",
+       "文件名 / 对象键**服务端生成**,不接受调用方给路径;同一期重做出一份新的,不覆盖旧的(旧的还是证据)",
+       "下载 = 交出系统 → 逐次审计;按项目隔离,登记了门店的成员只拿得到本店(store_id)或不限门店的文档"],
+      依赖=["execution_runs"]),
+
     # ⑤ 人工介入
     E("human_requests", "人工请求", 子对象, 可改,
       ["execution_run_id", "run_step_id", "kind", "payload_ref", "allowed_fields",

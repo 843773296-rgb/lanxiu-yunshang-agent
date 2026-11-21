@@ -1256,8 +1256,53 @@ def _跑一张工作流(c, job, 打点):
                 "试跑id": 存.get("试跑id"), "execution_mode": "live",
                 **({"存档说明": 存.get("为什么")} if not 存.get("存了吗") else {})}   # 没存上召回记录要看得见,不吞
 
+    def _markdown_export(cfg, 实参):
+        """「Markdown 导出」步骤(11-21,用户拍第一个业务定时任务 = 经营日报草稿 + Markdown 导出)。
+        正文 → UTF-8 字节 → 对象存储(storage.写入,先临时文件再改名)→ **回读再算一次哈希** → 记 workflow_documents(status=已存)。
+        回读对不上 → 这一步失败(不记成已存);文档归哪个门店照人工待办同一份口径(输入 / 材料 / 发起人)。
+        演示运行照样写(是我们自己的存储,不出系统、不花钱),只是 execution_mode 照记。"""
+        import 文档导出 as _X
+        import storage as _ST
+        import 门店范围 as _SS
+        from datetime import datetime, timezone
+        正文 = 实参.get("正文")
+        if 正文 is None or (isinstance(正文, str) and not 正文.strip()):
+            raise RN.节点失败("MARKDOWN_BODY_EMPTY", "要导出的正文是空的", "前面产出正文的那一步这次没给内容;看它的详情")
+        文本 = _X.正文转文本(正文)
+        字节, 哈, 字数 = _X.字节与哈希(文本)
+        期 = _X.统计期(实参)
+        标题 = str(实参.get("标题") or cfg.get("title") or 来源.get("名") or "文档")[:120]
+        发起人门店 = c.execute(text("""select store_id from memberships where user_id=:u and (project_id=:p or project_id is null)
+                                        and status='active' order by (project_id is null) limit 1"""),
+                            {"u": r["principal"], "p": job["project_id"]}).scalar() if r["principal"] else None
+        门店, _ = _SS.取门店({"门店": 实参.get("门店")}, None, 发起人门店)
+        did = _新("doc")
+        名 = _X.文件名(cfg.get("file_prefix") or 标题, 门店, 期.get("起") or datetime.now(timezone.utc).date().isoformat(), _X.运行短号(run_id))
+        键 = _ST.建键(项目id=job["project_id"], 上传id=did, 文件名=名, 年月=datetime.now(timezone.utc).strftime("%Y%m"))
+        生成于 = datetime.now(timezone.utc)
+        c.execute(text("""insert into workflow_documents (id, organization_id, project_id, execution_run_id, node_id, workflow_version_id, kind, title,
+                              file_name, content_type, byte_count, content_hash, object_key, status, period_detail, template_version, owner, store_id,
+                              generated_at, created_at, created_by, updated_at, revision)
+                          values (:i,:o,:p,:r,:n,:v,'markdown',:t,:f,:ct,:b,:h,:k,'生成',cast(:pd as jsonb),:tv,:ow,:sid,:g, now(), :u, now(), 1)"""),
+                  {"i": did, "o": job["organization_id"], "p": job["project_id"], "r": run_id, "n": 实参.get("__node_id") or cfg.get("__node_id"),
+                   "v": 来源.get("version_id"), "t": 标题, "f": 名, "ct": _X.媒体类型, "b": 字数, "h": 哈, "k": 键,
+                   "pd": _j.dumps(期, ensure_ascii=False), "tv": cfg.get("template_version"), "ow": r["principal"], "sid": 门店, "g": 生成于, "u": 我是谁})
+        try:
+            _ST.写入(键, 字节)
+            回 = _ST.读出(键)
+        except _ST.存不了 as e:
+            raise RN.节点失败("DOCUMENT_STORE_FAILED", f"文件没存成:{str(e)[:160]}", "看存储目录权限 / 磁盘;这一步没有产出文件,不是产出了一份坏的")
+        import hashlib as _hl
+        if _hl.sha256(回).hexdigest() != 哈:
+            raise RN.节点失败("DOCUMENT_HASH_MISMATCH", "写进去再读出来的内容和算好的哈希对不上", "存储那边有问题;这一步按失败算,不给一份对不上的文件")
+        c.execute(text("""update workflow_documents set status='已存', stored_at=now(), updated_at=now(), revision=revision+1
+                          where project_id=:p and id=:i"""), {"p": job["project_id"], "i": did})
+        记事("document.stored", {"document_id": did, "file_name": 名, "byte_count": 字数, "content_hash": 哈, "门店": 门店, "统计期": 期})
+        return {"document_id": did, "file_name": 名, "content_hash": 哈, "byte_count": 字数, "title": 标题, "门店": 门店,
+                "下载": f"/api/v1/projects/{job['project_id']}/workflow-documents/{did}/download", "execution_mode": r["execution_mode"]}
+
     适配器们 = {"llm": _llm, "tool": _工具, "agent": _agent, "document": _文档, "http_request": _http, "subworkflow": _subworkflow,
-             "retrieve": _retrieve}
+             "retrieve": _retrieve, "markdown_export": _markdown_export}
     结果 =RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器=适配器们,
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
                     系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例,

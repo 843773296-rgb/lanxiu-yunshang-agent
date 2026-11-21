@@ -210,6 +210,7 @@ import knowledge_api as _KB
 import uploads_api as _UP
 import runs_api as _RUN
 import human_api as _HM
+import documents_api as _DOC
 import runctl as _RC
 import datasets_api as _DS
 import training_api as _TR
@@ -245,6 +246,7 @@ app.include_router(_AG.router)
 app.include_router(_KB.router)
 app.include_router(_UP.router)
 app.include_router(_RUN.router)
+app.include_router(_DOC.router)
 app.include_router(_HM.router)
 app.include_router(_KR.router)
 app.include_router(_RC.router)
