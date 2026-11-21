@@ -66,6 +66,14 @@ create table if not exists pending_action (
 );
 create index if not exists pa_trace on pending_action(trace);
 create index if not exists pa_session on pending_action(session);
+-- 11-21(复审 P1-02):完整回执另存一张表 —— 不动老表的列(加列要走迁移目录,tools/migration_check 盯着;这里建一张新表 if not exists 就够)
+create table if not exists pending_action_result (
+    aid         text primary key,
+    result_full text not null,
+    sha256      text not null,
+    byte_count  integer not null,
+    truncated   integer not null default 0
+);
 """
 
 
@@ -81,11 +89,6 @@ def _连(路径):
     c = sqlite3.connect(路径, timeout=10, isolation_level=None)
     c.row_factory = sqlite3.Row
     c.executescript(_建表)
-    # 11-21 加的三列(完整结果 / 哈希 / 字节 / 截过没):老库没有就补 —— sqlite 没有 add column if not exists
-    有 = {r["name"] for r in c.execute("pragma table_info(pending_action)")}
-    for 列, 型 in (("result_full", "text"), ("result_sha256", "text"), ("result_bytes", "integer"), ("result_truncated", "integer")):
-        if 列 not in 有:
-            c.execute(f"alter table pending_action add column {列} {型}")
     return c
 
 
@@ -96,10 +99,8 @@ def _行(r, 现在=None):
     d["args"] = json.loads(d.pop("args_json") or "{}")
     d["asker"] = json.loads(d.pop("asker_json") or "{}")
     d["result"] = json.loads(d.pop("result_json")) if d.get("result_json") else None
-    # 11-21:卡上的 result 是**摘要**(永远是合法 JSON);完整结果另存(result_full),这里只带元信息,要全文走 取完整结果()
-    字节 = d.pop("result_bytes", None)
-    d["result_meta"] = ({"字节": 字节, "哈希": d.get("result_sha256"), "已截短": bool(d.get("result_truncated"))} if 字节 is not None else None)
-    d.pop("result_full", None); d.pop("result_sha256", None); d.pop("result_truncated", None)
+    # 11-21:卡上的 result 是**摘要**(永远是合法 JSON);完整结果另存 pending_action_result,这里只带元信息(由 _补元 填),要全文走 取完整结果()
+    d.setdefault("result_meta", None)
     if d["status"] == "待确认" and (现在 if 现在 is not None else time.time()) >= d["expires_at"]:
         d["status"] = "已过期"           # 读的时候现算:过期不靠后台扫,也就不会有「该过期而没过期」的窗口
     return d
@@ -136,10 +137,19 @@ def 建(路径, tool, domain, args, me, trace=None, session=None, 现在=None):
         c.close()
 
 
+def _补元(c, d):
+    """卡上带一份完整结果的元信息(字节 / 哈希 / 截过没);没收尾过就 None。"""
+    if d is None:
+        return d
+    m = c.execute("select sha256, byte_count, truncated from pending_action_result where aid=?", (d["id"],)).fetchone()
+    d["result_meta"] = {"字节": m["byte_count"], "哈希": m["sha256"], "已截短": bool(m["truncated"])} if m else None
+    return d
+
+
 def 取(路径, aid, 现在=None):
     c = _连(路径)
     try:
-        return _行(c.execute("select * from pending_action where id=?", (str(aid or ""),)).fetchone(), 现在)
+        return _补元(c, _行(c.execute("select * from pending_action where id=?", (str(aid or ""),)).fetchone(), 现在))
     finally:
         c.close()
 
@@ -150,7 +160,7 @@ def 本轮的(路径, trace, 现在=None):
         return []
     c = _连(路径)
     try:
-        return [_行(r, 现在) for r in c.execute("select * from pending_action where trace=? order by created_at", (trace,))]
+        return [_补元(c, _行(r, 现在)) for r in c.execute("select * from pending_action where trace=? order by created_at", (trace,))]
     finally:
         c.close()
 
@@ -229,10 +239,11 @@ def 收尾(路径, aid, 成功, 结果, 状态=None):
     摘要, 截 = 摘要化(json.loads(完整))
     c = _连(路径)
     try:
-        c.execute("""update pending_action set status=?, result_json=?, result_full=?, result_sha256=?, result_bytes=?, result_truncated=?
-                      where id=? and status='执行中'""",
-                  (状态, json.dumps(摘要, ensure_ascii=False), 完整, hashlib.sha256(完整.encode("utf-8")).hexdigest(),
-                   len(完整.encode("utf-8")), 1 if 截 else 0, aid))
+        n = c.execute("update pending_action set status=?, result_json=? where id=? and status='执行中'",
+                      (状态, json.dumps(摘要, ensure_ascii=False), aid)).rowcount
+        if n == 1:
+            c.execute("insert or replace into pending_action_result (aid, result_full, sha256, byte_count, truncated) values (?,?,?,?,?)",
+                      (aid, 完整, hashlib.sha256(完整.encode("utf-8")).hexdigest(), len(完整.encode("utf-8")), 1 if 截 else 0))
     finally:
         c.close()
 
@@ -241,12 +252,12 @@ def 取完整结果(路径, aid):
     """完整结果(原样 JSON 文本)+ 哈希 + 字节;没有就 None。页面上的「看完整结果」走这里,不从摘要还原。"""
     c = _连(路径)
     try:
-        r = c.execute("select result_full, result_sha256, result_bytes from pending_action where id=?", (str(aid or ""),)).fetchone()
+        r = c.execute("select result_full, sha256, byte_count from pending_action_result where aid=?", (str(aid or ""),)).fetchone()
     finally:
         c.close()
-    if r is None or r["result_full"] is None:
+    if r is None:
         return None
-    return {"完整": r["result_full"], "哈希": r["result_sha256"], "字节": r["result_bytes"]}
+    return {"完整": r["result_full"], "哈希": r["sha256"], "字节": r["byte_count"]}
 
 
 def 取消(路径, aid, me, 现在=None):
