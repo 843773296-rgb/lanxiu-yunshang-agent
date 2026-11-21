@@ -175,8 +175,9 @@ def main():
     尾 = uuid.uuid4().hex[:5].upper()
     甲 = 成员.记(项目, f"E2EHS1{尾}")   # SH001 的店长(管理员角色才在 candidate_roles 里)
     乙 = 成员.记(项目, f"E2EHS2{尾}")   # SH002 的店长
-    c1, b1 = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "门店": "sh001"})
-    c2, b2 = 打("POST", P + "/memberships", 体={"工号": 乙, "角色": "admin", "门店": "SH002"})
+    # 「审批工具动作」对 admin 是「可授权」档、默认关 —— 要显式专项授权,不然决定那一步先被 403 拦住、到不了门店范围的 404(第八轮 e2e 栽过)
+    c1, b1 = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "门店": "sh001", "专项授权": ["审批工具动作"]})
+    c2, b2 = 打("POST", P + "/memberships", 体={"工号": 乙, "角色": "admin", "门店": "SH002", "专项授权": ["审批工具动作"]})
     ck("加两个临时成员,各登记一个门店(编号统一成大写)", c1 == 201 and c2 == 201 and (b1 or {}).get("门店") == "SH001" and (b2 or {}).get("门店") == "SH002", (c1, b1, c2, b2))
     c, m = 打("GET", P + "/memberships")
     行 = {x["工号"]: x for x in (m or {}).get("成员") or []}
