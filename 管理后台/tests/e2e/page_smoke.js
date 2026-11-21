@@ -89,10 +89,13 @@ global.prompt = () => null;
 const 页面用的项目 = () => localStorage.getItem("aimc.proj") || "project_demo_a";
 const 页面用的身份 = () => localStorage.getItem("aimc.user") || "U002";
 const realFetch = global.fetch;
-let 请求数 = 0, 请求们 = [];
+let 请求数 = 0, 请求们 = [], 在途 = 0, 最后回来 = Date.now();
 global.fetch = (u, o) => {
   请求数++; 请求们.push((o && o.method || "GET") + " " + u);
-  return realFetch(u.startsWith("http") ? u : 基址 + u, o);
+  在途++;
+  // 记「最后一个响应回来是什么时候」:下面的收尾判定等的是**请求都回来了、页面又安静了一会**,不是固定 3.5 秒
+  // (11-21 第九轮 e2e-ci:/traces 空闲时就要 2.4 秒,e2e 并行跑着时超过 3.5 秒 → #/runs「加载中」被判成占位符 —— 服务没坏,是尺子按固定秒数量的)
+  return realFetch(u.startsWith("http") ? u : 基址 + u, o).finally(() => { 在途--; 最后回来 = Date.now(); });
 };
 process.on("unhandledRejection", (e) => errs.push("未捕获的 Promise:" + (e && e.message || e)));
 
@@ -111,7 +114,19 @@ if (!/^#\//.test(global.location.hash)) {
 try { new Function(src)(); }
 catch (e) { errs.push("同步执行就挂了:" + e.message); }
 
-setTimeout(() => {
+/* 什么时候算「页面加载完了」:至少等 1.5 秒(让加载路径发出请求),然后等**在途请求归零、且最后一个响应回来之后页面又安静了 400 毫秒**;
+ * 最多等 20 秒 —— 到顶还有在途的,照旧往下判(该红的「加载中」还是红),只是把等了多久、还有几个没回来印出来,
+ * 让人分得清「服务挂了」和「服务慢」。原来是固定 3.5 秒:比的是机器快慢,不是页面对错。 */
+const 起点 = Date.now();
+const 收尾判定 = () => {
+  const 等了 = Date.now() - 起点;
+  if (等了 < 1500 || (等了 < 20000 && (在途 > 0 || Date.now() - 最后回来 < 400))) return setTimeout(收尾判定, 100);
+  console.log(`  等了 ${等了} ms${在途 > 0 ? ` · ⚠️ 还有 ${在途} 个请求没回来(到 20 秒上限了)` : ""}`);
+  判定();
+};
+setTimeout(收尾判定, 100);
+
+function 判定() {
   const 填过 = [...写过.entries()].filter(([, v]) => v && v.length > 12);
   const 字数 = 填过.reduce((n, [, v]) => n + v.length, 0);
   console.log(`  发了 ${请求数} 个请求`);
@@ -481,4 +496,4 @@ setTimeout(() => {
   }
   console.log("=".repeat(70));
   console.log(`✅ 页面跑通:${请求数} 个真请求,${填过.length} 个节点被真实数据填充`);
-}, 3500);
+}
