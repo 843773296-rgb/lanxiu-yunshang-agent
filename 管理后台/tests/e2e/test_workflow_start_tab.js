@@ -144,6 +144,31 @@ ck("下拉选「定时」和页签点「定时触发器」写出同一份配置"
 下拉改("");
 ck("下拉选回「请选择」→ 不改定义", 起().config.start_mode === "定时");
 
+console.log("\n▸ ⑦ 定时触发器的「可视化 / Cron 表达式」两种模式(11-21 规划 2-1,照 Dify)+ 卡片上的「下次」");
+装({ 待配: false }); 跑(`选开始方式("定时")`);
+h = 面板();
+ck("面板顶上两段开关:可视化(选中)/ Cron 表达式;可视化模式下有「多久跑一次」没有表达式框",
+   /aria-selected="true"[^>]*>可视化</.test(h) && /aria-selected="false"[^>]*>Cron 表达式</.test(h) && /多久跑一次/.test(h) && !/Cron 表达式\(分 时 日 月 周/.test(h), h.slice(0, 600));
+ck("开关不拼 class 名(选中态走 aria-selected)", !/class="\$\{|class="(on|)"/.test(h));
+// 预览缓存里放一份服务端算的等价 Cron(真跑时由 填定时预览 写进去;这里直接塞,不起服务)
+跑(`图态.定时预览 = { 键: JSON.stringify(节点("start").config.schedule_rule), 说法: "每周一 08:00", 下次: "2026-11-23T08:00:00+08:00", 等价Cron: "0 8 * * 1", 等价Cron说明: "" }`);
+ck("卡片副标题写「开始 · 定时触发器 · 下次 2026-11-23 08:00」(照 Dify 卡片上的下次执行时间)", 跑(`次级标签(节点("start"))`) === "开始 · 定时触发器 · 下次 2026-11-23 08:00", 跑(`次级标签(节点("start"))`));
+let km = /data-lb="Cron 模式" role="tab"/.test(h) && /data-k="(\d+)" data-lb="Cron 模式"/.exec(h);
+跑(`控件表[${km[1]}]()`);
+c = 起().config;
+ck("切到 Cron:规则只剩 周期=cron + 表达式(等价的「0 8 * * 1」带过去),周几 / 时刻没了", c.schedule_rule.周期 === "cron" && c.schedule_rule.表达式 === "0 8 * * 1" && !("周几" in c.schedule_rule) && !("时刻" in c.schedule_rule), c.schedule_rule);
+ck("规则一改、缓存的键对不上 → 卡片先不写「下次」(等预览回来)", 跑(`次级标签(节点("start"))`) === "开始 · 定时触发器");
+ck("能撤销(是一次真编辑)", 跑(`图态.脏`) === true && (跑(`撤销()`), 起().config.schedule_rule.周期 === "周"));
+跑(`重做()`);
+h = 面板();
+ck("Cron 模式面板:开关选中「Cron 表达式」、有表达式输入框和例子、没有「多久跑一次」", /aria-selected="true"[^>]*>Cron 表达式</.test(h) && /Cron 表达式\(分 时 日 月 周/.test(h) && /0 8 \* \* 1/.test(h) && !/多久跑一次/.test(h), h.slice(0, 600));
+let kv = /data-k="(\d+)" data-lb="可视化模式"/.exec(h);
+跑(`控件表[${kv[1]}]()`);
+c = 起().config;
+ck("切回可视化:回到默认每周一 08:00(表达式没了)", c.schedule_rule.周期 === "周" && c.schedule_rule.时刻 === "08:00" && !("表达式" in c.schedule_rule), c.schedule_rule);
+跑(`控件表[${kv[1]}]()`);
+ck("已经是可视化再点可视化 → 不算一次编辑", 跑(`图态.编辑序号`) === (跑(`图态.编辑序号`)));
+
 console.log();
 if (挂.length) { console.log(`❌ ${挂.length} 条没过:${挂.join(" / ")}`); process.exit(1); }
 console.log(`✅ 「开始」页签与多开始 ${过} 条过`);

@@ -130,7 +130,7 @@ def main():
     st = 等到(rid, ("waiting_approval", "failed", "succeeded", "cancelled")) if rid else None
     ck("受理 202、停在 waiting_approval", c == 202 and st == "waiting_approval", (c, r, st))
     with 事务() as cx:
-        hid = cx.execute(text("select id from human_requests where project_id=:p and execution_run_id=:r order by created_at desc limit 1"), {"p": 项目, "i": rid, "r": rid}).scalar()
+        hid = cx.execute(text("select id from human_requests where project_id=:p and execution_run_id=:r order by created_at desc limit 1"), {"p": 项目, "r": rid}).scalar()
     c, 详 = 打("GET", P + f"/human-requests/{hid}") if hid else (None, None)
     表 = ((详 or {}).get("核对材料") or {}).get("__表单") or {}
     ck("待办详情.核对材料.__表单:说明已渲染(带「袖子短了」)、两个按钮、两个字段", c == 200 and "袖子短了" in (表.get("说明") or "")

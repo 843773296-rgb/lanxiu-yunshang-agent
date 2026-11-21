@@ -231,6 +231,11 @@ tr.warn-row td{background:#fff7e8}
 .wftool .seg{display:inline-flex}.wftool .seg button{border-radius:0}
 .wftool .seg button:first-child{border-radius:var(--radius) 0 0 var(--radius)}
 .wftool .seg button:last-child{border-radius:0 var(--radius) var(--radius) 0;margin-left:-1px}
+/* 节点面板里的「可视化 / Cron 表达式」两段开关(11-21 规划 2-1):选中态用 aria-selected,不拼 class 名 */
+.wfpanel .seg,.panel .seg{display:inline-flex;margin:2px 0 6px}.wfpanel .seg button,.panel .seg button{border-radius:0}
+.wfpanel .seg button:first-child,.panel .seg button:first-child{border-radius:var(--radius) 0 0 var(--radius)}
+.wfpanel .seg button:last-child,.panel .seg button:last-child{border-radius:0 var(--radius) var(--radius) 0;margin-left:-1px}
+.seg button[aria-selected="true"]{border-color:var(--pri);color:var(--pri);background:var(--pri-bg)}
 .wftool button[aria-pressed="true"]{border-color:var(--pri);color:var(--pri);background:var(--pri-bg)}
 .wftool .find input{height:32px;width:150px;border:1px solid var(--line);border-radius:var(--radius);padding:0 8px}
 .wfstage{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;height:560px;background:var(--card)}

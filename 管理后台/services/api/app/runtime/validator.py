@@ -428,10 +428,15 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
         if 方式 != "定时":
             continue
         try:
-            SCH.校验规则(c.get("schedule_rule") or {})
+            规则 = SCH.校验规则(c.get("schedule_rule") or {})
+            # Cron 模式(11-21,规划 2-1)能写出比内置最密的「每小时」还密的频率(「* * * * *」一天 1440 次):每次到点都真跑、真花钱,
+            # 不拦(Dify 也不拦),但要在检查里说出来 —— 24 这个数不是拍的,是可视化模式里能选到的最密档
+            if 规则["周期"] == SCH.CRON and (次 := len(SCH.执行时刻们(规则, SCH.date(2026, 1, 1)))) > 24:
+                出.append(问(警告, "START_TRIGGER_DENSE", f"这条 Cron 一天要跑 {次} 次,比内置最密的「每小时」还密 —— 每次到点都真跑生产那一版、真花一次钱",
+                           "确认真要这么密;不是的话把「分」那一段改成一个固定值(比如 0)", node_id=n["id"], field_path="config.schedule_rule"))
         except SCH.规则不对 as e:
             出.append(问(阻断, "START_TRIGGER_RULE", f"「开始」的定时规则不对:{e}",
-                       "在「开始」的「基本」里把多久跑一次、哪几天 / 几号、几点跑填对", node_id=n["id"], field_path="config.schedule_rule"))
+                       "在「开始」的「基本」里把多久跑一次、哪几天 / 几号、几点跑填对;Cron 模式写五段「分 时 日 月 周」", node_id=n["id"], field_path="config.schedule_rule"))
         多 = sorted(set(((c.get("input_schema") or {}).get("properties") or {})) - set(定时自填))
         if 多:
             出.append(问(阻断, "START_TRIGGER_EXCLUSIVE",

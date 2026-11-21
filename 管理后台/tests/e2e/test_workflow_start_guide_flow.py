@@ -14,6 +14,7 @@
 import json
 import os
 import sys
+from datetime import datetime
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -113,6 +114,25 @@ def main():
     c, d3 = 打("GET", P + f"/workflows/{wid3}")
     ck("只改布局存一次 → 标没了,定义原样", "$开始待配置" not in (((d3 or {}).get("草稿") or {}).get("布局") or {})
        and ((d3 or {}).get("草稿") or {}).get("定义") == 草3.get("定义"), (c, b))
+
+    print("\n▸ ⑤ 定时预览接口认 Cron(11-21 规划 2-1;验收「每周一 8:00」→ 5 次全是周一)")
+    c, pv = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "cron", "表达式": "0 8 * * 1"}))
+    次 = (pv or {}).get("接下来") or []
+    ck("Cron「0 8 * * 1」→ 200,说法「每周一 08:00」,5 次全是周一", c == 200 and pv.get("说法") == "每周一 08:00" and len(次) == 5
+       and all(datetime.fromisoformat(x["时刻"]).weekday() == 0 for x in 次), (c, pv))
+    c, pv = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "cron", "表达式": "0 8 31 2 *"}))
+    ck("永不到点的 Cron → 422 说人话", c == 422 and "一次都不会到点" in json.dumps(pv, ensure_ascii=False), (c, pv))
+    c, pv = 打("GET", P + "/schedule-preview?" + urllib.parse.urlencode({"周期": "周", "周几": "0", "时刻": "08:00"}))
+    ck("可视化预览顺带回等价 Cron「0 8 * * 1」", c == 200 and (pv or {}).get("等价Cron") == "0 8 * * 1", (c, pv))
+    定义["nodes"][[n["type"] for n in 定义["nodes"]].index("start")]["config"] = {"start_mode": "定时", "schedule_rule": {"周期": "cron", "表达式": "* * * * *"},
+                                                                                  "input_schema": {"type": "object", "properties": {}, "required": []}}
+    c, d = 打("GET", P + f"/workflows/{wid}")
+    c, b = 打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定义}, 头={"If-Match": str(((d or {}).get("草稿") or {}).get("revision"))})
+    c, v = 打("POST", P + f"/workflows/{wid}/validate")
+    问题 = (v or {}).get("问题") or []
+    ck("开始写「* * * * *」→ 存得了,检查配置给警告 START_TRIGGER_DENSE(一天 1440 次),不阻断",
+       c == 200 and any(p.get("code") == "START_TRIGGER_DENSE" and p.get("级别") == "warning" for p in 问题)
+       and not any(p.get("code") == "START_TRIGGER_RULE" for p in 问题), (c, [(p.get("code"), p.get("级别")) for p in 问题]))
 
     收尾()
     print()

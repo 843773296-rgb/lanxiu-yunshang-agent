@@ -1439,24 +1439,31 @@ def _定时出(c, project_id, s, 现在=None):
 
 
 @router.get(前缀 + "/schedule-preview")
-def 定时预览(project_id: str, 周期: str = "周", 时刻: str = "08:00", 周几: str = "", 几号: str = "",
+def 定时预览(project_id: str, 周期: str = "周", 时刻: str = "08:00", 周几: str = "", 几号: str = "", 表达式: str = "",
           me: 身份 = Depends(要权限("查看有权配置"))):
-    """编排页「开始 · 定时触发器」面板用:传频率,回人话说法 + 接下来 5 次各统计哪一段。不存不改。"""
+    """编排页「开始 · 定时触发器」面板用:传频率,回人话说法 + 接下来 5 次各统计哪一段。不存不改。
+    周期=cron 时只看「表达式」(11-21,规划 2-1 的 Cron 模式);顺带回「可视化等价 Cron」,面板切模式时带过去。"""
     import 定时 as T
     from datetime import datetime, timezone
-    体 = {"周期": 周期, "时刻": 时刻}
-    if 周几.strip():
-        体["周几"] = [x.strip() for x in 周几.split(",") if x.strip()]
-    if 几号.strip():
-        体["几号"] = [x.strip() for x in 几号.split(",") if x.strip()]
+    if 周期 == T.CRON:
+        体 = {"周期": T.CRON, "表达式": 表达式}
+    else:
+        体 = {"周期": 周期, "时刻": 时刻}
+        if 周几.strip():
+            体["周几"] = [x.strip() for x in 周几.split(",") if x.strip()]
+        if 几号.strip():
+            体["几号"] = [x.strip() for x in 几号.split(",") if x.strip()]
     try:
         规则 = T.校验规则(体)
     except T.规则不对 as e:
-        raise _错(422, "VALIDATION", str(e), "周期选 日 / 周 / 月 / 时;周几 0–6 逗号分开;几号 1–31 或「末」逗号分开;时刻写 08:00 这样")
+        raise _错(422, "VALIDATION", str(e), "周期选 日 / 周 / 月 / 时;周几 0–6 逗号分开;几号 1–31 或「末」逗号分开;时刻写 08:00 这样;Cron 写五段「分 时 日 月 周」")
     现在 = datetime.now(timezone.utc)
-    return {"说法": T.说法(规则), "规则": 规则,
-            "接下来": [{"时刻": a.isoformat(), "统计起": b.isoformat(), "统计止": e.isoformat()}
-                    for a, b, e in T.接下来几次(规则, 现在, 5)]}
+    出 = {"说法": T.说法(规则), "规则": 规则,
+         "接下来": [{"时刻": a.isoformat(), "统计起": b.isoformat(), "统计止": e.isoformat()}
+                 for a, b, e in T.接下来几次(规则, 现在, 5)]}
+    if 规则["周期"] != T.CRON:
+        出["等价Cron"], 出["等价Cron说明"] = T.可视化转cron(规则)
+    return 出
 
 
 @router.get(前缀 + "/workflows/{wid}/schedule")

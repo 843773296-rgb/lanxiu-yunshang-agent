@@ -25,6 +25,7 @@
 - 到点时上一次还没跑完 → 这次跳过(这一条要查库,不在这里判;这里只算「该不该是这一期」)。
 """
 import calendar
+import functools
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -33,10 +34,140 @@ from zoneinfo import ZoneInfo
 月末 = "末"
 默认时刻 = "08:00"
 默认时区 = "Asia/Shanghai"
+CRON = "cron"   # 第五种周期(11-21,规划 2-1「可视化 / Cron 表达式」两种模式,照 Dify):规则里带「表达式」,不带「时刻」
+# Cron 看多少天(日 / 周 / 月那四种 40 天够;Cron 能写「每年 1 月 1 日」,要看满一年)
+_CRON_天数 = 400
 
 
 class 规则不对(ValueError):
     pass
+
+
+# ── Cron 表达式(标准五段:分 时 日 月 周;北京时间)──────────────────────────────────────────
+# 认:* / 数字 / a-b / */n / a-b/n / 逗号列表;周 0 和 7 都是周日(cron 口径),月和周也认英文三字母(jan / mon)。
+# 不认:秒(六段)、L / W / # 这类扩展、年 —— 「每月最后一天」请用可视化模式的「末」。
+# 日和周都限定时按 cron 标准取**并集**(「每月 1 号或周一」)—— 这是 cron 几十年的口径,不「纠正」。
+_月名 = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+_周名 = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+_CRON_段 = [("分", 0, 59, None), ("时", 0, 23, None), ("日", 1, 31, None), ("月", 1, 12, _月名), ("周", 0, 7, _周名)]
+
+
+def _cron段(文, 名, 下, 上, 名表):
+    """一段 → (是不是 *, 命中的整数集合)。抛 规则不对(带人话)。"""
+    文 = 文.strip().lower()
+    if not 文:
+        raise 规则不对(f"Cron 的「{名}」这一段是空的")
+
+    def 值(s):
+        if 名表 and s in 名表:
+            return 名表.index(s) + (1 if 名 == "月" else 0)
+        try:
+            return int(s)
+        except ValueError:
+            raise 规则不对(f"Cron 的「{名}」里认不出「{s}」")
+    出 = set()
+    全 = True
+    for 项 in 文.split(","):
+        步 = 1
+        if "/" in 项:
+            项, 步文 = 项.split("/", 1)
+            try:
+                步 = int(步文)
+            except ValueError:
+                raise 规则不对(f"Cron 的「{名}」里步长「{步文}」不是整数")
+            if 步 < 1:
+                raise 规则不对(f"Cron 的「{名}」里步长要 ≥ 1")
+        if 项 == "*":
+            起, 止 = 下, 上
+            if 步 == 1 and len(文.split(",")) == 1:
+                return True, set(range(下, 上 + 1))
+        elif "-" in 项:
+            a, b = 项.split("-", 1)
+            起, 止 = 值(a), 值(b)
+            if 起 > 止:
+                raise 规则不对(f"Cron 的「{名}」里「{项}」起点比终点大")
+        else:
+            起 = 止 = 值(项)
+        全 = False
+        for v in (起, 止):
+            if not 下 <= v <= 上:
+                raise 规则不对(f"Cron 的「{名}」只能在 {下} 到 {上} 之间,「{项}」超了")
+        出.update(range(起, 止 + 1, 步))
+    if 名 == "周" and 7 in 出:
+        出.discard(7); 出.add(0)
+    return 全, 出
+
+
+def 解析cron(表达式):
+    """五段 → {"分": set, "时": set, "日": (全, set), "月": set, "周": (全, set 以 cron 口径 0=周日)}。"""
+    段们 = str(表达式 or "").split()
+    if len(段们) != 5:
+        raise 规则不对("Cron 要写五段:分 时 日 月 周,比如「0 8 * * 1」= 每周一 08:00" + (";不认秒和年" if len(段们) in (6, 7) else ""))
+    出 = {}
+    for 文, (名, 下, 上, 名表) in zip(段们, _CRON_段):
+        出[名] = _cron段(文, 名, 下, 上, 名表)
+    return {"分": 出["分"][1], "时": 出["时"][1], "日": 出["日"], "月": 出["月"][1], "周": 出["周"]}
+
+
+def _cron是执行日(c, 某天):
+    if 某天.month not in c["月"]:
+        return False
+    日全, 日们 = c["日"]
+    周全, 周们 = c["周"]
+    中日 = 某天.day in 日们
+    中周 = ((某天.weekday() + 1) % 7) in 周们      # python 0=周一 → cron 0=周日
+    if 日全 and 周全:
+        return True
+    if 日全:
+        return 中周
+    if 周全:
+        return 中日
+    return 中日 or 中周                          # 两边都限定:cron 标准是并集
+
+
+def _cron时刻们(c):
+    return sorted((h, m) for h in c["时"] for m in c["分"])
+
+
+def cron说法(表达式, c=None):
+    """能说人话的就说人话(「每周一 08:00」「每天 08:00、20:00」「每月 1 号 08:00」),说不清的照抄表达式。"""
+    c = c or 解析cron(表达式)
+    时刻们 = _cron时刻们(c)
+    if len(时刻们) > 6:
+        return f"按 Cron「{表达式}」(一天 {len(时刻们)} 次)"
+    时文 = "、".join(f"{h:02d}:{m:02d}" for h, m in 时刻们)
+    日全, 日们 = c["日"]
+    周全, 周们 = c["周"]
+    月全 = c["月"] == set(range(1, 13))
+    if not 月全:
+        return f"按 Cron「{表达式}」"
+    if 日全 and 周全:
+        return f"每天 {时文}"
+    if 日全 and len(周们) <= 7:
+        名 = "、".join(周几名[(d - 1) % 7] for d in sorted(周们, key=lambda d: (d - 1) % 7))
+        return f"每{名} {时文}"
+    if 周全 and len(日们) <= 6:
+        return "每月 " + "、".join(f"{d} 号" for d in sorted(日们)) + f" {时文}"
+    return f"按 Cron「{表达式}」"
+
+
+def 可视化转cron(规则):
+    """可视化规则 → 等价的 Cron(面板切模式时带过去)。「末」在 Cron 里写不出来 → 丢掉并在第二个返回值里说明。"""
+    h, m = (int(x) for x in 规则["时刻"].split(":"))
+    p = 规则["周期"]
+    注 = ""
+    if p == "日":
+        表 = f"{m} {h} * * *"
+    elif p == "时":
+        表 = f"{m} * * * *"
+    elif p == "周":
+        表 = f"{m} {h} * * " + ",".join(str((d + 1) % 7) for d in 规则.get("周几") or [0])
+    else:
+        号 = [d for d in (规则.get("几号") or [1]) if isinstance(d, int)]
+        if 月末 in (规则.get("几号") or []):
+            注 = "Cron 写不出「最后一天」,这一项没带过去;要月末跑请用可视化模式"
+        表 = f"{m} {h} {','.join(str(d) for d in 号) or '1'} * *"
+    return 表, 注
 
 
 def _整数们(值, 名, 下, 上, 另许=()):
@@ -66,8 +197,22 @@ def 校验规则(规则):
     """→ 规范化后的规则 dict;不合法抛 规则不对(带人话)。
     周 → 带「周几」(0 = 周一 … 6 = 周日,默认 [0]);月 → 带「几号」(1–31 或「末」,默认 [1]);日 / 时不带。"""
     r = dict(规则 or {})
+    if r.get("周期") == CRON:
+        时区 = str(r.get("时区") or 默认时区)
+        try:
+            ZoneInfo(时区)
+        except Exception:
+            raise 规则不对(f"认不出的时区 {时区}")
+        表 = " ".join(str(r.get("表达式") or "").split())
+        c = 解析cron(表)
+        出 = {"周期": CRON, "表达式": 表, "时区": 时区}
+        # 「0 8 31 2 *」这种一年里一次都到不了的,现在就拒 —— 不然面板上「接下来 5 次」是空的、到点永远不跑,看着像配好了
+        今 = datetime.now(ZoneInfo(时区)).date()
+        if not any(_cron是执行日(c, 今 + timedelta(days=i)) for i in range(_CRON_天数)):
+            raise 规则不对("这条 Cron 一年里一次都不会到点(比如 2 月 31 日)")
+        return 出
     if r.get("周期") not in 周期们:
-        raise 规则不对("周期只能是 日 / 周 / 月 / 时")
+        raise 规则不对("周期只能是 日 / 周 / 月 / 时,或 cron(带表达式)")
     时刻 = str(r.get("时刻") or 默认时刻)
     try:
         h, m = (int(x) for x in 时刻.split(":"))
@@ -89,6 +234,8 @@ def 校验规则(规则):
 
 def 说法(规则):
     """给人看的一句:「每周三、周五 08:00」「每月 15 号、最后一天 08:00」「每小时的第 05 分」「每天 08:00」。"""
+    if 规则["周期"] == CRON:
+        return cron说法(规则["表达式"])
     p, t = 规则["周期"], 规则["时刻"]
     if p == "日":
         return f"每天 {t}"
@@ -104,10 +251,36 @@ def _本地(规则, 时刻utc):
     return 时刻utc.astimezone(ZoneInfo(规则["时区"]))
 
 
+@functools.lru_cache(maxsize=256)
+def _解析缓存(表达式):
+    return 解析cron(表达式)
+
+
+def _cron(规则):
+    """规则里的 Cron 解析结果(按表达式缓存;**不往规则 dict 里挂东西** —— 规则会被原样 json 返回给面板,set 进不了 JSON)。"""
+    return _解析缓存(规则["表达式"])
+
+
+def 按时刻算(规则):
+    """统计区间按「时刻」算(两头是带时区的时刻)还是按「日期」算(两头是本地日期)?
+    时 → 时刻;日 / 周 / 月 → 日期;Cron 看它一天跑几次:一天只一次 → 日期(「0 8 * * 1」和可视化的「每周一 08:00」口径一样),多次 → 时刻。"""
+    if 规则["周期"] == "时":
+        return True
+    if 规则["周期"] == CRON:
+        return len(_cron时刻们(_cron(规则))) > 1
+    return False
+
+
+def _看多少天(规则):
+    return _CRON_天数 if 规则["周期"] == CRON else 40
+
+
 def 执行时刻们(规则, 某天):
-    """某一天(本地日期)里**所有**该执行的时刻(带时区)—— 不管那天该不该跑。日 / 周 / 月各一次;时 24 次。"""
-    h, m = (int(x) for x in 规则["时刻"].split(":"))
+    """某一天(本地日期)里**所有**该执行的时刻(带时区)—— 不管那天该不该跑。日 / 周 / 月各一次;时 24 次;Cron 按分 × 时。"""
     tz = ZoneInfo(规则["时区"])
+    if 规则["周期"] == CRON:
+        return [datetime.combine(某天, time(hh, mm), tzinfo=tz) for hh, mm in _cron时刻们(_cron(规则))]
+    h, m = (int(x) for x in 规则["时刻"].split(":"))
     if 规则["周期"] == "时":
         return [datetime.combine(某天, time(hh, m), tzinfo=tz) for hh in range(24)]
     return [datetime.combine(某天, time(h, m), tzinfo=tz)]
@@ -120,6 +293,8 @@ def 执行时刻(规则, 某天):
 
 def 是执行日(规则, 某天):
     p = 规则["周期"]
+    if p == CRON:
+        return _cron是执行日(_cron(规则), 某天)
     if p in ("日", "时"):
         return True
     if p == "周":
@@ -151,11 +326,11 @@ def 统计区间(规则, 执行):
     日 / 周 / 月:两头都是本地日期、**两头都含**(起 = 上一次该跑那天,止 = 这次前一天);
     时:两头都是带时区的时刻、两头都含(起 = 上一个整点那次,止 = 这次前一分钟)。"""
     if not isinstance(执行, datetime):
-        if 规则["周期"] == "时":
-            raise ValueError("每小时的规则要给执行时刻,不是执行日")
+        if 按时刻算(规则):
+            raise ValueError("一天跑多次的规则要给执行时刻,不是执行日")
         执行 = 执行时刻(规则, 执行)
     上 = _上一次(规则, 执行)
-    if 规则["周期"] == "时":
+    if 按时刻算(规则):
         return 上, 执行 - timedelta(minutes=1)
     return 上.date(), 执行.date() - timedelta(days=1)
 
@@ -168,7 +343,7 @@ def 期键(流程id, 规则, 起):
 def 下次执行(规则, 现在):
     """`现在` 之后(不含)最近的一次执行 → (执行时刻, 统计起, 统计止)。"""
     天 = _本地(规则, 现在).date()
-    for i in range(0, 40):
+    for i in range(0, _看多少天(规则)):
         d = 天 + timedelta(days=i)
         if not 是执行日(规则, d):
             continue
@@ -176,7 +351,7 @@ def 下次执行(规则, 现在):
             if t > 现在:
                 起, 止 = 统计区间(规则, t)
                 return t, 起, 止
-    raise RuntimeError("40 天里找不到下一次执行 —— 规则有问题")
+    raise RuntimeError(f"{_看多少天(规则)} 天里找不到下一次执行 —— 规则有问题")
 
 
 def 接下来几次(规则, 现在, n=5):
@@ -193,7 +368,7 @@ def 接下来几次(规则, 现在, n=5):
 def 最近该跑的(规则, 现在):
     """`现在` 之前(含)最近该跑的那一次 → (执行时刻, 统计起, 统计止);一次都还没到就 None。"""
     天 = _本地(规则, 现在).date()
-    for i in range(0, 40):
+    for i in range(0, _看多少天(规则)):
         d = 天 - timedelta(days=i)
         if not 是执行日(规则, d):
             continue
@@ -210,7 +385,7 @@ def _同类(规则, 上次统计起):
     if 上次统计起 is None:
         return None
     tz = ZoneInfo(规则["时区"])
-    if 规则["周期"] == "时":
+    if 按时刻算(规则):
         if isinstance(上次统计起, datetime):
             return 上次统计起 if 上次统计起.tzinfo else 上次统计起.replace(tzinfo=tz)
         return datetime.combine(上次统计起, time(0, 0), tzinfo=tz)

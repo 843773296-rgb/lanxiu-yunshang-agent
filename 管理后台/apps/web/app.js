@@ -3173,7 +3173,13 @@ function 次级标签(n) {
   }
   if (n.type === "start") {
     if (开始待配置()) return "开始 · 还没配置怎么开始";
-    return `开始 · ${开始方式名[(n.config || {}).start_mode] || 开始方式名.用户输入}`;
+    const 式 = (n.config || {}).start_mode;
+    // 定时触发器的卡片写「下次 …」(11-21 规划 2-1,照 Dify 卡片上的「下次执行时间」):取预览缓存,规则一改键就对不上、先不写,预览回来重画
+    if (式 === "定时") {
+      const 缓 = 图态 && 图态.定时预览 && 图态.定时预览.键 === JSON.stringify((n.config || {}).schedule_rule || {}) ? 图态.定时预览 : null;
+      return `开始 · 定时触发器${缓 && 缓.下次 ? ` · 下次 ${时间(缓.下次)}` : ""}`;
+    }
+    return `开始 · ${开始方式名[式] || 开始方式名.用户输入}`;
   }
   return (步类型名[n.type] || n.type) + 在;
 }
@@ -3973,19 +3979,30 @@ function 表_设置(n) {
     }
     if (方式 === "定时") {
       const r = c.schedule_rule = c.schedule_rule || { 周期: "周", 周几: [0], 时刻: "08:00" };
-      体 += `<label class="f">多久跑一次</label>` + 下拉(r.周期 || "周", Object.entries(周期说法), (el) => {
-        if (!el.value) return false;
-        r.周期 = el.value;
-        if (el.value === "周" && !(r.周几 || []).length) r.周几 = [0];
-        if (el.value === "月" && !(r.几号 || []).length) r.几号 = [1];
-        重画();
-      }, "请选择");
-      if (r.周期 === "周") 体 += `<div class="k">哪几天</div><div>` + 周几名.map((名, i) =>
-        `<label class="k"><input type="checkbox" data-k="${挂控件((el) => { const w = new Set(r.周几 || []); if (el.checked) w.add(i); else w.delete(i); r.周几 = [...w].sort(); 重画(); })}" data-lb="周几" ${(r.周几 || []).includes(i) ? "checked" : ""}> ${名}</label>`).join(" ") + `</div>`;
-      if (r.周期 === "月") 体 += `<label class="f">几号</label>` + 输入框((r.几号 || [1]).join(","), (el) => { r.几号 = 读几号(el.value); 重画(); }, "1,15,末")
-        + `<div class="k">逗号分开;最后一天写「末」;31 号碰上小月落到月末跑。</div>`;
-      体 += `<label class="f">${r.周期 === "时" ? "每小时的第几分(时:分里只用分)" : "几点跑(北京时间)"}</label>`
-        + 输入框(r.时刻 || "08:00", (el) => { r.时刻 = el.value.trim() || "08:00"; 重画(); }, "08:00");
+      // 两种模式(11-21 规划 2-1,照 Dify 面板顶上的「可视化 / Cron 表达式」):切过去带等价表达式(服务端算的,预览里顺带回),切回来从头选
+      const 是cron = r.周期 === "cron";
+      体 += `<label class="f">怎么定频率</label><div class="seg" role="tablist">
+        <button type="button" data-k="${挂控件(() => 切定时模式(r, "可视化"))}" data-lb="可视化模式" role="tab" aria-selected="${!是cron}">可视化</button>
+        <button type="button" data-k="${挂控件(() => 切定时模式(r, "cron"))}" data-lb="Cron 模式" role="tab" aria-selected="${是cron}">Cron 表达式</button></div>`;
+      if (是cron) {
+        体 += `<label class="f">Cron 表达式(分 时 日 月 周,北京时间)</label>`
+          + 输入框(r.表达式 || "", (el) => { r.表达式 = el.value.trim(); 重画(); }, "0 8 * * 1")
+          + `<div class="k">例:<code>0 8 * * 1</code> 每周一 08:00 · <code>30 8,20 * * *</code> 每天两次 · <code>0 8 1 * *</code> 每月 1 号 · <code>0 8 1 1 *</code> 每年元旦。认 * / 数字 / 范围 / 逗号 / 步长(*/15),周 0 和 7 都是周日;「最后一天」Cron 写不出来,用可视化模式的「末」。</div>`;
+      } else {
+        体 += `<label class="f">多久跑一次</label>` + 下拉(r.周期 || "周", Object.entries(周期说法), (el) => {
+          if (!el.value) return false;
+          r.周期 = el.value;
+          if (el.value === "周" && !(r.周几 || []).length) r.周几 = [0];
+          if (el.value === "月" && !(r.几号 || []).length) r.几号 = [1];
+          重画();
+        }, "请选择");
+        if (r.周期 === "周") 体 += `<div class="k">哪几天</div><div>` + 周几名.map((名, i) =>
+          `<label class="k"><input type="checkbox" data-k="${挂控件((el) => { const w = new Set(r.周几 || []); if (el.checked) w.add(i); else w.delete(i); r.周几 = [...w].sort(); 重画(); })}" data-lb="周几" ${(r.周几 || []).includes(i) ? "checked" : ""}> ${名}</label>`).join(" ") + `</div>`;
+        if (r.周期 === "月") 体 += `<label class="f">几号</label>` + 输入框((r.几号 || [1]).join(","), (el) => { r.几号 = 读几号(el.value); 重画(); }, "1,15,末")
+          + `<div class="k">逗号分开;最后一天写「末」;31 号碰上小月落到月末跑。</div>`;
+        体 += `<label class="f">${r.周期 === "时" ? "每小时的第几分(时:分里只用分)" : "几点跑(北京时间)"}</label>`
+          + 输入框(r.时刻 || "08:00", (el) => { r.时刻 = el.value.trim() || "08:00"; 重画(); }, "08:00");
+      }
       体 += `<div class="note">${md("只跑**生产那一版**;同一期只跑一次;关机错过的只补最近一期;上一次没跑完就跳过(10-26 拍)。开始交给下一步两项:**统计起 / 统计止** = 上一次该跑到这一次该跑之间。打开 / 关掉在「版本与发布」页签里。")}</div>
         <div id="sc-prev" class="k">接下来 5 次:读取中…</div>`;
       setTimeout(() => 填定时预览(r), 0);
@@ -5004,13 +5021,31 @@ function 弹_配置开始() {
   document.querySelectorAll("[data-startpick]").forEach((b) => { b.onclick = () => { 关弹层(); 选开始方式(b.dataset.startpick); }; });
   $("#sp-later").onclick = 关弹层;
 }
+/* 切「可视化 / Cron」模式(11-21 规划 2-1):可视化 → Cron 带上服务端算的等价表达式(预览缓存里有;没有就空着让人写);Cron → 可视化回到默认「每周一 08:00」 */
+function 切定时模式(r, 到) {
+  if (到 === "cron" && r.周期 === "cron") return;
+  if (到 !== "cron" && r.周期 !== "cron") return;
+  const 缓 = 图态 && 图态.定时预览 && 图态.定时预览.键 === JSON.stringify(r) ? 图态.定时预览 : null;
+  改图(到 === "cron" ? "定时改用 Cron 表达式" : "定时改用可视化", () => {
+    for (const k of Object.keys(r)) delete r[k];
+    if (到 === "cron") { r.周期 = "cron"; r.表达式 = (缓 && 缓.等价Cron) || ""; }
+    else { r.周期 = "周"; r.周几 = [0]; r.时刻 = "08:00"; }
+  });
+  if (到 === "cron" && 缓 && 缓.等价Cron说明) 轻提示(缓.等价Cron说明);
+  重画();
+}
+/* 预览的结果留一份在 图态.定时预览(键 = 规则的 JSON):画布上「开始」卡要同步显示「下次 …」(照 Dify 卡片上的「下次执行时间」),画卡是同步的、不能等接口 */
 async function 填定时预览(r) {
   const el = $("#sc-prev"); if (!el) return;
   try {
-    const q = new URLSearchParams({ 周期: r.周期 || "周", 时刻: r.时刻 || "08:00" });
+    const q = new URLSearchParams(r.周期 === "cron" ? { 周期: "cron", 表达式: r.表达式 || "" } : { 周期: r.周期 || "周", 时刻: r.时刻 || "08:00" });
     if (r.周期 === "周") q.set("周几", (r.周几 || [0]).join(","));
     if (r.周期 === "月") q.set("几号", (r.几号 || [1]).join(","));
     const d = await 请求(`${P()}/schedule-preview?${q}`);
+    if (图态) {
+      图态.定时预览 = { 键: JSON.stringify(r), 说法: d["说法"], 下次: ((d["接下来"] || [])[0] || {})["时刻"] || null, 等价Cron: d["等价Cron"] || "", 等价Cron说明: d["等价Cron说明"] || "" };
+      if (typeof 画_节点 === "function" && 图态.画) 画_节点();
+    }
     el.innerHTML = `<b>${esc(d["说法"])}</b> · 接下来 5 次(北京时间):${(d["接下来"] || []).map((x) =>
       `${时间(x["时刻"])}(统计 ${esc(x["统计起"])}${x["统计起"] !== x["统计止"] ? ` ~ ${esc(x["统计止"])}` : ""})`).join(" · ")}`;
     // 卡片上要说清「到点会不会真的跑」(规划 2-1 验收:生产没发布过 → 红字「还没发布,到点不跑」)
