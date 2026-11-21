@@ -637,7 +637,7 @@ def _差评返修(桥):
             "nodes": 节点, "edges": 边}
 
 
-模板们 = ("空白", "文本处理", "音频整理", "经营报告", "订单风险", "老客召回", "库存补货", "差评返修")
+模板们 = ("空白", "文本处理", "音频整理", "经营报告", "经营日报草稿", "订单风险", "老客召回", "库存补货", "差评返修")
 
 # ── 聊天接管(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──────────────────
 # 能被接管的只有澜绣**自有**技能(agentsite/skills_own.py 的 OURS)—— 第三方技能没有业务写口,接管它没有意义。
@@ -691,8 +691,43 @@ def _默认处理要求(c, project_id, key="customer_needs_extract"):
                              order by version_no desc limit 1"""), {"p": project_id, "k": key}).scalar()
 
 
-_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "订单风险": "order_risk_advise",
+_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "经营日报草稿": "store_report_write", "订单风险": "order_risk_advise",
             "老客召回": "recall_script", "库存补货": "restock_advise", "差评返修": "rating_review"}
+
+
+def _经营日报草稿(桥):
+    """**经营日报草稿 + Markdown 导出**(用户 11-21 拍,台账第八十六条:第一个业务定时任务)。
+    定时开始(每天 08:00,统计前一天)→ 取经营数据(日报取数包)→ 写报告正文(模型只归纳 / 解释,数字来自取数包)→ Markdown 导出(存成文件)→ 结束。
+    **只出草稿给人看**:不存进澜绣的报告表、不确认、不派单、不发消息 —— 存和确认仍由店长在澜绣页面上做(和「经营报告」那条流程分开)。
+    文档归哪个门店 = 打开定时的那个人在成员表里登记的门店(先覆盖一个授权门店,用户拍);发布到生产、在「版本与发布」页打开定时后才会按时跑。"""
+    def 引(n, p):
+        return {"source": "node", "node_id": n, "pointer": p}
+    入 = lambda k: {"source": "input", "pointer": "/" + k}
+    常 = lambda v: {"source": "constant", "value": v}
+    串 = {"type": "string"}
+    写Schema = {"type": "object", "properties": {"正文": 串, "待确认项": {"type": "array", "items": 串}},
+               "required": ["正文", "待确认项"], "additionalProperties": False}
+    开始 = {"id": "start", "type": "start", "name": "开始", "layout": {"x": 40, "y": 160},
+            "config": {"start_mode": "定时", "schedule_rule": {"周期": "日", "时刻": "08:00"},
+                       "input_schema": {"type": "object", "properties": {"统计起": {"type": "string", "title": "统计起", "description": "这一期从哪天起,定时自己填"},
+                                                                      "统计止": {"type": "string", "title": "统计止", "description": "这一期到哪天止,定时自己填"}},
+                                        "required": ["统计起", "统计止"]}}}
+    取 = {"id": "fetch", "type": "tool", "name": "取经营数据", "layout": {"x": 300, "y": 160},
+          "config": {"tool_version_id": 桥.get("store_report"), "bindings": {"kind": 常("日"), "date": 入("统计起")}}}
+    写 = {"id": "write", "type": "llm", "name": "写报告正文", "layout": {"x": 560, "y": 160},
+          "config": {"output_schema": 写Schema, "prompt_version_id": 桥.get("处理要求"), "bindings": {"取数包": 引("fetch", "/数据")}}}
+    存 = {"id": "export", "type": "markdown_export", "name": "存成 Markdown", "layout": {"x": 820, "y": 160},
+          "config": {"title": "经营日报", "template_version": "v1",
+                     "bindings": {"正文": 引("write", "/正文"), "统计起": 入("统计起"), "统计止": 入("统计止")}}}
+    结束 = {"id": "finish", "type": "end", "name": "结束", "layout": {"x": 1080, "y": 160},
+            "config": {"output_schema": {"type": "object", "properties": {"文件": 串, "哈希": 串, "下载": 串, "待确认项": {"type": "array", "items": 串}},
+                                         "required": ["文件"], "additionalProperties": False},
+                       "bindings": {"文件": 引("export", "/file_name"), "哈希": 引("export", "/content_hash"), "下载": 引("export", "/下载"),
+                                    "待确认项": 引("write", "/待确认项")}}}
+    边 = [{"source": "start", "target": "fetch", "port": "success"}, {"source": "fetch", "target": "write", "port": "success"},
+         {"source": "write", "target": "export", "port": "success"}, {"source": "export", "target": "finish", "port": "success"}]
+    return {"definition_schema_version": "1", "kind": "workflow", "input_schema": 开始["config"]["input_schema"],
+            "output_schema": 结束["config"]["output_schema"], "nodes": [开始, 取, 写, 存, 结束], "edges": 边}
 
 
 def _模板(名, 桥=None):
@@ -701,6 +736,8 @@ def _模板(名, 桥=None):
         return _音频整理(桥 or {})
     if 名 == "经营报告":
         return _经营报告(桥 or {})
+    if 名 == "经营日报草稿":
+        return _经营日报草稿(桥 or {})
     if 名 == "订单风险":
         return _订单风险(桥 or {})
     if 名 == "老客召回":

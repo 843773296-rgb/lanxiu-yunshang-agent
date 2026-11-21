@@ -86,6 +86,20 @@ ck("worker 适配器表里有 markdown_export,适配器写完回读核哈希、�
 a = open(os.path.join(根, "services", "api", "app", "documents_api.py"), encoding="utf-8").read()
 ck("下载接口读出来再算一次哈希、对不上不给;走 _审计(交出系统)", "DOCUMENT_HASH_MISMATCH" in a and "_审计(c, me, \"workflow_document.download\"" in a, 2)
 
+print("\n▸ ⑤ 模板「经营日报草稿」(台账第八十六条:第一个业务定时任务)")
+import workflows_api as WA  # noqa: E402
+d = WA._模板("经营日报草稿", {"store_report": "tv_1", "处理要求": "pv_1"})
+问 = V.校验(d, 依赖存在=lambda 种类, i: True)
+阻 = [(p["code"], p.get("node_id")) for p in 问 if p["级别"] == V.阻断]
+ck("模板链:定时开始(每天 08:00)→ 取经营数据(日)→ 写报告正文 → Markdown 导出 → 结束", [(n["id"], n["type"]) for n in d["nodes"]] == [("start", "start"), ("fetch", "tool"), ("write", "llm"), ("export", "markdown_export"), ("finish", "end")]
+   and d["nodes"][0]["config"]["start_mode"] == "定时" and d["nodes"][0]["config"]["schedule_rule"] == {"周期": "日", "时刻": "08:00"}
+   and d["nodes"][1]["config"]["bindings"]["kind"] == {"source": "constant", "value": "日"}, 1, [(n["id"], n["type"]) for n in d["nodes"]])
+ck("导出绑的是写出来的正文 + 开始的统计起止;结束交出 文件 / 哈希 / 下载 / 待确认项", d["nodes"][3]["config"]["bindings"]["正文"] == {"source": "node", "node_id": "write", "pointer": "/正文"}
+   and d["nodes"][3]["config"]["bindings"]["统计起"] == {"source": "input", "pointer": "/统计起"} and set(d["nodes"][4]["config"]["bindings"]) == {"文件", "哈希", "下载", "待确认项"}, 1)
+ck("模板只预填草稿:唯一的阻断是「写报告正文」还没选模型(和「经营报告」模板一样),没有别的红", 阻 == [("NODE_MISSING_CONFIG", "write")], len(阻) or 1, 阻)
+ck("不存澜绣报告表、不确认、不派单:没有 save_report / confirm_report / assign 这类写工具,也没有人工节点", not any(n["type"] in ("human",) for n in d["nodes"])
+   and not any((n.get("config") or {}).get("tool_version_id") == "tv_2" for n in d["nodes"]), 1)
+
 print()
 if 挂:
     print(f"❌ {len(挂)} 条挂了:{挂}")

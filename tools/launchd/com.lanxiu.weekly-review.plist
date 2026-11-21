@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.lanxiu.weekly-review</string>
+  <!-- 每周一 07:30 只读审查项目、写一份 Markdown 到辅助目录(用户 2026-11-21 拍,台账第八十七条)。
+       跑的是 tools/weekly_review.sh:claude 一次性只读跑(只放行 Read / Grep / Glob 和只读 git),报告由脚本落盘并回读核过才算成。
+       装法(用户亲手):
+         cp tools/launchd/com.lanxiu.weekly-review.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.lanxiu.weekly-review.plist
+       手动试一次:launchctl start com.lanxiu.weekly-review;日志在 .feynman/weekly-review.log;报告在 ~/Documents/ChatGPT/澜绣云裳agent-辅助/ -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/eureka/Desktop/澜绣云裳agent/tools/weekly_review.sh</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/eureka/Desktop/澜绣云裳agent</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/eureka/Desktop/澜绣云裳agent/.feynman/weekly-review-launchd.log</string>
+  <key>StandardErrorPath</key><string>/Users/eureka/Desktop/澜绣云裳agent/.feynman/weekly-review-launchd.log</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/Users/eureka/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+</dict>
+</plist>
