@@ -1200,8 +1200,12 @@ function actCards(m, i){
     let 尾 = "";
     if(态 === "待确认") 尾 = `<div class="note">核对上面每一项,确认无误再点 · 有效至 ${esc(至)}(30 分钟)· 只回一句「好」不算</div>`
       + `<button data-act="${i}" data-actj="${j}" data-actv="confirm">确认执行</button> <button data-act="${i}" data-actj="${j}" data-actv="cancel">暂不执行</button>`;
-    else if(态 === "已成功") 尾 = `<div class="done">✅ 已执行</div><details><summary>执行结果</summary><pre style="white-space:pre-wrap">${esc(JSON.stringify(k.结果, null, 1).slice(0, 2000))}</pre></details>`;
+    else if(态 === "已成功") 尾 = `<div class="done">✅ 已执行</div><details><summary>执行结果${k.结果元 && k.结果元.已截短 ? "(卡上是摘要)" : ""}</summary><pre style="white-space:pre-wrap">${esc(JSON.stringify(k.结果, null, 1).slice(0, 2000))}</pre>`
+      + (k.结果元 ? `<div class="note">完整结果 ${esc(String(k.结果元.字节 || ""))} 字节 · 哈希 ${esc(String(k.结果元.哈希 || "").slice(0, 12))}… · <a href="/api/action/result?id=${encodeURIComponent(k.id)}" target="_blank">看完整结果</a></div>` : "") + `</details>`;
     else if(态 === "已失败") 尾 = `<div style="color:var(--bad,#b42318)">❌ 执行失败:${esc(String((k.结果 || {}).error || JSON.stringify(k.结果 || {})).slice(0, 300))}</div>`;
+    else if(态 === "未执行") 尾 = `<div class="note">⛔ 没有执行:${esc(String((k.结果 || {}).error || "").slice(0, 300))} —— 要做的话让助手重新查一遍、重新生成</div>`;
+    else if(态 === "核对中") 尾 = `<div style="color:var(--warn,#b54708)"><b>⏳ 可能已执行,正在核对</b> —— 工具没有及时回结果,这一笔<b>可能已经落库</b>。<b>请不要重复操作</b>,也不要再让助手生成一张;`
+      + `${(k.结果 || {}).转人工待办 ? `已转人工核对(待办 ${esc(String(k.结果.转人工待办))})` : `转人工没建成:${esc(String((k.结果 || {}).转人工失败 || ""))}`},核对结果出来会在管理后台待办里。</div>`;
     else if(态 === "已过期") 尾 = `<div class="note">已过期,没有执行 —— 要做的话让助手重新查一遍、重新生成</div>`;
     else if(态 === "已取消") 尾 = `<div class="note">已选择暂不执行,没有执行</div>`;
     else 尾 = `<div class="note">${esc(态 || "")}</div>`;

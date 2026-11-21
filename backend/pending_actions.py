@@ -35,7 +35,16 @@ import time
 import uuid
 
 有效秒 = 30 * 60          # 用户 11-11 拍:30 分钟
-终态 = ("已成功", "已失败", "已取消", "已过期")
+# 11-21(复审 P0-01,用户拍):结束不再只有「成功 / 失败」两种 ——
+#   已成功   工具回了结果、没报错
+#   已失败   工具**明确**报了错(它自己说没做成)
+#   未执行   **确定**没碰业务库:找不到工具服务 / 指纹对不上(工具服务自己说「还没有执行」)
+#   核对中   **不知道**做没做:120 秒没回、进程没回结果 —— 可能已落库。不记失败、不许重试,页面写「可能已执行,正在核对」,自动转人工
+# 「超时」≠「没做」:原来把超时记成已失败,员工看到失败再点一次,就重复派单了。
+终态 = ("已成功", "已失败", "未执行", "核对中", "已取消", "已过期")
+结束状态们 = ("已成功", "已失败", "未执行", "核对中")
+摘要字数 = 200           # 结果里单个字串超过它就在卡上截短(完整结果另存一份,带哈希)
+摘要项数 = 30
 
 _建表 = """
 create table if not exists pending_action (
@@ -72,6 +81,11 @@ def _连(路径):
     c = sqlite3.connect(路径, timeout=10, isolation_level=None)
     c.row_factory = sqlite3.Row
     c.executescript(_建表)
+    # 11-21 加的三列(完整结果 / 哈希 / 字节 / 截过没):老库没有就补 —— sqlite 没有 add column if not exists
+    有 = {r["name"] for r in c.execute("pragma table_info(pending_action)")}
+    for 列, 型 in (("result_full", "text"), ("result_sha256", "text"), ("result_bytes", "integer"), ("result_truncated", "integer")):
+        if 列 not in 有:
+            c.execute(f"alter table pending_action add column {列} {型}")
     return c
 
 
@@ -82,6 +96,10 @@ def _行(r, 现在=None):
     d["args"] = json.loads(d.pop("args_json") or "{}")
     d["asker"] = json.loads(d.pop("asker_json") or "{}")
     d["result"] = json.loads(d.pop("result_json")) if d.get("result_json") else None
+    # 11-21:卡上的 result 是**摘要**(永远是合法 JSON);完整结果另存(result_full),这里只带元信息,要全文走 取完整结果()
+    字节 = d.pop("result_bytes", None)
+    d["result_meta"] = ({"字节": 字节, "哈希": d.get("result_sha256"), "已截短": bool(d.get("result_truncated"))} if 字节 is not None else None)
+    d.pop("result_full", None); d.pop("result_sha256", None); d.pop("result_truncated", None)
     if d["status"] == "待确认" and (现在 if 现在 is not None else time.time()) >= d["expires_at"]:
         d["status"] = "已过期"           # 读的时候现算:过期不靠后台扫,也就不会有「该过期而没过期」的窗口
     return d
@@ -96,7 +114,8 @@ def 建(路径, tool, domain, args, me, trace=None, session=None, 现在=None):
     c = _连(路径)
     try:
         # 同一个人、同一份参数,30 分钟内已经点卡执行成功过 → 不再出新卡,拿回那张(模型下一轮以为没办成又调一次)
-        办过 = c.execute("""select * from pending_action where asker_no=? and fingerprint=? and status='已成功'
+        # 11-21:「核对中」(不知道做没做)也算 —— 这时再出一张新卡让人点,正是重复派单的入口
+        办过 = c.execute("""select * from pending_action where asker_no=? and fingerprint=? and status in ('已成功', '核对中')
                             and decided_at>? order by decided_at desc limit 1""",
                          (str(me["no"]), 指, 现在 - 有效秒)).fetchone()
         if 办过 is not None:
@@ -174,13 +193,60 @@ def 领取(路径, aid, me, 现在=None):
     return 卡, None
 
 
-def 收尾(路径, aid, 成功, 结果):
+def 摘要化(值, 深=0):
+    """给卡片看的结果:**结构不变、只把长的截短**,所以永远是合法 JSON(复审 P1-02:原来把序列化后的字串直接砍到两万字,读回来解析就炸)。
+    → (摘要, 截过没)。字串超 摘要字数 → 开头 + 「…(已截短,共 N 字)」;列表超 摘要项数 → 前几项 + 说明;太深 → 「<…>」。"""
+    if isinstance(值, str):
+        if len(值) > 摘要字数:
+            return 值[:摘要字数] + f"…(已截短,共 {len(值)} 字)", True
+        return 值, False
+    if 深 >= 8:
+        return "<…太深,看完整结果>", True
+    if isinstance(值, dict):
+        出, 截 = {}, False
+        for i, (k, v) in enumerate(值.items()):
+            if i >= 60:
+                出["__更多__"] = f"…还有 {len(值) - 60} 项,看完整结果"; 截 = True; break
+            出[str(k)], t = 摘要化(v, 深 + 1); 截 = 截 or t
+        return 出, 截
+    if isinstance(值, (list, tuple)):
+        出, 截 = [], False
+        for v in list(值)[:摘要项数]:
+            x, t = 摘要化(v, 深 + 1); 出.append(x); 截 = 截 or t
+        if len(值) > 摘要项数:
+            出.append(f"…(已截短,共 {len(值)} 项)"); 截 = True
+        return 出, 截
+    return 值, False
+
+
+def 收尾(路径, aid, 成功, 结果, 状态=None):
+    """执行完了记结果。`状态` 不给就按 成功 布尔定(老调用方不用改);给了只认 结束状态们。
+    完整结果原样存 result_full(带 sha256 和字节数),卡上的 result_json 存**摘要**(合法 JSON)—— 两份都在,页面按需要拿。"""
+    状态 = 状态 or ("已成功" if 成功 else "已失败")
+    if 状态 not in 结束状态们:
+        raise ValueError(f"收尾状态只认 {结束状态们},拿到 {状态!r}")
+    完整 = json.dumps(结果, ensure_ascii=False, default=str)
+    摘要, 截 = 摘要化(json.loads(完整))
     c = _连(路径)
     try:
-        c.execute("update pending_action set status=?, result_json=? where id=? and status='执行中'",
-                  ("已成功" if 成功 else "已失败", json.dumps(结果, ensure_ascii=False, default=str)[:20000], aid))
+        c.execute("""update pending_action set status=?, result_json=?, result_full=?, result_sha256=?, result_bytes=?, result_truncated=?
+                      where id=? and status='执行中'""",
+                  (状态, json.dumps(摘要, ensure_ascii=False), 完整, hashlib.sha256(完整.encode("utf-8")).hexdigest(),
+                   len(完整.encode("utf-8")), 1 if 截 else 0, aid))
     finally:
         c.close()
+
+
+def 取完整结果(路径, aid):
+    """完整结果(原样 JSON 文本)+ 哈希 + 字节;没有就 None。页面上的「看完整结果」走这里,不从摘要还原。"""
+    c = _连(路径)
+    try:
+        r = c.execute("select result_full, result_sha256, result_bytes from pending_action where id=?", (str(aid or ""),)).fetchone()
+    finally:
+        c.close()
+    if r is None or r["result_full"] is None:
+        return None
+    return {"完整": r["result_full"], "哈希": r["result_sha256"], "字节": r["result_bytes"]}
 
 
 def 取消(路径, aid, me, 现在=None):
@@ -208,6 +274,10 @@ def 给模型的话(卡):
         return (f"✅ 这一步**已经办过了**:确认卡 {卡['id']}({卡['tool']})用户点过确认、执行成功,结果:"
                 f"{json.dumps(卡.get('result'), ensure_ascii=False)[:600]}。**不要再做一遍**,照这个结果答;"
                 f"要确认现状就用查询工具查。")
+    if 卡["status"] == "核对中":
+        return (f"⚠️ 这一步**结果还在核对**:确认卡 {卡['id']}({卡['tool']})用户点过确认,但工具没有及时回结果 —— "
+                f"**可能已经落库**。**绝对不要再做一遍**,也不要生成新卡;照实告诉用户「可能已执行,正在核对,请不要重复操作」,"
+                f"要知道现状就用查询工具查一下再说。已转人工跟进。")
     return (f"⏸ 这一步**还没有执行**:已生成确认卡 {卡['id']}({卡['tool']}),要用户在这条回答下方**点「确认」**才会执行,"
             f"有效 30 分钟。请照实告诉用户:把要做的事(对象、数值、前后变化)说清楚,请他核对后点卡;"
             f"**不要说已经办好**,不要换别的工具绕过,也不要因为用户回了「好」就再调一次 —— 只有点卡才算确认;"

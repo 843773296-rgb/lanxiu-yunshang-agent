@@ -13,6 +13,8 @@
   ⑤ 「只回文字不算」:执行只有一条路 —— 领取只在 action_confirm.确认 里被调(聊天文字没有任何路径能执行)
   ⑦ 评测别继承开关:聊天站起评测子进程剥掉 LANXIU_CONFIRM_STORE
   ⑥ 接线:聊天站有确认 / 取消两个口、sdk 把卡库路径透传给工具服务、页面每个写操作都有中文名(新加写工具漏了会红)
+  ⑧ 11-21 复审两条(用户拍):长回执不截 JSON(卡上是摘要、完整另存带哈希);工具超时 / 没回执 → 「核对中」不记失败、
+     同一份参数不再出新卡、页面写「可能已执行,正在核对」并转人工;找不到服务 / 指纹对不上 → 「未执行」
 """
 import ast
 import json
@@ -144,6 +146,62 @@ def 工具服务那一层(库):
             else: os.environ[k] = v
 
 
+def 复审两条(库):
+    print("▸ ⑧ 11-21 复审:长回执 / 结果不确定")
+    import action_confirm as AC
+    t0 = 1_700_000_000.0
+    # P1-02:两万一千字的结果 —— 原来 json.dumps(...)[:20000] 截成坏 JSON,读回来 JSONDecodeError
+    a = PA.建(库, "assign_task", "task", {"task": "L1", "to": "60000011"}, 店长, trace="tr-long", 现在=t0)
+    PA.领取(库, a["id"], 店长, 现在=t0 + 1)
+    长 = {"ok": True, "正文": "汉" * 21000, "清单": list(range(100)), "嵌": {"套": {"再": {"深": "x" * 500}}}}
+    PA.收尾(库, a["id"], True, 长)
+    读 = PA.取(库, a["id"], 现在=t0 + 2)
+    ck("超两万字的结果:读回来是合法 JSON、状态已成功(原来这里 JSONDecodeError)", 读 is not None and 读["status"] == "已成功" and isinstance(读["result"], dict), 读 and 读["status"])
+    ck("卡上是摘要:长字串截到开头 + 「已截短,共 21000 字」、长列表只留前 30 项 + 说明、结构不变",
+       读["result"]["ok"] is True and 读["result"]["正文"].endswith("…(已截短,共 21000 字)") and len(读["result"]["正文"]) < 300
+       and len(读["result"]["清单"]) == 31 and "共 100 项" in 读["result"]["清单"][-1] and 读["result"]["嵌"]["套"]["再"]["深"].startswith("xxxx"), 读["result"].keys())
+    import hashlib
+    全 = PA.取完整结果(库, a["id"])
+    完整 = json.dumps(长, ensure_ascii=False, default=str)
+    ck("完整结果另存:原样全文、sha256 对得上、字节数对得上、卡上的元信息标了「已截短」",
+       全 and 全["完整"] == 完整 and 全["哈希"] == hashlib.sha256(完整.encode("utf-8")).hexdigest() and 全["字节"] == len(完整.encode("utf-8"))
+       and 读["result_meta"]["已截短"] is True and 读["result_meta"]["哈希"] == 全["哈希"], 读.get("result_meta"))
+    短 = PA.建(库, "assign_task", "task", {"task": "S1", "to": "60000011"}, 店长, trace="tr-short", 现在=t0)
+    PA.领取(库, 短["id"], 店长, 现在=t0 + 1); PA.收尾(库, 短["id"], True, {"ok": True, "行": 3})
+    读短 = PA.取(库, 短["id"], 现在=t0 + 2)
+    ck("短结果:摘要 = 原文、标「没截短」", 读短["result"] == {"ok": True, "行": 3} and 读短["result_meta"]["已截短"] is False, 读短.get("result_meta"))
+    # P0-01:没回执 / 超时 → 核对中
+    ck("解读输出:没有 id=2 的结果 → 「不确定」(不是「没执行」)", AC.解读输出("", "boom")[0] == "不确定" and "stderr" in AC.解读输出("", "boom")[1])
+    ck("解读输出:工具自己报错 → 失败;说「还没有执行」→ 未执行;正常结果 → 成功",
+       AC.解读输出(json.dumps({"id": 2, "result": {"isError": True, "content": [{"type": "text", "text": "{\"error\": \"x\"}"}]}}))[0] == "失败"
+       and AC.解读输出(json.dumps({"id": 2, "result": {"content": [{"type": "text", "text": json.dumps({"text": "这一步还没有执行"}, ensure_ascii=False)}]}}))[0] == "未执行"
+       and AC.解读输出(json.dumps({"id": 2, "result": {"content": [{"type": "text", "text": "{\"ok\": true}"}]}})) == ("成功", {"ok": True}), 3)
+    ck("状态字:不确定 → 核对中、未执行 → 未执行、失败 → 已失败、成功 → 已成功", AC.状态字 == {"成功": "已成功", "失败": "已失败", "未执行": "未执行", "不确定": "核对中"})
+    参 = {"task": "U1", "to": "60000011"}
+    b = PA.建(库, "assign_task", "task", 参, 店长, trace="tr-unsure", 现在=t0)
+    PA.领取(库, b["id"], 店长, 现在=t0 + 1)
+    PA.收尾(库, b["id"], False, {"error": "执行超时(120 秒)"}, 状态="核对中")
+    读b = PA.取(库, b["id"], 现在=t0 + 2)
+    ck("超时收尾成「核对中」(不是已失败);是终态,再领 → 409", 读b["status"] == "核对中" and 读b["status"] in PA.终态 and PA.领取(库, b["id"], 店长, 现在=t0 + 3)[1][0] == 409, 读b["status"])
+    c = PA.建(库, "assign_task", "task", 参, 店长, trace="tr-unsure-2", 现在=t0 + 5)
+    ck("核对中的那份参数下一轮再来 → 拿回同一张,不出新卡(重复派单的入口就在这儿)", c["id"] == b["id"] and c["status"] == "核对中", (c["id"], b["id"]))
+    话 = PA.给模型的话(c)
+    ck("给模型的话:说「还在核对、可能已落库、不要再做一遍」,不说「还没有执行」", "核对" in 话 and "可能已经落库" in 话 and "不要再做一遍" in 话 and "还没有执行" not in 话, 话[:160])
+    try:
+        PA.收尾(库, b["id"], False, {}, 状态="随便")
+        ck("收尾只认四种结束状态", False)
+    except ValueError:
+        ck("收尾只认四种结束状态", True)
+    确认码 = open(os.path.join(HERE, "action_confirm.py"), encoding="utf-8").read()
+    段 = 确认码.split("def 确认(", 1)[1]
+    ck("接线:确认 把「不确定」收尾成 状态字 里的「核对中」并调 _转人工核对(不是写死 True/False)", "状态=状态字[态]" in 段 and "_转人工核对(" in 段 and "PA.收尾(库, 卡[\"id\"], 成, 结果)" not in 段)
+    页 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()
+    ck("页面:有「核对中」「未执行」两种状态的样子,核对中写「可能已执行」「不要重复操作」;成功卡能看完整结果",
+       '态 === "核对中"' in 页 and "可能已执行" in 页 and "不要重复操作" in 页 and '态 === "未执行"' in 页 and "/api/action/result?id=" in 页)
+    应用 = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+    ck("聊天站有 GET /api/action/result,调 action_confirm.完整结果、身份取登录会话", '"/api/action/result"' in 应用 and "_ac.完整结果(" in 应用)
+
+
 def 接线():
     print("▸ ⑤⑥ 接线")
     确认码 = open(os.path.join(HERE, "action_confirm.py"), encoding="utf-8").read()
@@ -200,6 +258,7 @@ def main():
         生命周期(库)
         指纹()
         工具服务那一层(os.path.join(d, "actions2.db"))
+        复审两条(os.path.join(d, "actions3.db"))
     接线()
     print()
     if 挂:

@@ -353,6 +353,17 @@ class H(BaseHTTPRequestHandler):
                                "怎么办": d.get("advice") or d.get("怎么办") or ""}, code=502)
         # /pattern/<版型>-<号型>.svg(打版图,后台现画)也转 —— 11-11 版师撞到:技能给出这个地址,
         # 而聊天站不转,点开是 404;助手又照技能说明去「跑脚本出图」,被「模型不能执行命令」那道闸拦下
+        if p == "/api/action/result":
+            # 确认卡的完整执行结果(复审 P1-02,11-21):卡上只有摘要;全文带哈希走这里,只给发起人本人
+            import action_confirm as _ac
+            me = _who(self)
+            if not me:
+                return self._send({"error": "没登录"}, code=401)
+            aid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0].strip()
+            if not aid:
+                return self._send({"error": "缺确认卡编号"}, code=400)
+            码, d = _ac.完整结果(aid, me)
+            return self._send(d, code=码)
         if p.startswith("/api/") or p.startswith("/img/") or p.startswith("/pattern/"): return self._proxy("GET")
         if p == "/report.pdf":
             # 报告导出 PDF(用户 10-10)。**先拿店长自己的 cookie 向后台取这一份** ——
