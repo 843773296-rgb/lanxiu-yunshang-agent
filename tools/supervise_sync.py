@@ -93,6 +93,114 @@ def 补上报(db=None):
         c.close()
 
 
+# ── 店长派的任务 → 被派的人的定时提醒(11-22,用户拍 ⑥:自动建、默认截止前 1 小时、被派的人能改能关)────────────────
+# 澜绣这边派任务写的是 schedule 表(assignee_no / end_ts);管理后台的「员工定时任务」是另一套库。管理后台**绝不反过来读澜绣的库**,
+# 所以由这边推:每轮把新派的、带截止时间的任务 POST 成一条「一次性」提醒(source_ref=task:<单号>,后台按来源去重);
+# 任务完结 / 取消了就把那条提醒归档。推过的记在 .feynman/chat_task_pushes.json(**不改澜绣的表**)。
+提前分钟 = 60
+_推账 = os.path.join(ROOT, ".feynman", "chat_task_pushes.json")
+
+
+def _读推账():
+    try:
+        return json.load(open(_推账, encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _写推账(d):
+    os.makedirs(os.path.dirname(_推账), exist_ok=True)
+    tmp = _推账 + ".part"
+    json.dump(d, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
+    os.replace(tmp, _推账)
+
+
+def 提醒体(行, 现在=None):
+    """一条派单行(schedule)→ 管理后台 POST /chat-tasks 的体;→ None = 不建(没截止 / 截止已过)。
+    时刻 = 截止前 提前分钟;要是那一刻已经过了但截止还没到 → 现在 + 1 分钟(马上提醒一次);截止本身过了 → 不建。"""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    现在 = 现在 or datetime.now(ZoneInfo("Asia/Shanghai"))
+    end = str(行.get("end_ts") or "").strip()
+    if not end or not 行.get("assignee_no"):
+        return None
+    try:
+        截 = datetime.strptime(end[:16], "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    except ValueError:
+        return None
+    if 截 <= 现在:
+        return None
+    提 = 截 - timedelta(minutes=提前分钟)
+    if 提 <= 现在:
+        提 = 现在 + timedelta(minutes=1)
+    备注 = (行.get("note") or "").strip()
+    return {"staff_code": 行["assignee_no"], "store_id": 行.get("shop_code") or None,
+            "title": f"任务提醒 · {行.get('type') or '任务'}",
+            "instruction": (f"店长 {行.get('assigned_by') or ''} 派给你的「{行.get('type') or '任务'}」" + (f":{备注}" if 备注 else "")
+                            + (f"(关联 {行['ref_id']})" if 行.get("ref_id") else "") + f",截止 {end}。这是截止前 {提前分钟} 分钟的提醒;提前量在「我的定时」里能改能关。"),
+            "task_mode": "提醒", "规则": {"周期": "一次", "时刻": 提.isoformat()},
+            "source_ref": f"task:{行['id']}", "note": "店长派任务自动建"}
+
+
+def _后台(cfg, 项目, 方法, 路径, 体=None, 头=None):
+    import urllib.request, urllib.error
+    h = {"X-Dev-User": cfg["工号"], **(头 or {})}
+    data = None
+    if 体 is not None:
+        data = json.dumps(体, ensure_ascii=False).encode(); h["content-type"] = "application/json"
+    q = urllib.request.Request(f"{cfg['地址'].rstrip('/')}/api/v1/projects/{项目}{路径}", data=data, method=方法, headers=h)
+    try:
+        with urllib.request.urlopen(q, timeout=20) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"{}")
+        except Exception:  # noqa: BLE001
+            return e.code, {}
+    except Exception as e:  # noqa: BLE001
+        return 0, {"error": type(e).__name__}
+
+
+def 推派任务提醒(cfg, 项目, db=None, 现在=None, 看几天=2):
+    """→ (新建几条, 归档几条, 说明)。只看最近 看几天 派的(老任务不补提醒);每轮幂等:推过的记账,后台按 source_ref 也去重。"""
+    import sqlite3
+    import api
+    账 = _读推账()
+    新, 归, 错 = 0, 0, []
+    with sqlite3.connect(db or api.DB) as c:
+        c.row_factory = sqlite3.Row
+        行们 = c.execute("""SELECT id, type, assignee_no, assigned_by, end_ts, status, shop_code, note, ref_id FROM schedule
+                           WHERE assignee_no IS NOT NULL AND assignee_no <> '' AND end_ts IS NOT NULL AND end_ts <> ''
+                             AND assigned_at >= datetime('now', 'localtime', ?)
+                           ORDER BY assigned_at""", (f"-{int(看几天)} days",)).fetchall()
+    for 行 in 行们:
+        行 = dict(行)
+        记 = 账.get(行["id"])
+        if 行["status"] == "有效" and not 记:
+            体 = 提醒体(行, 现在)
+            if not 体:
+                账[行["id"]] = {"跳过": "没截止或截止已过"}; continue
+            码, d = _后台(cfg, 项目, "POST", "/chat-tasks", 体)
+            if 码 in (200, 201) and d.get("id"):
+                账[行["id"]] = {"chat_task_id": d["id"], "staff_code": 体["staff_code"], "pushed_at": time.strftime("%F %T")}; 新 += 1
+            else:
+                错.append(f"{行['id']}: {码} {str(d)[:80]}")
+        elif 行["status"] != "有效" and 记 and 记.get("chat_task_id") and not 记.get("archived"):
+            # 任务完结 / 取消了 → 提醒也收掉(要 revision:先拉一下)
+            码, l = _后台(cfg, 项目, "GET", f"/chat-tasks?staff_code={记['staff_code']}&limit=200")
+            条 = next((x for x in (l or {}).get("items") or [] if x["id"] == 记["chat_task_id"]), None)
+            if 条:
+                码, d = _后台(cfg, 项目, "POST", f"/chat-tasks/{记['chat_task_id']}/archive?staff_code={记['staff_code']}", 头={"If-Match": str(条["revision"])})
+                if 码 == 200:
+                    记["archived"] = time.strftime("%F %T"); 归 += 1
+                else:
+                    错.append(f"{行['id']} 归档: {码}")
+            else:
+                记["archived"] = "后台已没有"
+    _写推账(账)
+    return 新, 归, ("" if not 错 else ";".join(错[:3]))
+
+
 def 一轮(只看=False):
     cfg = U.配置()
     总, 好, 剩, 老 = AR.积压()
@@ -128,6 +236,12 @@ def 一轮(只看=False):
         # 把测试编的跟进写进真客户档案。所以单独一个变量,没配就不跑桥(不给默认值)
         n桥, 错桥 = 跑桥({**cfg, "项目": 桥项目})
         print(f"桥({桥项目}):待执行的取转写 / 写跟进 {n桥} 张" + (f"(拉取失败:{错桥})" if 错桥 else ""))
+        # 店长派的任务 → 被派的人的一次性提醒(11-22):同样只连正式项目;出错只打印,不影响别的步
+        try:
+            n新, n归, 说提 = 推派任务提醒(cfg, 桥项目)
+            print(f"派任务提醒({桥项目}):新建 {n新} 条 · 归档 {n归} 条" + (f"(⚠️ {说提})" if 说提 else ""))
+        except Exception as e:  # noqa: BLE001
+            print(f"派任务提醒:这一轮没推成({type(e).__name__}: {str(e)[:120]})")
     else:
         print("桥:没配 LANXIU_BRIDGE_PROJECT —— 不拉工作流的取转写 / 写跟进单")
     for d in 行们:

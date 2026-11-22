@@ -72,6 +72,11 @@ def _行(r, 现在=None):
             except Exception:
                 pass
     规则 = _规则(d)
+    if 规则.get("周期") == 一次:
+        t = _一次时刻(规则.get("时刻"))
+        d["频率说明"] = "一次:" + (t.astimezone().strftime("%m-%d %H:%M") if t else "时刻认不出")
+        d["接下来几次"] = [t.isoformat()] if (t and d.get("status") == 启用 and t > (现在 or datetime.now(timezone.utc))) else []
+        return d
     try:
         d["频率说明"] = T.说法(规则)
         # T.接下来几次 回的是 (执行时刻, 统计起, 统计止) 三元组 —— 第一版当成时刻直接 .isoformat(),抛 AttributeError 被下面兜住,
@@ -111,9 +116,29 @@ def _要IfMatch(if_match):
         raise _错(409, "IF_MATCH_REQUIRED", "If-Match 不是一个 revision 数字", "列表接口每条都给了 `revision`")
 
 
+一次 = "一次"   # 一次性任务(店长派任务自动建的截止前提醒,用户拍 ⑥):时刻是一个绝对时刻(ISO),到点排一条就自动停用;不在 runtime/定时.py 的周期里
+
+
+def _一次时刻(文):
+    """ISO 时刻字串 → 带时区的 datetime;没带时区按 Asia/Shanghai。认不出 → None。"""
+    try:
+        t = datetime.fromisoformat(str(文).replace("Z", "+00:00").replace(" ", "T"))
+    except Exception:  # noqa: BLE001
+        return None
+    if t.tzinfo is None:
+        from zoneinfo import ZoneInfo
+        t = t.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    return t
+
+
 def _核规则(体规则):
     if not isinstance(体规则, dict) or not 体规则.get("周期"):
-        raise _错(422, "VALIDATION", "要给 规则 {周期, 时刻, 周几? / 几号? / 表达式?}", "照「定时触发器」那套:日 / 周 / 月 / 时 / cron", field_errors={"规则": "必填"})
+        raise _错(422, "VALIDATION", "要给 规则 {周期, 时刻, 周几? / 几号? / 表达式?}", "照「定时触发器」那套:日 / 周 / 月 / 时 / cron / 一次", field_errors={"规则": "必填"})
+    if 体规则.get("周期") == 一次:
+        t = _一次时刻(体规则.get("时刻"))
+        if not t:
+            raise _错(422, "SCHEDULE_RULE_INVALID", "一次性任务的时刻要是 ISO 时刻(2026-11-22T17:00:00+08:00)", "改成合法的时刻再提", field_errors={"规则": "时刻认不出"})
+        return {"周期": 一次, "时刻": t.isoformat(), "时区": 体规则.get("时区") or "Asia/Shanghai"}
     try:
         return T.校验规则({**体规则, "时区": 体规则.get("时区") or "Asia/Shanghai"})
     except Exception as e:  # noqa: BLE001
@@ -176,7 +201,15 @@ async def 建任务(project_id: str, request: Request, me: 身份 = Depends(要�
     规则 = _核规则(体.get("规则"))
     tid = f"ct_{uuid.uuid4().hex[:12]}"
     现在 = datetime.now(timezone.utc)
+    来源 = (str(体.get("source_ref") or "").strip() or None)
     with 事务() as c:
+        if 来源:
+            # 同一来源(比如店长派的同一条任务)只建一条:澜绣那边的同步每 30 秒跑一轮,重放不许重建
+            已 = c.execute(text("select * from chat_tasks where project_id=:p and staff_code=:sc and source_ref=:src and archived_at is null"),
+                          {"p": project_id, "sc": 工号, "src": 来源}).mappings().first()
+            if 已:
+                d = _行(已, 现在); d["提示"] = "同一来源已经有一条,没重建"; d["已有"] = True
+                return d
         c.execute(text("""insert into chat_tasks (id, organization_id, project_id, created_at, created_by, updated_at, revision,
                               staff_code, store_id, title, instruction, task_mode, role_key, cadence, cadence_detail, fire_time, timezone,
                               schedule_enabled, armed_at, deliver_policy, source_ref, status, fail_count, note)
@@ -337,6 +370,20 @@ def 排到点的(c, 现在):
     rs = c.execute(text("""select * from chat_tasks where schedule_enabled and archived_at is null and status=:s for update skip locked"""),
                    {"s": 启用}).mappings().all()
     for t in rs:
+        if t["cadence"] == 一次:
+            # 一次性(店长派任务的提醒):到点排一条、立刻自动停用;没到点跳过
+            时 = _一次时刻(t["fire_time"])
+            if not 时 or 现在 < 时:
+                continue
+            c.execute(text("""insert into chat_task_runs (id, organization_id, project_id, created_at, created_by, updated_at, revision, chat_task_id, period_key, kind, status)
+                              values (:i,:o,:p, now(), 'system', now(), 1, :t, :k, :kind, :s) on conflict do nothing"""),
+                      {"i": f"ctr_{uuid.uuid4().hex[:12]}", "o": t["organization_id"], "p": t["project_id"], "t": t["id"], "k": f"once:{t['id']}", "kind": 定时, "s": 排队})
+            c.execute(text("""update chat_tasks set status=:s, schedule_enabled=false, last_period_start=:o, note=coalesce(note,'') || :n, revision=revision+1, updated_at=now()
+                               where project_id=:p and id=:i"""),
+                      {"s": 停用, "o": 时, "n": "(一次性,到点已排,自动停用)", "p": t["project_id"], "i": t["id"]})
+            _审计(c, _系统身份(c, t["project_id"]), "chat_task.switch", {"chat_task_id": t["id"], "staff_code": t["staff_code"], "enabled": False, "动作": "一次性到点,自动停用"})
+            话.append(f"{t['id']}:一次性到点,排了并停用")
+            continue
         try:
             规则 = T.校验规则(_规则(t))
             判 = T.该发起吗(规则, 现在, 上次统计起=t["last_period_start"], 设定于=t["armed_at"])
