@@ -100,6 +100,20 @@ ck("模板只预填草稿:唯一的阻断是「写报告正文」还没选模型
 ck("不存澜绣报告表、不确认、不派单:没有 save_report / confirm_report / assign 这类写工具,也没有人工节点", not any(n["type"] in ("human",) for n in d["nodes"])
    and not any((n.get("config") or {}).get("tool_version_id") == "tv_2" for n in d["nodes"]), 1)
 
+print("\n▸ ⑥ 模板「每周交付风险清单」(11-22,用户拍第二个业务定时任务;方案 §3.5)")
+d = WA._模板("每周交付风险清单", {"factory_chase": "tv_1", "delay_pending": "tv_2", "处理要求": "pv_1"})
+问 = V.校验(d, 依赖存在=lambda 种类, i: True)
+阻 = [(p["code"], p.get("node_id")) for p in 问 if p["级别"] == V.阻断]
+ck("模板链:定时开始(每周一 09:00)→ 该催工厂(全店)→ 延期未告知(全店)→ 整理成清单 → Markdown 导出 → 结束",
+   [(n["id"], n["type"]) for n in d["nodes"]] == [("start", "start"), ("chase", "tool"), ("delay", "tool"), ("write", "llm"), ("export", "markdown_export"), ("finish", "end")]
+   and d["nodes"][0]["config"]["schedule_rule"] == {"周期": "周", "时刻": "09:00", "周几": [0]}, 1, [(n["id"], n["type"]) for n in d["nodes"]])
+ck("两个取数都是**现成只读工具、不传参**(不另造全店桥工具);整理那步两个取数包都绑上", d["nodes"][1]["config"]["bindings"] == {} and d["nodes"][2]["config"]["bindings"] == {}
+   and set(d["nodes"][3]["config"]["bindings"]) == {"该催", "延期未告知"}, 3)
+ck("唯一的阻断是「整理成清单」还没选模型", 阻 == [("NODE_MISSING_CONFIG", "write")], len(阻) or 1, 阻)
+ck("只读只出清单:没有人工节点、没有写工具、标题「交付风险清单」", not any(n["type"] == "human" for n in d["nodes"]) and d["nodes"][4]["config"]["title"] == "交付风险清单", 1)
+ck("模板登记齐:模板们 / _模板要求(delivery_risk_list_write)/ _模板说明", "每周交付风险清单" in WA.模板们 and WA._模板要求.get("每周交付风险清单") == "delivery_risk_list_write"
+   and "每周交付风险清单" in WA._模板说明, 3)
+
 print()
 if 挂:
     print(f"❌ {len(挂)} 条挂了:{挂}")

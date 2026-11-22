@@ -637,7 +637,7 @@ def _差评返修(桥):
             "nodes": 节点, "edges": 边}
 
 
-模板们 = ("空白", "文本处理", "音频整理", "经营报告", "经营日报草稿", "订单风险", "老客召回", "库存补货", "差评返修")
+模板们 = ("空白", "文本处理", "音频整理", "经营报告", "经营日报草稿", "订单风险", "每周交付风险清单", "老客召回", "库存补货", "差评返修")
 
 # ── 聊天接管(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──────────────────
 # 能被接管的只有澜绣**自有**技能(agentsite/skills_own.py 的 OURS)—— 第三方技能没有业务写口,接管它没有意义。
@@ -692,6 +692,7 @@ def _默认处理要求(c, project_id, key="customer_needs_extract"):
 
 
 _模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "经营日报草稿": "store_daily_draft_write", "订单风险": "order_risk_advise",
+            "每周交付风险清单": "delivery_risk_list_write",
             "老客召回": "recall_script", "库存补货": "restock_advise", "差评返修": "rating_review"}
 
 
@@ -730,6 +731,45 @@ def _经营日报草稿(桥):
             "output_schema": 结束["config"]["output_schema"], "nodes": [开始, 取, 写, 存, 结束], "edges": 边}
 
 
+def _每周交付风险清单(桥):
+    """**每周交付风险清单**(用户 11-22 拍,方案《业务定时与项目定期审查及 Markdown 交付》§3.5:第二个业务定时任务)。
+    定时开始(每周一 09:00)→ 取「该催工厂的单」(全店)→ 取「延期未告知的单」(全店)→ 整理成清单(模型只整理原因和建议,全部标尚未执行)→ Markdown 导出 → 结束。
+    **只读、只出清单**:不催、不派、不改交期 —— 催办 / 派单由店长看了清单后在聊天站或订单风险流程里做。
+    不另造「全店交付风险」桥工具:两个现成只读工具就是澜绣自己判「该催 / 延期」的规则出口,拼进一份清单正是 §3.5 要的「规则算风险 → 模型整理」。
+    口径:截至本次查询的**存量**(两个工具都是现状),统计起止只用来命名文件和写进证据段。"""
+    def 引(n, p):
+        return {"source": "node", "node_id": n, "pointer": p}
+    入 = lambda k: {"source": "input", "pointer": "/" + k}
+    串 = {"type": "string"}
+    写Schema = {"type": "object", "properties": {"正文": 串, "待确认项": {"type": "array", "items": 串}},
+               "required": ["正文", "待确认项"], "additionalProperties": False}
+    开始 = {"id": "start", "type": "start", "name": "开始", "layout": {"x": 40, "y": 160},
+            "config": {"start_mode": "定时", "schedule_rule": {"周期": "周", "时刻": "09:00", "周几": [0]},
+                       "input_schema": {"type": "object", "properties": {"统计起": {"type": "string", "title": "统计起", "description": "这一期从哪天起,定时自己填"},
+                                                                      "统计止": {"type": "string", "title": "统计止", "description": "这一期到哪天止,定时自己填"}},
+                                        "required": ["统计起", "统计止"]}}}
+    催 = {"id": "chase", "type": "tool", "name": "取该催工厂的单", "layout": {"x": 280, "y": 100},
+         "config": {"tool_version_id": 桥.get("factory_chase"), "bindings": {}}}
+    延 = {"id": "delay", "type": "tool", "name": "取延期未告知的单", "layout": {"x": 280, "y": 240},
+         "config": {"tool_version_id": 桥.get("delay_pending"), "bindings": {}}}
+    写 = {"id": "write", "type": "llm", "name": "整理成清单", "layout": {"x": 540, "y": 160},
+         "config": {"output_schema": 写Schema, "prompt_version_id": 桥.get("处理要求"),
+                    "bindings": {"该催": 引("chase", "/数据"), "延期未告知": 引("delay", "/数据")}}}
+    存 = {"id": "export", "type": "markdown_export", "name": "存成 Markdown", "layout": {"x": 800, "y": 160},
+         "config": {"title": "交付风险清单", "template_version": "v1",
+                    "bindings": {"正文": 引("write", "/正文"), "统计起": 入("统计起"), "统计止": 入("统计止")}}}
+    结束 = {"id": "finish", "type": "end", "name": "结束", "layout": {"x": 1060, "y": 160},
+          "config": {"output_schema": {"type": "object", "properties": {"文件": 串, "哈希": 串, "下载": 串, "待确认项": {"type": "array", "items": 串}},
+                                       "required": ["文件"], "additionalProperties": False},
+                     "bindings": {"文件": 引("export", "/file_name"), "哈希": 引("export", "/content_hash"), "下载": 引("export", "/下载"),
+                                  "待确认项": 引("write", "/待确认项")}}}
+    边 = [{"source": "start", "target": "chase", "port": "success"}, {"source": "chase", "target": "delay", "port": "success"},
+         {"source": "delay", "target": "write", "port": "success"}, {"source": "write", "target": "export", "port": "success"},
+         {"source": "export", "target": "finish", "port": "success"}]
+    return {"definition_schema_version": "1", "kind": "workflow", "input_schema": 开始["config"]["input_schema"],
+            "output_schema": 结束["config"]["output_schema"], "nodes": [开始, 催, 延, 写, 存, 结束], "edges": 边}
+
+
 def _模板(名, 桥=None):
     """**模板只预填草稿**,不调模型、不绑生产环境(§4.2)。"""
     if 名 == "音频整理":
@@ -740,6 +780,8 @@ def _模板(名, 桥=None):
         return _经营日报草稿(桥 or {})
     if 名 == "订单风险":
         return _订单风险(桥 or {})
+    if 名 == "每周交付风险清单":
+        return _每周交付风险清单(桥 or {})
     if 名 == "老客召回":
         return _老客召回(桥 or {})
     if 名 == "库存补货":
@@ -854,6 +896,9 @@ _模板说明 = {
                ["选报告期", "取经营数据", "写报告正文", "店长核对", "保存前再取一次比指纹", "一样 → 存 / 变了 → 重写再核"]),
     "经营日报草稿": ("每天 08:00 自动取前一天的经营数据写成日报草稿,存成一份 Markdown 文件给人看;**只出草稿**,不存进澜绣的报告表、不确认、不派单、不发消息(用户 11-21 拍:第一个业务定时任务)",
                  ["定时开始(每天 08:00,统计前一天)", "取经营数据(日报取数包)", "写报告正文(数字来自取数包)", "存成 Markdown 文件", "结束(文件名 / 哈希 / 下载)"]),
+    "每周交付风险清单": ("每周一 09:00 自动取全店「该催工厂的单」和「延期还没告诉顾客的单」,整理成一份交付风险清单草稿存成 Markdown 给店长看;"
+                  "**只读、只出清单**,不催、不派、不改交期(用户 11-22 拍:第二个业务定时任务;口径是截至本次查询的存量)",
+                  ["定时开始(每周一 09:00)", "取该催工厂的单(全店)", "取延期未告知的单(全店)", "整理成清单(原因 / 建议只标尚未执行)", "存成 Markdown 文件", "结束(文件名 / 哈希 / 下载)"]),
     "订单风险": ("选一笔订单,规则判出交付风险档(已延期 / 需关注 / 暂无已识别风险 / 无法判断),要跟踪的由店长填负责人和时间后派「订单跟踪」",
                ["选订单", "取这一单的交付风险(规则分档)", "要跟踪?", "写处理建议", "店长决定", "派之前再核一次", "派订单跟踪"]),
     "老客召回": ("促活名单和流失预警逐人交叉出一张有由头的回访名单,逐人写依据和开口话术;店长勾人、填截止后,给客户的归属顾问各派一条电话回电",
@@ -883,12 +928,13 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         有要求 = bool(_默认处理要求(c, project_id))
         有报告要求 = bool(_默认处理要求(c, project_id, "store_report_write"))
         有日报要求 = bool(_默认处理要求(c, project_id, "store_daily_draft_write"))   # 11-22:日报草稿换成六段那套,不再借经营报告的
+        有清单要求 = bool(_默认处理要求(c, project_id, "delivery_risk_list_write"))
         有风险要求 = bool(_默认处理要求(c, project_id, "order_risk_advise"))
         有召回要求 = bool(_默认处理要求(c, project_id, "recall_script"))
         有补货要求 = bool(_默认处理要求(c, project_id, "restock_advise"))
         有差评要求 = bool(_默认处理要求(c, project_id, "rating_review"))
     出 = []
-    for 名 in ("音频整理", "经营报告", "经营日报草稿", "订单风险", "老客召回", "库存补货", "差评返修", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
+    for 名 in ("音频整理", "经营报告", "经营日报草稿", "订单风险", "每周交付风险清单", "老客召回", "库存补货", "差评返修", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
         说, 步 = _模板说明[名]
         要 = []
         if 名 == "音频整理":
@@ -903,6 +949,11 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                           "怎么补": "跑 管理后台/tools/seed_bridge_tools.py 登记(派任务在正式项目里用从澜绣导入的)"})
             要.append({"名": "处理要求「订单风险建议」", "有了吗": 有风险要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
+        if 名 == "每周交付风险清单":
+            for 工, 中 in (("factory_chase", "该催工厂的单"), ("delay_pending", "延期未告知的单")):
+                要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
+                          "怎么补": "正式项目从澜绣导入工具时就有;演示项目跑 管理后台/tools/seed_bridge_tools.py 登记"})
+            要.append({"名": "处理要求「交付风险清单撰写」", "有了吗": 有清单要求, "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
         if 名 == "老客召回":
             for 工, 中 in (("召回名单", "取召回名单"), ("派回访任务", "派回访任务")):
                 要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
@@ -931,7 +982,7 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
             要.append({"名": "澜绣业务动作「取经营数据」", "有了吗": bool(桥.get("store_report")),
                       "怎么补": "正式项目从澜绣导入;别的项目跑 管理后台/tools/seed_bridge_tools.py 登记"})
             要.append({"名": "处理要求「经营日报草稿撰写」(六段)", "有了吗": 有日报要求, "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
-        if 名 in ("音频整理", "经营报告", "经营日报草稿", "订单风险", "老客召回", "库存补货", "差评返修", "文本处理"):
+        if 名 in ("音频整理", "经营报告", "经营日报草稿", "订单风险", "每周交付风险清单", "老客召回", "库存补货", "差评返修", "文本处理"):
             要.append({"名": "一个可用的模型", "有了吗": 有模型, "怎么补": "平台管理员在「模型与连接」里接一个"})
         出.append({"名": 名, "说明": 说, "步骤": 步, "需要的资源": 要,
                    "能直接跑吗": all(x["有了吗"] for x in 要) and 名 != "空白"})
