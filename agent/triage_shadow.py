@@ -537,10 +537,15 @@ import rating_triage as RT
 import triage_pipeline_eval as PE
 import evalrec
 改了 = protocol.指到副本()
-print(json.dumps(dict(_meta=1, 副本=副, 改了几个模块=改了,
+# 11-22 起 api / ops 等改走 dbpath.路径()(W02 第③步):上面先设了 LANXIU_DB,它们 import 时**自己就落在副本上**,
+# 指到副本() 于是可能改 0 个 —— 那不是「读真库」。所以判据从「改了几个」换成「工具层最终读哪份」:
+# 改了 ≥1 个,**或者** api / ops 本来就指着副本,才放行;两样都不是才拒跑。
+_经单源落副本 = sum(1 for m in (api, ops)
+                 if os.path.realpath(getattr(m, "DB", "") or "") == os.path.realpath(副))
+print(json.dumps(dict(_meta=1, 副本=副, 改了几个模块=改了, 经单源已在副本=_经单源落副本,
                       api读的是=getattr(api, "DB", None)), ensure_ascii=False), flush=True)
-# ③ **0 就拒跑** —— 不然这一批的材料全是从真库取的,而台账上看不出来
-if 改了 <= 0:
+# ③ **工具层没落到副本就拒跑** —— 不然这一批的材料全是从真库取的,而台账上看不出来
+if 改了 <= 0 and _经单源落副本 < 2:
     print(json.dumps(dict(_meta=1, 致命="指到副本 改了 0 个模块 —— 这一批会读真库,拒跑"),
                      ensure_ascii=False), flush=True)
     sys.exit(3)

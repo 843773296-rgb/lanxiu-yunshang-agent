@@ -23607,7 +23607,7 @@
     "new": ""
    }
   ],
-  "预期红": "指到副本之后才 import 的写口(order_write)连到的是副本"
+  "预期红": "指到副本之后才 import、还自己拼真库路径的写口(替身)连到的是副本"
  },
  {
   "script": "agentsite/guards_test.py",
