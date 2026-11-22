@@ -1579,6 +1579,27 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "status 只有 启用 / 停用;归档走 archived_at。生效还要看 projects.chat_annotation_enabled 总开关(默认关)",
        "不挂 traces 的外键:trace 骨架 30 天后只删原文不删行,但标注要比日志活得久"]),
 
+    # 员工定时 agent 任务(11-22,用户拍七条;方案《澜绣云裳agent-员工定时agent任务方案-20261122》):
+    # 员工在聊天站用一句话建任务,后台调度,到点走内部通道让聊天站助手以他的身份、只读工具跑一遍(或只提醒),结果送站内 + 飞书
+    E("chat_tasks", "员工定时任务", 项目级, 可改,
+      ["staff_code", "store_id", "title", "instruction", "task_mode", "role_key",
+       "cadence", "cadence_detail", "fire_time", "timezone", "schedule_enabled", "armed_at", "last_period_start", "last_run_id",
+       "deliver_policy", "source_ref", "status", "fail_count", "note"],
+      ["staff_code 是澜绣工号:到点以**他**的身份跑,他看不到的数据定时也看不到;他停用后任务自动停(内部通道查不到在职员工就不跑)",
+       "task_mode 只有 跑 / 提醒:「跑」才调模型(真花钱,进门店月上限);「提醒」只生成一条「到点了」",
+       "频率字段(cadence / cadence_detail / fire_time / timezone)和 workflow_schedules **同一套**,规则在 runtime/定时.py,不另写",
+       "一期只跑一次:runs 表 (chat_task_id, period_key) 唯一;上一期没跑完就跳过当期并记原因;**不自动补漏期**",
+       "source_ref 记来源:自建 空;店长派任务自动建的记「task:<任务号>」(一次性提醒);连续失败到 fail_count 阈值自动停用",
+       "员工只看自己的(staff_code);店长按 store_id 看本店所有人的、能停"]),
+    E("chat_task_runs", "员工定时任务的一次执行", 项目级, 可改,
+      ["chat_task_id", "period_key", "kind", "status", "trace_id", "answer_text", "cost_amount", "amount_known",
+       "started_at", "ended_at", "error_detail", "inbox_at", "read_at", "feishu_at", "feishu_detail"],
+      ["kind = 定时 / 手动(「立即跑一次」不算一期,period_key 用 manual:<时刻>)",
+       "status = 排队 / 跑了 / 失败 / 跳过 / 提醒;「失败」不自动重试,下一期照常",
+       "answer_text 是聊天站回的那一轮回答原文(站内消息就是它);trace_id 指聊天站推过来的运行记录,原文权限照那边的规矩",
+       "inbox_at = 进了站内收件箱的时刻(存下即送达);read_at = 本人看过;feishu_at / feishu_detail = 飞书送达与否及原因(没配接收方就记原因)"],
+      依赖=["chat_tasks"]),
+
     # ⑤ 人工介入
     E("human_requests", "人工请求", 子对象, 可改,
       ["execution_run_id", "run_step_id", "kind", "payload_ref", "allowed_fields",

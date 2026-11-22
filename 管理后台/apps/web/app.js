@@ -123,6 +123,7 @@ const 导航 = [
   ["grp", "待办与定时"],
   ["#/human", "人工待办", true, true],
   ["#/schedules", "定时", true, true],
+  ["#/chat-tasks", "员工定时", true, true],
   ["grp", "日志与监测"],
   ["#/runs", "运行记录", true, true],
   ["#/opinions", "意见受理", true, true],
@@ -5189,6 +5190,52 @@ async function 画_定时块(wid) {
   $("#sc-on").onclick = () => 存(true);
   if ($("#sc-off")) $("#sc-off").onclick = () => 存(false);
 }
+/* ── 员工定时(11-22,台账第九十条):员工在聊天站交给助手的定时任务,这里是全项目的管理视角 ──
+ * 建 / 改在聊天站「我的定时」;这里看全部、能停(管理员替停要留审计:PATCH status + 代改),默认把「开着但最近失败」的排前面。 */
+async function 页_员工定时(页 = 1) {
+  const 头 = `<div class="crumb">待办与定时 / 员工定时</div>
+    <div class="head"><div><h1>员工定时任务</h1>
+      <div class="sub">${md("员工在聊天站里交给助手的定时任务:到点以**他本人的身份、只读工具**让聊天站助手跑一遍(真调模型,进门店月费用),或只提醒。"
+        + "这里是全项目视角,能停;建和改在聊天站「我的定时」。连续 3 期失败自动停用。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/chat-tasks?limit=50&page=${页}`); }
+  catch (e) { const s = 错误块(e, 页_员工定时); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  if (!d.items.length) {
+    $("#main").innerHTML = 头 + 状态("", "还没有员工定时任务", "员工在聊天站顶栏「⏰ 我的定时」里建;建了就会出现在这里。").html;
+    return;
+  }
+  const 排 = [...d.items].sort((a, b) => ((b.status === "启用" && b["上次结果"] === "失败") - (a.status === "启用" && a["上次结果"] === "失败")));
+  $("#main").innerHTML = 头 + `<table><thead><tr>
+      <th>谁的</th><th>任务</th><th>频率</th><th>到点</th><th>状态</th><th class="num">成功</th><th>上次 / 下次</th><th></th>
+    </tr></thead><tbody>`
+    + 排.map((t) => `<tr data-id="${esc(t.id)}" data-rev="${esc(String(t.revision || 0))}">
+        <td class="k">${esc(t.staff_code)}${t.store_id ? `<div class="k">${esc(t.store_id)}</div>` : ""}</td>
+        <td><b>${esc(t.title)}</b><div class="k">${esc(String(t.instruction || "").slice(0, 100))}</div></td>
+        <td class="k">${esc(t["频率说明"] || "")}</td>
+        <td>${t.task_mode === "跑" ? "让助手跑" : "只提醒"}</td>
+        <td><span class="pill ${t.status === "启用" ? "ok" : ""}">${esc(t.status)}</span>${t["上次结果"] === "失败" ? ` <span class="pill fail">上次失败</span>` : ""}
+            ${t.note ? `<div class="k">${esc(t.note)}</div>` : ""}</td>
+        <td class="num">${Number(t["成功次数"] || 0)}</td>
+        <td class="k">${t["上次成功"] ? esc(String(t["上次成功"]).slice(5, 16).replace("T", " ")) : "—"}
+          <div class="k">${(t["接下来几次"] || [])[0] ? "下次 " + esc(String(t["接下来几次"][0]).slice(5, 16).replace("T", " ")) : ""}</div></td>
+        <td><button data-act="toggle">${t.status === "启用" ? "停用" : "启用"}</button> <span class="k ct-msg"></span></td>
+      </tr>`).join("")
+    + `</tbody></table>${页码条(d)}<div class="note">${md(d.note || "")}</div>`;
+  挂页码($("#main"), (n) => 页_员工定时(n));
+  $("#main").querySelectorAll("tr[data-id] button[data-act=toggle]").forEach((b) => {
+    const tr = b.closest("tr"), id = tr.dataset.id, rev = tr.dataset.rev, 说 = tr.querySelector(".ct-msg");
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await 请求(`${P()}/chat-tasks/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "If-Match": String(rev) },
+          body: JSON.stringify({ status: b.textContent === "停用" ? "停用" : "启用", 代改: "管理后台" }) });
+        await 页_员工定时(页);
+      } catch (e) { const bb = e.体 || {}; 说.textContent = `${bb.code || "出错"}:${e.message}`; b.disabled = false; }
+    };
+  });
+}
+
 async function 页_定时() {
   const 头 = `<div class="crumb">待办与定时 / 定时</div>
     <div class="head"><div><h1>定时</h1>
@@ -12102,6 +12149,7 @@ async function 路由() {
     if (h === "#/acceptance") return await 页_上线验收();
     if (h.startsWith("#/capability/")) return await 页_能力档案详情(decodeURIComponent(h.slice(13)));
     if (h === "#/schedules") return await 页_定时();
+    if (h === "#/chat-tasks") return await 页_员工定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/bridge/")) return await 页_桥请求详情(decodeURIComponent(h.slice(9)));

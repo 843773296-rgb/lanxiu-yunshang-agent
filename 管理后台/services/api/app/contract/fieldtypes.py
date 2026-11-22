@@ -241,6 +241,8 @@
     "stage": "TEXT", "error": "JSONB", "verdict": "TEXT", "note": "TEXT",
     # 聊天标注(11-21):提问 / 标准答案是原文;tools_used 是那一轮调过的工具名清单(判「实时」的证据)
     "question": "TEXT", "standard_answer": "TEXT", "assistant_role": "TEXT", "tools_used": "JSONB",
+    # 员工定时任务(11-22):一句话任务 / 到点那一轮的回答原文
+    "instruction": "TEXT", "answer_text": "TEXT",
     "resource": "TEXT", "quantity": "NUMERIC(20,6)", "unit": "TEXT",
     "currency": "TEXT", "scope": "TEXT", "period": "TEXT", "type": "TEXT",
     "attempts": "INTEGER", "topic": "TEXT", "payload": "JSONB", "actor": "TEXT",
@@ -359,6 +361,8 @@
     # 执行故障上报(2026-10-25):少了哪一列这张单都没法处理 —— 不知道是哪一轮、什么故障、为什么、现在什么状态
     "trace_incidents": {"trace_id", "kind", "reason", "status"},
     "chat_annotations": {"trace_id", "question", "standard_answer", "status"},
+    "chat_tasks": {"staff_code", "title", "instruction", "task_mode", "cadence", "fire_time", "timezone", "schedule_enabled", "status"},
+    "chat_task_runs": {"chat_task_id", "period_key", "kind", "status"},
     "workflow_test_samples": {"workflow_id", "name", "input_snapshot", "source"},
     # 工作流定时(2026-10-26):周期 / 时刻 / 时区 / 以谁的身份 —— 少一样都算不出该不该发起、以谁发起
     # 版本标记(2026-10-27):标在哪一条流程的哪一版上 —— 少一样就不知道藏的是谁

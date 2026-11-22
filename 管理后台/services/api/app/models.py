@@ -201,6 +201,8 @@ _额外唯一 = {
     "jobs": [("project_id", "idempotency_key")],
     # 聊天标注(11-21):一轮问答只能标一条 —— 两个人同时给同一轮点「标注」,接口里的 if 都会看到「还没有」,靠库钉住
     "chat_annotations": [("project_id", "trace_id")],
+    # 员工定时任务(11-22):同一条任务的同一期只跑一次 —— 两个 worker 同时扫到,靠库钉住
+    "chat_task_runs": [("project_id", "chat_task_id", "period_key")],
     # 费用事件唯一键:唯一用量事件防重复计费
     "usage_ledger": [("project_id", "event_key")],
     # 索引成员:**同一个片段在一个构建里只出现一次。**

@@ -2383,12 +2383,21 @@ def 扫定时(现在=None):
 
     **扫挂了不许把 worker 一起带走**:定时出错只少发一期(且记在日志里),而 worker 停了是所有任务都没人跑。"""
     from datetime import datetime, timezone
+    话 = []
     try:
         import workflows_api as WA
         with 事务() as c:
-            return WA.定时扫一遍(c, 现在 or datetime.now(timezone.utc))
+            话 += WA.定时扫一遍(c, 现在 or datetime.now(timezone.utc))
     except Exception as e:
-        return [f"⚠️ 这一遍扫定时出错了,下一分钟再扫:{type(e).__name__}: {str(e)[:200]}"]
+        话.append(f"⚠️ 这一遍扫定时出错了,下一分钟再扫:{type(e).__name__}: {str(e)[:200]}")
+    # 员工定时 agent 任务(11-22,台账第九十条):到点的排一条、排队的逐条执行(调聊天站,一轮几十秒,自己管事务不在锁里等)。
+    # 和工作流定时分开 try:一边挂了不连带另一边
+    try:
+        import chat_tasks_api as CT
+        话 += CT.员工任务扫一遍(现在 or datetime.now(timezone.utc))
+    except Exception as e:
+        话.append(f"⚠️ 这一遍扫员工定时出错了,下一分钟再扫:{type(e).__name__}: {str(e)[:200]}")
+    return 话
 
 
 def main():

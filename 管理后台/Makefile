@@ -361,7 +361,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	    exit 1; fi; \
 	  rc=0; \
 	  for h in '#/prompts' '#/kb' '#/acceptance' '#/knobs' '#/selection' \
-	           '#/members' '#/audit' '#/integrations/tools' '#/integrations/groups' '#/integrations/conns' '#/retrieval' '#/human' '#/runs' '#/outputs' '#/usage'; do \
+	           '#/members' '#/audit' '#/integrations/tools' '#/integrations/groups' '#/integrations/conns' '#/retrieval' '#/human' '#/runs' '#/outputs' '#/usage' '#/annotations' '#/chat-tasks'; do \
 	    printf "  %-12s " "$$h"; \
 	    out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
 		node tests/e2e/page_smoke.js "$$h" 2>&1); \
@@ -429,7 +429,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_tool_modelcard_flow.py test_prompt_snapshot_flow.py \
           test_exec_mode_flow.py test_retrieval_runs_flow.py \
           test_raw_log_flow.py test_chat_assistant_flow.py \
-          test_access_api_flow.py test_webhook_flow.py test_workflow_start_guide_flow.py test_retrieve_node_flow.py test_workflow_export_import_flow.py test_human_form_flow.py test_code_node_flow.py test_markdown_export_flow.py test_chat_annotations_flow.py test_opinions_flow.py test_issues_flow.py test_knowledge_revision_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
+          test_access_api_flow.py test_webhook_flow.py test_workflow_start_guide_flow.py test_retrieve_node_flow.py test_workflow_export_import_flow.py test_human_form_flow.py test_code_node_flow.py test_markdown_export_flow.py test_chat_annotations_flow.py test_chat_tasks_flow.py test_opinions_flow.py test_issues_flow.py test_knowledge_revision_flow.py test_capability_profiles_flow.py test_issue_improvements_flow.py test_acceptance_flow.py \
           test_opinions_migration_with_data.py test_chat_handoff_flow.py test_monitoring_flow.py test_alerts_flow.py test_log_policy_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
           test_agent_bridge_flow.py test_agent_step_flow.py test_agent_approval_flow.py test_glossary_flow.py test_entity_flow.py test_route_flow.py test_intent_flow.py test_fingerprint_ratchet.py \
@@ -599,6 +599,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_code_node_flow.py
 	@./.venv/bin/python tests/e2e/test_markdown_export_flow.py
 	@./.venv/bin/python tests/e2e/test_chat_annotations_flow.py
+	@./.venv/bin/python tests/e2e/test_chat_tasks_flow.py
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py
 	@./.venv/bin/python tests/e2e/test_issues_flow.py
 	@./.venv/bin/python tests/e2e/test_knowledge_revision_flow.py
@@ -941,6 +942,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_chat_annotations_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_chat_annotations_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_chat_annotations_flow.log
+	@./.venv/bin/python tests/e2e/test_chat_tasks_flow.py > /tmp/prog-test_chat_tasks_flow.log 2>&1 \
+	  || { echo "  ❌ test_chat_tasks_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_chat_tasks_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_chat_tasks_flow.log
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py > /tmp/prog-test_opinions_flow.log 2>&1 \
 	  || { echo "  ❌ test_opinions_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_opinions_flow.log; exit 1; }
@@ -1341,6 +1346,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 标注回复(11-21):按那一轮调过的工具判能不能标(知识类只读才行)、从 span 取问答与工具、七条接口 / 开关 / 迁移登记齐"
 	@./.venv/bin/python tests/orchestration/test_chat_annotations.py
+	@echo ""
+	@echo "▸ 员工定时 agent 任务(11-22):模板规则、提示词写明只读、规则互转、十处登记(后台 / worker / 聊天站 / 页面)"
+	@./.venv/bin/python tests/orchestration/test_chat_tasks.py
 	@echo ""
 	@echo "▸ 出网策略(三期 HTTP 请求的地基):只读方法、连接白名单、解析落内网 / 云元数据就拒、不跟重定向、15 秒 1 MB;**假 DNS 注入,不靠本机网络**"
 	@./.venv/bin/python tests/orchestration/test_outbound_policy.py

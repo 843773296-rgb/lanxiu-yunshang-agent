@@ -212,6 +212,7 @@ import runs_api as _RUN
 import human_api as _HM
 import documents_api as _DOC
 import chat_annotations_api as _ANN
+import chat_tasks_api as _CTK
 import runctl as _RC
 import datasets_api as _DS
 import training_api as _TR
@@ -249,6 +250,7 @@ app.include_router(_UP.router)
 app.include_router(_RUN.router)
 app.include_router(_DOC.router)
 app.include_router(_ANN.router)
+app.include_router(_CTK.router)
 app.include_router(_HM.router)
 app.include_router(_KR.router)
 app.include_router(_RC.router)

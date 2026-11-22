@@ -1184,7 +1184,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     model = _env(provider, model_name)
     工具 = 生效工具(kind, _收窄)
     # ── 聊天助手配置(用户 10-28 拍「分两步」,第 2 步)── 后台生产那一版:工具只收不加、开头 / 结尾换成后台的。
-    # 模型这一步先不接:聊天页的难题分流靠「是不是默认模型」判,接了要动分流;这一轮用的模型照实进核对字段
+    # 模型不在这一层接:后台选的默认模型 11-02/03 起由 app.py 那层通过 assistant_client.默认模型 定好再传进来(provider / model_name),
+    # 这里只照实把用的模型写进核对字段(原来那句「先不接」的理由已经过期,11-22 改)
     _助手 = None
     _助手系统 = None
     if 后台配置 and kind == "task" and not _研判:

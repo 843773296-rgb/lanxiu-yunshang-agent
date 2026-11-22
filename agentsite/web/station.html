@@ -392,6 +392,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
     <button id="opbtn">✉ 意见与建议</button>
     <!-- 人工待办(11-22,四期 4-1 聊天站一半):管理后台的人工介入单在这里看、填、点按钮;以登录工号绑定的后台账号去办 -->
     <button id="hrbtn">🔔 人工待办</button>
+    <!-- 我的定时(11-22,台账第九十条):交给助手的定时任务 —— 建 / 停 / 跑一次 / 看结果;到点由管理后台调度、以本人身份只读跑 -->
+    <button id="ctbtn">⏰ 我的定时</button>
   </header>
   <div id="convs"></div>
   <!-- 平台入口放在左栏**底部**(用户 2026-09-24 要「从左侧侧边栏进」)。
@@ -1314,6 +1316,123 @@ async function 提建议(){
   }
   $("#op-why").textContent = (r.error || "没提上") + (r.怎么办 ? ":" + r.怎么办 : "");   // 失败不装作成功
 }
+/* ── 我的定时(11-22,台账第九十条:交给 agent 的定时任务)──────────────────────
+ * 一句话 + 频率 → 管理后台存成「员工定时任务」,到点以本人身份、只读工具让助手跑一遍(或只提醒),结果进站内收件箱(这里)+ 飞书(三期)。
+ * 任务归登录工号;这里一条权限都不判,改 / 停 / 归档都带本人工号去管理后台,不是他的 404。
+ * 频率控件照管理后台「定时触发器」:每天 / 每周几 / 每月几号 / 每小时(周几 0 = 周一,和 runtime/定时.py 一致)。 */
+const _ct周几名 = ["一", "二", "三", "四", "五", "六", "日"];
+function _ct规则读(框){
+  const 周期 = 框.querySelector("[data-ct=周期]").value, 时刻 = 框.querySelector("[data-ct=时刻]").value || "09:00";
+  const 规则 = {周期, 时刻};
+  if(周期 === "周") 规则.周几 = [...框.querySelectorAll("[data-ct-wd]:checked")].map(x => Number(x.value));
+  if(周期 === "月") 规则.几号 = (框.querySelector("[data-ct=几号]").value || "1").split(/[,,\s]+/).filter(Boolean).map(x => x === "末" ? "末" : Number(x));
+  return 规则;
+}
+function _ct规则控件(规则){
+  规则 = 规则 || {周期: "日", 时刻: "09:00"};
+  return `<div class="sub">频率:<select data-ct="周期">${["日", "周", "月", "时"].map(p => `<option value="${p}" ${规则.周期 === p ? "selected" : ""}>${{日: "每天", 周: "每周几", 月: "每月几号", 时: "每小时"}[p]}</option>`).join("")}</select>
+      时刻 <input data-ct="时刻" type="time" value="${esc(规则.时刻 || "09:00")}">
+      <span data-ct="周几框" ${规则.周期 === "周" ? "" : "hidden"}>${_ct周几名.map((n, i) => `<label><input type="checkbox" data-ct-wd value="${i}" ${(规则.周几 || [0]).includes(i) ? "checked" : ""}>周${n}</label>`).join(" ")}</span>
+      <span data-ct="几号框" ${规则.周期 === "月" ? "" : "hidden"}>几号 <input data-ct="几号" value="${esc((规则.几号 || [1]).join(","))}" size="8" placeholder="1,15 或 末"></span></div>`;
+}
+function _ct接周期(框){
+  框.querySelector("[data-ct=周期]").onchange = e => {
+    框.querySelector("[data-ct=周几框]").hidden = e.target.value !== "周";
+    框.querySelector("[data-ct=几号框]").hidden = e.target.value !== "月";
+  };
+}
+async function 开我的定时(页签){
+  const ov = $("#od"), bx = $("#odp");
+  ov.classList.add("on");
+  页签 = 页签 || "任务";
+  bx.innerHTML = `<button id="odclose">关闭</button><h3>我的定时</h3>
+    <div class="sub"><button id="ct-tab-任务" ${页签 === "任务" ? "disabled" : ""}>我的任务</button> <button id="ct-tab-结果" ${页签 === "结果" ? "disabled" : ""}>结果收件箱</button> <button id="ct-tab-新建" ${页签 === "新建" ? "disabled" : ""}>＋ 新建</button></div>
+    <div id="ct-body" class="sub">在取…</div>`;
+  $("#odclose").onclick = closeOrder;
+  ["任务", "结果", "新建"].forEach(t => { $("#ct-tab-" + t).onclick = () => 开我的定时(t); });
+  const 框 = $("#ct-body");
+  if(页签 === "任务"){
+    const d = await fetch("/api/chat-tasks").then(x => x.json()).catch(e => ({error: String(e)}));
+    if(!d.ok){ 框.innerHTML = `<b>${esc(d.error || "取不到")}</b>${d.怎么办 ? "<br>" + esc(d.怎么办) : ""}<br><small>这是取不到,不是「没有任务」</small>`; return; }
+    if(!(d.items || []).length){ 框.innerHTML = `还没有定时任务。<button id="ct-go-new">建一条</button>`; $("#ct-go-new").onclick = () => 开我的定时("新建"); return; }
+    框.innerHTML = d.items.map(t => `<div class="kv" data-ct-id="${esc(t.id)}" data-ct-rev="${esc(String(t.revision || 0))}"><span>${t.status === "启用" ? "🟢" : "⏸"}</span><span>
+        <b>${esc(t.title)}</b> · ${esc(t.频率说明 || "")} · ${t.task_mode === "跑" ? "到点让助手跑" : "到点提醒我"}
+        <br><small style="white-space:pre-wrap">${esc(t.instruction || "")}</small>
+        <br><small>成功 ${Number(t.成功次数 || 0)} 次${t.上次结果 ? " · 上次:" + esc(t.上次结果) : ""}${(t.接下来几次 || [])[0] ? " · 下次 " + esc(String(t.接下来几次[0]).slice(0, 16).replace("T", " ")) : ""}${t.note ? " · " + esc(t.note) : ""}</small>
+        <br><button data-ct-act="toggle">${t.status === "启用" ? "停用" : "启用"}</button> <button data-ct-act="run">跑一次</button> <button data-ct-act="runs">结果</button> <button data-ct-act="archive">归档</button> <span class="ct-msg"></span></span></div>`).join("")
+      + `<div class="note">${esc(d.note || "")}</div>`;
+    框.querySelectorAll("[data-ct-act]").forEach(b => {
+      const 行 = b.closest("[data-ct-id]"), id = 行.dataset.ctId, rev = Number(行.dataset.ctRev), 说 = 行.querySelector(".ct-msg");
+      const 发 = async (路, 体) => {
+        b.disabled = true;
+        const r = await fetch(路, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(体)}).then(x => x.json()).catch(e => ({error: String(e)}));
+        if(!r.ok){ 说.textContent = `${r.error || "出错"}${r.怎么办 ? " —— " + r.怎么办 : ""}`; b.disabled = false; return; }
+        说.textContent = r.note || r.提示 || "好了"; 开我的定时("任务");
+      };
+      if(b.dataset.ctAct === "toggle") b.onclick = () => 发("/api/chat-task/update", {id, revision: rev, status: b.textContent === "停用" ? "停用" : "启用"});
+      if(b.dataset.ctAct === "run") b.onclick = () => 发("/api/chat-task/run-now", {id});
+      if(b.dataset.ctAct === "archive") b.onclick = () => 发("/api/chat-task/archive", {id, revision: rev});
+      if(b.dataset.ctAct === "runs") b.onclick = () => 开定时结果(id);
+    });
+    return;
+  }
+  if(页签 === "结果"){
+    const d = await fetch("/api/chat-task-inbox").then(x => x.json()).catch(e => ({error: String(e)}));
+    if(!d.ok){ 框.innerHTML = `<b>${esc(d.error || "取不到")}</b>`; return; }
+    if(!(d.items || []).length){ 框.textContent = "还没有结果 —— 任务到点跑过之后会出现在这里"; 刷定时角标(0); return; }
+    框.innerHTML = d.items.map(r => `<div class="kv" style="${r.read_at ? "" : "font-weight:600"}"><span>${esc(String(r.inbox_at || "").slice(5, 16).replace("T", " "))}</span><span>
+        <b>${esc(r.title || "")}</b> · ${esc(r.status)}${r.kind === "手动" ? " · 手动" : ""}${r.cost_amount != null ? " · $" + Number(r.cost_amount).toFixed(3) : ""}
+        <div data-raw="原文" style="white-space:pre-wrap;font-weight:400">${esc(r.answer_text || (r.error_detail ? JSON.stringify(r.error_detail).slice(0, 300) : ""))}</div>
+        ${r.read_at ? "" : `<button data-ct-read="${esc(r.id)}">标已读</button>`}</span></div>`).join("");
+    框.querySelectorAll("[data-ct-read]").forEach(b => { b.onclick = async () => {
+      await fetch("/api/chat-task-run/read", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({run_id: b.dataset.ctRead})});
+      开我的定时("结果"); 刷定时角标(); }; });
+    刷定时角标(d.未读);
+    return;
+  }
+  // 新建
+  const m = await fetch("/api/chat-task-templates").then(x => x.json()).catch(() => ({items: []}));
+  框.innerHTML = `<div class="sub">模板:${(m.items || []).map(t => `<button data-ct-tpl="${esc(t.名)}" title="${esc(t.instruction)}">${esc(t.名)}</button>`).join(" ")} <small>点了填好,都能改</small></div>
+    <label class="sub">任务名<input data-ct="title" style="width:100%" placeholder="比如:商机探索"></label>
+    <label class="sub">一句话说清到点让助手做什么<textarea data-ct="instruction" rows="3" style="width:100%" placeholder="比如:看最近 7 天通话里的商机,和店里现有的货、新品对一遍,列出能跟进的"></textarea></label>
+    <div id="ct-rule">${_ct规则控件()}</div>
+    <div class="sub">到点:<select data-ct="task_mode"><option value="跑">让助手跑一遍,结果送给我(真调模型,进门店月费用)</option><option value="提醒">只提醒我</option></select></div>
+    <div class="sub"><button class="pri" id="ct-save">保存</button> <span id="ct-save-msg"></span></div>
+    <div class="note">只读:到点那一轮不会做任何写操作(派单 / 改档这类要你自己来)。结果在「结果收件箱」。</div>`;
+  _ct接周期($("#ct-rule"));
+  框.querySelectorAll("[data-ct-tpl]").forEach(b => { b.onclick = () => {
+    const t = (m.items || []).find(x => x.名 === b.dataset.ctTpl); if(!t) return;
+    框.querySelector("[data-ct=title]").value = t.title; 框.querySelector("[data-ct=instruction]").value = t.instruction;
+    $("#ct-rule").innerHTML = _ct规则控件(t.规则); _ct接周期($("#ct-rule"));
+  }; });
+  $("#ct-save").onclick = async () => {
+    const 体 = {title: 框.querySelector("[data-ct=title]").value.trim(), instruction: 框.querySelector("[data-ct=instruction]").value.trim(),
+                task_mode: 框.querySelector("[data-ct=task_mode]").value, 规则: _ct规则读($("#ct-rule"))};
+    if(!体.title || !体.instruction){ $("#ct-save-msg").textContent = "任务名和一句话都要填"; return; }
+    $("#ct-save").disabled = true;
+    const r = await fetch("/api/chat-task", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(体)}).then(x => x.json()).catch(e => ({error: String(e)}));
+    if(!r.ok){ $("#ct-save-msg").textContent = `${r.error || "没存上"}${r.怎么办 ? " —— " + r.怎么办 : ""}`; $("#ct-save").disabled = false; return; }
+    开我的定时("任务");
+  };
+}
+async function 开定时结果(id){
+  const bx = $("#odp");
+  const d = await fetch("/api/chat-task-runs?id=" + encodeURIComponent(id)).then(x => x.json()).catch(e => ({error: String(e)}));
+  bx.innerHTML = `<button id="odclose">关闭</button><h3>执行记录</h3><div class="sub"><button id="ct-back">← 回我的任务</button></div>
+    <div class="sub">${!d.ok ? `<b>${esc(d.error || "取不到")}</b>` : !(d.items || []).length ? "还没跑过" : d.items.map(r => `<div class="kv"><span>${esc(String(r.created_at || "").slice(5, 16).replace("T", " "))}</span><span>
+      ${esc(r.kind)} · <b>${esc(r.status)}</b>${r.cost_amount != null ? " · $" + Number(r.cost_amount).toFixed(3) : ""}
+      <div data-raw="原文" style="white-space:pre-wrap">${esc(r.answer_text || (r.error_detail ? JSON.stringify(r.error_detail).slice(0, 300) : ""))}</div></span></div>`).join("")}</div>`;
+  $("#odclose").onclick = closeOrder; $("#ct-back").onclick = () => 开我的定时("任务");
+}
+async function 刷定时角标(n){
+  if(n == null){
+    const d = await fetch("/api/chat-task-inbox").then(x => x.json()).catch(() => null);
+    n = d && d.ok ? Number(d.未读 || 0) : null;
+  }
+  const b = $("#ctbtn"); if(!b) return;
+  b.textContent = n ? `⏰ 我的定时(${n})` : "⏰ 我的定时";
+}
+
 /* ── 人工待办(11-22,四期 4-1 聊天站一半)────────────────────────────────
  * 列表 / 表单都来自管理后台的真返回值(聊天站 human_requests.py 以登录工号绑定的后台账号去取)。
  * ⚠️ 按钮亮不亮只看「能处理吗」;**点下去管理后台按那个账号再判一次**(门店 / 角色 / 过期 / 版本)。
@@ -2108,6 +2227,8 @@ $("#evt2").onclick = () => { EVTAB = "子助手"; drawEv(); };
 $("#gallery").onclick = () => { PICKING = true; drawStream(); };
 $("#opbtn").onclick = openOpinions;
 $("#hrbtn").onclick = () => 开人工待办();
+$("#ctbtn").onclick = () => 开我的定时();
+刷定时角标(); setInterval(() => 刷定时角标(), 60000);   // 站内红点:每分钟看一眼收件箱有几条没读
 $("#send").onclick = ask;
 $("#stop").onclick = () => { if(RUNNING) RUNNING.abort(); };
 $("#q").addEventListener("input", grow);
