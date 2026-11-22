@@ -10,6 +10,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from contextlib import closing
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -47,11 +48,12 @@ ck("截止格式认不出 → 不建(不编时刻)", S.提醒体({**行, "end_ts
 print("\n▸ ② 推一轮(假后台 + 临时库 + 临时推账)")
 d = tempfile.mkdtemp()
 库 = os.path.join(d, "t.db")
-with sqlite3.connect(库) as c:
+with closing(sqlite3.connect(库)) as c, c:
     c.execute("CREATE TABLE schedule(id TEXT, type TEXT, assignee_no TEXT, assigned_by TEXT, end_ts TEXT, status TEXT, shop_code TEXT, note TEXT, ref_id TEXT, assigned_at TEXT)")
-    c.execute("INSERT INTO schedule VALUES('SC1','订单跟踪','60000011','60000003','2099-01-01 18:00','有效','SH001','催','O1', datetime('now','localtime'))")
-    c.execute("INSERT INTO schedule VALUES('SC2','日常运维','60000012','60000003','','有效','SH001','','', datetime('now','localtime'))")
-    c.execute("INSERT INTO schedule VALUES('SC3','接待任务','60000012','60000003','2099-01-01 10:00','有效','SH001','','', datetime('now','localtime','-10 days'))")
+    for 值 in ("'SC1','订单跟踪','60000011','60000003','2099-01-01 18:00','有效','SH001','催','O1', datetime('now','localtime')",
+              "'SC2','日常运维','60000012','60000003','','有效','SH001','','', datetime('now','localtime')",
+              "'SC3','接待任务','60000012','60000003','2099-01-01 10:00','有效','SH001','','', datetime('now','localtime','-10 days')"):
+        c.execute("INSERT INTO schedule(id, type, assignee_no, assigned_by, end_ts, status, shop_code, note, ref_id, assigned_at) VALUES(" + 值 + ")")
 S._推账 = os.path.join(d, "pushes.json")
 调用 = []
 
@@ -74,7 +76,7 @@ ck("推账记了 SC1 的后台任务号;SC2 没截止,查询那一步就没取�
 调用.clear()
 新, 归, 说 = S.推派任务提醒(cfg, "project_lanxiu", db=库)
 ck("第二轮:什么都不推(幂等)", 新 == 0 and 归 == 0 and not 调用, (新, 归, 调用))
-with sqlite3.connect(库) as c:
+with closing(sqlite3.connect(库)) as c, c:
     c.execute("UPDATE schedule SET status='完结' WHERE id='SC1'")
 调用.clear()
 新, 归, 说 = S.推派任务提醒(cfg, "project_lanxiu", db=库)

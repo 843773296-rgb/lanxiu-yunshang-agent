@@ -164,14 +164,17 @@ def _后台(cfg, 项目, 方法, 路径, 体=None, 头=None):
 def 推派任务提醒(cfg, 项目, db=None, 现在=None, 看几天=2):
     """→ (新建几条, 归档几条, 说明)。只看最近 看几天 派的(老任务不补提醒);每轮幂等:推过的记账,后台按 source_ref 也去重。"""
     import sqlite3
+    from contextlib import closing
     import api
     账 = _读推账()
     新, 归, 错 = 0, 0, []
-    with sqlite3.connect(db or api.DB) as c:
+    # 真实时钟:这段跑在真实世界的 launchd 里,「最近两天派的」按真实日历看;assigned_at 本身就是机器时钟写的
+    # (booking.py / fitting_write.py 的注释写明了,每日平移跟着挪),拿世界时钟去比反而对不上。
+    with closing(sqlite3.connect(db or api.DB)) as c, c:
         c.row_factory = sqlite3.Row
         行们 = c.execute("""SELECT id, type, assignee_no, assigned_by, end_ts, status, shop_code, note, ref_id FROM schedule
                            WHERE assignee_no IS NOT NULL AND assignee_no <> '' AND end_ts IS NOT NULL AND end_ts <> ''
-                             AND assigned_at >= datetime('now', 'localtime', ?)
+                             AND assigned_at >= datetime('now', 'localtime', ?)  -- 真实时钟:见上面两行
                            ORDER BY assigned_at""", (f"-{int(看几天)} days",)).fetchall()
     for 行 in 行们:
         行 = dict(行)

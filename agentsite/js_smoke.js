@@ -190,7 +190,7 @@ setTimeout(() => {
   if (纯表单[page]) {
     console.log("\n" + "=".repeat(68));
     console.log(`✅ 脚本跑通(这一页没有加载路径:${纯表单[page]} —— 不按「填了几个节点」判)`);
-    return;
+    process.exit(0);
   }
   const 字数 = filled.reduce((n, [, v]) => n + v._h.length, 0);
   const 占位 = filled.filter(([, v]) => /加载中|undefined|NaN|\[object Object\]/.test(v._h))
@@ -210,5 +210,9 @@ setTimeout(() => {
   }
   console.log("\n" + "=".repeat(68));
   console.log(`✅ 脚本跑通,${filled.length} 个节点被真实数据填充`);
+  /* 2026-11-22:通过路径也要显式退出。聊天站加了「每分钟刷一次收件箱红点」的 setInterval,
+     node 的事件循环有定时器挂着就不退 —— 这一行 ✅ 印出来了,进程却一直活着,
+     门禁等了 600 秒把它掐了,算「崩了」。页面定期刷新是正常写法,不该让冒烟挂住。 */
+  process.exit(0);
 }, 4000);
 })();
