@@ -325,7 +325,9 @@ def 研判回包(r, tr):
         if any(a in s for a in 答案):
             out.pop(k)
     return out
-DB=os.path.join(HERE,"lanxiu.db")
+# 库路径走单源(W02 第③步,11-22):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB=_库路径()
 DRAFTS=os.path.join(HERE,"drafts.json")
 
 def rows(sql,*a):
