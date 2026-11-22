@@ -19,7 +19,9 @@
 from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import sqlite3, os, datetime
 
-DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
+# 库路径走单源(W02 第③步,11-22):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 
 
 def _rows(sql, *a):

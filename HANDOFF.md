@@ -2705,3 +2705,5 @@ a6cbf89d 开关登记表加「定时(系统停用)」:workflow.schedule_disabled
 - 11-22 15:1x 本地又提一笔:backend/server.py 的 DB 也改走 dbpath.路径(),欠债 322 → 321(相关检查单跑全绿)。和 b9084f5f 一起等并行会话报号后 ship;推完重启业务后台 8760(com.lanxiu.backend)和 8770。下一个按顺序是 oplog.py。
 - 11-22 15:4x 并行会话 gate_w25 在跑(并进员工定时二期,推完它会 kickstart com.lanxiu.supervise),我照旧不占锁、不动 agentsite;本地待推 b9084f5f / f3ebafa3。
 - 11-22 15:5x 本地第三笔:oplog / auth / ops 三个的 DB 改走 dbpath.路径(),欠债 321 → 318(相关 8 项单跑全绿)。ops.py 的 _本库 = DB 照旧是 import 时冻结 —— 行为和改前一样,手册里「改成函数」那条另做。三笔一起等并行会话报号后 ship,推完重启 8760 / 8770。第③步按顺序剩 shop_key / tasks / merge / booking 等,再往后是 ratchet 慢慢降。
+- 11-22 16:2x 并行会话判 e2e 那条是偶发,直接 ship(约 45 分钟);我继续本地收 shop_key / tasks / merge / booking。
+- 11-22 16:3x 本地第四笔:shop_key / merge / tasks / booking 改走 dbpath.路径(),欠债 318 → 314(9 项单跑全绿)。四笔一起等并行会话报号后 ship(ship 日志用 ship-20261122-17xxa.log),推完重启 8760 / 8770。
