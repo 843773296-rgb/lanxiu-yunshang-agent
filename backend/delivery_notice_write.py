@@ -14,7 +14,9 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
 from oplog import log_op  # noqa: E402
 
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-22):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 渠道们 = ("微信", "电话", "短信", "当面", "小程序")
 交付之后 = ("已发货", "待完成", "完成")
 
