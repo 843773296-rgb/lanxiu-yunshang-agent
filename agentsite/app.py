@@ -873,6 +873,18 @@ class H(BaseHTTPRequestHandler):
                 ok_s, why_s = sessions.check(sid_in, me)
                 if not ok_s:
                     return self._send({"error": why_s, "code": "SESSION_NOT_YOURS"}, code=403)
+                # ── 标注回复(用户 10-27 拍第 7 条;后台一半 11-21、这一半 11-22)── 后台总开关开着时,先让模型判这句和哪条标注同义,
+                # 命中就直接回标准答案(零花费、不跑助手、不调工具),并向后台报一次命中;没命中 / 开关关 / 任何出错 → 走原路
+                if not imgs:
+                    try:
+                        import annotations as _an
+                        _命 = _an.试命中(prompt, (sdk.ROLE_META.get(kind) or {}).get("name"))
+                    except Exception:  # noqa: BLE001
+                        _命 = None
+                    if _命:
+                        r = _an.命中回答(_命, prompt, sid_in)
+                        _an.报命中(_命.get("id"))
+                        return self._send(r)
                 # ── 难题分流(用户 10-25 拍,算法见 model_route.py)── 只在用默认模型、页面没手选过时开:
                 # 先 Haiku 跑,出问题 → 换 Opus 重答一次。**不按事情类型分**:意图分类交给 harness 统一调配(用户 10-25)
                 import model_route as _mr

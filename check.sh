@@ -454,6 +454,7 @@ run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值�
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "工作流接管 · 聊天站这一半(被接管的技能调不动 / 拉不到清单的退路 / 每个角色都能发起)" ./agentsite/.venv/bin/python agentsite/takeover_check.py
 run "聊天站人工待办 · 以登录工号绑定的后台账号办 / 四种点不了分开说 / 按钮 · 版本 · 幂等键原样透传(四期 4-1 聊天站一半,11-22)" ./agentsite/.venv/bin/python agentsite/human_requests_check.py
+run "标注回复聊天站一半 · 开关关 / 清单空不问模型、按角色筛候选、不确定答 0、命中逐字回标准答案零花费、接在分流之前(用户 10-27 第 7 条,11-22)" ./agentsite/.venv/bin/python agentsite/annotations_check.py
 run "聊天站我的定时 · 每条都带本人工号 / 内部通道认任务id且费用到顶不跑 / 路由在转发之前 / 面板角标(员工定时 agent 任务,11-22 台账第九十条)" ./agentsite/.venv/bin/python agentsite/chat_tasks_check.py
 run "URL 查询参数名 · 不许中文字面量(11-03:中文参数名原样发出,管理后台回 400;试纸是出事那一行)" python3 tools/url_ascii_check.py
 run "聊天站内部口 · 凭证 / 只收本机 / 身份现查 / 会话归密钥 / 访问 API 那一轮写工具不挂(11-03)" ./agentsite/.venv/bin/python agentsite/internal_call_check.py
