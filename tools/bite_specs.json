@@ -23788,5 +23788,41 @@
    }
   ],
   "预期红": "带工号 / 任务名 / 一句话 / 时间;写明只读、不做写操作"
+ },
+ {
+  "script": "agentsite/annotations_check.py",
+  "改坏": "候选上限从 40 放到 400 —— 提示词里塞一百条标注,判同义会变慢变贵,清单越长越容易误命中",
+  "file": [
+   {
+    "path": "agentsite/annotations.py",
+    "old": "最多候选 = 40",
+    "new": "最多候选 = 400"
+   }
+  ],
+  "预期红": "最多 40 条"
+ },
+ {
+  "script": "agentsite/chat_tasks_check.py",
+  "改坏": "带 任务id 的那一轮不再记门店用量 —— 用户拍「不限条数,靠门店月上限兜」,不记账上限就兜不住定时任务",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "_su.记(r.get(\"trace_id\"), r.get(\"cost_usd\"), me.get(\"no\"), r.get(\"model\"))",
+    "new": "pass  # 不记"
+   }
+  ],
+  "预期红": "带 任务id 的那一轮记门店用量(_su.记)"
+ },
+ {
+  "script": "tools/chat_task_push_check.py",
+  "改坏": "第二轮不再看推账、每轮都重推 —— 推账是幂等的唯一依据,去掉后同一个任务每五分钟建一条提醒",
+  "file": [
+   {
+    "path": "tools/supervise_sync.py",
+    "old": "if 行[\"status\"] == \"有效\" and not 记:",
+    "new": "if 行[\"status\"] == \"有效\":"
+   }
+  ],
+  "预期红": "第二轮:什么都不推(幂等)"
  }
 ]

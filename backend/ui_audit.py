@@ -56,11 +56,13 @@ def audit(src):
     # 而委托恰恰是这类按钮最正常的写法(参照原型里也是这么写的)。
     # 这个误报出现过两次:第一次我改了代码去迁就审计,第二次才想起来该修的是审计。
     # **同一个误报出现两次,就该修检查。**
-    for sel in qsa + re.findall(r'\.(?:closest|matches)\("([^"]+)"\)', s):
-        bound |= set(re.findall(r'\[data-([a-z][a-z0-9-]*)\]', sel))
-    # dataset.xxx 读取的属于「数据载体」,由别的 handler 消费,不算死控件
-    carriers = {m.replace("-", "") for m in used} & set(re.findall(r'dataset\.([a-zA-Z]\w*)', s))
-    used = {u for u in used if u.replace("-", "") not in carriers}
+    # 2026-11-22 第三次同形误报:`querySelector("[data-ct=周期]")` 带值的属性选择器,老正则只认
+    # `[data-ct]`;`data-ct-rev` 由 `dataset.ctRev` 读,老比对没折掉驼峰大小写。**同一个误报出现三次,修检查。**
+    for sel in qsa + re.findall(r'\.(?:closest|matches|querySelector)\("([^"]+)"\)', s):
+        bound |= set(re.findall(r'\[data-([a-z][a-z0-9-]*)(?:[~|^$*]?=[^\]]*)?\]', sel))
+    # dataset.xxx 读取的属于「数据载体」,由别的 handler 消费,不算死控件(data-ct-rev ↔ dataset.ctRev,比对前都压成小写)
+    carriers = {m.replace("-", "").lower() for m in used} & {x.lower() for x in re.findall(r'dataset\.([a-zA-Z]\w*)', s)}
+    used = {u for u in used if u.replace("-", "").lower() not in carriers}
     dead_attr = sorted(used - bound)
 
     # ② CSS 里声明了 cursor:pointer 的类,是否出现在任何绑定选择器里

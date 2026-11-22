@@ -159,6 +159,13 @@ def 定向运营上限():
     return targeted_ops.上限
 
 
+def 派任务提醒提前分钟():
+    """店长派了带截止的任务,自动给被派的人建的提醒默认提前多少分钟(用户 2026-11-22 拍「默认截止前 1 小时」,台账第九十条;
+    `tools/supervise_sync.py` 的 `提前分钟`)—— 业务数,会再调,所以对账不豁免。读字面量不 import:那个脚本顶层连着桥和后台的环境。"""
+    m = re.search(r"^提前分钟 = (\d+)\s*$", (ROOT / "tools" / "supervise_sync.py").read_text(encoding="utf-8"), re.M)
+    return int(m.group(1)) if m else -1
+
+
 def 购买回看月数():
     """购买喜好看最近几个月买的(用户 2026-10-10,`knowledge/purchase_pref.py`)。"""
     sys.path.insert(0, str(ROOT / "knowledge"))
@@ -312,6 +319,8 @@ def 顶栏项数():
     S("在职员工数", 库中("staff"),
       r"在职员工\s*(\d+)\s*人",
       r"(\d+)\s*个在职员工"),
+    S("派任务提醒提前分钟", 派任务提醒提前分钟,
+      r"默认截止前\s*(\d+)\s*分钟"),
 ]
 
 # 角色分布也要对账。**这一处恰恰是漂掉的那一处** —— 文档写「顾问 8」,库里是 9。

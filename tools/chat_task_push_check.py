@@ -13,6 +13,11 @@ import tempfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+# 咬合(每条在 tools/bite_specs.json 里有可重放的规格:改坏什么 → 该红的是哪一条)
+咬合 = [
+    ("第二轮不再看推账、每轮都重推 —— 推账是幂等的唯一依据,去掉后同一个任务每五分钟建一条提醒", "第二轮:什么都不推(幂等)"),
+]
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "tools"), os.path.join(ROOT, "agent"), os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge")]
 import supervise_sync as S  # noqa: E402

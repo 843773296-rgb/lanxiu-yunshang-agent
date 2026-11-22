@@ -1401,7 +1401,7 @@ async function 开我的定时(页签){
     if(!(d.items || []).length){ 框.textContent = "还没有结果 —— 任务到点跑过之后会出现在这里"; 刷定时角标(0); return; }
     框.innerHTML = d.items.map(r => `<div class="kv" style="${r.read_at ? "" : "font-weight:600"}"><span>${esc(String(r.inbox_at || "").slice(5, 16).replace("T", " "))}</span><span>
         <b>${esc(r.title || "")}</b> · ${esc(r.status)}${r.kind === "手动" ? " · 手动" : ""}${r.cost_amount != null ? " · $" + Number(r.cost_amount).toFixed(3) : ""}
-        <div data-raw="原文" style="white-space:pre-wrap;font-weight:400">${esc(r.answer_text || (r.error_detail ? JSON.stringify(r.error_detail).slice(0, 300) : ""))}</div>
+        <div class="ct-raw" style="white-space:pre-wrap;font-weight:400">${esc(r.answer_text || (r.error_detail ? JSON.stringify(r.error_detail).slice(0, 300) : ""))}</div>
         ${r.read_at ? "" : `<button data-ct-read="${esc(r.id)}">标已读</button>`}</span></div>`).join("");
     框.querySelectorAll("[data-ct-read]").forEach(b => { b.onclick = async () => {
       await fetch("/api/chat-task-run/read", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({run_id: b.dataset.ctRead})});
@@ -1440,7 +1440,7 @@ async function 开定时结果(id){
   bx.innerHTML = `<button id="odclose">关闭</button><h3>执行记录</h3><div class="sub"><button id="ct-back">← 回我的任务</button></div>
     <div class="sub">${!d.ok ? `<b>${esc(d.error || "取不到")}</b>` : !(d.items || []).length ? "还没跑过" : d.items.map(r => `<div class="kv"><span>${esc(String(r.created_at || "").slice(5, 16).replace("T", " "))}</span><span>
       ${esc(r.kind)} · <b>${esc(r.status)}</b>${r.cost_amount != null ? " · $" + Number(r.cost_amount).toFixed(3) : ""}
-      <div data-raw="原文" style="white-space:pre-wrap">${esc(r.answer_text || (r.error_detail ? JSON.stringify(r.error_detail).slice(0, 300) : ""))}</div></span></div>`).join("")}</div>`;
+      <div class="ct-raw" style="white-space:pre-wrap">${esc(r.answer_text || (r.error_detail ? JSON.stringify(r.error_detail).slice(0, 300) : ""))}</div></span></div>`).join("")}</div>`;
   $("#odclose").onclick = closeOrder; $("#ct-back").onclick = () => 开我的定时("任务");
 }
 async function 刷定时角标(n){

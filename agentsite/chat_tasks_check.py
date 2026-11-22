@@ -12,6 +12,11 @@ import json
 import os
 import re
 import sys
+
+# 咬合(每条在 tools/bite_specs.json 里有可重放的规格:改坏什么 → 该红的是哪一条)
+咬合 = [
+    ("带 任务id 的那一轮不再记门店用量 —— 用户拍「不限条数,靠门店月上限兜」,不记账上限就兜不住定时任务", "带 任务id 的那一轮记门店用量(_su.记)"),
+]
 from unittest import mock
 
 这 = os.path.dirname(os.path.abspath(__file__))
@@ -77,7 +82,8 @@ print("\n▸ ⑤ app.py")
 ap = open(os.path.join(这, "app.py"), encoding="utf-8").read()
 ck("/internal/chat 认 任务id,不要密钥也放行", '任务id = str(body.get("任务id")' in ap and "(kid or 任务id)" in ap)
 ck("费用到顶 → 429 BUDGET_EXHAUSTED(不跑)", '"code": "BUDGET_EXHAUSTED"' in ap and "code=429" in ap)
-ck("带 任务id 的那一轮记门店用量(_su.记)", re.search(r"if 任务id:\s*\n.*?_su\.记\(r\.get\(\"trace_id\"\)", ap, re.S) is not None)
+# ⚠️ 不用 re.S 的 .*?:它会跨到后面别的 _su.记,把 任务id 块里那一处删了也照样绿(11-22 配咬合时抓到)
+ck("带 任务id 的那一轮记门店用量(_su.记)", re.search(r"if 任务id:\n(?:[^\n]*\n){1,5}\s*_su\.记\(r\.get\(\"trace_id\"\)", ap) is not None)
 GET = ap.find('"/api/chat-tasks", "/api/chat-task-templates"'); 转 = ap.find('if p.startswith("/api/") or p.startswith("/img/")')
 POST = ap.find('"/api/chat-task", "/api/chat-task/update"'); 决 = ap.find('if p == "/api/human-request/decide"')
 ck("GET 四条写在「转发给后台」之前;POST 五条写在人工待办决定之前(都在 answer-feedback 之前)", 0 < GET < 转 and 0 < POST < 决, (GET, 转, POST, 决))

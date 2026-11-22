@@ -14,6 +14,11 @@ import sys
 sys.path.insert(0, 这)
 import annotations as A  # noqa: E402
 
+# 咬合(每条在 tools/bite_specs.json 里有可重放的规格:改坏什么 → 该红的是哪一条)
+咬合 = [
+    ("候选上限从 40 放到 400 —— 提示词里塞一百条标注,判同义会变慢变贵,清单越长越容易误命中", "最多 40 条"),
+]
+
 过, 挂 = [], []
 
 
