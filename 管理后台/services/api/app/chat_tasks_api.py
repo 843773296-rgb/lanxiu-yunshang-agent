@@ -88,11 +88,17 @@ def _审计(c, me, action, target, reason=None):
     _a(c, me, action, target, reason=reason)
 
 
-def _锁任务(c, project_id, tid, 工号=None):
-    """`工号` 给了就只认这个人的任务(聊天站代员工调时带 ?staff_code=):不是他的 → 404,**不泄露别人有这条**。后台页面(管理员)不带。"""
+def _锁任务(c, project_id, tid, 工号=None, 门店=None):
+    """聊天站代员工调时带 ?staff_code=(本人)和 / 或 ?store_id=(店长代管本店):**是他的、或在他店里**才认,否则 404,不泄露别人有这条。
+    后台页面(管理员)两个都不带。用户拍 ⑦:员工自建自管;店长能看本店所有人的并能停。"""
     r = c.execute(text("select * from chat_tasks where project_id=:p and id=:i for update"), {"p": project_id, "i": tid}).mappings().first()
-    if not r or r["archived_at"] or (工号 and r["staff_code"] != 工号):
-        raise _错(404, "NOT_FOUND", "没有这条定时任务(或已归档,或不是你的)", "回「我的定时」列表")
+    if not r or r["archived_at"]:
+        raise _错(404, "NOT_FOUND", "没有这条定时任务(或已归档)", "回「我的定时」列表")
+    if 工号 or 门店:
+        是本人 = bool(工号) and r["staff_code"] == 工号
+        在本店 = bool(门店) and (r["store_id"] or "").upper() == 门店.upper()
+        if not (是本人 or 在本店):
+            raise _错(404, "NOT_FOUND", "没有这条定时任务(或已归档,或不是你的 / 不在你店里)", "回「我的定时」列表")
     return r
 
 
@@ -190,7 +196,7 @@ async def 建任务(project_id: str, request: Request, me: 身份 = Depends(要�
 
 @router.patch(前缀 + "/chat-tasks/{tid}")
 async def 改任务(project_id: str, tid: str, request: Request, me: 身份 = Depends(要权限("运行评测")),
-             if_match: str = Header(default=None, alias="If-Match"), staff_code: str = Query(None)):
+             if_match: str = Header(default=None, alias="If-Match"), staff_code: str = Query(None), store_id: str = Query(None)):
     rev = _要IfMatch(if_match)
     体 = await request.json()
     可改 = {"title", "instruction", "task_mode", "role_key", "规则", "status", "note", "deliver_policy"}
@@ -202,7 +208,7 @@ async def 改任务(project_id: str, tid: str, request: Request, me: 身份 = De
         raise _错(422, "VALIDATION", f"task_mode 只能是 {' / '.join(模式们)}", "", field_errors={"task_mode": "不认识"})
     规则 = _核规则(体["规则"]) if "规则" in 体 else None
     with 事务() as c:
-        老 = _锁任务(c, project_id, tid, staff_code)
+        老 = _锁任务(c, project_id, tid, staff_code, store_id)
         if int(老["revision"] or 0) != rev:
             raise _错(409, "CONFLICT", f"这条任务已经被改过(现在是 revision {老['revision']})", "刷新后再改", field_errors={"If-Match": str(老["revision"])})
         新 = {"t": str(体.get("title", 老["title"])).strip() or 老["title"], "ins": str(体.get("instruction", 老["instruction"])).strip() or 老["instruction"],
@@ -230,10 +236,10 @@ async def 改任务(project_id: str, tid: str, request: Request, me: 身份 = De
 
 @router.post(前缀 + "/chat-tasks/{tid}/archive")
 def 归档任务(project_id: str, tid: str, me: 身份 = Depends(要权限("运行评测")), if_match: str = Header(default=None, alias="If-Match"),
-         staff_code: str = Query(None)):
+         staff_code: str = Query(None), store_id: str = Query(None)):
     rev = _要IfMatch(if_match)
     with 事务() as c:
-        老 = _锁任务(c, project_id, tid, staff_code)
+        老 = _锁任务(c, project_id, tid, staff_code, store_id)
         if int(老["revision"] or 0) != rev:
             raise _错(409, "CONFLICT", f"这条任务已经被改过(现在是 revision {老['revision']})", "刷新后再归档")
         c.execute(text("""update chat_tasks set archived_at=now(), status=:s, schedule_enabled=false, revision=revision+1, updated_at=now()
@@ -243,11 +249,11 @@ def 归档任务(project_id: str, tid: str, me: 身份 = Depends(要权限("运�
 
 
 @router.post(前缀 + "/chat-tasks/{tid}/run-now", status_code=202)
-def 立即跑一次(project_id: str, tid: str, me: 身份 = Depends(要权限("运行评测")), staff_code: str = Query(None)):
+def 立即跑一次(project_id: str, tid: str, me: 身份 = Depends(要权限("运行评测")), staff_code: str = Query(None), store_id: str = Query(None)):
     """排一条「手动」运行,worker 下一分钟执行(一轮聊天 20~90 秒,接口不等它)。不算一期、不改 last_period_start。"""
     现在 = datetime.now(timezone.utc)
     with 事务() as c:
-        t = _锁任务(c, project_id, tid, staff_code)
+        t = _锁任务(c, project_id, tid, staff_code, store_id)
         在跑 = c.execute(text("select id from chat_task_runs where project_id=:p and chat_task_id=:t and status in ('排队','进行中') limit 1"),
                        {"p": project_id, "t": tid}).first()
         if 在跑:

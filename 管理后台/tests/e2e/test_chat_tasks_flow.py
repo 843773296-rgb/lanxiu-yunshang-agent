@@ -94,6 +94,16 @@ c, r = 打("PATCH", P + f"/chat-tasks/{tid}?staff_code={工}", 体={"title": "e2
 ck("本人改名 + 停用 → 200,revision 2,接下来几次为空", c == 200 and r.get("revision") == 2 and r.get("title") == "e2e 提醒(改)" and r.get("status") == "停用" and r.get("接下来几次") == [], (c, r))
 c, r = 打("PATCH", P + f"/chat-tasks/{tid}?staff_code={工}", 体={"status": "启用"}, 头={"If-Match": "2"})
 ck("再启用 → 200,revision 3,接下来三次回来", c == 200 and r.get("revision") == 3 and len(r.get("接下来几次") or []) == 3, (c, r))
+# 店长视角(用户拍 ⑦):建一条归 SH001 的任务,店长带 store_id 能停;别的店不行
+c, t店 = 打("POST", P + "/chat-tasks", 体={"staff_code": "E2ECTSTAFF", "store_id": "sh001", "title": "e2e 店员的", "instruction": "x", "task_mode": "提醒", "规则": {"周期": "日", "时刻": "09:00"}})
+tid店 = (t店 or {}).get("id"); 建的.append(tid店)
+ck("建时 store_id 统一成大写 SH001", c == 201 and (t店 or {}).get("store_id") == "SH001", (c, t店))
+c, l店 = 打("GET", P + "/chat-tasks?store_id=sh001")
+ck("按门店列(不分大小写)→ 见这条", any(x["id"] == tid店 for x in (l店 or {}).get("items") or []), c)
+c, r = 打("PATCH", P + f"/chat-tasks/{tid店}?staff_code=E2ECTBOSS&store_id=SH002", 体={"status": "停用"}, 头={"If-Match": "1"})
+ck("别的店的店长(SH002)来停 → 404", c == 404, (c, r))
+c, r = 打("PATCH", P + f"/chat-tasks/{tid店}?staff_code=E2ECTBOSS&store_id=SH001", 体={"status": "停用", "note": "店长停用"}, 头={"If-Match": "1"})
+ck("本店店长(不是本人、带 store_id=SH001)来停 → 200,状态停用", c == 200 and r.get("status") == "停用" and r.get("revision") == 2, (c, r))
 
 print("\n▸ ④ 立即跑一次(提醒)")
 c, r = 打("POST", P + f"/chat-tasks/{tid}/run-now?staff_code={工}")

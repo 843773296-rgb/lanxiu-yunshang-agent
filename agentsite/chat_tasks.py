@@ -16,6 +16,7 @@
 """
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from urllib.parse import quote, urlencode
@@ -70,13 +71,41 @@ def _要登录(me):
     return None
 
 
-def 列表(me):
+_码样 = re.compile(r"^[A-Za-z0-9]{2,32}$")
+
+
+def _门店码(me):
+    """登录身份里 shop 是「SH001 静安旗舰店」这种文字(backend/auth.who),门店编号取第一段;有 shop_code 就直接用。认不出 → None(不限门店)。"""
+    c = (me or {}).get("shop_code")
+    if c and _码样.match(str(c)):
+        return str(c).upper()
+    头 = str((me or {}).get("shop") or "").split()
+    return 头[0].upper() if 头 and _码样.match(头[0]) else None
+
+
+def 是店长(me):
+    return (me or {}).get("role") == "店长"
+
+
+def _范围参数(me):
+    """改 / 归档 / 跑一次 带的身份:本人工号;店长再带本店编号(服务端:是他的或在他店里才认 —— 用户拍 ⑦)。"""
+    参 = {"staff_code": me["no"]}
+    if 是店长(me) and _门店码(me):
+        参["store_id"] = _门店码(me)
+    return 参
+
+
+def 列表(me, 范围=None):
+    """范围="本店":店长看本店所有人的(用户拍 ⑦);别人传了也只回自己的。"""
     e = _要登录(me)
     if e: return e
-    码, d = _调("GET", "/chat-tasks?" + urlencode({"staff_code": me["no"], "limit": 100}))
+    本店 = 范围 == "本店" and 是店长(me) and _门店码(me)
+    参 = {"store_id": _门店码(me), "limit": 100} if 本店 else {"staff_code": me["no"], "limit": 100}
+    码, d = _调("GET", "/chat-tasks?" + urlencode(参))
     if 码 != 200:
         return (码 or 502), {"ok": False, **人话(码, d)}
-    return 200, {"ok": True, "items": d.get("items") or [], "总数": d.get("total"), "note": d.get("note"), "工号": me["no"]}
+    return 200, {"ok": True, "items": d.get("items") or [], "总数": d.get("total"), "note": d.get("note"), "工号": me["no"],
+                 "范围": ("本店 " + _门店码(me)) if 本店 else "我的", "是店长": 是店长(me), "门店": _门店码(me)}
 
 
 def 模板(me):
@@ -93,7 +122,7 @@ def 建(me, body):
     if e: return e
     体 = {k: body.get(k) for k in ("title", "instruction", "task_mode", "role_key", "规则", "note") if body.get(k) is not None}
     体["staff_code"] = me["no"]
-    体["store_id"] = (me.get("shop_code") or me.get("shop") or None)
+    体["store_id"] = _门店码(me)
     码, d = _调("POST", "/chat-tasks", 体)
     if 码 != 201:
         return (码 or 502), {"ok": False, **人话(码, d)}
@@ -107,7 +136,7 @@ def 改(me, body):
     if not tid or rev is None:
         return 400, {"ok": False, "error": "要带 id 和 revision", "怎么办": "刷新列表再改"}
     体 = {k: body[k] for k in ("title", "instruction", "task_mode", "role_key", "规则", "status", "note") if k in body}
-    码, d = _调("PATCH", f"/chat-tasks/{quote(tid)}?" + urlencode({"staff_code": me["no"]}), 体, 头={"If-Match": str(rev)})
+    码, d = _调("PATCH", f"/chat-tasks/{quote(tid)}?" + urlencode(_范围参数(me)), 体, 头={"If-Match": str(rev)})
     if 码 != 200:
         return (码 or 502), {"ok": False, **人话(码, d)}
     return 200, {"ok": True, **d}
@@ -119,7 +148,7 @@ def 归档(me, body):
     tid, rev = str(body.get("id") or ""), body.get("revision")
     if not tid or rev is None:
         return 400, {"ok": False, "error": "要带 id 和 revision", "怎么办": "刷新列表再试"}
-    码, d = _调("POST", f"/chat-tasks/{quote(tid)}/archive?" + urlencode({"staff_code": me["no"]}), 头={"If-Match": str(rev)})
+    码, d = _调("POST", f"/chat-tasks/{quote(tid)}/archive?" + urlencode(_范围参数(me)), 头={"If-Match": str(rev)})
     if 码 != 200:
         return (码 or 502), {"ok": False, **人话(码, d)}
     return 200, {"ok": True, **d}
@@ -131,7 +160,7 @@ def 跑一次(me, body):
     tid = str(body.get("id") or "")
     if not tid:
         return 400, {"ok": False, "error": "要带 id", "怎么办": ""}
-    码, d = _调("POST", f"/chat-tasks/{quote(tid)}/run-now?" + urlencode({"staff_code": me["no"]}))
+    码, d = _调("POST", f"/chat-tasks/{quote(tid)}/run-now?" + urlencode(_范围参数(me)))
     if 码 != 202:
         return (码 or 502), {"ok": False, **人话(码, d)}
     return 202, {"ok": True, **d}

@@ -1346,11 +1346,30 @@ async function 开我的定时(页签){
   ov.classList.add("on");
   页签 = 页签 || "任务";
   bx.innerHTML = `<button id="odclose">关闭</button><h3>我的定时</h3>
-    <div class="sub"><button id="ct-tab-任务" ${页签 === "任务" ? "disabled" : ""}>我的任务</button> <button id="ct-tab-结果" ${页签 === "结果" ? "disabled" : ""}>结果收件箱</button> <button id="ct-tab-新建" ${页签 === "新建" ? "disabled" : ""}>＋ 新建</button></div>
+    <div class="sub"><button id="ct-tab-任务" ${页签 === "任务" ? "disabled" : ""}>我的任务</button> <button id="ct-tab-结果" ${页签 === "结果" ? "disabled" : ""}>结果收件箱</button> <button id="ct-tab-新建" ${页签 === "新建" ? "disabled" : ""}>＋ 新建</button>${ME.role === "店长" ? ` <button id="ct-tab-本店" ${页签 === "本店" ? "disabled" : ""}>本店所有人的</button>` : ""}</div>
     <div id="ct-body" class="sub">在取…</div>`;
   $("#odclose").onclick = closeOrder;
-  ["任务", "结果", "新建"].forEach(t => { $("#ct-tab-" + t).onclick = () => 开我的定时(t); });
+  ["任务", "结果", "新建", "本店"].forEach(t => { const b = $("#ct-tab-" + t); if(b) b.onclick = () => 开我的定时(t); });
   const 框 = $("#ct-body");
+  if(页签 === "本店"){
+    // 店长视角(用户拍 ⑦):本店所有人的任务,能停;改和归档还是本人自己做。服务端按「在他店里」认,这里不另判
+    const d = await fetch("/api/chat-tasks?scope=store").then(x => x.json()).catch(e => ({error: String(e)}));
+    if(!d.ok){ 框.innerHTML = `<b>${esc(d.error || "取不到")}</b>`; return; }
+    if(!(d.items || []).length){ 框.textContent = `本店(${esc(d.门店 || "")})还没有人建定时任务`; return; }
+    框.innerHTML = `<div class="note">范围:${esc(d.范围 || "")}。停用后对方在自己的「我的定时」里看到状态变了;要重新开让他自己开。</div>`
+      + d.items.map(t => `<div class="kv" data-ct-id="${esc(t.id)}" data-ct-rev="${esc(String(t.revision || 0))}"><span>${t.status === "启用" ? "🟢" : "⏸"}</span><span>
+        <b>${esc(t.staff_code)}</b> · ${esc(t.title)} · ${esc(t.频率说明 || "")} · ${t.task_mode === "跑" ? "到点让助手跑" : "到点提醒"}
+        <br><small>成功 ${Number(t.成功次数 || 0)} 次${t.上次结果 ? " · 上次:" + esc(t.上次结果) : ""}${t.note ? " · " + esc(t.note) : ""}</small>
+        <br>${t.status === "启用" ? `<button data-ct-stop>停用</button>` : `<small>已停用</small>`} <span class="ct-msg"></span></span></div>`).join("");
+    框.querySelectorAll("[data-ct-stop]").forEach(b => { b.onclick = async () => {
+      const 行 = b.closest("[data-ct-id]"), 说 = 行.querySelector(".ct-msg"); b.disabled = true;
+      const r = await fetch("/api/chat-task/update", {method: "POST", headers: {"content-type": "application/json"},
+        body: JSON.stringify({id: 行.dataset.ctId, revision: Number(行.dataset.ctRev), status: "停用", note: `店长 ${ME.no || ""} 停用`})}).then(x => x.json()).catch(e => ({error: String(e)}));
+      if(!r.ok){ 说.textContent = `${r.error || "出错"}${r.怎么办 ? " —— " + r.怎么办 : ""}`; b.disabled = false; return; }
+      开我的定时("本店");
+    }; });
+    return;
+  }
   if(页签 === "任务"){
     const d = await fetch("/api/chat-tasks").then(x => x.json()).catch(e => ({error: String(e)}));
     if(!d.ok){ 框.innerHTML = `<b>${esc(d.error || "取不到")}</b>${d.怎么办 ? "<br>" + esc(d.怎么办) : ""}<br><small>这是取不到,不是「没有任务」</small>`; return; }

@@ -50,6 +50,18 @@ ck("建:staff_code 用登录工号(调用方塞的「想冒充的」被盖掉),�
 ck("列表 / 改 / 归档 / 跑一次 / 结果 / 收件箱 / 已读 七条的查询串都带 staff_code=本人", len(带) == 7, [(m, p) for m, p, b, h in 调用])
 改头 = next(h for m, p, b, h in 调用 if m == "PATCH")
 ck("改 带 If-Match = 页面看到的 revision", 改头 == {"If-Match": "3"}, 改头)
+ck("顾问不是店长:改 / 归档 的查询串**不带** store_id", not any("store_id=" in p for m, p, b, h in 调用 if m in ("PATCH",) or "archive" in p))
+
+print("\n▸ ②b 店长视角(用户拍 ⑦)")
+店长 = {"no": "60000003", "name": "店长", "role": "店长", "shop": "SH001 静安旗舰店"}
+ck("门店编号从登录身份的 shop 文字取第一段(SH001 静安旗舰店 → SH001);有 shop_code 优先;认不出 → None",
+   C._门店码(店长) == "SH001" and C._门店码({"shop_code": "sh002"}) == "SH002" and C._门店码({"shop": "静安旗舰店"}) is None and C._门店码({}) is None)
+调用.clear()
+with mock.patch.object(C, "_调", 假调):
+    码本店, d本店 = C.列表(店长, "本店"); C.列表(me, "本店"); C.改(店长, {"id": "ct_9", "revision": 1, "status": "停用"}); C.归档(店长, {"id": "ct_9", "revision": 1})
+ck("店长看「本店」→ 查询串按 store_id=SH001,不按工号;返回标 是店长 / 范围 本店", "store_id=SH001" in 调用[0][1] and "staff_code" not in 调用[0][1] and d本店["是店长"] and d本店["范围"] == "本店 SH001", 调用[0][1])
+ck("顾问传「本店」也只回自己的(按 staff_code)", "staff_code=60000011" in 调用[1][1] and "store_id" not in 调用[1][1], 调用[1][1])
+ck("店长改 / 归档 带本人工号 + 本店编号(服务端:是他的或在他店里才认)", all("staff_code=60000003" in p and "store_id=SH001" in p for m, p, b, h in 调用[2:4]), [p for m, p, b, h in 调用[2:4]])
 
 print("\n▸ ③ 缺字段")
 ck("改 / 归档 缺 id 或 revision → 400;跑一次 缺 id → 400;已读 缺 run_id → 400",

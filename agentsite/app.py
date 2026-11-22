@@ -379,7 +379,7 @@ class H(BaseHTTPRequestHandler):
             import chat_tasks as _ct
             me_ = _who(self)
             q_ = parse_qs(urlparse(self.path).query)
-            if p == "/api/chat-tasks": 码, d = _ct.列表(me_)
+            if p == "/api/chat-tasks": 码, d = _ct.列表(me_, "本店" if (q_.get("scope") or [""])[0] == "store" else None)
             elif p == "/api/chat-task-templates": 码, d = _ct.模板(me_)
             elif p == "/api/chat-task-runs": 码, d = _ct.结果(me_, (q_.get("id") or [""])[0])
             else: 码, d = _ct.收件箱(me_)
