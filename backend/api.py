@@ -6,7 +6,10 @@
 from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import sqlite3, os, json, sys, re, subprocess
 import datetime as _dt
-DB=os.path.join(os.path.dirname(os.path.abspath(__file__)),"lanxiu.db")
+# 库路径走单源(W02 第③步第一个,11-22):LANXIU_DB 优先 —— 服务进程不设它、照旧是 backend/lanxiu.db;
+# 评测设了它,子进程里 mcp/protocol.py 本来就按它切,这里 import 时也就对齐了
+from dbpath import 路径 as _库路径   # noqa: E402
+DB=_库路径()
 
 # ── 两道结构锁 ──────────────────────────────────────────────────────────
 # 这两条原来都是**约定**:靠「这里没人写 INSERT」和「这里没人 JOIN truth」守着。
