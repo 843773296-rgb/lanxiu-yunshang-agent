@@ -184,7 +184,7 @@ def 任务列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
 async def 建任务(project_id: str, request: Request, me: 身份 = Depends(要权限("运行评测"))):
     体 = await request.json()
     if not isinstance(体, dict):
-        raise _错(422, "VALIDATION", "体要是对象", "")
+        raise _错(422, "VALIDATION", "体要是对象", "检查入参再提一次(规格要求每个错误都带下一步)")
     工号 = str(体.get("staff_code") or "").strip()
     标题 = str(体.get("title") or "").strip()
     一句 = str(体.get("instruction") or "").strip()
@@ -341,7 +341,7 @@ def 标已读(project_id: str, rid: str, me: 身份 = Depends(要权限("运行�
                                where t.project_id=r.project_id and t.id=r.chat_task_id and r.project_id=:p and r.id=:i and t.staff_code=:sc"""),
                       {"p": project_id, "i": rid, "sc": staff_code}).rowcount
     if not n:
-        raise _错(404, "NOT_FOUND", "没有这条结果(或不是你的)", "")
+        raise _错(404, "NOT_FOUND", "没有这条结果(或不是你的)", "检查入参再提一次(规格要求每个错误都带下一步)")
     return {"id": rid, "已读": True}
 
 
