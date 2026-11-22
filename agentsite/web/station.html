@@ -1374,11 +1374,11 @@ async function 开我的定时(页签){
     const d = await fetch("/api/chat-tasks").then(x => x.json()).catch(e => ({error: String(e)}));
     if(!d.ok){ 框.innerHTML = `<b>${esc(d.error || "取不到")}</b>${d.怎么办 ? "<br>" + esc(d.怎么办) : ""}<br><small>这是取不到,不是「没有任务」</small>`; return; }
     if(!(d.items || []).length){ 框.innerHTML = `还没有定时任务。<button id="ct-go-new">建一条</button>`; $("#ct-go-new").onclick = () => 开我的定时("新建"); return; }
-    框.innerHTML = d.items.map(t => `<div class="kv" data-ct-id="${esc(t.id)}" data-ct-rev="${esc(String(t.revision || 0))}"><span>${t.status === "启用" ? "🟢" : "⏸"}</span><span>
+    框.innerHTML = d.items.map(t => `<div class="kv" data-ct-id="${esc(t.id)}" data-ct-rev="${esc(String(t.revision || 0))}" data-ct-cad="${esc(t.cadence || "")}" data-ct-fire="${esc(t.fire_time || "")}" data-ct-detail="${esc(JSON.stringify(t.cadence_detail || {}))}"><span>${t.status === "启用" ? "🟢" : "⏸"}</span><span>
         <b>${esc(t.title)}</b> · ${esc(t.频率说明 || "")} · ${t.task_mode === "跑" ? "到点让助手跑" : "到点提醒我"}
         <br><small style="white-space:pre-wrap">${esc(t.instruction || "")}</small>
         <br><small>成功 ${Number(t.成功次数 || 0)} 次${t.上次结果 ? " · 上次:" + esc(t.上次结果) : ""}${(t.接下来几次 || [])[0] ? " · 下次 " + esc(String(t.接下来几次[0]).slice(0, 16).replace("T", " ")) : ""}${t.note ? " · " + esc(t.note) : ""}</small>
-        <br><button data-ct-act="toggle">${t.status === "启用" ? "停用" : "启用"}</button> <button data-ct-act="run">跑一次</button> <button data-ct-act="runs">结果</button> <button data-ct-act="archive">归档</button> <span class="ct-msg"></span></span></div>`).join("")
+        <br><button data-ct-act="toggle">${t.status === "启用" ? "停用" : "启用"}</button> <button data-ct-act="when">改时刻</button> <button data-ct-act="run">跑一次</button> <button data-ct-act="runs">结果</button> <button data-ct-act="archive">归档</button> <span class="ct-msg"></span><div class="ct-edit"></div></span></div>`).join("")
       + `<div class="note">${esc(d.note || "")}</div>`;
     框.querySelectorAll("[data-ct-act]").forEach(b => {
       const 行 = b.closest("[data-ct-id]"), id = 行.dataset.ctId, rev = Number(行.dataset.ctRev), 说 = 行.querySelector(".ct-msg");
@@ -1392,6 +1392,28 @@ async function 开我的定时(页签){
       if(b.dataset.ctAct === "run") b.onclick = () => 发("/api/chat-task/run-now", {id});
       if(b.dataset.ctAct === "archive") b.onclick = () => 发("/api/chat-task/archive", {id, revision: rev});
       if(b.dataset.ctAct === "runs") b.onclick = () => 开定时结果(id);
+      /* 改时刻(11-22,用户拍 ⑥「被派的人自己改提前量」):店长派任务带出来的提醒是「一次」—— 给个日期时间框;
+         自己建的周期任务复用建任务那套频率控件。服务端 /chat-tasks/{id} 本来就收 规则,这里只补页面那一半。 */
+      if(b.dataset.ctAct === "when") b.onclick = () => {
+        const 编 = 行.querySelector(".ct-edit"), 一次 = 行.dataset.ctCad === "一次";
+        let 细节 = {}; try { 细节 = JSON.parse(行.dataset.ctDetail || "{}"); } catch(e) { 细节 = {}; }
+        const 原时刻 = 行.dataset.ctFire || "";
+        编.innerHTML = 一次
+          ? `<div class="sub">什么时候提醒 <input data-ct="一次时刻" type="datetime-local" value="${esc(原时刻.slice(0, 16))}"> <button data-ct-save>保存</button> <button data-ct-cancel>取消</button> <small>截止前多早提醒,自己定</small></div>`
+          : _ct规则控件({周期: 行.dataset.ctCad, 时刻: 原时刻, ...细节}) + `<div class="sub"><button data-ct-save>保存</button> <button data-ct-cancel>取消</button></div>`;
+        if(!一次) _ct接周期(编);
+        编.querySelector("[data-ct-cancel]").onclick = () => { 编.innerHTML = ""; };
+        编.querySelector("[data-ct-save]").onclick = () => {
+          let 规则;
+          if(一次){
+            const v = 编.querySelector("[data-ct=一次时刻]").value;
+            if(!v){ 说.textContent = "先选个时刻"; return; }
+            const off = -new Date().getTimezoneOffset(), sg = off >= 0 ? "+" : "-", hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0"), mm = String(Math.abs(off) % 60).padStart(2, "0");
+            规则 = {周期: "一次", 时刻: `${v.length === 16 ? v + ":00" : v}${sg}${hh}:${mm}`};
+          } else 规则 = _ct规则读(编);
+          发("/api/chat-task/update", {id, revision: rev, 规则});
+        };
+      };
     });
     return;
   }
