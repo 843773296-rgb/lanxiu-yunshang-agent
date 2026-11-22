@@ -316,8 +316,12 @@ def _wearer(wid):
 
 def _mask(phone):
     """手机号对外一律脱敏。顾问要的是「认得出是哪个号」,不是号本身。"""
+    # 用户 11-22 拍:手机前三后四、固话前三后三,和页面同一个口径(只在 backend/mask.电话 写一次)
     p = (phone or "").strip()
-    return f"{p[:3]}****{p[-4:]}" if len(p) >= 7 else "—"
+    if len(p) < 7:
+        return "—"
+    import mask as _mk
+    return _mk.电话(p)
 
 def _account(aid):
     """账户的对外视图。**列名写死,不用星号** —— 星号会把 pwd_* 带出来,

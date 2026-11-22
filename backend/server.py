@@ -1341,7 +1341,7 @@ def chat_order_detail(oid, handler):
     # ⚠️ 手机号**脱敏**(和别处同一条规矩:对外只给脱敏手机号)
     if 客:
         客 = dict(客[0])
-        import mask as _mk      # 打码只认 管理后台/docs/口径/敏感字段清单.json(用户 11-17 拍:手机只露后四位)
+        import mask as _mk      # 打码只认 管理后台/docs/口径/敏感字段清单.json(用户 11-22 拍:手机前三后四、固话前三后三)
         ph = 客.get("phone") or ""
         客["phone"] = _mk.手机(ph) if ph else None
     else:
@@ -3140,7 +3140,7 @@ def aftersale_detail(aid):
     填顾问名(cn)
     if cn:
         import mask as _mk
-        c0=_mk.给人看行(cn[0])      # 手机只露后四位(清单)
+        c0=_mk.给人看行(cn[0])      # 手机前三后四、固话前三后三(清单)
         a["customer"]=c0
     CHAIN=dict(仅退款=["待确认","审批同意","审批失败","退款失败","待结算","已完成"],
                退货退款=["提交申请","审批同意","审批拒绝","商品寄回","已入库","退款成功","退款失败","已完成"])
@@ -3157,7 +3157,7 @@ def maintain_detail(mid):
     填顾问名(cn)
     if cn:
         import mask as _mk
-        c0=_mk.给人看行(cn[0])      # 手机只露后四位(清单)
+        c0=_mk.给人看行(cn[0])      # 手机前三后四、固话前三后三(清单)
         m["customer"]=c0
     o=rows("SELECT id,status,amount,created FROM ordr WHERE id=?",m["order_id"])
     m["order"]=o[0] if o else None

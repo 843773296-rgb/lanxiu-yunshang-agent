@@ -1435,12 +1435,14 @@ SHOP_SCHEMAS=[
 # 这样任何新加的工具**默认就是脱敏的** —— 不靠作者记得写 _mask()。
 # 在此之前 _mask 全项目只被调用一次,「对外一律脱敏」是一句**约定**,不是结构。
 _PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+# 固定电话(用户 11-22 拍前三后三):文字里只认「0 开头区号 + 横杠 / 空格 + 7–8 位」;连写的不认 —— 和订单号这类长数字分不开,宁漏不误
+_LANDLINE = re.compile(r"(?<![\dA-Za-z.])0\d{2,3}[-\s]\d{7,8}(?![\dA-Za-z.])")
 
 
 def _mask_out(o, depth=0):
     """递归把返回值里的手机号脱敏。字符串里夹着的也认。"""
     if depth > 8: return o
-    if isinstance(o, str): return _PHONE.sub(lambda m: _mask(m.group()), o)
+    if isinstance(o, str): return _LANDLINE.sub(lambda m: _mask(m.group()), _PHONE.sub(lambda m: _mask(m.group()), o))
     if isinstance(o, dict): return {k: _mask_out(v, depth + 1) for k, v in o.items()}
     if isinstance(o, (list, tuple)): return [_mask_out(v, depth + 1) for v in o]
     return o
