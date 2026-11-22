@@ -6,7 +6,9 @@ HTTP 接口(人在页面上点)和 MCP 工具(智能体代人做)。
 from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, json
 
-DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
+# 库路径走单源(W02 第③步,11-22):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 _真库 = os.path.realpath(DB)
 
 

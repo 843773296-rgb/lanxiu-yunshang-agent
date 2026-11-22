@@ -16,7 +16,9 @@
 import json, os, sqlite3, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-22):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 # 本库 = 模块载入时那个库。检查脚本会把 DB 指向临时副本,但改不到这个 ——
 # 销账后的判读上报**只在本库上发生**(2026-10-12:ops_resolve_check 第一次在副本上销账,
 # 两条假判读进了真投递箱;同 artifact_report.是本库 那次 10-10 的事故)

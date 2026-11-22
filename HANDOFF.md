@@ -2703,3 +2703,5 @@ a6cbf89d 开关登记表加「定时(系统停用)」:workflow.schedule_disabled
 - 11-22 14:3x **本地提交待推(等并行会话 gate_w23 报号后再 ship)**:backend/api.py 的 DB 改走 dbpath.路径()(W02 第③步第一个;服务进程不设 LANXIU_DB 所以行为不变;评测设了它,与 mcp/protocol.py 子进程切库对齐),欠债 323 → 322;dbpath / selftest / isolation / boundary_audit / bite_check 单跑全绿。ship 前要重放 api.py 相关咬合(数量大,交给 pre_push 的按改动重放);推完要重启 8770 和业务后台(都 import api)。下一个按顺序是 server.py。
 - 11-22 15:0x 并行会话 gate_w24 在跑(第十六轮 e2e 红在它自己那边,已修重起),约 70 分钟;我照旧不占锁、不动 agentsite,b9084f5f 待推。
 - 11-22 15:1x 本地又提一笔:backend/server.py 的 DB 也改走 dbpath.路径(),欠债 322 → 321(相关检查单跑全绿)。和 b9084f5f 一起等并行会话报号后 ship;推完重启业务后台 8760(com.lanxiu.backend)和 8770。下一个按顺序是 oplog.py。
+- 11-22 15:4x 并行会话 gate_w25 在跑(并进员工定时二期,推完它会 kickstart com.lanxiu.supervise),我照旧不占锁、不动 agentsite;本地待推 b9084f5f / f3ebafa3。
+- 11-22 15:5x 本地第三笔:oplog / auth / ops 三个的 DB 改走 dbpath.路径(),欠债 321 → 318(相关 8 项单跑全绿)。ops.py 的 _本库 = DB 照旧是 import 时冻结 —— 行为和改前一样,手册里「改成函数」那条另做。三笔一起等并行会话报号后 ship,推完重启 8760 / 8770。第③步按顺序剩 shop_key / tasks / merge / booking 等,再往后是 ratchet 慢慢降。
