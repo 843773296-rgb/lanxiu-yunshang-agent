@@ -16,11 +16,10 @@ import booking, oplog, shutil, tempfile, atexit
 # ⚠️ **在库副本上跑**(2026-10-19 改)。原来这条检查直接在真库上下一单、再删掉那单和台账里那一行 ——
 # 「写了再清」:中途崩了就留在真库里,而且清台账那句按 id 推算,算错就删到别人的行。
 # 门禁的台账闸(LANXIU_CHECK_LEAK)把它逮了出来:它的「一号多档留了痕」那一笔是写进真库台账的。
-_副本目录 = tempfile.mkdtemp(prefix="booking-")
-DB = os.path.join(_副本目录, "lanxiu.db")
-shutil.copy(booking.DB, DB)
-booking.DB = oplog.DB = DB
-atexit.register(shutil.rmtree, _副本目录, True)
+# 11-22 起切库走 check_copy.用副本()(W02 第②步):原来只手指 booking / oplog 两个,
+# 烤进默认参数的路径扫不到;用副本() 一并换,换不干净当场抛,进程退出时删副本
+import check_copy
+DB = check_copy.用副本("booking-")
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad = 0
 

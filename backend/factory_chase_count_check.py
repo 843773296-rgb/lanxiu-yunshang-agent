@@ -29,10 +29,10 @@ def ck(名, ok, 说明=""):
 
 
 print("工厂回传 · 条数不被 LIMIT 截住(副本上造 60+ 条)")
-tmp = tempfile.mkdtemp()
-db = os.path.join(tmp, "lanxiu.db")
-shutil.copy(api.DB, db)
-api.DB = factory_inbox.DB = db
+# 切库走 check_copy.用副本()(W02 第②步,11-22):原来只手指 api / factory_inbox 两个,
+# 别的已加载模块和烤进默认参数的路径都还指着真库;用副本() 一并换,换不干净当场抛
+import check_copy
+db = check_copy.用副本("factory-chase-")
 c = sqlite3.connect(db)
 单 = [r[0] for r in c.execute("SELECT id FROM ordr ORDER BY id LIMIT 60")]
 c.executemany("INSERT INTO factory_msg(msg_id,order_id,event,at,factory,result,reason) VALUES(?,?,?,?,?,?,?)",
@@ -48,7 +48,7 @@ ck("造出来的样本确实超过 50(否则验不到截断)", 期望 > 50, f"�
 ck("条数 = 独立 SQL 数出来的总数", r.get("条数") == 期望, f"工具 {r.get('条数')} / SQL {期望}")
 ck("明细最多列 50 条", len(r.get("明细") or []) <= 50, str(len(r.get("明细") or [])))
 ck("截了就明说", 期望 <= 50 or "截断" in r, str(list(r)))
-shutil.rmtree(tmp, ignore_errors=True)
+# 副本由 check_copy 在进程退出时删
 
 print()
 if bad:

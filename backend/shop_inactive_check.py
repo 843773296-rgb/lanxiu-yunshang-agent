@@ -43,13 +43,12 @@ def ck(name, ok, n, msg=""):
 
 
 def main():
-    tmp = tempfile.mkdtemp()
-    副本 = os.path.join(tmp, "lanxiu.db")
-    with closing(sqlite3.connect(os.path.join(HERE, "lanxiu.db"))) as 真, closing(sqlite3.connect(副本)) as 副:
-        真.backup(副)
-    # 先把所有写口 import 进来再切库 —— 之后才 import 的模块会写真库
+    # 先把所有写口 import 进来再切库 —— 之后才 import 的模块会写真库。
+    # 切库走 check_copy.用副本()(W02 第②步,11-22):原来手指五个模块的 DB,
+    # 扫不到别的已加载模块、也扫不到烤进默认参数的路径;用副本() 两样都换,换不干净当场抛
     import server, oplog, order_write, booking, shop_key
-    server.DB = oplog.DB = order_write.DB = booking.DB = shop_key.DB = 副本
+    import check_copy
+    副本 = check_copy.用副本("shop-inactive-")
     assert server.DB == order_write.DB == booking.DB == oplog.DB == 副本, "库没切到副本"
 
     def q(sql, *a):

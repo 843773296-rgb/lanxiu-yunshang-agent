@@ -23,7 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 G, R, D, Y = "\033[32m", "\033[31m", "\033[0m", "\033[33m"
 
 豁免 = {"backend/dbpath.py", "tools/dbpath_check.py"}   # 单源本身,和这条检查自己(docstring 里举了例子)
-欠债下限 = 324     # 2026-11-17 实测 327 处 / 290 个文件(含 DB = … 和直接 connect 两种写法);11-19 评测切库 / 夜跑那几处改走 dbpath.真库() 降到 324;降了就改小(只许少不许多)
+欠债下限 = 323     # 2026-11-17 实测 327 处 / 290 个文件(含 DB = … 和直接 connect 两种写法);11-19 评测切库 / 夜跑那几处改走 dbpath.真库() 降到 324;降了就改小(只许少不许多)
 
 行判 = re.compile(r"lanxiu\.db")
 锚判 = re.compile(r"\b(HERE|ROOT|根|__file__)\b|dirname\(")
@@ -63,6 +63,11 @@ def 自测():
 
 def 取样本():
     r = subprocess.run(["git", "-c", "core.quotepath=false", "ls-files", "*.py"], cwd=ROOT, capture_output=True, text=True)
+    if r.returncode != 0 and os.environ.get("LANXIU_SRC_ROOT"):
+        # 咬合副本不带 .git(11-22 查实:这条咬合的对照因此一直是红的,样本 0 个)——
+        # 文件清单向原检出要,**内容照旧读副本里的**(改坏的是副本)
+        r = subprocess.run(["git", "-c", "core.quotepath=false", "ls-files", "*.py"],
+                           cwd=os.environ["LANXIU_SRC_ROOT"], capture_output=True, text=True)
     files = [f for f in r.stdout.split("\n") if f and "/.venv/" not in f and "node_modules" not in f]
     样本 = []
     for f in files:
