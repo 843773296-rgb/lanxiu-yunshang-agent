@@ -56,6 +56,12 @@ for 规 in ({"周期": "日", "时刻": "08:00"}, {"周期": "周", "时刻": "0
     回 = T.校验规则(CT._规则(行))
     ck(f"{T.说法(规则)} → 行 → 规则,说法一样", T.说法(回) == T.说法(规则), 1, (T.说法(回), T.说法(规则)))
 ck("连续失败阈值是正整数且 ≥ 2(1 期失败就停会把偶发网络错当成坏任务)", isinstance(CT.失败阈值, int) and CT.失败阈值 >= 2, 1, CT.失败阈值)
+行 = {"id": "ct_x", "status": "启用", "cadence": "日", "fire_time": "09:00", "timezone": "Asia/Shanghai", "cadence_detail": {}, "deliver_policy": None}
+d = CT._行(行, datetime(2026, 11, 22, 1, 0, tzinfo=timezone.utc))
+ck("列表行:频率说明「每天 09:00」,接下来三次是三个时刻字串(T.接下来几次 回的是三元组,只取执行时刻 —— 第十六轮 e2e 栽的)",
+   d["频率说明"] == "每天 09:00" and len(d["接下来几次"]) == 3 and all(isinstance(x, str) and x.startswith("2026-11-2") for x in d["接下来几次"]), 3, d)
+d2 = CT._行({**行, "status": "停用"}, datetime(2026, 11, 22, 1, 0, tzinfo=timezone.utc))
+ck("停用的行:接下来几次为空、频率说明照给", d2["接下来几次"] == [] and d2["频率说明"] == "每天 09:00", 1, d2)
 
 print("\n▸ ④ 登记")
 ep = 读("管理后台", "services", "api", "app", "contract", "endpoints.py")

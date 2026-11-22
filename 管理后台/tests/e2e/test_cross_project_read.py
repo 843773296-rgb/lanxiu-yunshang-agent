@@ -47,6 +47,7 @@ A, B = "project_demo_a", "project_demo_b"
     "/evaluations/compare": "要两个评测 id 当查询参数(a / b),参数名太通用,不进 id 类查询参数表;欠账:单独写一刀",
     "/opinion-samples/pending": "聊天站内部通道:按角色 / 门店现算待复核的,查询参数是身份不是项目记录 id",
     "/opinions/mine": "按提的人工号查自己的意见,查询参数是身份不是项目记录 id",
+    "/chat-task-inbox": "员工定时任务的站内收件箱(11-22):必填查询参数 staff_code 是澜绣工号(身份),不是项目记录 id;任务本身按 project_id 隔离,列表接口 /chat-tasks 照常攻",
     "/chat-assistants/by-role/{role}/production": "路径参数是角色名(店长 / 顾问),不是项目记录 id",
     "/knob-plans/{key}": "数据:演示项目 A 里没有调参方案,取不到 A 的 key;欠账:A 里造一份再攻(数据类只打印不判)",
 }

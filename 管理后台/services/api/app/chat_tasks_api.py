@@ -74,7 +74,9 @@ def _行(r, 现在=None):
     规则 = _规则(d)
     try:
         d["频率说明"] = T.说法(规则)
-        d["接下来几次"] = [x.isoformat() for x in T.接下来几次(规则, 现在 or datetime.now(timezone.utc), 3)] if d.get("status") == 启用 else []
+        # T.接下来几次 回的是 (执行时刻, 统计起, 统计止) 三元组 —— 第一版当成时刻直接 .isoformat(),抛 AttributeError 被下面兜住,
+        # 列表上「频率说明」就成了「规则认不出」(第十六轮 e2e 抓到);这里只要执行时刻
+        d["接下来几次"] = [x[0].isoformat() for x in T.接下来几次(规则, 现在 or datetime.now(timezone.utc), 3)] if d.get("status") == 启用 else []
     except Exception as e:  # noqa: BLE001 —— 老行规则坏了也要能列出来,说清
         d["频率说明"] = f"规则认不出:{type(e).__name__}"
         d["接下来几次"] = []
