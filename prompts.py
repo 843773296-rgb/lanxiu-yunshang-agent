@@ -2565,14 +2565,24 @@ def assemble(role, have, head=None, foot=None):
     # 表达「任意一个写工具」;而让每个调用方自己传一个标记,等于又多一处「靠人记得」
     # —— `prompts_check` 的调用方表上记着这个坑踩过三次(财务、版师、售后各一次)。
     # 清单从 `api.WRITE_TOOLS` **现取**(那张表是写闸 / 隔离 / 漏斗共用的唯一登记),
-    # 这儿不抄第二份。取不到就**不加这个标记** —— 宁可少装一条规矩,
-    # 也不要凭一个猜出来的清单去装(而且 `prompts_check` 的 P12 会红)。
+    # 这儿不抄第二份。**取不到就炸**(W36④ / W40④,11-22):原来是 `except: pass` 静默不加 ——
+    # 于是「这个角色没有写工具」和「清单没取到」装出来的提示词一模一样,手上有写工具的角色
+    # 悄悄丢掉写纪律(TL05),而 P12 只在门禁那个进程里验得到,验不到别的进程。
+    # 调用方没把 backend/ 放进路径时,这里自己补一次(追加在末尾,不顶掉调用方已有的同名模块);
+    # 补了还取不到 → 抛,不猜。
     try:
         import api as _api写
-        if have & set(_api写.WRITE_TOOLS):
-            have.add("写")
-    except Exception:                       # noqa: BLE001 —— 取不到就照实不加
-        pass
+    except ImportError:
+        _后台 = _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)), "backend")
+        if _后台 not in _sys.path:
+            _sys.path.append(_后台)
+        try:
+            import api as _api写
+        except ImportError as e:
+            raise RuntimeError(f"装配提示词要读写工具清单(backend/api.WRITE_TOOLS),取不到:{e} —— "
+                               "不能静默少装写纪律") from e
+    if have & set(_api写.WRITE_TOOLS):
+        have.add("写")
     picked = [r for r in rules
               if all(n in have for n in r.needs) and not any(n in have for n in r.avoid)]
     laws = [r for r in picked if r.scope == "铁律"]

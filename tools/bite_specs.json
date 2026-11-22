@@ -14114,8 +14114,8 @@
   "file": [
    {
     "path": "prompts.py",
-    "old": "            have.add(\"写\")",
-    "new": "            pass"
+    "old": "        have.add(\"写\")",
+    "new": "        pass"
    }
   ],
   "预期红": "手上有写工具的角色,都装上了写工具的通用纪律"
@@ -14126,8 +14126,8 @@
   "file": [
    {
     "path": "prompts.py",
-    "old": "        if have & set(_api写.WRITE_TOOLS):",
-    "new": "        if True:"
+    "old": "    if have & set(_api写.WRITE_TOOLS):",
+    "new": "    if True:"
    }
   ],
   "预期红": "手上没有写工具的调用方,不会被告知它有"
@@ -23752,5 +23752,29 @@
    }
   ],
   "预期红": "决定带的是**页面看到的那一版** revision(过期版本照样送去让后台拦)"
+ },
+ {
+  "script": "tools/prompts_check.py",
+  "改坏": "assemble 取不到 api 时退回原来的 except: pass(静默不加「写」)",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "    try:\n        import api as _api写\n    except ImportError:\n        _后台 = ",
+    "new": "    try:\n        import api as _api写\n        if have & set(_api写.WRITE_TOOLS):\n            have.add(\"写\")\n    except Exception:\n        pass\n    _api写 = type(\"x\", (), {\"WRITE_TOOLS\": ()})\n    if False:\n        _后台 = "
+   }
+  ],
+  "预期红": "换一个干净的进程也装对写纪律;清单取不到就报错,不静默少装"
+ },
+ {
+  "script": "tools/prompts_check.py",
+  "改坏": "assemble 取不到 api 时不自己补 backend/ 路径(只放仓库根的进程直接炸)",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "        if _后台 not in _sys.path:\n            _sys.path.append(_后台)\n",
+    "new": "        pass\n"
+   }
+  ],
+  "预期红": "换一个干净的进程也装对写纪律;清单取不到就报错,不静默少装"
  }
 ]

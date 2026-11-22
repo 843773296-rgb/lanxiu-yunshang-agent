@@ -34,6 +34,11 @@ bad = []
      '手上有写工具的角色,都装上了写工具的通用纪律'),
     ('把那个能力标记改成无条件加(没有写工具的调用方也被告知「你手上有会改数据的工具」)',
      '手上没有写工具的调用方,不会被告知它有'),
+    # 11-22:W36④ / W40④ 取不到写工具清单就炸
+    ('assemble 取不到 api 时退回原来的 except: pass(静默不加「写」)',
+     '换一个干净的进程也装对写纪律;清单取不到就报错,不静默少装'),
+    ('assemble 取不到 api 时不自己补 backend/ 路径(只放仓库根的进程直接炸)',
+     '换一个干净的进程也装对写纪律;清单取不到就报错,不静默少装'),
     # 2026-10-28:给 assemble 加了 head= / foot=(后台那一版顶上来)。
     ('把 assemble 里 head 的 `is None` 改成 `or`(后台把开头清空时静默回退到代码那一份)',
      '后台那一版的开头 / 结尾能顶上来,而不传时和代码那一份一字不差'),
@@ -173,6 +178,55 @@ rule("P12c", "这一条真的两组都验到了(不是一组是空的)",
       [f"有写工具的 {len(_有写的)} 个、没写工具的 {len(_没写的)} 个 —— 有一组是空的"]),
      "两组里有一组是空的时候,那一侧的断言自动成立 —— "
      "而「验过了」和「没东西可验」在那个 ✅ 上长得一模一样")
+
+# ── P12e:换一个进程照样装对 —— 取不到写工具清单不许静默少装(W36④ / W40④,11-22)──────
+# 上面几条都跑在**本进程**里,而本进程第 16 行就把 backend/ 放进了路径 —— 别的进程未必。
+# 原来 assemble 取不到 api 就 `except: pass`:实测(11-22)只放仓库根进路径、给一个带开单工具的角色装配,
+# 装出来的是 TL78「你手上没有会改数据的工具」—— 方向正好反了,而本进程这几条全绿。
+# 所以起两个**干净的子进程**(-I,不带本进程的路径)真调 assemble:
+#   ① 只放仓库根:必须自己找到清单、装 TL05 不装 TL78
+#   ② 把 api 整个拦掉(找不到这个模块):必须抛错,不许返回一份提示词
+import subprocess as _sp
+_写一个 = sorted(WRITE_T)[0] if WRITE_T else ""
+_探 = r"""
+import sys, json
+sys.path.insert(0, %r)
+if %r:
+    class _拦:
+        def find_spec(self, name, path=None, target=None):
+            if name == "api": raise ImportError("测试里拦掉 api")
+    sys.meta_path.insert(0, _拦())
+import prompts
+try:
+    _, ids = prompts.assemble("task", {"kb_lookup", %r})
+    print(json.dumps({"ids": ids}))
+except Exception as e:
+    print(json.dumps({"抛": type(e).__name__}))
+"""
+def _子(拦):
+    r = _sp.run([sys.executable, "-I", "-c", _探 % (ROOT, 拦, _写一个)], capture_output=True, text=True,
+                cwd=os.path.dirname(ROOT), timeout=120)
+    try:
+        import json as _j
+        return _j.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        return {"崩": (r.stderr or r.stdout)[-200:]}
+_p12e = []
+if not _写一个:
+    _p12e.append("写工具清单是空的 —— 没东西可验,不是验过了")
+else:
+    a = _子(False)
+    if "ids" not in a:
+        _p12e.append(f"① 只放仓库根进路径时装配没跑通:{a}")
+    elif not ("TL05" in a["ids"] and "TL78" not in a["ids"]):
+        _p12e.append(f"① 只放仓库根进路径、手上有 {_写一个}:装了 TL05×{a['ids'].count('TL05')} / "
+                     f"TL78×{a['ids'].count('TL78')} —— 清单没取到却照样装出一份(写纪律装反了)")
+    b = _子(True)
+    if b.get("抛") != "RuntimeError":
+        _p12e.append(f"② 写工具清单取不到时没有抛错,而是 {b} —— 静默少装写纪律")
+rule("P12e", "换一个干净的进程也装对写纪律;清单取不到就报错,不静默少装", _p12e,
+     "本进程把 backend/ 放进了路径,所以上面几条在这里永远取得到清单 —— "
+     "「清单取到了」和「清单没取到、照样装出一份」只在别的进程里分得开")
 
 # ── P13:后台那一版的开头 / 结尾顶上来,**而不传时一字不差** ──────────────
 #
