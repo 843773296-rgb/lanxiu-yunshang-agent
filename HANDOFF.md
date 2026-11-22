@@ -2713,3 +2713,13 @@ a6cbf89d 开关登记表加「定时(系统停用)」:workflow.schedule_disabled
 - 11-22 22:15 并行会话 bd5730e4 已推；我 6 笔 rebase 后（fdb91c09…e86a999f）起 ship（日志 scratchpad/ship-20261122-2215a.log）。绿 → 主检出 ff + merge-base 核 → kickstart com.lanxiu.backend / com.lanxiu.agentsite + curl 302 → 报号；然后做手机号打码统一（见上一条）。
 - 11-22 23:16 **22:15 那轮 ship 我主动停了**（全量门禁要跑约一小时，会跨 0 点，撞「0 点到夜跑结束不占锁」）。停之前咬合重放 78/93 全绿，没有红；锁已放，远端仍 bd5730e4。**明早夜跑结束后第一件事**：fetch + rebase --autostash → 告诉并行会话（它也排着「启用经营日报草稿」，谁先谁后先商量）→ ./tools/ship.sh（新日志名 ship-20261123-xxxxa.log）→ ff + 重启 8760/8770 + 报号 → 手机号打码统一。
 - 11-22 23:3x **手机号打码统一已在本地第七笔**（用户拍：手机前三后四、固话前三后三、身份证照旧后四位）：backend/mask.电话（页面）、api_wearer._mask 改调它（工具层）、api._mask_out 加文字里的固话（只认「0区号+横杠/空格+7–8位」，连写不认）、管理后台 上次运行.打码 + test_last_run（23 条全过，加了固话两例）、清单 json「给人看」、check.sh 标题、workflows_api / endpoints / app.js 说明字样。单跑全绿：mask 自测 14、boundary_audit、isolation、selftest、raw_log、popularity、draft。**管理后台动了 → 明早 ship 前要跑 make test-e2e-ci（主检出 ff 后）、推完重启 com.lanxiu.aimc（防孤儿 uvicorn）**。PRD 台账第七十九 / 八十一条的「只露后四位」明早顺手改成新口径。
+- 11-22 23:4x **压缩前六项（本会话）**
+  - 未验证：① 7 笔本地（fdb91c09…e86a999f + cbb2c72b，rebase 后哈希）**没跑过完整 ship**，22:15 那轮停前咬合 78/93 全绿；② 打码那笔没跑 make test-e2e-ci、没跑 js_smoke；③ 人工待办页面没真点过端到端。
+  - 判据：库路径改走单源后，「指到副本改了 0 个」不再等于读真库 → 判「工具层最终读哪份」；懒加载切副本换现造替身模块（还没改的一百多个模块仍要守）。固话在文字里只认带分隔的，宁漏不误（已告诉用户，用户没反对）。
+  - 作废：18:46 那轮 ship 的红（已修在 e86a999f）；alembic「找不到 e1014ff53288」是并行会话迁移未推导致，bd5730e4 后应已好。
+  - 禁区：0 点到夜跑结束不占锁；agentsite/app.py / station.html / sdk.py 归并行会话；它明早先做「启用日报草稿」，再轮到我。
+  - 下一步第一个动作：夜跑结束后 fetch + rebase --autostash → 问并行会话锁空没 → 主检出 ff 后 make test-e2e-ci → ./tools/ship.sh（新日志名）→ ff + merge-base 核 → kickstart com.lanxiu.backend / com.lanxiu.agentsite / com.lanxiu.aimc（lsof 查 8801 孤儿）→ curl --noproxy 302 → 报号给用户和并行会话。
+  - 悬而未决：PRD 台账第七十九 / 八十一条「只露后四位」要改成新口径（随下一笔业务提交）；W02 第③步继续（欠债 307）；ops `_本库` 冻结在 import 时，另起一笔改成函数。
+- 11-22 23:5x 补：本地待推现为 **8 笔**（库路径 6 + 打码 cbb2c72b + PRD 台账第九十二条 aaa6f764；rebase 后哈希会变）。PRD 那条「悬而未决」已做完，划掉。其余六项见上一条，不变。
+- 11-22 23:5x 并行会话：「启用经营日报草稿」已做完（23:30 放锁），今晚不再碰锁和共享库；明天不动 上次运行.py / workflows_api / endpoints / app.js / test_last_run（要动会先说）。**所以明早夜跑结束后不用再等它，直接从 fetch + rebase 开始。**
+- 11-23 04:5x 夜跑已推 cd31a7d0；8 笔 rebase 后起 ship（日志 scratchpad/ship-20261123-0450a.log，只认「ship:pre_push 退出码」行）。绿 → 主检出 ff + merge-base 核 → kickstart backend / agentsite / aimc（lsof 8801 查孤儿）→ curl 302 → 拿锁跑 管理后台 make test-e2e-ci（主检出）→ 报号给用户和并行会话（它等着起 gate_w29）。
