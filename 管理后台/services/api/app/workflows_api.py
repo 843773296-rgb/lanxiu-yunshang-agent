@@ -691,7 +691,7 @@ def _默认处理要求(c, project_id, key="customer_needs_extract"):
                              order by version_no desc limit 1"""), {"p": project_id, "k": key}).scalar()
 
 
-_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "经营日报草稿": "store_report_write", "订单风险": "order_risk_advise",
+_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "经营日报草稿": "store_daily_draft_write", "订单风险": "order_risk_advise",
             "老客召回": "recall_script", "库存补货": "restock_advise", "差评返修": "rating_review"}
 
 
@@ -882,6 +882,7 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                               {"p": project_id}).first())
         有要求 = bool(_默认处理要求(c, project_id))
         有报告要求 = bool(_默认处理要求(c, project_id, "store_report_write"))
+        有日报要求 = bool(_默认处理要求(c, project_id, "store_daily_draft_write"))   # 11-22:日报草稿换成六段那套,不再借经营报告的
         有风险要求 = bool(_默认处理要求(c, project_id, "order_risk_advise"))
         有召回要求 = bool(_默认处理要求(c, project_id, "recall_script"))
         有补货要求 = bool(_默认处理要求(c, project_id, "restock_advise"))
@@ -929,7 +930,7 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         if 名 == "经营日报草稿":
             要.append({"名": "澜绣业务动作「取经营数据」", "有了吗": bool(桥.get("store_report")),
                       "怎么补": "正式项目从澜绣导入;别的项目跑 管理后台/tools/seed_bridge_tools.py 登记"})
-            要.append({"名": "处理要求「经营报告撰写」", "有了吗": 有报告要求, "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
+            要.append({"名": "处理要求「经营日报草稿撰写」(六段)", "有了吗": 有日报要求, "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
         if 名 in ("音频整理", "经营报告", "经营日报草稿", "订单风险", "老客召回", "库存补货", "差评返修", "文本处理"):
             要.append({"名": "一个可用的模型", "有了吗": 有模型, "怎么补": "平台管理员在「模型与连接」里接一个"})
         出.append({"名": 名, "说明": 说, "步骤": 步, "需要的资源": 要,
