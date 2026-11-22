@@ -11,6 +11,9 @@
   6 POST /releases {版本id, 环境: production} → 422 带 清单id → POST /releases/{清单id}/reviews {结论: 通过} → 再发 → 202
   7 PUT /workflows/{wid}/schedule {开着: true} → 200,打印下次时刻
 用法:python3 enable_daily_draft.py [--只到 N]
+     python3 enable_daily_draft.py --换要求 --wid wf_xxx --pv pv_xxx   # 11-23:处理要求改了措辞 → 先 `seed_bridge_tools.py --项目 project_lanxiu`
+                                                            # 拿它打印的新版本号 pv_…,再跑这条:把已启用流程的草稿换到那版 → 校验 → 冻结 → 真跑 → 发生产;
+                                                            # 定时原来开着就不动(最后 GET schedule 打出来核一眼)
 """
 import json, sys, time, uuid, urllib.request, urllib.error
 
@@ -59,22 +62,32 @@ def 前五步():
     wid = w["id"]; print("1 建流程", wid)
     if 只到 < 2: sys.exit(0)
 
+    改llm节点(wid, {"connection_version_id": 模型连接版本}, 说明="2 选模型 " + 模型连接版本)
+    if 只到 < 3: sys.exit(0)
+    return wid, 校验冻结真跑(wid, "经营日报草稿首版(演示门店启用,11-22)")
+
+
+def 改llm节点(wid, 配置补丁, 说明):
+    """GET 草稿 → 给每个 llm 节点的 config 合进补丁 → PATCH(If-Match 草稿.revision)。"""
     c, d = 打("GET", P + f"/workflows/{wid}")
+    if c != 200: 停(2, c, d)
     定义 = d["草稿"]["定义"]
     for n in 定义["nodes"]:
         if n["type"] == "llm":
-            n["config"]["connection_version_id"] = 模型连接版本
+            n["config"].update(配置补丁)
     c, b = 打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定义}, 头={"If-Match": str(d["草稿"]["revision"])})
     if c != 200: 停(2, c, b)
-    print("2 选模型", 模型连接版本)
-    if 只到 < 3: sys.exit(0)
+    print(说明)
 
+
+def 校验冻结真跑(wid, 变更说明):
+    """3 校验 → 4 冻结版本 → 5 真跑一次等到 succeeded(真调模型几分钱)→ 返回 vid。"""
     c, v = 打("POST", P + f"/workflows/{wid}/validate")
     if c != 200 or not v.get("通过"): 停(3, c, v)
     print("3 校验通过")
     if 只到 < 4: sys.exit(0)
 
-    c, 版 = 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": "经营日报草稿首版(演示门店启用,11-22)"})
+    c, 版 = 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": 变更说明})
     if c != 201: 停(4, c, 版)
     vid = 版["id"]; print("4 冻结版本", vid)
     if 只到 < 5: sys.exit(0)
@@ -82,7 +95,7 @@ def 前五步():
     c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())}, 体={"workflow_id": wid, "输入": {}})
     if c not in (200, 201, 202): 停(5, c, r)
     rid = r.get("resource_id") or r.get("id"); print("5 真跑一次", rid, "(等它跑完…)")
-    st = None
+    st = rr = None
     for _ in range(60):
         time.sleep(10)
         c, rr = 打("GET", P + f"/execution-runs/{rid}")
@@ -91,10 +104,17 @@ def 前五步():
         if st in ("succeeded", "failed", "cancelled"):
             break
     if st != "succeeded": 停(5, st, rr)
-    return wid, vid
+    return vid
 
 
-if 从 <= 5:
+换要求 = "--换要求" in sys.argv
+pv = sys.argv[sys.argv.index("--pv") + 1] if "--pv" in sys.argv else None
+if 换要求:
+    # 11-23:只换处理要求版本,流程 / 模型 / 定时都不动。pv 从 seed_bridge_tools 的打印里抄(内容没变它不出新版本,那就没必要跑这条)
+    if not (wid and pv): 停(0, "--换要求", "要带 --wid 和 --pv")
+    改llm节点(wid, {"prompt_version_id": pv}, 说明="2 换处理要求 " + pv)
+    vid = 校验冻结真跑(wid, f"换处理要求 {pv}(11-23:口径按统计期改写、异常段分当日新增 / 存量)")
+elif 从 <= 5:
     wid, vid = 前五步()
 else:
     print("从第 6 步接着(前五步已做过):", wid, vid)
@@ -111,6 +131,13 @@ if c == 422 and ((b or {}).get("field_errors") or {}).get("清单id"):
 if c != 202: 停(6, c, b)
 print("6 发到生产", (b or {}).get("清单id"))
 if 只到 < 7: sys.exit(0)
+
+if 换要求:
+    c, s = 打("GET", P + f"/workflows/{wid}/schedule")   # 定时本来就开着,只核一眼还开着、下次是明早
+    if c != 200: 停(7, c, s)
+    print("7 定时(没动):", json.dumps((s or {}).get("定时") or s, ensure_ascii=False)[:400])
+    print("✅ 处理要求已换到", pv, "版本", vid)
+    sys.exit(0)
 
 c, s = 打("PUT", P + f"/workflows/{wid}/schedule", 体={"开着": True})
 if c != 200: 停(7, c, s)
