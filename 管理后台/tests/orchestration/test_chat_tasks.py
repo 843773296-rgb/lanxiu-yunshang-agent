@@ -96,7 +96,9 @@ ck("聊天站 /internal/chat 认 任务id(不要密钥)、费用到顶 429 BUDGE
 ck("聊天站路由:四条 GET + 五条 POST 都在转发之前", '"/api/chat-tasks", "/api/chat-task-templates", "/api/chat-task-runs", "/api/chat-task-inbox"' in ap
    and '"/api/chat-task", "/api/chat-task/update", "/api/chat-task/archive", "/api/chat-task/run-now", "/api/chat-task-run/read"' in ap, 2)
 ct = 读("agentsite", "chat_tasks.py")
-ck("聊天站代理:改 / 归档 / 跑一次 / 结果 / 收件箱 / 已读 每条都带本人工号(staff_code),建 用本人工号", ct.count('"staff_code": me["no"]') >= 6 and '体["staff_code"] = me["no"]' in ct, 7, ct.count('"staff_code": me["no"]'))
+ck("聊天站代理:改 / 归档 / 跑一次 走 _范围参数(本人工号 + 店长的本店编号);结果 / 收件箱 / 已读 带本人工号;建 用本人工号、门店从登录身份解析",
+   ct.count("urlencode(_范围参数(me))") >= 3 and ct.count('"staff_code": me["no"]') >= 4 and '体["staff_code"] = me["no"]' in ct and '体["store_id"] = _门店码(me)' in ct,
+   8, (ct.count("urlencode(_范围参数(me))"), ct.count('"staff_code": me["no"]')))
 st = 读("agentsite", "web", "station.html")
 ck("聊天站页面:按钮 / 开我的定时 / 收件箱角标 / 周几 0 = 周一", all(s in st for s in ('id="ctbtn"', "async function 开我的定时", "刷定时角标", 'const _ct周几名 = ["一"')), 4)
 js = 读("管理后台", "apps", "web", "app.js")
