@@ -2767,3 +2767,7 @@ M HANDOFF.md
 - 11-23 11:15 并行会话 gate_w29 第一轮 e2e-ci 红 1(ifmatch_reachable_check:它 11-21/22 的 4 个乐观锁写接口没登记 revision 来源;因我补生成契约文档才进视野,它认定是它的漏登记)已修,第二轮 11:15 起、预计 12:2x 完(w1117=c5f7d656 领先远端 6 笔)。**仍别拿锁**;等它报哈希 + 换日报要求 + 「锁放了」。
 - 11-23 并行会话已推 c5f7d656;我已 rebase --autostash 到它之上(第 2 批变 b3953ea0,第 3 批 + 口径改动仍未提交)。它正锁内换日报要求 ~5 分钟,放锁后我跑 w02c.sh。
 - 11-23 12:1x 锁内 w02c 绿(20 检查 + 口径咬合);第 3 批 + 口径改动已提交,起 ship#5(log ship-20261123-1220e.log)。推完:报哈希、ff 主检出、kickstart 8760/8770、告并行会话。
+- 11-23 ship#5 跑着(后台任务 bx2hbmr3i,log scratchpad/ship-20261123-1220e.log);并行会话今天已收尾,只剩一笔交接未推,等我报哈希后再 rebase;它不拿锁、不碰主检出。**本条 HANDOFF 追加在 ship 起跑之后,未提交,随下一笔业务提交带上。**
+- 11-23 ship#5 绿,已推 **ba1d046d**(c5f7d656..ba1d046d:第 2、3 批写口迁移 + 周营收口径按期);主检出 ff 已验,8760=200 / 8770=302;已告并行会话。欠债 297,下一批候选:alert_dispatch / arrival_card / appt_expire / factory_inbox / kb_issue / revive(先 grep 前提断言,再改,检查等锁)。
+- 11-23 13:29 并行会话重启了 com.lanxiu.supervise:桥工具(weekly_revenue 等)在 supervise_sync 进程里 import backend 执行,我推口径新说法后只重启了 8760/8770,它那里没生效;已补重启、首轮日志正常。**以后改被桥工具用到的 backend 代码,推完要 kickstart supervise**(已记长期记忆)。并行会话已 rebase 到 ba1d046d,今天收尾、不占锁。
+- 11-23 W02 第 4 批:告警派发/到店卡/预约过期/工坊收件/知识问题/召回六模块迁 dbpath(欠债 291),锁内 13 检查绿(kb_issue_check 要用 ./agentsite/.venv/bin/python 跑,系统 python3 缺 claude_agent_sdk 会假红 8 处——那次不算)。已本地提交**未推**,攒下一批一起 ship;提醒:这批里 workflow_bridge 可达模块推完要 kickstart supervise。

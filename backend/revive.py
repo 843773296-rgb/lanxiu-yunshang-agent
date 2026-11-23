@@ -38,7 +38,9 @@
 import os, sqlite3, sys, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 # 判定口径在 knowledge/reactivate.py,这里只取数。
 # (名字避开 revive:和这个文件同名的话 `import revive` 会先找到它自己,
 #  而「导入成功了」和「导入对了」长得一样。)

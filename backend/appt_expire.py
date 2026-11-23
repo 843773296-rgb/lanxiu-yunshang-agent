@@ -37,7 +37,9 @@ import sqlite3
 import fsm
 from oplog import log_op
 
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 宽限小时 = 2          # 状态机 auto 里写的那个 2 小时
 可过期的 = "已预约"    # **只动这一个状态**;「待确认」不在状态机里,不碰
 
