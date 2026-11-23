@@ -40,12 +40,12 @@
 8. (并进第 5 项的第三轮了:6、7 都在 22:54 那批里;如果那批红了修完再起一轮,过了 0 点就等 05:10 夜跑结束)
 9. 🔎 《还债与收尾计划》核过(执行手册 395–424 行那张 27 行表,23:4x):17 / 20 / 21 / 22 / 24 / 27 都 ✅(**W22 费用上限 11-15 就做完了**:store_usage 月上限 + cost_alert 80% / 到顶 + app.py:825 到顶不升 Opus —— 我 23:0x 那条「没动」是没查表,作废);新人保底 ✅(booking.py:393)。真剩下的:row 26 **W27 标品签收告知 + 换货分支**(「只在工具说明里出现,流程没找到」)、row 18 默认模型接聊天站(要复测模型 + 动 agentsite/sdk.py)、row 11③④ / 6 单源(fc 地界或 fc 在做)、row 23 用户亲手。**W27 也 ✅(11-17 22:1x 核实:换货分支不用另做)** → 还债表里没有我今晚能不占锁、不碰 fc 地界、不用拍板就能做的了。0 点后的时间用来补今晚新面板的 vm 测试(人工介入表单 / 代码执行,照 test_workflow_retrieve_panel.js 的写法)和把规划 1.2 那张「对上了 18 个」的表改成现状。
 
-- **压缩前六项(11-23 12:3x 刷,最新;下面 19:0x 那组是 11-22 日间的)**:
-  · 未验证的预判:① 明早 11-24 08:00 那份日报两处口径都会好 —— 异常段分两小节已在真跑那份里验到(n=1);周口径半截「归周」靠 fc 改工具(随它 ship#5 推,**还没推上**)+ 我处理要求那条第二道保险,**没在同一份上验过两道都在**;② 两份 e2e 收尾「留一条停用的当样例」在 GitHub CI 新库上也成立 —— 只在本地共享库验过(page-smoke 排在流程之后,顺序一样,应该成立);③ fc ship#1/#2「咬合对照就是红」是不是两会话交错 —— 它的猜测,没查实。
+- **压缩前六项(11-23 13:0x 刷,最新;下面 19:0x 那组是 11-22 日间的)**:
+  · 未验证的预判:① 明早 11-24 08:00 那份日报两处口径都会好 —— 异常段分两小节已在真跑那份里验到(n=1);周口径半截「归周」靠 fc 改工具(**ba1d046d 已推上,aimc 没重启 —— 日报走 aimc worker,它读的是主检出工作区的代码,进程里是不是新代码没核;明早那份如果「归周」还在,先查这个**)+ 我处理要求那条第二道保险,**没在同一份上验过两道都在**;② 两份 e2e 收尾「留一条停用的当样例」在 GitHub CI 新库上也成立 —— 只在本地共享库验过(page-smoke 排在流程之后,顺序一样,应该成立);③ fc ship#1/#2「咬合对照就是红」是不是两会话交错 —— 它的猜测,没查实。
   · 判据:明早日报 = `GET /api/v1/projects/project_lanxiu/workflow-documents?limit=3`(X-Dev-User U001)出现 11-23 统计的那份,下载 `/workflow-documents/{did}/download`,看 ①「关键指标与口径」里没有「周」②「异常与待处理事项」下有「当日新增」「存量」两个小标题;fc 推完 = `git fetch && git log -1 origin/main` 不再是 c5f7d656 + 它的消息(别看锁 owner);换要求成了的证据 = 脚本印了「✅ 处理要求已换到 pv_44db0ac828ca 版本 wfv_b7fad79d7523」+ schedule 开着下次 11-24 08:00(都见过了)。
-  · 作废:「gate_w29 会不会绿」(绿了,c5f7d656 已推);「换要求模式没真跑过」(真跑过且成了);「等 fc 报哈希再起 gate_w29」(做完了);「08:00 第二份日报看完再决定换不换」(换了);「还债表里没有我能做的」仍成立。
-  · 禁区:**fc ship#5 跑着(12:2x 起 → 约 13:3x)不占锁、不写共享库、不碰 w1117、不碰主检出**;别碰 上次运行.py / workflows_api / endpoints / app.js / test_last_run / rating_check / shift_world / shift_eval / backfill_rating / weekly_revenue 工具(fc 地界);代码只写 w1121;bite_specs 只在末尾追加;scan_secrets 不接管道当通行证;锁 owner 里「咬合重放 --only X」≠ 有人单跑(07:17 栽过);不替 fc 推;用户没说「不换」日报要求就保持换好的。
-  · 下一步第一个动作:**没有排定的活了**。fc 报哈希后:`git -C w1121 fetch && git -C w1121 rebase origin/main --autostash` → `git -C w1117 merge --ff-only w1121`(ff 不了且 w1117 无独有改动就 reset --hard)→ 本地两笔交接(19c3de62 / a5058055)随下一次有业务改动的 ship 一起推,**不单独为交接起 ship**。用户来了先看第三节三件拍板;用户拍「换回去」的话:`enable_daily_draft.py --换要求 --wid wf_e81d8b16994b --pv pv_<上一版>`(上一版 pv 看 prompt_versions key=store_daily_draft_write version_no 倒数第二)。历史记录:① gate_w29 第二轮 12:02 绿,**已推 c5f7d656**(f3823ea9..c5f7d656 六笔,全量门禁退出码 0;主检出 = w1117 = w1121 = 远端;8770 kickstart 过 302、aimc 10:43 重启过);② 锁内换日报处理要求成了:seed 出新版本 **pv_44db0ac828ca**(其余 21 项没动)→ 草稿换版本 → 校验 → 冻结 **wfv_b7fad79d7523** → 真跑 xr_7bdc92e41035 succeeded(出 doc_0cb5981cd72b 7171 字节)→ 审核 rel_727a3778d19f → 发生产 202;定时没动,开着、下次 2026-11-24 08:00 统计 11-23;③ 锁已放、fc 已知(它接着推周营收口径那笔)。真跑那份读过:**异常段已分「当日新增」/「存量(截至 2026-11-22)」两小节 ✅**;周口径半好 —— 「本周」改成了「周实际收到的钱…归周」还在,来源段补了「口径按周统计」;**这半句由 fc 改工具解决**(见悬而未决),明早 11-24 那份两道保险都在。接下来没有排定的活:等用户拍飞书接收方 / 周审查 plist;fc 推完它那笔后不用我做什么。**12:2x:汇总已补结果重发飞书(https://aqvi2xbk5kd.feishu.cn/docx/QJqvdpFTMosbw1xt5Tpcwu1ynGg),交接 + 汇总那笔 19c3de62 在 w1121 = w1117,未推(随下一笔);fc ship#5 12:2x 起(b3953ea0 第 2 批 4 写口 + ba1d046d 第 3 批 6 模块 + 周营收口径按统计期),锁归它、推完它报哈希并重启 8760/8770;我不占锁、不碰 w1117。它推完后我若再有东西要推,先 `git -C w1121 rebase origin/main --autostash` → w1117 对齐 → 复用 gate_w29.sh 形(备份 w1121/.gate_w29.sh.bak)。**
+  · 作废:「gate_w29 会不会绿」(绿了,c5f7d656 已推);「换要求模式没真跑过」(真跑过且成了);「等 fc 报哈希再起 gate_w29」(做完了);「08:00 第二份日报看完再决定换不换」(换了);「等 fc ship#5 推完再对齐」(13:2x 推完 ba1d046d,已对齐);「还债表里没有我能做的」仍成立。
+  · 禁区:fc ship#5 已完、锁空(13:2x);别碰 上次运行.py / workflows_api / endpoints / app.js / test_last_run / rating_check / shift_world / shift_eval / backfill_rating / weekly_revenue 工具(fc 地界);代码只写 w1121;bite_specs 只在末尾追加;scan_secrets 不接管道当通行证;锁 owner 里「咬合重放 --only X」≠ 有人单跑(07:17 栽过);不替 fc 推;用户没说「不换」日报要求就保持换好的。
+  · 下一步第一个动作:**没有排定的活了**。本地几笔交接提交(都只碰 HANDOFF / 汇总 md)随下一次有业务改动的 ship 一起推,**不单独为交接起 ship**。明早 11-24 08:00 后按判据核日报。用户来了先看第三节三件拍板;用户拍「换回去」的话:`enable_daily_draft.py --换要求 --wid wf_e81d8b16994b --pv pv_<上一版>`(上一版 pv 看 prompt_versions key=store_daily_draft_write version_no 倒数第二)。历史记录:① gate_w29 第二轮 12:02 绿,**已推 c5f7d656**(f3823ea9..c5f7d656 六笔,全量门禁退出码 0;主检出 = w1117 = w1121 = 远端;8770 kickstart 过 302、aimc 10:43 重启过);② 锁内换日报处理要求成了:seed 出新版本 **pv_44db0ac828ca**(其余 21 项没动)→ 草稿换版本 → 校验 → 冻结 **wfv_b7fad79d7523** → 真跑 xr_7bdc92e41035 succeeded(出 doc_0cb5981cd72b 7171 字节)→ 审核 rel_727a3778d19f → 发生产 202;定时没动,开着、下次 2026-11-24 08:00 统计 11-23;③ 锁已放、fc 已知(它接着推周营收口径那笔)。真跑那份读过:**异常段已分「当日新增」/「存量(截至 2026-11-22)」两小节 ✅**;周口径半好 —— 「本周」改成了「周实际收到的钱…归周」还在,来源段补了「口径按周统计」;**这半句由 fc 改工具解决**(见悬而未决),明早 11-24 那份两道保险都在。接下来没有排定的活:等用户拍飞书接收方 / 周审查 plist;fc 推完它那笔后不用我做什么。**12:2x:汇总已补结果重发飞书(https://aqvi2xbk5kd.feishu.cn/docx/QJqvdpFTMosbw1xt5Tpcwu1ynGg),交接 + 汇总那笔 19c3de62 在 w1121 = w1117,未推(随下一笔);fc ship#5 12:2x 起(b3953ea0 第 2 批 4 写口 + ba1d046d 第 3 批 6 模块 + 周营收口径按统计期),锁归它、推完它报哈希并重启 8760/8770;我不占锁、不碰 w1117。它推完后我若再有东西要推,先 `git -C w1121 rebase origin/main --autostash` → w1117 对齐 → 复用 gate_w29.sh 形(备份 w1121/.gate_w29.sh.bak)。**
   · 悬而未决:飞书接收方谁填(问用户);~~weekly_revenue 口径说法「归周」归谁改~~ → **fc 11:0x 定了:改工具不靠模型改写**(口径和「⚠️ 近似」两句按统计期给说法:不给区间照旧「这一周…归周」;start=end 说「当天…归日」近似写「相邻一天」;多天区间说「这段时间…归到各自那一天」近似写「区间外」;weekly_revenue_check 加两条判据 + 一条咬合;它本地改了没提交,等我 ship 完 + 换好日报要求 + 放锁后它锁内跑检查再推)。我处理要求里那条「口径按统计期改写」留着当第二道保险;标注匹配真命中没人试过;改时刻页面真页面没点过;用户没说「不换」就换(汇总里写了)。
   · **六项(11-22 19:0x 刷;下面那组是 11-21 夜的)**
   · 未验证的预判:① gate_w28 的 ship 会绿 —— w27 红的四处在 w1121 单跑都绿、咬合 `bite_run --only chat_task_push_check` 过,但 rebase 到 fc 新哈希之后的树没整跑过(fc 改的是 backend 库路径,和我的 supervise_sync/聊天站不该撞);② 标注匹配真命中、员工定时真到点跑、派任务自动提醒真推到后台 —— 线上一次都没发生过;③ scratchpad/enable_daily_draft.py 七步没跑过(第 5 步真调模型几分钱)。
@@ -60,6 +60,7 @@
   · **04:45:夜跑完了,这次它自己把自动提交推上了远端(origin/main = 主检出 = cd31a7d0,只动夜跑产物)**,夜跑进程没了,锁空,fc 还没动。不用再问「夜跑提交带不带」—— 已经在主干上了。本地动作(不占锁):w1121 rebase 到 cd31a7d0 → w1117 ff;已告 fc「夜跑完、锁空、你先 ship」,等它报哈希再起 gate_w29。**04:5x fc 回:它 rebase 到 cd31a7d0 领先 8 笔,ship 现在起约 60–90 分钟;推完它先主检出 ff、重启 8760 / 8770 / aimc,再拿一次锁跑 e2e-ci 约 20 分钟;两样完了报哈希、放锁,我才起 gate_w29**(预计 06:30–07:15 轮到我;gate_w29 本身约 65 分钟,08:40 汇总可能要先发、推送结果后补)。w1117 已 reset 到 w1121 = c1fc8f3c(rebase 后哈希全变,ff 不了就 reset;w1117 没有独有改动,核过)。05:47 查:锁在 fc 手里(05:45 起在单跑一条咬合 repo_consistency_check,像是它 ship 红了一处在补),远端仍 cd31a7d0;继续等。**06:0x fc:它第二次 ship 红在 shop_key_check 12 条咬合「对照就是红」,锁内单跑却绿 → 判偶发(共享库数据在变),06:25 起第三次 ship**。我回它:不排队(gate_lock 等锁上限 3600 秒),提议它推完报哈希放锁 → 我立刻起 gate_w29,这轮 e2e-ci 跑的是含它打码几笔的主检出,它那 20 分钟 e2e 不用单开;它没回就按这个办。预计:fc 推完约 07:15–07:40 → gate_w29 约 65 分钟 → **08:40 汇总时推送多半还在跑,汇总先发、哈希后补**。scratchpad/gate_w29.sh 还在(23:39 版,核过步骤)。**07:17 栽了一下(没造成后果)**:锁 owner 文件里写着「咬合重放 --only tools/gate_print_check.py」,我当成 fc 在单跑一条、它 ship 又红了,就起了 gate_w29 还发消息说「别拿锁」;fc 立刻回「别起!那是 ship 里按改动重放咬合的第 98/112 条,**咬合每条单独拿锁、条与条之间放锁**,你插进缝里会交错,前两次『对照就是红』可能就是这么撞的」→ pkill 掉 gate_w29,它还卡在第一步等锁空,主检出 / 8801 / 锁都没碰,核过。**教训:owner 里的「咬合重放 --only X」不等于有人单跑,ship 的 bite_replay_touched 就是这个形状;判 ship 完没完看远端哈希 + fc 的消息,别看锁 owner。** 07:2x 只读查过:08:00 前 workflow-documents 只有昨晚那份 doc_4f24ddf13293;定时仍开着,下次 2026-11-23 08:00 统计 11-22。fc 预计 08:1x 推完报哈希,我再起 gate_w29 → 约 09:2x 完;08:40 汇总先发,哈希后补。**08:09:08:00 定时日报自己跑出来了**(08:07 发起,文件 doc_168925e646b0 7552 字节,统计 11-22,下次 11-24 08:00)—— 第一次没人碰的业务定时真跑;读过:「本周」没了但「归周」还在(weekly_revenue 口径原话)、存量单列了一块但异常段仍没分小节 → 两处不是偶发,**决定今天白天换处理要求**(链在上面 00:5x 那条;锁内、告 fc、在 gate_w29 之后)。fc 的 ship 08:09 还在跑(远端仍 cd31a7d0,锁 owner 停在 07:26 那条咬合 —— owner 文件不一定刷,别拿它判进度)。汇总《澜绣云裳agent-夜间汇总-20261123.md》**08:4x 已发飞书产品文件夹 https://aqvi2xbk5kd.feishu.cn/docx/J0rydhVZAona5cxXSpKcR0bQnOf**(写着「发时还没推」;md 在 w1121 未提交,随下一笔 git add)。**08:4x fc 来消息:第三次 ship 红了、已放锁。咬合 112 条全过,红在全量门禁 3 条:① OpenAPI 过期(它的,已重生成);② 店长排班判分器「夹具挑得到」—— 每日平移把 11-30 那周铺成 system 已发布 56 格,shift_eval.挑() 只清草稿 → 它改成清 system 铺的不分状态(随它下次 ship);③ rating_check「按店配对合并后在上升」+0.13 < +0.15 —— rating_window 固定 08|09|10,每日平移天天挪 rated_at,三周下来相邻月混桶、升幅稀释,今天刚跌破;另 06:10 跨月重造因等锁 60 分钟超时没做(今天不跨月不影响)。它问 ③ 归谁 → 我回:不归我(没碰过 shift_world / rating_check),建议它按「判据按 rating_built_on 平移天数挪窗口」修(只改检查不改造数口径),①②③ 一起 ship 推上 → 报哈希 → 我再起 gate_w29。**②③ 是时间推进造成的,我现在推也会红,所以必须排它后面。** 09:0x fc:③ 按只改检查的修法做了(backfill_rating 多记不挪的 rating_built_world;shift_world 登记成不挪;rating_check 按「今天 − 造数日」把 rated_at 挪回去再分月,老库没这键按「窗口后一个月 1 号」估 → +0.25),相关咬合 3 条锁内重放全过;**ship#4 已起(本地 f3823ea9,①②③ 一起),锁归它约 60–90 分钟,推完报哈希、放锁、它自己重启 8760/8770,然后我起 gate_w29**。我什么都不占,等消息。12 小时循环到点停了;fc 的消息会把这个会话叫醒,届时:`git -C w1121 add 澜绣云裳agent-夜间汇总-20261123.md` + commit --only(HANDOFF + 汇总)→ w1117 reset/ff 到 w1121 → `bash scratchpad/gate_w29.sh` 后台 → 绿后告 fc 哈希 → 锁内换日报处理要求(seed → --换要求)→ kickstart 不用(日报走 aimc worker,不是 8770)。**
   · **09:1x fc 推完了:origin/main = f3823ea9(cd31a7d0..f3823ea9),ship:pre_push 退出码 0,锁已放;主检出它已 ff 到 f3823ea9、8760/8770 它重启了(200 / 302),aimc 没重启、e2e-ci 交给我的 gate_w29。它这笔带:dbpath 单源迁移(欠债 307)、全站打码统一(手机前三后四 / 固话前三后三)、门禁那三条修。** 紧接着它又要借锁约 10 分钟跑 9 个单项检查(只用副本不推)→ 我让它先跑,我做不占锁的:w1121 提交(HANDOFF + 今早汇总 md)→ w1121 rebase 到 f3823ea9 → w1117 对齐;它放锁后再起 gate_w29。
   · **11:0x gate_w29 第一轮 e2e-ci 红 1 条(退出码 2,没到 ship)**:page-smoke 里 `ifmatch_reachable_check` 报我 11-21/22 加的 4 个乐观锁写接口(PATCH/archive chat-annotations、PATCH/archive chat-tasks)「没登记 revision 从哪儿来」—— 之前几轮 e2e-ci 没红是因为契约文档漏生成,fc 这笔「补生成漏掉的接口文档」后它们才进了检查的视野。修法(w1121,只动检查名单 + 两份 e2e 测试,没动运行时代码):名单登记 4 条(两组都没详情接口,界面从**列表行**拿 revision,`读` 指列表、`字段` items[0].revision、项目 demo_a);两份 e2e 收尾**各留一条「停用」的不归档**(归档的列表里不出现,全归档则「列表空 = 什么都没验到」红;上次剩的顺手归档,库里始终一条)。锁内单跑:标注 e2e 38 全过 / 员工定时 e2e 32 全过 / ifmatch 4 条 ✅(revision 6 / 3)。→ 提交后 w1117 ff,gate_w29 第二轮。
+  · **13:2x fc ship#5 推完:origin/main = ba1d046d(c5f7d656..ba1d046d,带周营收口径按统计期 + 第 2/3 批库路径单源),它重启了 8760/8770、主检出 ff 过**。我:w1121 `rebase origin/main --autostash` 干净(四笔交接提交哈希变成 16e64d4b / c01ec544 / 5b8a2b16 / 85e84301);w1117 对齐用的是 `git rebase w1121`(reset --hard 被分类器拦;rebase 会把补丁已在上游的四笔自动跳过,结果 w1117 = w1121 = 85e84301,**以后 ff 不了就用这招,别 reset**)。**顺手查出一处要紧的:日报取数的桥工具不是 aimc 执行的,是 com.lanxiu.supervise(tools/supervise_sync.py --循环 30)拉回来在自己进程里 import workflow_bridge → api_report 跑的;它 11-22 23:17 起一直没重启,fc 的 weekly_revenue 新说法在它进程里不生效** → 13:29 `launchctl kickstart -k gui/$(id -u)/com.lanxiu.supervise` 重启过,日志 /tmp/lanxiu-supervise.log 第一轮正常(桥 project_lanxiu、派任务提醒 0/0)。教训:**改了 backend/ 下被桥工具用到的代码,要重启的是 supervise,不是 aimc / 8770**;已告 fc。
   · 下一步第一个动作(11-23 早):**先等 fc 的 ship(它夜跑结束后起,带手机号打码那笔,推完它重启 aimc)—— 它报了哈希、锁空、05:10 之后**,才 **先把 w1121 里这份未提交的 HANDOFF `git commit --only HANDOFF.md`(随早上第一笔;单独提也行)→ `git -C w1117 merge --ff-only w1121`** → `bash scratchpad/gate_w29.sh` 后台起;红了看 e2e_ci_w29.log / ship_w29.log;绿了告 fc 哈希。期间不碰 上次运行.py / workflows_api / endpoints / app.js / test_last_run。08:00 后看 project_lanxiu 的 workflow-documents 有没有 11-22 那份日报(GET …/workflow-documents?limit=3,X-Dev-User U001),有就写进 11-23 汇总;首份日报的两处口径观察(悬而未决 ⓪)先问 fc weekly_revenue 的说法归谁改。(原第一动作:等 fc 的哈希消息(没来就看 `git fetch && git log -1 origin/main` 变没变、锁空没空)→ w1121 `git fetch && git rebase origin/main --autostash` → `git -C w1117 merge --ff-only w1121` → `sed 's/w27/w28/g' gate_w27.sh > gate_w28.sh` 后台起 → 绿:告 fc 哈希 → 喊 fc 要锁 → 锁内 `cd 管理后台 && ./.venv/bin/python tools/seed_bridge_tools.py --项目 project_lanxiu` → `python3 scratchpad/enable_daily_draft.py`(每步不是预期就停)→ `launchctl kickstart -k gui/$(id -u)/com.lanxiu.supervise` → 汇总填哈希发飞书(`FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf python3 tools/feishu_publish.py 澜绣云裳agent-夜间与日间汇总-20261122.md`)→ 清单 1/3/4/5 打 ✅。
   · 悬而未决:⓪ **首份日报草稿(doc_4f24ddf13293,23:3x 读过)内容两处要人定**:a) 「关键指标与口径」把 weekly_revenue 的口径原话「营收=本周实际收到的钱−本周退出去的钱…归周」直接抄进单日日报,读者会问「日报怎么说本周」—— 是处理要求该让模型按统计期改写口径,还是 weekly_revenue 该给按日的说法(fc 地界,先问);b) 「异常与待处理」全是截至今天的存量(断货 216 / 流失预警 918…),和当日段混在一起没分「当日新增 / 存量」,六段方案 §5.3 原文怎么写的要对一下。其余(数字带出处和取数时间、「这是判断」「尚未执行」标注)都对。① 飞书送达要每人接收方,谁填(问用户);② ~~被派的人改提前量只有服务端,聊天站 UI 没有~~ → **23:5x 补了页面那一半(w1121 提交,未推):「我的定时 → 任务」每行多「改时刻」—— 一次性提醒给 datetime-local 框、周期任务复用建任务的频率控件,存 POST /api/chat-task/update {规则};js_check / ui_audit / chat_tasks_check / js_smoke 都绿,真页面没点过**;③ test_lanxiu_knobs_flow 在 w1117 跑必红(环境假设,欠账);④ 「核对中」卡无出口;⑤ 标注列表给没原文权限的人看标准答案(现在给,用户没拍)。
   · 未验证:**test_chat_annotations_flow.py 第 76 行之后的断言一条都没真跑过**(第一次红在第 76 行夹具;修后由 gate_w17 锁内单跑;再红先看审计接口列表键名 / U003 viewer 权限这些我按源码推的);前端标注块 / 标注回复页**只 node --check,没在真页面点过**;fc 还没推聊天站那一半;w1121 领先 w1117 五笔(脚本修法 / shell_lint 扩范围 / 夹具 / 交接 ×2),gate_w17 会 ff。
@@ -2132,20 +2133,21 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-23 12:10。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-23 13:31。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `w1121` |
-| 最新提交 | af8ac650 · 2026-11-23 · 交接:12:3x 刷六项(今天的活收尾,fc ship#5 跑着不占锁) |
-| 代码量 | 1228 个 Python 文件 / 212576 行(不含 .venv) |
+| 最新提交 | 85e84301 · 2026-11-23 · 交接:刷自动区(12:4x) |
+| 代码量 | 1228 个 Python 文件 / 212611 行(不含 .venv) |
 | 验收 | `./check.sh` 共 444 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M agentsite/evals/funnel.jsonl
+M HANDOFF.md
+ M agentsite/evals/funnel.jsonl
 ?? .feynman/weekly-review.log
 ?? .gate_w29.sh.bak
 ?? agentsite/.venv
@@ -2156,11 +2158,11 @@ M agentsite/evals/funnel.jsonl
 **最近 5 次提交:**
 
 ```
-af8ac650 交接:12:3x 刷六项(今天的活收尾,fc ship#5 跑着不占锁)
-a5058055 交接:fc ship#5 起(周营收口径按统计期),我不占锁;今天的活收尾
-19c3de62 交接 + 汇总补结果:已推 c5f7d656;日报处理要求换到 pv_44db0ac828ca 并发生产,真跑那份异常段已分当日新增 / 存量
-c5f7d656 乐观锁检查补登记标注 / 员工定时 4 个写接口「界面从列表行拿 revision」;两份 e2e 收尾各留一条停用的当样例
-5dd4fdc5 交接 + 11-23 早汇总:fc 推完 f3823ea9,我排它后面起 gate_w29;今天白天换日报处理要求
+85e84301 交接:刷自动区(12:4x)
+5b8a2b16 交接:12:3x 刷六项(今天的活收尾,fc ship#5 跑着不占锁)
+c01ec544 交接:fc ship#5 起(周营收口径按统计期),我不占锁;今天的活收尾
+16e64d4b 交接 + 汇总补结果:已推 c5f7d656;日报处理要求换到 pv_44db0ac828ca 并发生产,真跑那份异常段已分当日新增 / 存量
+ba1d046d 库路径单源第③步再迁六个(欠债 303→297);周营收口径说法跟着统计期走
 ```
 <!--/AUTO-->
 ## 一句话在做什么
