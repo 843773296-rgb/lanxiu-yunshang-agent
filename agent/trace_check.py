@@ -61,6 +61,10 @@ SKIP = (".git", ".venv", "__pycache__", "node_modules")
          "发前核白名单 + 禁区),内容只有流程名 / 步骤名 / 该谁处理 / 截止 / 链接,**不是调模型** —— 没有 token、没有模型花费可记,"
          "发送结果只记运行事件。worker 里真正调模型的路径(`_llm` / `_agent` / 知识检索的改写与精排)都走 `runtime/真模型.py` 和 knowledge/ 那几个口,"
          "那里接了记录仪。「curl + secretref」这个指纹和上一条 HTTP请求.py 同形、不同去向。"),
+    "管理后台/services/api/app/chat_task_feishu.py":
+        ("员工定时结果的**飞书送达**(11-23,用户拍「一期统一发到他本人的飞书」):用 curl 以机器人身份往 `open.feishu.cn/open-apis/im/v1/messages` 发一条文本,"
+         "**不是调模型** —— 点中指纹是因为飞书 IM 接口的路径里恰好也有 `/v1/messages`;没有 token、没有模型花费可记,"
+         "发送结果(已发 / 失败 / 未配置 / 策略不发)记在 chat_task_runs.feishu_detail。员工定时真正调模型的那一步走聊天站 /internal/chat → agentsite/sdk.py,那里接了记录仪。"),
 }
 
 # 真正发起调用的指纹
