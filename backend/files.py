@@ -15,7 +15,9 @@ from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只�
 import os, sqlite3, base64, hashlib, datetime, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 ROOT = os.path.join(HERE, "uploads")
 
 # 只收图片。收 pdf/doc 不是不行,但**能被浏览器直接打开的类型才安全展示**,

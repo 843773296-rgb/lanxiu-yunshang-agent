@@ -40,7 +40,9 @@ from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只�
 import os, re, sqlite3, subprocess, shutil, time, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 模型目录 = os.path.expanduser("~/.whisper-models")
 默认模型 = "ggml-small.bin"
 可执行 = "whisper-cli"
