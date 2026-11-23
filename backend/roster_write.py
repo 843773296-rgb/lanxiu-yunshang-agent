@@ -32,7 +32,9 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
 import shift as K     # noqa: E402
 
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 # 排谁:**本店在职顾问**。和 week_grid / 派单可派的人是同一拨 —— 店长自己不进排班表
 # (现有 280 行全是顾问;店长要不要也排,业务没说,先不扩)。
 可排角色 = ("顾问",)

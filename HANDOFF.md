@@ -2744,3 +2744,4 @@ a6cbf89d 开关登记表加「定时(系统停用)」:workflow.schedule_disabled
   ② 排班判分器夹具:11-23 平移把甲周铺成 system「已发布」56 格,挑() 只清草稿 → 已改 agent/shift_eval.py 副本上清 system 不分状态 + judgetest 加铺一格 system 已发布(31 条全过,bite_check rc0;未提交);
   ③ rating_check 合并升 +0.13<0.15:rating_window 固定 08|09|10、平移每天挪 rated_at、跨月才重造 → 月中漂移稀释。并行会话确认不归它、让我按「只改检查」修 → **已修**:backfill_rating 记不挪的 rating_built_world、shift_world 登记不挪(+自测+咬合)、rating_check 按「今天−造数日」挪回 rated_at 再分月(老库按窗口后一月 1 号估)→ +0.25;PRD 附录 B-128。**已验**:只读量 rated_at 往回挪 0/10/22 天 → 合并升 +0.13/+0.19/+0.25,漂移就是原因。
   ①②③ 一起提交后起 ship#4;推完报哈希,并行会话起 gate_w29(它不拿锁、不碰 rating / shift_world / shift_eval)。
+- 11-23 ship#4 绿,已推 **f3823ea9**(含 dbpath 迁移、打码统一、门禁三修);主检出 ff 已验,8760=200 / 8770=302 已重启;aimc 和 e2e-ci 交给并行会话的 gate_w29(已通知)。下一步:W02 第③步接着迁(欠债 307),**这条 HANDOFF 记录未提交,随下一笔业务提交带上**。
