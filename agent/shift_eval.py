@@ -193,9 +193,11 @@ def 挑():
         # 每日平移会把「系统铺的草稿」一天天往后铺(11-16 铺到了 12-06,正好压上甲那一周)——
         # 那是数据在往前走,不是有人排了班。**只在副本上**把这两周系统铺的草稿清掉再数;
         # 真库上不清(谁拿真库跑到这,就该被「不空就不跑」拦住)。拍 / 还原在 挑 之后,清掉的不会被还回去。
+        # 11-23 起每日平移把甲那周直接铺成了**已发布**(created_by 照旧是 system,35+14+7=56 格),
+        # 只清草稿的话夹具挑不到空周、判分器整条红 —— 所以副本上清 system 铺的**不分状态**;人排的照旧数进「占」。
         真 = os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db"))
         if os.path.realpath(DBP) != 真:
-            c.execute(f"DELETE FROM roster WHERE created_by='system' AND status='草稿' AND d IN ({','.join('?'*14)})",
+            c.execute(f"DELETE FROM roster WHERE created_by='system' AND d IN ({','.join('?'*14)})",
                       (*甲, *乙))
             c.commit()
         占 = c.execute(f"SELECT COUNT(*) FROM roster WHERE d IN ({','.join('?'*14)})", (*甲, *乙)).fetchone()[0]

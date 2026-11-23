@@ -566,6 +566,9 @@ def 铺(db=DB, 说=print):
     # 2026-11-03:**这批数据按哪三个月造的趋势**,另记一个键。rating_built_on 会跟着世界平移,
     # 拿它当守卫永远为真;这个键在 shift_world.world_meta里不挪的键 里登记了不挪(见那里的事故说明)
     c.execute("INSERT OR REPLACE INTO world_meta(k, v) VALUES('rating_window',?)", (窗口串(月目标),))
+    # 2026-11-23:**造数那一刻世界的今天**,再记一个**不挪**的(rating_built_on 跟着挪,永远等于今天)。
+    # rated_at 每天跟着平移挪一天、窗口跨月才重造 → 月中 rating_check 要知道「造完之后挪了几天」才能按造数时的月分桶
+    c.execute("INSERT OR REPLACE INTO world_meta(k, v) VALUES('rating_built_world',?)", (今s,))
     # ⚠️⚠️ 2026-10-14 加:**造数这一刻,输入长什么样的指纹。**
     # 为什么要记它 —— 「库里那批和现在重跑不一致」有两种完全不同的原因:
     #   ① 造数的代码改了                              ← **这是要判红的**
@@ -798,6 +801,9 @@ def _自测():
     ck("记下了造数时的世界日期(顺序那道守卫靠它)", 建于 == 夹具今天,
        f"记的是 {建于} —— `rating_check` 的「造数之后世界没有再被平移过」靠这个值,"
        f"不记就等于那道守卫没有依据")
+    不挪的建于 = (c.execute("select v from world_meta where k='rating_built_world'").fetchone() or [None])[0]
+    ck("记下了不挪的造数日(rating_built_world;rating_check 按它算造完之后平移了几天)", 不挪的建于 == 夹具今天,
+       f"记的是 {不挪的建于} —— 不记的话检查只能按「窗口后一月 1 号」估,跨月重造晚了几天就差几天")
     窗 = (c.execute("select v from world_meta where k='rating_window'").fetchone() or [None])[0]
     ck("记下了这批数据按哪三个月造的(rating_window;rating_check 的跨月守卫靠它)",
        窗 == 窗口串(月目标_于(dt.date.fromisoformat(夹具今天))),

@@ -163,6 +163,32 @@ def 查一遍(c, 前缀=""):
     return n
 
 
+def 造后平移了几天(c):
+    """这批评价造完之后,世界又被平移了几天 → (天数, 依据)。
+
+    ⚠️ 2026-11-23 加:窗口(rating_window)跨月才重造、登记了不挪;**评价的 rated_at 却每天跟着平移挪一天**。
+    于是月中按 rated_at 分月桶,桶里装的已经不是造数时那个月的评价 —— 11-23 合并升幅掉到 +0.13 跌破线,
+    只读量过:把 rated_at 挪回 0 / 10 / 22 天,合并升 +0.13 / +0.19 / +0.25。
+    > 「趋势没造出来」和「造出来了、被平移挪出了桶」**在合并升幅上长得一模一样**。
+    依据优先 `rating_built_world`(造数那一刻世界的今天,shift_world 登记了不挪);
+    11-23 之前造的库没记它,就按「窗口最后一个月的下个月 1 号造的」估(daily_shift 跨月当天重造),说明是估的。
+    """
+    import datetime as _d
+    今 = worldclock.今天()
+    有表 = c.execute("SELECT 1 FROM sqlite_master WHERE name='world_meta'").fetchone()
+    if not 有表:
+        return 0, "库里没有 world_meta,不挪"
+    记 = c.execute("SELECT v FROM world_meta WHERE k='rating_built_world'").fetchone()
+    if 记 and 记[0]:
+        return max(0, (今 - _d.date.fromisoformat(记[0][:10])).days), f"造于 {记[0][:10]}(记的)"
+    窗 = c.execute("SELECT v FROM world_meta WHERE k='rating_window'").fetchone()
+    if not (窗 and 窗[0]):
+        return 0, "没记窗口,不挪"
+    y, m = (int(x) for x in 窗[0].split("|")[-1][:7].split("-"))
+    起 = _d.date(y + (m == 12), m % 12 + 1, 1)
+    return max(0, (今 - 起).days), f"造于 {起}(估的:没记 rating_built_world,按窗口后一月 1 号)"
+
+
 def 查形状(c, n):
     """**铺完必须有东西盯着形状。**
 
@@ -211,9 +237,12 @@ def 查形状(c, n):
     #
     # > 「每家店自己在涨」是业务的说法,也是铁律 TK13 认的比法;
     # > 但**一家店一个月几十条评价,判不出 0.3 的升幅** —— 合并才判得出。
+    挪, 挪据 = 造后平移了几天(c)
+    _回 = f"-{挪} days"      # 按造数时的日期分月:rated_at 挪回造完之后被平移的天数
+    print(f"     ℹ 造完之后世界平移了 {挪} 天({挪据})—— 分月前把 rated_at 挪回去")
     店月 = {(r["shop"], r["ym"]): (r["n"], r["a"]) for r in c.execute(
-        """SELECT o.shop, substr(r.rated_at,1,7) ym, COUNT(*) n, AVG(r.star) a
-             FROM rating r JOIN ordr o ON o.id=r.order_id GROUP BY 1,2""")}
+        """SELECT o.shop, substr(date(substr(r.rated_at,1,10), ?),1,7) ym, COUNT(*) n, AVG(r.star) a
+             FROM rating r JOIN ordr o ON o.id=r.order_id GROUP BY 1,2""", (_回,))}
     # 月份取**那批数据造的时候用的三个月**(rating_window,不跟着平移);没记就退回按今天算。
     # 「窗口是不是今天该看的」由 main 里那条守卫判 —— 这里只判「按它造的那三个月,趋势造出来没有」。
     # (原来按 rating_built_on 算,而它跟着平移挪,跨月后这里就去比一段没造趋势的月份,见 main 那段)
@@ -245,7 +274,7 @@ def 查形状(c, n):
                f"合并升 {合:+.2f}(" + " · ".join(f"{s.split()[-1]} {d:+.2f}" for s, d, *_ in 差们)
                + ")—— **配对去掉了门店构成的影响,合并又把样本量凑够了**")
         全 = {r["ym"]: r["a"] for r in c.execute(
-            """SELECT substr(rated_at,1,7) ym, AVG(star) a FROM rating GROUP BY ym""")}
+            """SELECT substr(date(substr(rated_at,1,10), ?),1,7) ym, AVG(star) a FROM rating GROUP BY ym""", (_回,))}
         print("     ℹ 全店整体月均(**报而不判**,它被门店构成搅乱 —— 造数自测里真出现过"
               "每家店都涨、整体反而跌):"
               + " → ".join(f"{m} {全[m]:.2f}" for m in 有的 if m in 全))

@@ -39,6 +39,9 @@ try:
     with closing(sqlite3.connect(副本)) as _c, _c:   # 先铺一格「系统每日平移铺的草稿」在甲那周:挑() 要能把它清掉(11-16 真库铺到了 12-06)
         _c.execute("INSERT INTO roster(staff_no, d, shift, shop, shop_code, status, created_by, created) "
                    "VALUES('60000002', ?, 'S1', 'SH001 静安旗舰店', 'SH001', '草稿', 'system', '2026-11-16')", (E.甲[0],))
+        # 11-23 起平移铺的是**已发布**(真库甲那周 56 格):再铺一格 system 已发布在乙那周,挑() 不分状态也要清掉
+        _c.execute("INSERT INTO roster(staff_no, d, shift, shop, shop_code, status, created_by, created) "
+                   "VALUES('60000002', ?, 'S1', 'SH001 静安旗舰店', 'SH001', '已发布', 'system', '2026-11-23')", (E.乙[0],))
     E.x, 为什么 = E.挑()
     ck("夹具挑得到(副本上那两周是空的)", bool(E.x), 为什么)
     if not E.x:

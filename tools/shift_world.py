@@ -467,6 +467,7 @@ def 标记路径(db):
 # > —— 所以这里显式登记,不靠值的写法躲过 `^\d{4}-\d{2}-\d{2}`。
 world_meta里不挪的键 = {
     "rating_window": "评价数据按哪三个月造的趋势(数据的属性,跨月时由 daily_shift 自动重造评价来更新)",
+    "rating_built_world": "评价数据造的那一刻世界的今天(11-23 加;rating_check 用「今天 − 它」算造完之后平移了几天,挪了就永远是 0)",
 }
 
 
@@ -937,12 +938,15 @@ def _自测():
     k = sqlite3.connect(_窗库)
     k.execute("insert into world_meta(k,v) values('rating_built_on','2026-10-20')")
     k.execute("insert into world_meta(k,v) values('rating_window','2026-07-01|2026-08-01|2026-09-01')")
+    k.execute("insert into world_meta(k,v) values('rating_built_world','2026-10-20')")
     k.commit(); k.close()
     平移(_窗库, "2026-11-03", 说=_哑)
     k = sqlite3.connect(_窗库)
     _m = dict(k.execute("select k, v from world_meta").fetchall()); k.close()
     ck("平移后 rating_window 一个字都没变(登记了逐键不挪;值长得像日期也不挪)",
        _m.get("rating_window") == "2026-07-01|2026-08-01|2026-09-01", _m)
+    ck("平移后 rating_built_world 没挪(登记了;挪了的话 rating_check 算出的平移天数永远是 0)",
+       _m.get("rating_built_world") == "2026-10-20", _m)
     ck("同一列里没登记的日期键照旧跟着挪(rating_built_on 2026-10-20 → 2026-11-03)",
        _m.get("rating_built_on") == "2026-11-03", _m)
 

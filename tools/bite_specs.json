@@ -14241,6 +14241,18 @@
   "预期红": "平移后 rating_window 一个字都没变"
  },
  {
+  "script": "tools/shift_world.py",
+  "改坏": "world_meta 不挪登记里删掉 rating_built_world —— 它跟着平移挪,rating_check 算出的「造完之后平移了几天」永远是 0,月中分桶又错位(11-23 评价趋势跌破线那个形状)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "    \"rating_built_world\": \"评价数据造的那一刻世界的今天(11-23 加;rating_check 用「今天 − 它」算造完之后平移了几天,挪了就永远是 0)\",",
+    "new": ""
+   }
+  ],
+  "预期红": "平移后 rating_built_world 没挪"
+ },
+ {
   "script": "tools/backfill_rating.py --selftest",
   "改坏": "造数不记这批数据按哪三个月造的 —— 跨月守卫没有依据",
   "file": [
@@ -22816,7 +22828,7 @@
  },
  {
   "script": "agent/shift_eval_judgetest.py",
-  "改坏": "夹具不清副本上系统铺的草稿(每日平移铺到那两周就永远「不空不跑」)",
+  "改坏": "夹具不清副本上系统铺的排班(草稿和 11-23 起的已发布;每日平移铺到那两周就永远「不空不跑」)",
   "file": [
    {
     "path": "agent/shift_eval.py",

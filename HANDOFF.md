@@ -2723,3 +2723,11 @@ a6cbf89d 开关登记表加「定时(系统停用)」:workflow.schedule_disabled
 - 11-22 23:5x 补：本地待推现为 **8 笔**（库路径 6 + 打码 cbb2c72b + PRD 台账第九十二条 aaa6f764；rebase 后哈希会变）。PRD 那条「悬而未决」已做完，划掉。其余六项见上一条，不变。
 - 11-22 23:5x 并行会话：「启用经营日报草稿」已做完（23:30 放锁），今晚不再碰锁和共享库；明天不动 上次运行.py / workflows_api / endpoints / app.js / test_last_run（要动会先说）。**所以明早夜跑结束后不用再等它，直接从 fetch + rebase 开始。**
 - 11-23 04:5x 夜跑已推 cd31a7d0；8 笔 rebase 后起 ship（日志 scratchpad/ship-20261123-0450a.log，只认「ship:pre_push 退出码」行）。绿 → 主检出 ff + merge-base 核 → kickstart backend / agentsite / aimc（lsof 8801 查孤儿）→ curl 302 → 拿锁跑 管理后台 make test-e2e-ci（主检出）→ 报号给用户和并行会话（它等着起 gate_w29）。
+- 11-23 06:3x **第三次 ship 06:25 起**（日志 scratchpad/ship-20261123-0625c.log）。前两次：①工作区脏（HANDOFF 追加没提交，**ship 起跑前别留未提交的 HANDOFF**）②shop_key_check 12 条咬合在副本里对照红，锁内单条重放绿，判偶发、未坐实；**再红在同一处就别重跑，查原始输出**。与并行会话约定：我推完报号就放锁、自己重启 8760/8770；aimc 重启 + make test-e2e-ci 由它的 gate_w29 带（含我打码那几笔），红在 test_last_run / test_artifacts_live / test_audio_flow 它把日志发我。
+- 11-23 07:1x 第三次 ship 还在跑（咬合重放 98/112，之后全量门禁）。**疑点（未坐实）**：按改动重放咬合每条单独拿锁、条间放锁，并行会话可能在缝里插进来交错 → 可能是前两次 shop_key「对照就是红」的成因；已叫它等我推完再起 gate_w29。
+- 11-23 07:2x 并行会话已停 gate_w29（没进锁），等我推完。**上一条的疑点被削弱**：它说 05:45 那次它没拿锁，所以第二次 shop_key「对照红」不是它在缝里插进来造成的，成因仍未知；第三次 ship 若再红在 shop_key，要看原始输出（bite_run 不印对照输出，得在副本里手跑 backend/shop_key_check.py）。
+- 11-23 ship#3(ship-20261123-0625c.log)红:咬合 112 全过;全量门禁红 3 条 ——
+  ① OpenAPI 过期(我改 endpoints 文案没重生成;已用 管理后台/tools/gen_openapi.py 重生成,diff 一句,未提交);
+  ② 排班判分器夹具:11-23 平移把甲周铺成 system「已发布」56 格,挑() 只清草稿 → 已改 agent/shift_eval.py 副本上清 system 不分状态 + judgetest 加铺一格 system 已发布(31 条全过,bite_check rc0;未提交);
+  ③ rating_check 合并升 +0.13<0.15:rating_window 固定 08|09|10、平移每天挪 rated_at、跨月才重造 → 月中漂移稀释。并行会话确认不归它、让我按「只改检查」修 → **已修**:backfill_rating 记不挪的 rating_built_world、shift_world 登记不挪(+自测+咬合)、rating_check 按「今天−造数日」挪回 rated_at 再分月(老库按窗口后一月 1 号估)→ +0.25;PRD 附录 B-128。**已验**:只读量 rated_at 往回挪 0/10/22 天 → 合并升 +0.13/+0.19/+0.25,漂移就是原因。
+  ①②③ 一起提交后起 ship#4;推完报哈希,并行会话起 gate_w29(它不拿锁、不碰 rating / shift_world / shift_eval)。
