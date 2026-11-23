@@ -115,6 +115,8 @@ ck("再点 → 409 CHAT_TASK_BUSY", c == 409 and (r2 or {}).get("code") == "CHAT
 好 = 等(lambda: next((x for x in 跑们(tid) if x["id"] == rid and x["status"] not in ("排队", "进行中")), None), 150)
 ck("worker 一分钟内执行成「提醒」,正文「到点了:…」,kind 手动,进了收件箱", 好 and 好["status"] == "提醒" and str(好["answer_text"]).startswith("到点了") and 好["kind"] == "手动" and 好["inbox_at"], 好)
 # 飞书送达(11-23):这条任务用默认策略(飞书开着)→ 本机配了接收方就真发一条(已发);GitHub CI 没配 → 未配置。「失败」算红 —— 它说的是发了没出去
+# ⚠️ 结果和 feishu_detail 是**两个事务**写的(发飞书在事务外、要几秒),上面那个 等 看到 status 变了就返回,这时 feishu_detail 多半还是空 —— 第二轮 e2e 就红在这;再等它出现
+好 = 等(lambda: next((x for x in 跑们(tid) if x["id"] == rid and x.get("feishu_detail")), None), 40) or 好
 飞细 = (好 or {}).get("feishu_detail") or {}
 ck("飞书送达落在 feishu_detail.状态(配了接收方 → 已发 + feishu_at;没配 → 未配置)", 飞细.get("状态") in ("已发", "未配置")
    and (飞细["状态"] != "已发" or (好.get("feishu_at") and 飞细.get("message_id"))), (好 or {}).get("feishu_detail"))
