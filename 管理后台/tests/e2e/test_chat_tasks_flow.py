@@ -170,14 +170,19 @@ c2, l = 打("GET", P + f"/chat-tasks?staff_code={工}")
 c3, r3 = 打("POST", P + f"/chat-tasks/{tid}/run-now?staff_code={工}")
 ck("归档 → 200;列表没了;run-now 404", c == 200 and not [x for x in (l or {}).get("items") or [] if x["id"] == tid] and c3 == 404, (c, c3))
 
-print("\n▸ 收尾:归档剩下的")
-for x in 建的:
-    if not x:
-        continue
-    c, l = 打("GET", P + "/chat-tasks?limit=200")
-    rev = next((y["revision"] for y in (l or {}).get("items") or [] if y["id"] == x), None)
-    if rev is not None:
-        打("POST", P + f"/chat-tasks/{x}/archive", 头={"If-Match": str(rev)})
+print("\n▸ 收尾:归档剩下的,只留一条(停用)当样例")
+# 11-23:page-smoke 里 ifmatch_reachable_check 要从 GET /chat-tasks 列表拿一个 revision 当样例,归档的列表里不出现,
+# 全归档它就「列表空 = 什么都没验到」红 → 这次建的里还在列表上的第一条改成停用留着(⑦ 已把 tid 归档了,所以不是它);
+# 上次跑剩的 E2ECT 工号任务顺手归档,库里始终只留一条。
+c, l = 打("GET", P + "/chat-tasks?limit=200")
+留 = None
+for y in (l or {}).get("items") or []:
+    if y["id"] in 建的 and 留 is None:
+        留 = y
+    elif y["id"] in 建的 or str(y.get("staff_code") or "").startswith("E2ECT"):
+        打("POST", P + f"/chat-tasks/{y['id']}/archive", 头={"If-Match": str(y["revision"])})
+c1, r1 = 打("PATCH", P + f"/chat-tasks/{留['id']}", 体={"status": "停用"}, 头={"If-Match": str(留["revision"])}) if 留 else (None, None)
+ck("留一条停用的当样例 → 200(给 ifmatch_reachable_check)", c1 == 200 and (r1 or {}).get("status") == "停用", (c1, r1))
 
 print()
 if 挂:

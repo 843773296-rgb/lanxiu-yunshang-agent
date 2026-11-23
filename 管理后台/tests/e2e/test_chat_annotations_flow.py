@@ -10,7 +10,7 @@
   ⑥ 命中:上报两次 → hit_count 2
   ⑦ 改:不带 If-Match 409;旧 revision 409;对的 → revision+1;停用后清单里没有、命中 404;再启用
   ⑧ 归档:列表 / 清单 / 命中都没了;运行详情回到「可以标」;同一轮再标 → 把那条起回来(同 id)
-  ⑨ 收尾:开关关回去、标注归档;临时成员由 _清成员 删
+  ⑨ 收尾:开关关回去、这条标注**停用留着**(ifmatch_reachable_check 要从列表拿样例 revision;上次剩的归档);临时成员由 _清成员 删
 """
 import json
 import os
@@ -227,12 +227,18 @@ ck("同一轮再标 → 201,**同一个 id 起回来**(唯一键钉着,不另起
    and r.get("standard_answer") == "又标回来", (c, r))
 
 print("\n▸ ⑨ 收尾")
+# 11-23:这一条**不归档、改成停用留着** —— page-smoke 里 ifmatch_reachable_check 要从 GET /chat-annotations 列表拿一个 revision 当样例,
+# 归档的列表里不出现,全归档它就「列表空 = 什么都没验到」红。上次跑剩的那条在这儿顺手归档,库里始终只留一条。
 c, l = 打("GET", P + "/chat-annotations", 甲)
+for x in (l or {}).get("items") or []:
+    if x["id"] != aid:
+        打("POST", P + f"/chat-annotations/{x['id']}/archive", 甲, 头={"If-Match": str(x["revision"])})
 rev = next((x["revision"] for x in (l or {}).get("items") or [] if x["id"] == aid), None)
-c1, _ = 打("POST", P + f"/chat-annotations/{aid}/archive", 甲, 头={"If-Match": str(rev)})
+c1, r1 = 打("PATCH", P + f"/chat-annotations/{aid}", 甲, 体={"status": "停用"}, 头={"If-Match": str(rev)})
 c2, r2 = 打("PUT", P + "/chat-annotations/switch", 甲, 体={"enabled": False})
 c3, a = 打("GET", P + "/chat-annotations/active", "U001")
-ck("标注归档、开关关回去,清单回到 开关 false / 空", c1 == 200 and c2 == 200 and (a or {}).get("开关") is False and not [x for x in (a or {}).get("items") or [] if x["id"] == aid], (c1, c2, a))
+ck("标注停用留一条(给 ifmatch_reachable_check 当样例)、开关关回去,清单回到 开关 false / 空", c1 == 200 and (r1 or {}).get("status") == "停用" and c2 == 200
+   and (a or {}).get("开关") is False and not [x for x in (a or {}).get("items") or [] if x["id"] == aid], (c1, r1, c2, a))
 
 print()
 if 挂:

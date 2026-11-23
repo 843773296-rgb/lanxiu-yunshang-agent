@@ -271,6 +271,21 @@ P = f"{基址}/api/v1/projects/{项目}"
     "POST /execution-runs/{id}/cancel": dict(
         取id=("/execution-runs", "items[0].id"),
         读="/execution-runs/{id}", 字段="revision"),
+    # ── 标注回复 / 员工定时(11-23 补登记)──────────────────────────────
+    # 两组都**没有详情接口**,界面(聊天站「我的定时」/ 后台「标注回复」)从**列表行**拿 revision,
+    # 所以 `读` 直接指列表、`字段` 取第一行。样例从哪来:两份 e2e(test_chat_annotations_flow / test_chat_tasks_flow)
+    # 收尾各**留一条「停用」的**不归档(归档的列表里不出现),page-smoke 排在它们之后跑 —— 全归档的话这里是空列表,
+    # 而「列表空」在这条判据里就是红(什么都没验到)。
+    "PATCH /chat-annotations/{id}": dict(
+        取id=None, 读="/chat-annotations", 字段="items[0].revision", 项目="project_demo_a",
+        说明="标注回复页列表行就带 revision;改 / 归档都从行上拿"),
+    "POST /chat-annotations/{id}/archive": dict(
+        取id=None, 读="/chat-annotations", 字段="items[0].revision", 项目="project_demo_a"),
+    "PATCH /chat-tasks/{id}": dict(
+        取id=None, 读="/chat-tasks?limit=200", 字段="items[0].revision", 项目="project_demo_a",
+        说明="聊天站「我的定时」列表行带 revision(agentsite/chat_tasks.py 代理原样透传);停用 / 改时刻 / 归档都从行上拿"),
+    "POST /chat-tasks/{id}/archive": dict(
+        取id=None, 读="/chat-tasks?limit=200", 字段="items[0].revision", 项目="project_demo_a"),
 }
 
 
