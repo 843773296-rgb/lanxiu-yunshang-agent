@@ -50,7 +50,9 @@ import os, sqlite3, sys, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 # 判定口径在 knowledge/shift.py,这里只取数。
 # (名字避开 roster:同名的话 `import roster` 会先找到这个文件自己,
 #  而「导入成功了」和「导入对了」长得一样。)
