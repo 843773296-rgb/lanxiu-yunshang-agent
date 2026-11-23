@@ -2807,3 +2807,5 @@ a4ec89b1 库路径单源第③步第 5 批:语音转写 / 示例池 / 文件 / �
 - 11-23 CI 自 11-18 06:41(9a9f93ed)起每次都红,check job 红因已查实:seed_factory_feed 自检「换号重发 0 条」—— fakedata/factory_sim.py:155 按订单号哈希 h%10==8 挑样本,CI 从零建库到完工的单少,挑不中;那段区间无人改过造数(factory_sim 最后改 10-29)。修法:照同文件「植过没单号」先例保证植一条(~3 行),验证要从零重建跑 seed_factory_feed。**未动**:并行会话在做全项目体检、要请用户排优先级;我已回它「修法明确、我可做」。admin-e2e 四份 CI 新库前提归它。
 - 11-23 CI 修法并行会话已写进体检报告(包一),**等用户排序再动,我先别改**。开始第 6 批:order_contract / product_summary / report_doc / report_template / roster / targeted_ops。
 - 11-23 第 6 批锁内 19 检查全绿,已本地提交**未推**(欠债 279);攒第 7 批一起 ship。剩余:db_build / migrate / mcp_registry / skill_registry / shop_rename / workflow_bridge(前四个建库 / 迁移 / 注册链路,先读再判;workflow_bridge 推完要重启 supervise)。
+- 11-23 ⚠️ 我误跑了一次 `python3 backend/migrate.py --help`(它不认参数、直接对真库跑迁移):输出「这次做了 0 条,库现在做到第 6 条」,**真库未被改动**;教训:不熟的脚本先读再跑。
+- 11-23 第 7 批(建库/迁移/MCP 注册/技能注册/门店改名/桥)锁内 14 检查绿,已提交;起 ship#7(log ship-20261123-2330g.log)带第 6+7 批,欠债 273。推完 kickstart 8760/8770/**supervise**(workflow_bridge 在里面)。业务模块(backend 非检查)的 DB= 写死已基本清空,剩下的 273 处主要是检查/造数/评测脚本。

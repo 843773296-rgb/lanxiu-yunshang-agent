@@ -29,7 +29,9 @@ import os, sys, json, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE] if HERE not in sys.path else []
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 
 import shop_key
 

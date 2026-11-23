@@ -36,7 +36,9 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 目录 = os.path.join(HERE, "migrations")
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 名式 = re.compile(r"^m(\d{4})_(.+)\.py$")
 
 DDL = """CREATE TABLE IF NOT EXISTS schema_version(

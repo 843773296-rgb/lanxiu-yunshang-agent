@@ -28,7 +28,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 
 可编辑角色 = ("总部运营",)
 超时范围 = (1, 600)        # 秒

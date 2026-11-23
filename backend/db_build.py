@@ -50,7 +50,9 @@ from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 键 = ("build_commit", "build_at", "build_logic_fp", "build_logic_n", "build_fp_ver")
 
 # 造数脚本 import 到、但**不影响重建出来的库**的本地模块 —— 走到这里就停,不往下跟。每条要写为什么

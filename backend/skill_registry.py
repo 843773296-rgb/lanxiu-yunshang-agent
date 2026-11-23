@@ -36,7 +36,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 技能目录 = os.path.join(ROOT, "agentsite", ".claude", "skills")
 # 第三方技能的人工审查清单(intent/skill-third-party.md):{名称: {分类, 理由, 可借鉴的方法?, 初筛}}。
 # 只当**没登记时的默认分类** —— 库里总部运营填过的分类以库为准。
