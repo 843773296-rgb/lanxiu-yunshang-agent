@@ -117,11 +117,10 @@ _旧环境 = {k: os.environ.get(k) for k in ("LANXIU_FEISHU_RECEIVER_FILE", "FEI
 with tempfile.TemporaryDirectory() as td:
     os.environ["LANXIU_FEISHU_RECEIVER_FILE"] = os.path.join(td, "r.json")
     os.environ["FEISHU_APP_ID"], os.environ["FEISHU_APP_SECRET"] = "cli_test", "s"
-    通 = lambda h: (True, "", ["1.1.1.1"])  # noqa: E731
     炸curl = lambda a, b=None: (_ for _ in ()).throw(RuntimeError("不该发请求"))  # noqa: E731
-    r未 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=炸curl, 核出网=通)
+    r未 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=炸curl)
     ck("没配接收方 → 未配置,不发请求、不抛", r未["状态"] == "未配置" and "接收方" in r未["为什么"], 1, r未)
-    r策 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": False}, 跑curl=炸curl, 核出网=通)
+    r策 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": False}, 跑curl=炸curl)
     ck("策略没开飞书 → 策略不发(接收方都不读)", r策["状态"] == "策略不发", 1, r策)
     with open(os.environ["LANXIU_FEISHU_RECEIVER_FILE"], "w") as f:
         json.dump({"open_id": "ou_test", "name": "测试人"}, f)
@@ -133,19 +132,20 @@ with tempfile.TemporaryDirectory() as td:
             return 0, json.dumps({"code": 0, "tenant_access_token": "t-xyz", "expire": 7200})
         return 0, json.dumps({"code": 0, "data": {"message_id": "om_1"}})
     FS._token缓存.update(值=None, 到期=0.0)
-    r发 = FS.送达("库存盘点", "60000008", "跑了", "a", 策略={"飞书": True}, 跑curl=假curl, 核出网=通)
+    r发 = FS.送达("库存盘点", "60000008", "跑了", "a", 策略={"飞书": True}, 跑curl=假curl)
     体 = json.loads(发过[-1][1])
     ck("配了接收方 → 拿令牌 + 发消息两次请求;receive_id = open_id、msg_type text、带 Bearer;状态 已发 + message_id",
        r发["状态"] == "已发" and r发["message_id"] == "om_1" and len(发过) == 2 and 体["receive_id"] == "ou_test" and 体["msg_type"] == "text"
        and "receive_id_type=open_id" in 发过[-1][0][-1] and any("Bearer t-xyz" in s for s in 发过[-1][0]), 6, r发)
     发过.clear()
-    r再 = FS.送达("t", "w", "提醒", "a", 策略=None, 跑curl=假curl, 核出网=通)
+    r再 = FS.送达("t", "w", "提醒", "a", 策略=None, 跑curl=假curl)
     ck("令牌缓存:第二条只发一次请求;策略 None 当作要发", r再["状态"] == "已发" and len(发过) == 1, 1, len(发过))
-    r败 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=lambda a, b=None: (0, json.dumps({"code": 230001, "msg": "no permission"})), 核出网=通)
+    r败 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=lambda a, b=None: (0, json.dumps({"code": 230001, "msg": "no permission"})))
     ck("飞书回非 0 → 失败,带码和原因", r败["状态"] == "失败" and r败["码"] == 230001 and "no permission" in r败["为什么"], 1, r败)
-    r禁 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=炸curl, 核出网=lambda h: (False, "解析到内网", []))
-    ck("出网策略不放行 → 失败,不发请求", r禁["状态"] == "失败" and "内网" in r禁["为什么"], 1, r禁)
-    r炸 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=lambda a, b=None: 1 / 0, 核出网=通)
+    源 = 读("管理后台", "services", "api", "app", "chat_task_feishu.py")
+    ck("主机名是写死的常量、不走出网策略那道闸(它防用户填的网址;这台机器 DNS 走拦截代理会把飞书判成内网 —— e2e 第一轮红在这)",
+       "出网策略" not in 源.split('"""', 2)[2] and '主机 = "open.feishu.cn"' in 源 and "https://{主机}/" in 源, 3)
+    r炸 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=lambda a, b=None: 1 / 0)
     ck("请求层炸了 → 失败,不抛(送达挂了不能带走 worker 那一轮)", r炸["状态"] == "失败" and "ZeroDivisionError" in r炸["为什么"], 1, r炸)
 for k, v in _旧环境.items():
     if v is None:
