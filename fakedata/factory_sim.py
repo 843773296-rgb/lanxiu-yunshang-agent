@@ -104,7 +104,7 @@ def 今日回传(c, 今天, 上限=None):
     """生产中的单 —— 工厂这一批该发的回传,混进故意的毛病。
     返回 [(消息, 毛病, 预期)] —— 预期是「该催」的那几条**不发**(消息里只有订单号):工厂该回没回,该催清单里要有它。"""
     今 = _t(str(今天)[:10] + " 18:00")
-    out, 植过没单号 = [], False
+    out, 植过没单号, 植过换号 = [], False, False
     单们 = c.execute("""SELECT id, cut_at, audit_at FROM ordr WHERE kind='定制品订单' AND status='生产中'
                         AND (cut_at IS NOT NULL OR audit_at IS NOT NULL) ORDER BY id""").fetchall()
     在制 = {r[0]: r[1] for r in c.execute("SELECT ref, MAX(due_date) FROM workorder WHERE status='在制' "
@@ -152,7 +152,8 @@ def 今日回传(c, 今天, 上限=None):
                 out.append((质消息, "", "收下"))
         if h % 10 == 6:                               # 重复发同一个号
             out.append((dict(完消息), "重复发", "重复"))
-        if h % 10 == 8:                               # 换号重发
+        if h % 10 == 8 or not 植过换号:               # 换号重发:第一条完工就植上,保证样本量不为 0
+            植过换号 = True                           # (11-18 起 CI 新库上按哈希一条都没挑中,seed_factory_feed 自测红)
             out.append((dict(完消息, 消息号=f"T{oid}-完-重"), "换号重发", "重复"))
         if 质消息:
             发 = 质 + dt.timedelta(hours=6)

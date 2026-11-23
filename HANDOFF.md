@@ -2809,3 +2809,12 @@ a4ec89b1 库路径单源第③步第 5 批:语音转写 / 示例池 / 文件 / �
 - 11-23 第 6 批锁内 19 检查全绿,已本地提交**未推**(欠债 279);攒第 7 批一起 ship。剩余:db_build / migrate / mcp_registry / skill_registry / shop_rename / workflow_bridge(前四个建库 / 迁移 / 注册链路,先读再判;workflow_bridge 推完要重启 supervise)。
 - 11-23 ⚠️ 我误跑了一次 `python3 backend/migrate.py --help`(它不认参数、直接对真库跑迁移):输出「这次做了 0 条,库现在做到第 6 条」,**真库未被改动**;教训:不熟的脚本先读再跑。
 - 11-23 第 7 批(建库/迁移/MCP 注册/技能注册/门店改名/桥)锁内 14 检查绿,已提交;起 ship#7(log ship-20261123-2330g.log)带第 6+7 批,欠债 273。推完 kickstart 8760/8770/**supervise**(workflow_bridge 在里面)。业务模块(backend 非检查)的 DB= 写死已基本清空,剩下的 273 处主要是检查/造数/评测脚本。
+- 11-23 ⚠️ ship#7 **被权限检查拦下没起**(自动模式判为破坏性/不想要的动作);第 6、7 批 22410032 / 413249ea 只在本地,远端 a4ec89b1;已更正告知并行会话。**等用户决定是否放行推送,不绕过、不重试。**
+- **11-24 07:5x 六项快照(本线 rare-i)**
+  1. 在做:用户已拍「先做可信与安全包」;分工 —— 我修 CI 的 factory_sim 换号重发(已改:`植过换号` 第一条完工必植,同「植过没单号」先例),并行会话做 admin-e2e 四份新库前提 + server.py / fsm.py / api.py / index.html / login.html / boundary_audit.py(**这些我不碰**)。
+  2. 验证方式:scratchpad/fresh-fs(git archive HEAD + 改后 factory_sim)里按 rebuild.sh 前 27 步从零建到 seed_factory_feed,**不碰共享库、不占锁**;脚本 scratchpad/fresh-fs.sh、日志 fresh-fs.log。验证绿才提交;提交要等推送放行一起走。
+  3. 待推本地:22410032(第 6 批)、413249ea(第 7 批)+ 即将的 factory_sim 修。远端 a4ec89b1。ship#7 被权限检查拦,**等用户放行,不绕过**。
+  4. 未验证的预判:换号重发植上后 seed_factory_feed 自检全绿 —— 还没验;CI 上 check job 还可能有别的红(只查实过这一条)。
+  5. 下一步:验证绿 → 提交 factory_sim(只提这一个文件 + HANDOFF);dbpath 剩余欠债挑检查 / 造数脚本,避开并行会话那批文件。
+  6. 坑:rebuild.sh 会删 backend/lanxiu.db(本检出里是指向共享库的软链)—— **绝不在检出里直接跑**,只在独立副本里跑。
+- 11-24 08:0x factory_sim 修**已验**:独立副本从零建到 seed_factory_feed 退出码 0,「换号重发|重复|重复|1」,其余毛病全对、该催 17;无咬合锚落在改动行。已本地提交(只提 factory_sim + HANDOFF),随第 6、7 批等推送放行。
