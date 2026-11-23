@@ -105,6 +105,60 @@ js = 读("管理后台", "apps", "web", "app.js")
 ck("后台:菜单 / 路由 / 页 三处", all(s in js for s in ('["#/chat-tasks", "员工定时"', 'h === "#/chat-tasks"', "async function 页_员工定时")), 3)
 ck("冒烟名单里有 #/chat-tasks 和 #/annotations", "'#/chat-tasks'" in 读("管理后台", "Makefile") and "'#/annotations'" in 读("管理后台", "Makefile"), 2)
 
+print("▸ ⑤ 飞书送达(11-23,用户拍:一期统一发到他本人的飞书;四态永远分得开、永远不抛)")
+import json  # noqa: E402
+import tempfile  # noqa: E402
+import chat_task_feishu as FS  # noqa: E402
+
+文 = FS.正文("库存盘点", "60000008", "跑了", "x" * (FS.正文上限 + 200), datetime(2026, 11, 23, 1, 0, tzinfo=timezone.utc))
+ck("正文:头一行带任务名 / 工号 / 结果,超长截到上限并说还有多少字", 文.startswith("【澜绣云裳 · 员工定时】库存盘点 · 60000008 · 跑了") and "还有 200 字" in 文
+   and len(文) < FS.正文上限 + 200, 1, 文[:90])
+_旧环境 = {k: os.environ.get(k) for k in ("LANXIU_FEISHU_RECEIVER_FILE", "FEISHU_APP_ID", "FEISHU_APP_SECRET")}
+with tempfile.TemporaryDirectory() as td:
+    os.environ["LANXIU_FEISHU_RECEIVER_FILE"] = os.path.join(td, "r.json")
+    os.environ["FEISHU_APP_ID"], os.environ["FEISHU_APP_SECRET"] = "cli_test", "s"
+    通 = lambda h: (True, "", ["1.1.1.1"])  # noqa: E731
+    炸curl = lambda a, b=None: (_ for _ in ()).throw(RuntimeError("不该发请求"))  # noqa: E731
+    r未 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=炸curl, 核出网=通)
+    ck("没配接收方 → 未配置,不发请求、不抛", r未["状态"] == "未配置" and "接收方" in r未["为什么"], 1, r未)
+    r策 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": False}, 跑curl=炸curl, 核出网=通)
+    ck("策略没开飞书 → 策略不发(接收方都不读)", r策["状态"] == "策略不发", 1, r策)
+    with open(os.environ["LANXIU_FEISHU_RECEIVER_FILE"], "w") as f:
+        json.dump({"open_id": "ou_test", "name": "测试人"}, f)
+    发过 = []
+
+    def 假curl(args, 体=None):
+        发过.append((args, 体))
+        if "tenant_access_token" in args[-1]:
+            return 0, json.dumps({"code": 0, "tenant_access_token": "t-xyz", "expire": 7200})
+        return 0, json.dumps({"code": 0, "data": {"message_id": "om_1"}})
+    FS._token缓存.update(值=None, 到期=0.0)
+    r发 = FS.送达("库存盘点", "60000008", "跑了", "a", 策略={"飞书": True}, 跑curl=假curl, 核出网=通)
+    体 = json.loads(发过[-1][1])
+    ck("配了接收方 → 拿令牌 + 发消息两次请求;receive_id = open_id、msg_type text、带 Bearer;状态 已发 + message_id",
+       r发["状态"] == "已发" and r发["message_id"] == "om_1" and len(发过) == 2 and 体["receive_id"] == "ou_test" and 体["msg_type"] == "text"
+       and "receive_id_type=open_id" in 发过[-1][0][-1] and any("Bearer t-xyz" in s for s in 发过[-1][0]), 6, r发)
+    发过.clear()
+    r再 = FS.送达("t", "w", "提醒", "a", 策略=None, 跑curl=假curl, 核出网=通)
+    ck("令牌缓存:第二条只发一次请求;策略 None 当作要发", r再["状态"] == "已发" and len(发过) == 1, 1, len(发过))
+    r败 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=lambda a, b=None: (0, json.dumps({"code": 230001, "msg": "no permission"})), 核出网=通)
+    ck("飞书回非 0 → 失败,带码和原因", r败["状态"] == "失败" and r败["码"] == 230001 and "no permission" in r败["为什么"], 1, r败)
+    r禁 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=炸curl, 核出网=lambda h: (False, "解析到内网", []))
+    ck("出网策略不放行 → 失败,不发请求", r禁["状态"] == "失败" and "内网" in r禁["为什么"], 1, r禁)
+    r炸 = FS.送达("t", "w", "跑了", "a", 策略={"飞书": True}, 跑curl=lambda a, b=None: 1 / 0, 核出网=通)
+    ck("请求层炸了 → 失败,不抛(送达挂了不能带走 worker 那一轮)", r炸["状态"] == "失败" and "ZeroDivisionError" in r炸["为什么"], 1, r炸)
+for k, v in _旧环境.items():
+    if v is None:
+        os.environ.pop(k, None)
+    else:
+        os.environ[k] = v
+api = 读("管理后台", "services", "api", "app", "chat_tasks_api.py")
+ck("执行排队的:写完结果后在事务外调 送达(只推 跑了 / 提醒,失败的记 策略不发),feishu_at 只在 已发 时写", "_FS.送达(t[\"title\"]" in api and "if 结[\"status\"] in (跑了, 已提醒):" in api
+   and "feishu_at=case when :ok then now() else feishu_at end" in api and "失败的运行不推飞书" in api, 4)
+ck("GET /chat-task-feishu:接口有、登记有、不吐 open_id", '"/chat-task-feishu")' in api and '"/chat-task-feishu"' in 读("管理后台", "services", "api", "app", "contract", "endpoints.py")
+   and '"open_id"' not in api.split("def 飞书送达状态")[1], 3)   # 只认带引号的键名:说明文字里写「不吐 open_id」不算吐(第一版就被自己的说明匹配了)
+ck("工作台员工定时页:拉 /chat-task-feishu、画_飞书送达 把四态都画出来", "chat-task-feishu" in js and "function 画_飞书送达" in js and all(s in js for s in ('"已发", "失败", "未配置", "策略不发"',)), 3)
+
 print()
 if 挂:
     print(f"❌ {len(挂)} 条挂了:{挂}")

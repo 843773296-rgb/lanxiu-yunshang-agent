@@ -6,6 +6,7 @@
   ② 建(提醒 / 每天):201 启用、频率说明、接下来三次;列表按 staff_code 只见自己的
   ③ 改:不带 If-Match 409;别人的工号 404;停用后接下来几次为空;再启用
   ④ 立即跑一次(提醒):202 → 再点 409 BUSY → worker 一分钟内执行成 提醒 → 收件箱未读 1、正文「到点了」→ 标已读 → 未读 0
+     + 飞书送达(11-23):这一条用默认策略真发(本机配了接收方 → 已发;CI 没配 → 未配置);GET /chat-task-feishu 给工作台看;其余几条策略关掉飞书 → 策略不发
   ⑤ 到点调度:建一条「每天 <下一分钟>」的任务 → 约两分钟内 worker 排一条 定时 运行并执行成 提醒;同一期只一条
   ⑥ 「跑」类 + 不在职工号:run-now → worker 调聊天站 → 403 NO_STAFF → 运行 失败 + 任务自动停用、note 说清、收件箱多一条系统说明
   ⑦ 归档:列表没了、run-now 404
@@ -113,6 +114,13 @@ c, r2 = 打("POST", P + f"/chat-tasks/{tid}/run-now?staff_code={工}")
 ck("再点 → 409 CHAT_TASK_BUSY", c == 409 and (r2 or {}).get("code") == "CHAT_TASK_BUSY", (c, r2))
 好 = 等(lambda: next((x for x in 跑们(tid) if x["id"] == rid and x["status"] not in ("排队", "进行中")), None), 150)
 ck("worker 一分钟内执行成「提醒」,正文「到点了:…」,kind 手动,进了收件箱", 好 and 好["status"] == "提醒" and str(好["answer_text"]).startswith("到点了") and 好["kind"] == "手动" and 好["inbox_at"], 好)
+# 飞书送达(11-23):这条任务用默认策略(飞书开着)→ 本机配了接收方就真发一条(已发);GitHub CI 没配 → 未配置。「失败」算红 —— 它说的是发了没出去
+飞细 = (好 or {}).get("feishu_detail") or {}
+ck("飞书送达落在 feishu_detail.状态(配了接收方 → 已发 + feishu_at;没配 → 未配置)", 飞细.get("状态") in ("已发", "未配置")
+   and (飞细["状态"] != "已发" or (好.get("feishu_at") and 飞细.get("message_id"))), (好 or {}).get("feishu_detail"))
+c, 飞 = 打("GET", P + "/chat-task-feishu?limit=5")
+ck("GET /chat-task-feishu → 200:配置了(布尔)/ 按状态 / items 里有这条、不吐 open_id", c == 200 and isinstance((飞 or {}).get("配置了"), bool) and "按状态" in (飞 or {})
+   and any(x["id"] == rid for x in (飞 or {}).get("items") or []) and "open_id" not in json.dumps(飞, ensure_ascii=False), (c, 飞))
 c, ib = 打("GET", P + f"/chat-task-inbox?staff_code={工}")
 ck("收件箱未读 1,带任务名", c == 200 and ib.get("未读") == 1 and ib["items"][0]["title"] == "e2e 提醒(改)", (c, ib))
 c, _ = 打("POST", P + f"/chat-task-runs/{rid}/read?staff_code={工}")
@@ -123,11 +131,14 @@ ck("标已读 → 未读 0;别人标不了(404)", c == 200 and ib.get("未读") 
 print("\n▸ ⑤ 到点调度")
 现在 = datetime.now(ZoneInfo("Asia/Shanghai"))
 到点 = (现在 + timedelta(minutes=1)).strftime("%H:%M")
-c, t2 = 打("POST", P + "/chat-tasks", 体={"staff_code": 工, "title": "e2e 到点", "instruction": "到点提醒", "task_mode": "提醒", "规则": {"周期": "日", "时刻": 到点}})
+c, t2 = 打("POST", P + "/chat-tasks", 体={"staff_code": 工, "title": "e2e 到点", "instruction": "到点提醒", "task_mode": "提醒", "规则": {"周期": "日", "时刻": 到点},
+                                        "deliver_policy": {"站内": True, "飞书": False}})   # 这条不要飞书:验「策略不发」,也别每跑一次 e2e 就给人发好几条
 tid2 = (t2 or {}).get("id"); 建的.append(tid2)
-ck(f"建一条每天 {到点} 的", c == 201 and tid2, (c, t2))
+ck(f"建一条每天 {到点} 的(策略不开飞书)", c == 201 and tid2 and (t2 or {}).get("deliver_policy", {}).get("飞书") is False, (c, t2))
 定 = 等(lambda: [x for x in 跑们(tid2) if x["kind"] == "定时" and x["status"] not in ("排队", "进行中")] or None, 200, 10)
 ck("约两分钟内 worker 排了一条 定时 运行并执行成 提醒", 定 and 定[0]["status"] == "提醒" and 定[0]["period_key"].startswith("定时:"), 跑们(tid2))
+ck("策略没开飞书 → feishu_detail.状态 策略不发(不去发、feishu_at 空)", bool(定) and (定[0].get("feishu_detail") or {}).get("状态") == "策略不发" and not 定[0].get("feishu_at"),
+   定 and 定[0].get("feishu_detail"))
 time.sleep(65)
 ck("再过一分钟:同一期只有一条(期键唯一,last_period_start 记了)", len([x for x in 跑们(tid2) if x["kind"] == "定时"]) == 1, [x["period_key"] for x in 跑们(tid2)])
 c, d2 = 打("GET", P + f"/chat-tasks?staff_code={工}")
@@ -142,6 +153,8 @@ rid3 = (r or {}).get("run_id")
 败 = 等(lambda: next((x for x in 跑们(tid3) if x["id"] == rid3 and x["status"] not in ("排队", "进行中")), None), 150)
 ck("worker 调了聊天站,运行 失败,error_detail 带 http 403 / NO_STAFF", 败 and 败["status"] == "失败" and str((败.get("error_detail") or {}).get("http")) == "403"
    and ((败.get("error_detail") or {}).get("回") or {}).get("code") == "NO_STAFF", 败)
+ck("失败的运行不推飞书 → feishu_detail.状态 策略不发,为什么说明", bool(败) and (败.get("feishu_detail") or {}).get("状态") == "策略不发" and "失败" in str((败.get("feishu_detail") or {}).get("为什么")),
+   败 and 败.get("feishu_detail"))
 c, d3 = 打("GET", P + "/chat-tasks?staff_code=E2ECTNOBODY")
 行 = next((x for x in (d3 or {}).get("items") or [] if x["id"] == tid3), {})
 ck("任务自动停用,note 说这个工号不在职", 行.get("status") == "停用" and "不在职" in (行.get("note") or ""), 行)
@@ -149,7 +162,8 @@ ck("收件箱多一条系统说明(已自动停用)", any(x["kind"] == "系统" 
 
 print("\n▸ ⑥b 一次性任务(店长派任务的提醒走这条:用户拍 ⑥)")
 过去 = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(minutes=1)).isoformat()
-c, t一 = 打("POST", P + "/chat-tasks", 体={"staff_code": 工, "title": "e2e 一次性", "instruction": "截止前提醒", "task_mode": "提醒", "规则": {"周期": "一次", "时刻": 过去}, "source_ref": "task:E2ESC1"})
+c, t一 = 打("POST", P + "/chat-tasks", 体={"staff_code": 工, "title": "e2e 一次性", "instruction": "截止前提醒", "task_mode": "提醒", "规则": {"周期": "一次", "时刻": 过去}, "source_ref": "task:E2ESC1",
+                                        "deliver_policy": {"站内": True, "飞书": False}})
 tid一 = (t一 or {}).get("id"); 建的.append(tid一)
 ck("建一次性(时刻已到)→ 201,频率说明「一次:…」", c == 201 and tid一 and str((t一 or {}).get("频率说明", "")).startswith("一次:"), (c, t一))
 c, 再 = 打("POST", P + "/chat-tasks", 体={"staff_code": 工, "title": "e2e 一次性(重放)", "instruction": "x", "task_mode": "提醒", "规则": {"周期": "一次", "时刻": 过去}, "source_ref": "task:E2ESC1"})

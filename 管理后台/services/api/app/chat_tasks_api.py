@@ -2,7 +2,8 @@
 """员工定时 agent 任务(11-22;用户拍七条,方案《澜绣云裳agent-员工定时agent任务方案-20261122》,台账第九十条)。
 
 员工在聊天站用一句话建任务;后台调度;到点走内部通道让聊天站的助手**以他的身份、只读工具**跑一遍(或只提醒);
-结果存进 chat_task_runs = 站内收件箱(飞书送达是三期)。
+结果存进 chat_task_runs = 站内收件箱;**飞书送达(11-23)一期统一发到用户本人的飞书**(chat_task_feishu.py,接收方不进库),
+每条运行的 feishu_detail.状态 四态:已发 / 失败 / 未配置 / 策略不发;GET /chat-task-feishu 给工作台看接收方 + 最近送达。
 
     GET    /chat-tasks?staff_code=|store_id=      列表(聊天站按工号 / 店长按门店 / 后台页面看全项目)
     POST   /chat-tasks                            建:{staff_code, title, instruction, task_mode(跑|提醒), role_key?, 规则{周期,时刻,周几?,几号?,表达式?}, store_id?, deliver_policy?, source_ref?}
@@ -31,6 +32,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy import text
 
 import 定时 as T
+import chat_task_feishu as _FS
 from db import 连接, 事务
 from deps import 身份, 要权限, _错
 
@@ -443,15 +445,20 @@ def 执行排队的(现在, 最多=3):
     话 = []
     for _ in range(最多):
         with 事务() as c:
-            r = c.execute(text("""select r.*, t.staff_code, t.title, t.instruction, t.task_mode, t.role_key, t.fail_count, t.organization_id org
+            r = c.execute(text("""select r.*, t.staff_code, t.title, t.instruction, t.task_mode, t.role_key, t.fail_count, t.organization_id org,
+                                            cast(t.deliver_policy as text) dp
                                      from chat_task_runs r join chat_tasks t on t.project_id=r.project_id and t.id=r.chat_task_id
                                     where r.status=:s order by r.created_at limit 1 for update of r skip locked"""), {"s": 排队}).mappings().first()
             if not r:
                 break
             c.execute(text("update chat_task_runs set status=:s, started_at=now(), updated_at=now() where project_id=:p and id=:i"),
                       {"s": 进行中, "p": r["project_id"], "i": r["id"]})
+        try:
+            策略 = json.loads(r["dp"]) if isinstance(r["dp"], str) else (r["dp"] or None)
+        except ValueError:
+            策略 = None
         t = {"id": r["chat_task_id"], "project_id": r["project_id"], "organization_id": r["org"], "staff_code": r["staff_code"], "title": r["title"],
-             "instruction": r["instruction"], "task_mode": r["task_mode"], "role_key": r["role_key"], "fail_count": r["fail_count"]}
+             "instruction": r["instruction"], "task_mode": r["task_mode"], "role_key": r["role_key"], "fail_count": r["fail_count"], "deliver_policy": 策略}
         if t["task_mode"] == 提醒:
             结 = {"status": 已提醒, "answer_text": f"到点了:{t['title']}\n{t['instruction']}", "trace_id": None, "cost": None, "err": None}
         else:
@@ -478,8 +485,36 @@ def 执行排队的(现在, 最多=3):
             else:
                 c.execute(text("update chat_tasks set fail_count=0, last_run_id=:r, updated_at=now() where project_id=:p and id=:i"),
                           {"r": r["id"], "p": r["project_id"], "i": t["id"]})
-        话.append(f"{t['id']}/{r['kind']}:{结['status']}")
+        # 飞书送达(11-23):**在事务外**发(网络调用不占库锁),只推成功的结果和提醒;失败的留在站内 + 系统说明里。
+        # 不管发成什么样 feishu_detail 都写(四态),工作台那页靠它分「没配」「不要」「没发出去」。
+        if 结["status"] in (跑了, 已提醒):
+            细 = _FS.送达(t["title"], t["staff_code"], 结["status"], 结["answer_text"], 策略=t.get("deliver_policy"))
+        else:
+            细 = {"状态": _FS.策略不发, "为什么": "失败的运行不推飞书(站内收件箱 + 系统说明里有)"}
+        with 事务() as c:
+            c.execute(text("""update chat_task_runs set feishu_at=case when :ok then now() else feishu_at end, feishu_detail=cast(:d as jsonb), updated_at=now()
+                               where project_id=:p and id=:i"""),
+                      {"ok": 细.get("状态") == _FS.已发, "d": json.dumps(细, ensure_ascii=False), "p": r["project_id"], "i": r["id"]})
+        话.append(f"{t['id']}/{r['kind']}:{结['status']}/飞书{细.get('状态')}")
     return 话
+
+
+@router.get(前缀 + "/chat-task-feishu")
+def 飞书送达状态(project_id: str, me: 身份 = Depends(要权限("查看有权配置")), limit: int = Query(20, ge=1, le=100)):
+    """工作台「员工定时」页顶那块:接收方配了没、发到谁、最近送达按四态计数、最近几条。不吐 open_id。"""
+    收 = _FS.接收方()
+    with 连接() as c:
+        rs = c.execute(text("""select r.id, r.chat_task_id, t.title, t.staff_code, r.kind, r.status, r.ended_at, r.feishu_at, cast(r.feishu_detail as text) feishu_detail
+                                 from chat_task_runs r join chat_tasks t on t.project_id=r.project_id and t.id=r.chat_task_id
+                                where r.project_id=:p and r.feishu_detail is not null
+                                order by r.ended_at desc nulls last, r.created_at desc limit :n"""), {"p": project_id, "n": limit}).mappings().all()
+        计 = c.execute(text("""select coalesce(feishu_detail->>'状态', '?') s, count(*) n from chat_task_runs
+                              where project_id=:p and feishu_detail is not null group by 1"""), {"p": project_id}).all()
+    return {"配置了": bool(收), "接收方": (收 or {}).get("name") or None,
+            "备注": (收 or {}).get("备注") or "一期统一发到用户本人的飞书;上线后改成每人各自",
+            "接收方文件": _FS.接收方文件(), "按状态": {row[0]: int(row[1]) for row in 计},
+            "items": [_跑行(r) for r in rs], "总数": len(rs),
+            "note": "状态四态:已发(飞书收到了)/ 失败(发了没出去,看为什么)/ 未配置(没接收方,只进站内)/ 策略不发(这条任务没开飞书,或运行失败不推)"}
 
 
 def 员工任务扫一遍(现在=None):

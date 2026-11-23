@@ -5198,15 +5198,18 @@ async function 页_员工定时(页 = 1) {
       <div class="sub">${md("员工在聊天站里交给助手的定时任务:到点以**他本人的身份、只读工具**让聊天站助手跑一遍(真调模型,进门店月费用),或只提醒。"
         + "这里是全项目视角,能停;建和改在聊天站「我的定时」。连续 3 期失败自动停用。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
-  let d;
+  let d, 飞 = null;
   try { d = await 请求(`${P()}/chat-tasks?limit=50&page=${页}`); }
   catch (e) { const s = 错误块(e, 页_员工定时); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  // 飞书送达那块单独拉、单独兜:它挂了不该把任务列表一起带没
+  try { 飞 = await 请求(`${P()}/chat-task-feishu?limit=10`); } catch (e) { 飞 = { 出错: e.message || String(e) }; }
+  const 飞书块 = 画_飞书送达(飞);
   if (!d.items.length) {
-    $("#main").innerHTML = 头 + 状态("", "还没有员工定时任务", "员工在聊天站顶栏「⏰ 我的定时」里建;建了就会出现在这里。").html;
+    $("#main").innerHTML = 头 + 飞书块 + 状态("", "还没有员工定时任务", "员工在聊天站顶栏「⏰ 我的定时」里建;建了就会出现在这里。").html;
     return;
   }
   const 排 = [...d.items].sort((a, b) => ((b.status === "启用" && b["上次结果"] === "失败") - (a.status === "启用" && a["上次结果"] === "失败")));
-  $("#main").innerHTML = 头 + `<table><thead><tr>
+  $("#main").innerHTML = 头 + 飞书块 + `<table><thead><tr>
       <th>谁的</th><th>任务</th><th>频率</th><th>到点</th><th>状态</th><th class="num">成功</th><th>上次 / 下次</th><th></th>
     </tr></thead><tbody>`
     + 排.map((t) => `<tr data-id="${esc(t.id)}" data-rev="${esc(String(t.revision || 0))}">
@@ -5234,6 +5237,28 @@ async function 页_员工定时(页 = 1) {
       } catch (e) { const bb = e.体 || {}; 说.textContent = `${bb.code || "出错"}:${e.message}`; b.disabled = false; }
     };
   });
+}
+
+/* 飞书送达(11-23,用户拍「统一用我的飞书,上线后再改每人各自」+「工作台内也要有地方展示」):
+ * 页顶一块 —— 接收方配了没、发到谁、最近送达按四态计数、最近几条的结果。四态(已发 / 失败 / 未配置 / 策略不发)
+ * 在「飞书没收到」上长得一模一样,所以每条都把 feishu_detail.状态 和 为什么 画出来。 */
+function 画_飞书送达(飞) {
+  if (!飞) return "";
+  if (飞.出错) return `<div class="note">飞书送达状态拿不到:${esc(飞.出错)}</div>`;
+  const 按 = 飞["按状态"] || {};
+  const 头行 = 飞["配置了"]
+    ? `飞书送达:<span class="pill ok">已配置</span> 统一发到 <b>${esc(飞["接收方"] || "")}</b> 的飞书 <span class="k">${esc(飞["备注"] || "")}</span>`
+    : `飞书送达:<span class="pill fail">未配置</span> 没有接收方,结果只进站内收件箱 <span class="k">配法:在服务器上写 ${esc(飞["接收方文件"] || "接收方文件")}</span>`;
+  const 计 = ["已发", "失败", "未配置", "策略不发"].map((k) => `${k} ${Number(按[k] || 0)}`).join(" · ");
+  const 行 = (飞.items || []).map((r) => {
+    const dd = r.feishu_detail || {}, s = dd["状态"] || "?";
+    return `<tr><td class="k">${esc(String(r.ended_at || r.feishu_at || "").slice(5, 16).replace("T", " "))}</td>
+      <td>${esc(r.title || "")}<div class="k">${esc(r.staff_code || "")}</div></td><td>${esc(r.status || "")}</td>
+      <td><span class="pill ${s === "已发" ? "ok" : s === "失败" ? "fail" : ""}">${esc(s)}</span>${dd["为什么"] ? `<div class="k">${esc(String(dd["为什么"]).slice(0, 120))}</div>` : ""}</td></tr>`;
+  }).join("");
+  return `<div class="note ct-feishu"><div>${头行}</div><div class="k">最近送达:${计}</div>`
+    + (行 ? `<table><thead><tr><th>时间</th><th>任务</th><th>结果</th><th>飞书</th></tr></thead><tbody>${行}</tbody></table>` : `<div class="k">还没有送达记录</div>`)
+    + `</div>`;
 }
 
 async function 页_定时() {
