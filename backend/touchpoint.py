@@ -40,7 +40,9 @@ from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只�
 import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 # 归一的口径(去重/排序/够不够算)在 knowledge/journey.py,这里只取数。
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
 import journey as _口径

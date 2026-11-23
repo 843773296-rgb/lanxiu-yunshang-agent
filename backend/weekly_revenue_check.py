@@ -18,6 +18,7 @@ from seed import TODAY
     ("实收按下单日归周(而不是付款日)", "上周实收和独立 SQL 对得上"),
     ("退款没减(营收 = 实收)", "营收 = 实收 − 退款,且和独立 SQL 对得上"),
     ("店长不再限本店", "店长只看本店:实收 = 本店独立 SQL"),
+    ("口径文字退回写死「这一周…归周」(不跟统计期走)", "单日查询的口径和近似说明里不出现「周」"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -59,6 +60,7 @@ with api.as_user(总部):
     本周 = api.weekly_revenue(week=TODAY)
     未来 = api.weekly_revenue(week=(今 + dt.timedelta(days=14)).isoformat())
     错 = api.weekly_revenue(week="上周")
+    单日 = api.weekly_revenue(start=上周日.isoformat(), end=上周日.isoformat())
 期收, 期退 = sql收(), sql退()
 ck("上周有收款样本(空集合上什么都成立)", 期收 > 0, "上周一笔收款都没有 —— 是没验到,不是对了")
 ck("业务周是上一个完整的周一到周日", r.get("业务周", "").startswith(f"{上周一} ~ {上周日}"), r.get("业务周"))
@@ -71,6 +73,11 @@ ck("本周还没过完要明说", "⚠️ 这一周还没过完" in 本周)
 ck("还没到的周 → 明说,不给 0", "还没到" in (未来.get("error") or ""))
 ck("week 写成「上周」→ 要日期,不替人解析", "YYYY-MM-DD" in (错.get("error") or ""))
 ck("返回里写明退款日是近似", "近似" in "".join(r.keys()) + str(r.get("⚠️ 近似")))
+# 11-23:日报也调它(start=end),口径原来一律写「这一周…归周」,两份单日日报都把「本周」原话抄了进去
+ck("单日查询的口径和近似说明里不出现「周」(日报不该抄到「本周」)",
+   "周" not in str(单日.get("口径", "")) + str(单日.get("⚠️ 近似", "")) and "当天" in str(单日.get("口径", "")),
+   f"{单日.get('口径')} / {单日.get('⚠️ 近似')}")
+ck("按周查询的口径照旧说「这一周…归周」", "这一周" in str(r.get("口径", "")) and "归周" in str(r.get("口径", "")), r.get("口径"))
 
 店 = c.execute("SELECT shop FROM ordr WHERE shop IS NOT NULL GROUP BY shop ORDER BY COUNT(*) DESC LIMIT 1").fetchone()[0]
 with api.as_user(dict(no="SM-CHECK", name="店长", role="店长", shop=店)):

@@ -47,7 +47,9 @@ import os, re, sqlite3, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "agent"))
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 import textmatch
 # 判定口径在 knowledge/oppo.py,这里只负责**取数**:词表从库里读、有没有货去查。
 # (模块叫 oppo 不叫 opportunity:和这个文件同名的话 `import opportunity`

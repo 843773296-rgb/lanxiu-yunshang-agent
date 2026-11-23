@@ -39,7 +39,9 @@ sys.path.insert(0, HERE)
 #  会先找到这个文件自己,而「导入成功了」和「导入对了」长得一样。)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
 import owner as _口径
-DB = os.path.join(HERE, "lanxiu.db")
+# 库路径走单源(W02 第③步,11-23):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 
 # 归属确立/变更的依据 —— **必须记,因为将来一定有人问「凭什么是他的」**
 依据 = ("客户点名", "首次接待确立", "店长指定", "顾问离职重分", "客户要求更换",

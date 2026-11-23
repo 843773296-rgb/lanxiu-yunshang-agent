@@ -2745,3 +2745,17 @@ a6cbf89d 开关登记表加「定时(系统停用)」:workflow.schedule_disabled
   ③ rating_check 合并升 +0.13<0.15:rating_window 固定 08|09|10、平移每天挪 rated_at、跨月才重造 → 月中漂移稀释。并行会话确认不归它、让我按「只改检查」修 → **已修**:backfill_rating 记不挪的 rating_built_world、shift_world 登记不挪(+自测+咬合)、rating_check 按「今天−造数日」挪回 rated_at 再分月(老库按窗口后一月 1 号估)→ +0.25;PRD 附录 B-128。**已验**:只读量 rated_at 往回挪 0/10/22 天 → 合并升 +0.13/+0.19/+0.25,漂移就是原因。
   ①②③ 一起提交后起 ship#4;推完报哈希,并行会话起 gate_w29(它不拿锁、不碰 rating / shift_world / shift_eval)。
 - 11-23 ship#4 绿,已推 **f3823ea9**(含 dbpath 迁移、打码统一、门禁三修);主检出 ff 已验,8760=200 / 8770=302 已重启;aimc 和 e2e-ci 交给并行会话的 gate_w29(已通知)。下一步:W02 第③步接着迁(欠债 307),**这条 HANDOFF 记录未提交,随下一笔业务提交带上**。
+- 11-23 W02 第③步第 2 批:返修/退款/排班/标签等级四写口迁完,本地 **571103ba 未推**(欠债 303;锁内 9 检查绿)。并行会话 gate_w29 占锁中,**它 ship 完之前我不拿锁**;之后 rebase --autostash 再推。下一批候选:credit / ownership / customer_link / touchpoint / opportunity / slipping(只改代码,检查等锁)。
+- 11-23 10:43 并行会话 gate_w29 起(w1117=5dd4fdc5,含我的打码那笔做 e2e-ci),预计 11:5x 完;之后它还要锁内换日报处理要求约 5 分钟(会先告我)。**期间别拿锁**。我手上:第 3 批六模块已改未提交(欠债 297,锚 0 失配),锁空后跑 scratchpad/w02c.sh(18 检查)→ 绿就提交 → 第 2、3 批一起 ship。
+- 11-23 日报抄「本周」口径:已改 backend/api_report.weekly_revenue 口径/近似按统计期出说法(周/当天/这段时间),weekly_revenue_check 加 2 判据 + bite_specs 1 条;**未提交、检查未在锁内跑**(只读直调验过三种)。并入 scratchpad/w02c.sh(18+2 检查 + 这条咬合重放),等并行会话 ship + 换日报要求放锁后跑 → 绿就和第 3 批一起提交、连第 2 批一起 ship。
+- **11-23 ~11:00 六项快照(本线 rare-i;压缩前写)**
+  - 未验证:第 3 批六模块(credit/ownership/customer_link/touchpoint/opportunity/slipping)迁 dbpath 后的 18 个检查**没跑**;weekly_revenue 口径按期改写的检查 + 新咬合**没在锁内跑**(只读直调三种说法对)。
+  - 判据:迁移只换 DB 来源;风险在「检查默认模块写死真库」的前提(18:46 那次三处红都是这形状)——每批先 grep `模块.DB ==/realpath(模块.DB)` 再跑检查。评价趋势修法依据:只读量 rated_at 挪回 0/10/22 天 → +0.13/+0.19/+0.25。
+  - 作废:「shop_key 红是两边锁空档撞上」的推测(并行会话 05:45 没拿锁);ship#2/#3 的红因已查清,不用再追。
+  - 禁区:并行会话 gate_w29 + 换日报处理要求期间**不拿锁**;agentsite/app.py、station.html、sdk.py 归它;evals/*.jsonl 不 add;HANDOFF 不单独提交。
+  - 下一步第一个动作:等并行会话报「锁放了」→ `./tools/gate_lock.sh /private/tmp/claude-501/-Users-eureka/ba8cb0f4-e02a-4402-b9bf-3ff3ab966980/scratchpad/w02c.sh`(scratchpad 会被清,若丢了照第 3 批检查清单重建:workflow_bridge credit product_summary ownership_transfer authgate order_write opportunity_task slipping ownership booking opportunity customer_summary opportunity_obj customer_link touchpoint check_copy arrival_card call_flow weekly_revenue store_report 的 _check + bite_run 那条「单日查询的口径…不出现「周」」)→ 绿则 git add 显式路径(6 模块 + tools/dbpath_check.py + backend/api_report.py + backend/weekly_revenue_check.py + tools/bite_specs.json + HANDOFF.md)commit --only → pull --rebase --autostash → ./tools/ship.sh(新日期 log 名)→ 报哈希给用户和并行会话、ff 主检出、kickstart 8760/8770。
+  - 悬而未决:无需用户拍板的;剩余 ~24 个业务模块待迁;ops `_本库` 改函数、人工待办页端到端 + js_smoke 仍欠。
+- 11-23 并行会话已同意「工具按统计期给口径说法」+ 处理要求那条留第二道保险;顺序确认:它 ship 报哈希 → 锁内换日报要求 ~5 分钟 → 告我「锁放了」→ 我跑 w02c.sh 再推。它的 e2e-ci 10:44 起仍在跑。无需回复它。
+- 11-23 11:15 并行会话 gate_w29 第一轮 e2e-ci 红 1(ifmatch_reachable_check:它 11-21/22 的 4 个乐观锁写接口没登记 revision 来源;因我补生成契约文档才进视野,它认定是它的漏登记)已修,第二轮 11:15 起、预计 12:2x 完(w1117=c5f7d656 领先远端 6 笔)。**仍别拿锁**;等它报哈希 + 换日报要求 + 「锁放了」。
+- 11-23 并行会话已推 c5f7d656;我已 rebase --autostash 到它之上(第 2 批变 b3953ea0,第 3 批 + 口径改动仍未提交)。它正锁内换日报要求 ~5 分钟,放锁后我跑 w02c.sh。
+- 11-23 12:1x 锁内 w02c 绿(20 检查 + 口径咬合);第 3 批 + 口径改动已提交,起 ship#5(log ship-20261123-1220e.log)。推完:报哈希、ff 主检出、kickstart 8760/8770、告并行会话。

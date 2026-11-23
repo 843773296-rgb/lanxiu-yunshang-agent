@@ -23,7 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 G, R, D, Y = "\033[32m", "\033[31m", "\033[0m", "\033[33m"
 
 豁免 = {"backend/dbpath.py", "tools/dbpath_check.py"}   # 单源本身,和这条检查自己(docstring 里举了例子)
-欠债下限 = 303     # 2026-11-17 实测 327 处 / 290 个文件(含 DB = … 和直接 connect 两种写法);11-19 评测切库 / 夜跑那几处改走 dbpath.真库() 降到 324;11-23 写口四个(返修 / 退款 / 排班 / 标签等级)降到 303;降了就改小(只许少不许多)
+欠债下限 = 297     # 2026-11-17 实测 327 处 / 290 个文件(含 DB = … 和直接 connect 两种写法);11-19 评测切库 / 夜跑那几处改走 dbpath.真库() 降到 324;11-23 写口四个(返修 / 退款 / 排班 / 标签等级)降到 303、读写六个(信用 / 归属 / 客户关联 / 接触点 / 商机 / 流失)降到 297;降了就改小(只许少不许多)
 
 行判 = re.compile(r"lanxiu\.db")
 锚判 = re.compile(r"\b(HERE|ROOT|根|__file__)\b|dirname\(")
