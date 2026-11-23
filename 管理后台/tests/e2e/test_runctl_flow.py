@@ -71,18 +71,21 @@ def 设状态(rid, st):
                          {"i": rid}).scalar()
 
 
+# 11-18:只借**早已结束**的运行 —— 原来借「最新一条」,门禁和别的 e2e 并发时抢走了人家刚发起、还在跑的运行,
+# 结尾一还原把一条已经 succeeded 的运行写回 queued(库里真出现过)。终态 + 结束超过 10 分钟的才借。
+# 11-24:GitHub CI 是从零建的新库,流水线刚用 seed_retrieval_demo 造了一条试跑就跑这份,**没有一条结束超过 10 分钟的**,
+# 11-19 起每次都红在下面那句、没人看见。CI 里没有并发的门禁和别的会话,「10 分钟」防的事在那里不存在 → CI 环境变量在就不设间隔。
+_间隔 = "0 minutes" if os.environ.get("CI") else "10 minutes"
 with 连接() as c:
-    # 11-18:只借**早已结束**的运行 —— 原来借「最新一条」,门禁和别的 e2e 并发时抢走了人家刚发起、还在跑的运行,
-    # 结尾一还原把一条已经 succeeded 的运行写回 queued(库里真出现过)。终态 + 结束超过 10 分钟的才借
-    rid = c.execute(text("""select id from execution_runs where project_id=:p
+    rid = c.execute(text(f"""select id from execution_runs where project_id=:p
                           and archived_at is null
                           and status in ('succeeded','failed','cancelled','expired','incomplete')
-                          and ended_at < now() - interval '10 minutes'
+                          and ended_at < now() - interval '{_间隔}'
                           and resume_snapshot is null
                           order by created_at desc limit 1"""),
                     {"p": 项目}).scalar()
 if not rid:
-    print("❌ 库里没有 execution_run —— **这不叫跳过**")
+    print(f"❌ 库里没有 execution_run(结束超过 {_间隔} 的终态运行)—— **这不叫跳过**")
     sys.exit(1)
 
 # ⚠️ **借来的运行要还回去。** 这份测试拿「最新一条真运行」当夹具、直接改库造状态,

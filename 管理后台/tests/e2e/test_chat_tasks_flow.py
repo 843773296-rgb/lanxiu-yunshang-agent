@@ -153,14 +153,33 @@ tid3 = (t3 or {}).get("id"); 建的.append(tid3)
 c, r = 打("POST", P + f"/chat-tasks/{tid3}/run-now?staff_code=E2ECTNOBODY")
 rid3 = (r or {}).get("run_id")
 败 = 等(lambda: next((x for x in 跑们(tid3) if x["id"] == rid3 and x["status"] not in ("排队", "进行中")), None), 150)
-ck("worker 调了聊天站,运行 失败,error_detail 带 http 403 / NO_STAFF", 败 and 败["status"] == "失败" and str((败.get("error_detail") or {}).get("http")) == "403"
-   and ((败.get("error_detail") or {}).get("回") or {}).get("code") == "NO_STAFF", 败)
+败 = 等(lambda: next((x for x in 跑们(tid3) if x["id"] == rid3 and x.get("feishu_detail")), None), 40) or 败   # feishu_detail 是第二个事务写的,再等一拍
 ck("失败的运行不推飞书 → feishu_detail.状态 策略不发,为什么说明", bool(败) and (败.get("feishu_detail") or {}).get("状态") == "策略不发" and "失败" in str((败.get("feishu_detail") or {}).get("为什么")),
    败 and 败.get("feishu_detail"))
-c, d3 = 打("GET", P + "/chat-tasks?staff_code=E2ECTNOBODY")
-行 = next((x for x in (d3 or {}).get("items") or [] if x["id"] == tid3), {})
-ck("任务自动停用,note 说这个工号不在职", 行.get("status") == "停用" and "不在职" in (行.get("note") or ""), 行)
-ck("收件箱多一条系统说明(已自动停用)", any(x["kind"] == "系统" and "自动停用" in (x.get("answer_text") or "") for x in 跑们(tid3)), [(x["kind"], x["status"]) for x in 跑们(tid3)])
+
+
+def _聊天站在吗():
+    """GitHub CI 只起 8801 + worker,**不起聊天站**;本地两个都在。聊天站不在时 NO_STAFF 那条路验不到,要明说「不适用」而不是红、也不是绿。"""
+    try:
+        urllib.request.urlopen(os.environ.get("LANXIU_AGENTSITE_URL", "http://127.0.0.1:8770") + "/", timeout=3)
+        return True
+    except urllib.error.HTTPError:
+        return True          # 回了 HTTP(哪怕 4xx)就是在
+    except Exception:
+        return False
+
+
+if _聊天站在吗():
+    ck("worker 调了聊天站,运行 失败,error_detail 带 http 403 / NO_STAFF", 败 and 败["status"] == "失败" and str((败.get("error_detail") or {}).get("http")) == "403"
+       and ((败.get("error_detail") or {}).get("回") or {}).get("code") == "NO_STAFF", 败)
+    c, d3 = 打("GET", P + "/chat-tasks?staff_code=E2ECTNOBODY")
+    行 = next((x for x in (d3 or {}).get("items") or [] if x["id"] == tid3), {})
+    ck("任务自动停用,note 说这个工号不在职", 行.get("status") == "停用" and "不在职" in (行.get("note") or ""), 行)
+    ck("收件箱多一条系统说明(已自动停用)", any(x["kind"] == "系统" and "自动停用" in (x.get("answer_text") or "") for x in 跑们(tid3)), [(x["kind"], x["status"]) for x in 跑们(tid3)])
+else:
+    # 11-24:11-19 起 GitHub CI 这份一直红在上面三条、没人看见 —— 那里没有聊天站,worker 只会记「连不上聊天站」
+    ck("(没有聊天站)worker 调不到聊天站 → 运行 失败,error_detail 记了连不上", bool(败) and 败["status"] == "失败" and "聊天站" in json.dumps(败.get("error_detail") or {}, ensure_ascii=False), 败)
+    print("  ⚠️ 不适用 ×2:『任务自动停用(不在职)』『收件箱系统说明』要聊天站回 NO_STAFF 才验得到 —— 这里没有聊天站,**不是通过**,本地 e2e-ci 验")
 
 print("\n▸ ⑥b 一次性任务(店长派任务的提醒走这条:用户拍 ⑥)")
 过去 = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(minutes=1)).isoformat()

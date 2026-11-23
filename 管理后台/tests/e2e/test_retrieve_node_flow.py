@@ -127,11 +127,22 @@ def 图(定义, *, 库, 索引, 配置, 绑问题=True):
 
 
 def main():
+    global 项目, P
     print(f"▸ ① 搭建资源接口给资料库和检索配置(服务{'演示' if 服务是mock else '真模型'}模式)")
     c, 资 = 打("GET", P + "/workflow-resources")
     库们 = (资 or {}).get("资料库") or []
     配们 = (资 or {}).get("检索配置") or []
     有索引的 = [k for k in 库们 if k.get("就绪索引")]
+    if not 有索引的 and 项目 != "project_demo_a":
+        # GitHub CI 是从零建的新库:澜绣项目只 ingest 了文档、**没建就绪索引**(建索引要真嵌入模型);
+        # CI 流水线给演示项目用 tools/seed_retrieval_demo.py 造了一个就绪索引 → 换到那个项目上验同一套判据。
+        # 本地共享库的澜绣项目有真索引,走不到这里。11-19 起 CI 这份一直红在这一步、没人看见。
+        print(f"  ⚠️ {项目} 没有带就绪索引的资料库 → 改用 project_demo_a 验(前提换了,下面的 ✅ 是在演示项目上验的)")
+        项目, P = "project_demo_a", "/api/v1/projects/project_demo_a"
+        c, 资 = 打("GET", P + "/workflow-resources")
+        库们 = (资 or {}).get("资料库") or []
+        配们 = (资 or {}).get("检索配置") or []
+        有索引的 = [k for k in 库们 if k.get("就绪索引")]
     ck("资源里有「资料库」,至少一个带最新就绪索引", c == 200 and bool(有索引的), (c, 库们[:3]))
     ck("资源里有「检索配置」,带候选数 / 最终片段数 / 召回方式", bool(配们) and all(k in 配们[0] for k in ("候选数", "最终片段数", "召回方式")), 配们[:2])
     if not (有索引的 and 配们):

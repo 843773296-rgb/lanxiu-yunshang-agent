@@ -175,10 +175,16 @@ def main():
     尾 = uuid.uuid4().hex[:5].upper()
     甲 = 成员.记(项目, f"E2EHS1{尾}")   # SH001 的店长(管理员角色才在 candidate_roles 里)
     乙 = 成员.记(项目, f"E2EHS2{尾}")   # SH002 的店长
-    # 「审批工具动作」对 admin 是「可授权」档、默认关 —— 要显式专项授权,不然决定那一步先被 403 拦住、到不了门店范围的 404(第八轮 e2e 栽过)
-    c1, b1 = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "门店": "sh001", "专项授权": ["审批工具动作"]})
-    c2, b2 = 打("POST", P + "/memberships", 体={"工号": 乙, "角色": "admin", "门店": "SH002", "专项授权": ["审批工具动作"]})
-    ck("加两个临时成员,各登记一个门店(编号统一成大写)", c1 == 201 and c2 == 201 and (b1 or {}).get("门店") == "SH001" and (b2 or {}).get("门店") == "SH002", (c1, b1, c2, b2))
+    # 「审批工具动作」对 admin 是「可授权」档、默认关 —— 要显式专项授权,不然决定那一步先被 403 拦住、到不了门店范围的 404(第八轮 e2e 栽过)。
+    # 11-24:**授权直接写库,不走邀请接口** —— GitHub CI 的新库里 U001 自己没有「审批工具动作」,带着「专项授权」去 POST 会 422 CANNOT_GRANT
+    # (规则「不能通过邀请获得自己没有的权限」是对的,是夹具的事;11-19 起 CI 这份一直红在这、没人看见)。照 test_chat_annotations_flow 的做法。
+    c1, b1 = 打("POST", P + "/memberships", 体={"工号": 甲, "角色": "admin", "门店": "sh001"})
+    c2, b2 = 打("POST", P + "/memberships", 体={"工号": 乙, "角色": "admin", "门店": "SH002"})
+    with 事务() as c:
+        n授 = c.execute(text("update memberships set special_grants = cast(:g as jsonb) where project_id=:p and user_id in (:a, :b) and user_id like 'E2E%'"),
+                       {"g": json.dumps(["审批工具动作"]), "p": 项目, "a": 甲, "b": 乙}).rowcount
+    ck("加两个临时成员,各登记一个门店(编号统一成大写);「审批工具动作」直接写库授权 2 行", c1 == 201 and c2 == 201 and (b1 or {}).get("门店") == "SH001" and (b2 or {}).get("门店") == "SH002" and n授 == 2,
+       (c1, b1, c2, b2, n授))
     c, m = 打("GET", P + "/memberships")
     行 = {x["工号"]: x for x in (m or {}).get("成员") or []}
     ck("成员列表里带门店;老成员没登记 = 不限门店(None)", 行.get(甲, {}).get("门店") == "SH001" and 行.get("U001", {}).get("门店") is None, {k: v.get("门店") for k, v in 行.items() if k in (甲, 乙, "U001")})
