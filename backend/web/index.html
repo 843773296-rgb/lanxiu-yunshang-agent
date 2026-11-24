@@ -3287,7 +3287,7 @@ async function approvalCenter(定位单){
   M.innerHTML=chrome([["首页","workbench"],"系统","审批中心"],`
    <div class="row r-4" style="margin-bottom:14px">
     ${[["待审批合计",d.todo,"项"],["客户合并",d.merge.length,"项"],
-       ["批量导出",d.export.length,"项"],["当前角色",ROLE,""]].map(([l,v,u])=>
+       ["高风险操作",d.risky.length,"项"],["当前角色",ROLE,""]].map(([l,v,u])=>
       `<div class="card"><div class="bd" style="padding:15px 18px">
         <div style="font-size:12.5px;color:var(--ink2)">${l}</div>
         <div class="v mono" style="font-size:24px;font-weight:600;color:${l==="当前角色"?(ROLE==="总部运营"?"var(--ok)":"var(--warn)"):"var(--blue)"};margin-top:5px">
@@ -3311,19 +3311,8 @@ async function approvalCenter(定位单){
           : '<span style="color:var(--ink4);font-size:12.5px">需总部运营</span>'}</td></tr>`).join("")}
      </tbody></table>`:'<div class="empty">当前没有待审批的客户合并</div>'}</div>
 
-   <div class="card"><div class="hd"><h3>批量导出待审批</h3>
-     <span class="n">${d.export.length} 项 · 须经总部运营负责人审批(后台 PRD 8.1)</span></div>
-    ${d.export.length?`<table class="tb" style="margin-top:12px"><thead><tr>
-     <th style="width:170px">任务号</th><th style="width:130px">导出类型</th><th>筛选条件</th>
-     <th style="width:150px">申请时间</th><th style="width:170px">操作</th></tr></thead><tbody>
-     ${d.export.map(x=>`<tr><td class="mono">${esc(x.id)}</td><td>${esc(x.kind)}</td>
-      <td style="color:var(--ink2)">${esc(x.filters)}</td>
-      <td class="mono">${esc(x.created)}</td>
-      <td>${ROLE==="总部运营"
-        ? `<span class="lk" data-dlok="${esc(x.id)}">批准导出</span><span class="lk" data-dlno="${esc(x.id)}">驳回</span>`
-        : '<span style="color:var(--ink4);font-size:12.5px">需总部运营</span>'}</td></tr>`).join("")}
-     </tbody></table>`:'<div class="empty">当前没有待审批的导出申请</div>'}</div>
-
+   <!-- 「批量导出待审批」那一块 11-24 摘了:导出 11-12 起限店长以上、不走审批(每次进操作日志、手机号只给尾号),
+        这里的「批准导出 / 驳回」永远等不到一张单 —— 一个永远空着的审批队列,和一个没人提交的审批队列,在页面上长得一模一样 -->
    <div class="card"><div class="hd"><h3>高风险操作待审批</h3>
      <span class="n">${d.risky.length} 项 · 等级调整 / 积分调整 / 客户转移(后台 PRD 第 8 章)</span></div>
     ${d.risky.length?`<table class="tb" style="margin-top:12px"><thead><tr>
@@ -3360,11 +3349,6 @@ async function approvalCenter(定位单){
   M.querySelectorAll("[data-apno]").forEach(e=>e.onclick=()=>
     modal("驳回合并",[{k:"note",type:"text",req:1,label:"驳回原因"}],
       v=>doOp("/api/merge",{id:e.dataset.apno,to:"已驳回",note:v.note},approvalCenter)));
-  M.querySelectorAll("[data-dlok]").forEach(e=>e.onclick=async()=>{
-    if(!await sure("批准这次导出?","批准后申请人就能下载这份数据(可能含客户信息),24 小时内有效。","批准导出"))return;
-    doTransit("bk-download",e.dataset.dlok,"已完成",{},approvalCenter)});
-  M.querySelectorAll("[data-dlno]").forEach(e=>e.onclick=()=>
-    doTransit("bk-download",e.dataset.dlno,"失败",{},approvalCenter));
   M.querySelectorAll("[data-rkok]").forEach(e=>e.onclick=()=>
     modal("审批通过",[{k:"note",type:"text",req:1,label:"审批意见"}],
       v=>doOp("/api/approval-decide",{id:e.dataset.rkok,to:"已通过",note:v.note},approvalCenter)));
