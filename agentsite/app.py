@@ -227,6 +227,22 @@ def _who(handler):
 _试跑结果 = {}
 
 
+def _对人说错(e, trace_id=None):
+    """给页面看的报错(11-24 包二④「报错不露程序异常」):出了什么事、编号、现在能做什么 —— 不带异常类型名和原文。
+
+    原文(`TypeError: 'NoneType' …`)对店员没有信息量,还会被当成「系统坏了」截图发群里;它该去的地方是执行记录(spans 记中断)
+    和返回里的 detail 字段,排障的人点「报告执行问题」或查 trace 时看。连不上 / 超时这两类说得更具体,因为店员自己能判断要不要等。"""
+    名 = type(e).__name__
+    if isinstance(e, (TimeoutError, asyncio.TimeoutError)) or "Timeout" in 名:
+        话 = "这一步等太久没等到结果(可能是模型或后台慢)"
+    elif isinstance(e, (ConnectionError, OSError)) or "Connection" in 名:
+        话 = "这一步连不上后台服务"
+    else:
+        话 = "这一步出错了,没有出结果"
+    编 = f"(编号 {trace_id})" if trace_id else ""
+    return f"{话}{编},已记录。可以重发一次;还不行就点「报告执行问题」或转人工。有没有写进什么,以上面的确认卡为准"
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
@@ -804,7 +820,8 @@ class H(BaseHTTPRequestHandler):
                     r = asyncio.run(sdk.run(kind, prompt, resume=sid_in, me=me, 后台配置=True, 只读=True,
                                             provider=_pv, model_name=_md))
             except Exception as e:
-                return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)
+                # 定时任务 / 内部调用那条路:管理后台把这个 error 画成「上次失败的原因」—— 一句人话 + detail 原文都给
+                return self._send({"error": _对人说错(e), "detail": f"{type(e).__name__}: {e}"[:400]}, code=500)
             sessions.own(r.get("session_id"), 主)
             if 任务id:
                 # 定时任务那一轮进门店用量账(用户拍「不限条数,靠门店月上限兜」—— 不记账,上限就兜不住它)
@@ -988,7 +1005,8 @@ class H(BaseHTTPRequestHandler):
                     sessions.记这一轮(轮[0], me)      # 失败的这一轮也能「报告执行问题」—— 要知道是谁问的
                 except Exception:
                     pass
-                return self._send({"error": f"{type(e).__name__}: {e}"[:400], "trace_id": 轮[0]}, code=500)
+                # 11-24 包二④:页面上只说人话(出了什么事、编号、能做什么);类型名和原文进 detail 和执行记录,给排障的人看
+                return self._send({"error": _对人说错(e, 轮[0]), "detail": f"{type(e).__name__}: {e}"[:400], "trace_id": 轮[0]}, code=500)
             finally:
                 if tmpdir: shutil.rmtree(tmpdir, ignore_errors=True)
         if p == "/ai/candidate":

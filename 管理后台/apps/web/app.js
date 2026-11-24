@@ -5226,9 +5226,11 @@ function 定时失败原因(raw) {
   try { if (typeof raw === "string") d = JSON.parse(raw); } catch (e) { return String(raw).slice(0, 160); }
   if (!d || typeof d !== "object") return String(raw).slice(0, 160);
   const 回 = d["回"] || {};
-  const 句 = 回.error || 回["错误"] || 回.detail || (typeof 回 === "string" ? 回 : "") || d.error || "";
+  const 句 = 回.error || 回["错误"] || (typeof 回 === "string" ? 回 : "") || d.error || "";
   const 码 = d.http ? `聊天站回 ${d.http}` : "";
-  return [码, String(句).slice(0, 160), 回["怎么办"] ? `→ ${String(回["怎么办"]).slice(0, 80)}` : ""].filter(Boolean).join(":") || String(raw).slice(0, 160);
+  // 聊天站 11-24 起 error 是人话、detail 才是异常原文 —— 管理后台是排障的人看的,两样都给
+  const 细 = 回.detail ? `(${String(回.detail).slice(0, 120)})` : "";
+  return [码, String(句).slice(0, 160) + 细, 回["怎么办"] ? `→ ${String(回["怎么办"]).slice(0, 80)}` : ""].filter(Boolean).join(":") || String(raw).slice(0, 160);
 }
 async function 页_员工定时(页 = 1) {
   const 头 = `<div class="crumb">待办与定时 / 员工定时</div>
