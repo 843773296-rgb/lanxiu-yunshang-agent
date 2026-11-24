@@ -115,6 +115,12 @@ const 导航 = [
   // 11-18:工具选择策略(selection_api.py 那套接口此前前端零引用)。挂在「集成」底下 —— 它配的是「Agent 怎么从工具目录里挑工具」,
   // 和「集成 → 工具」是同一批对象;⚠️ 后端明说**还没有任何东西在消费它**,页面顶上原样显示那句话
   ["#/selection", "工具选择策略", true, true],
+  // 11-24 用户拍(体检「AI 治理分两个后台」):数据后台 8760 里管 AI 的三页收到这里来 —— 调 AI 的人不用在两个后台之间跳,
+  // 门店员工也不再在 8760 看到和自己无关的页。页面本体仍由 8760 提供(嵌进来;同一个登录),8760 的侧栏不再列它们
+  ["grp", "澜绣 AI 治理"],
+  ["#/lanxiu-skills", "Skill 管理", true, true],
+  ["#/lanxiu-mcp", "MCP 服务与工具", true, true],
+  ["#/lanxiu-kb-issues", "知识问题", true, true],
   // 11-08 用户拍:「查询理解」(Query Understanding)只是个分组、没有自己的页面;下属实体识别 / 查询路由 / 意图识别,各自列表-详情-配置
   ["grp", "查询理解"],
   ["#/entities", "实体识别", true, true],
@@ -5192,6 +5198,24 @@ async function 画_定时块(wid) {
 }
 /* ── 员工定时(11-22,台账第九十条):员工在聊天站交给助手的定时任务,这里是全项目的管理视角 ──
  * 建 / 改在聊天站「我的定时」;这里看全部、能停(管理员替停要留审计:PATCH status + 代改),默认把「开着但最近失败」的排前面。 */
+/* ── 澜绣 AI 治理(11-24,用户拍):8760 的 Skill 管理 / MCP 服务与工具 / 知识问题三页收到这里 ──
+ * 页面本体还在 8760(它们读写的是澜绣那边的 skill_registry / mcp_registry / 知识问题表,搬实现 = 两份真相),
+ * 这里嵌进来并给同一套导航;登录和 8760 / 8770 是同一个 Cookie(同主机名不分端口)。
+ * 8760 侧栏 11-24 起不再列这三页,直链照旧能开。 */
+const 澜绣治理页 = {
+  skills: ["Skill 管理", "聊天站助手能用哪些技能:开关、依赖、谁能改(只有总部运营)。状态管的是执行闸 —— 关了的技能模型调不到。"],
+  mcp: ["MCP 服务与工具", "八个业务领域服务和它们的工具:停用工具、设超时和限流(只能收紧);体检看每个服务活没活。"],
+  kbissues: ["知识问题", "门店问了知识库却查不到依据的那些问题:类型 / 维护人 / 处理状态 / 复验。非总部只看自己问的。"],
+};
+function 页_澜绣治理(哪页) {
+  const [名, 说] = 澜绣治理页[哪页];
+  const 地址 = `${location.protocol}//${location.hostname || "127.0.0.1"}:8760/#${哪页}`;
+  $("#main").innerHTML = `<div class="crumb">澜绣 AI 治理 / ${esc(名)}</div>
+    <div class="head"><div><h1>${esc(名)}</h1><div class="sub">${md(说 + " 页面由数据后台(8760)提供、嵌在这里;**没登录会提示去登录**(和聊天站同一个登录)。")}</div></div>
+      <div><a class="lk" href="${esc(地址)}" target="_blank" rel="noopener">在新窗口打开</a></div></div>
+    <iframe title="${esc(名)}" src="${esc(地址)}" style="width:100%;height:calc(100vh - 180px);border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>`;
+}
+
 async function 页_员工定时(页 = 1) {
   const 头 = `<div class="crumb">待办与定时 / 员工定时</div>
     <div class="head"><div><h1>员工定时任务</h1>
@@ -12175,6 +12199,9 @@ async function 路由() {
     if (h.startsWith("#/capability/")) return await 页_能力档案详情(decodeURIComponent(h.slice(13)));
     if (h === "#/schedules") return await 页_定时();
     if (h === "#/chat-tasks") return await 页_员工定时();
+    if (h === "#/lanxiu-skills") return 页_澜绣治理("skills");
+    if (h === "#/lanxiu-mcp") return 页_澜绣治理("mcp");
+    if (h === "#/lanxiu-kb-issues") return 页_澜绣治理("kbissues");
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/bridge/")) return await 页_桥请求详情(decodeURIComponent(h.slice(9)));

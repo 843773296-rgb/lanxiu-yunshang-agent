@@ -456,9 +456,9 @@ const MENU=[
  {k:"goods",i:"goods",t:"商品",subs:[["products","商品库"],["categories","品类管理"],["pieces","裁片用料"],
    ["stock","库存查询"],["stocklog","库存变更日志"]]},
  {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["freight","运费表"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
- {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"],["kbissues","知识问题"]]},
+ {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"]]},   // 知识问题 11-24 收到 AI 管理后台「澜绣 AI 治理」(用户拍);页面和直链 #kbissues 照旧
  {k:"sys",i:"sys",t:"系统",subs:[["approvals","审批中心"],["staff","权限管理"],["syscodes","系统编码"],
-   ["downloads","下载中心"],["oplog","操作日志"],["skills","Skill 管理"],["mcp","MCP 服务与工具"],["rtpls","报告模板"]]}];
+   ["downloads","下载中心"],["oplog","操作日志"],["rtpls","报告模板"]]}];   // Skill 管理 / MCP 服务与工具 11-24 收到 AI 管理后台「澜绣 AI 治理」(用户拍);页面和直链 #skills #mcp 照旧
 
 function renderNav(){
   NAV.innerHTML=MENU.map(m=>{
