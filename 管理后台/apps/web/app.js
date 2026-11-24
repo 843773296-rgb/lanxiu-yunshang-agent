@@ -143,6 +143,8 @@ const 导航 = [
   ["#/traces", "调用链", true, true],
   ["#/annotations", "标注回复", true, true],
   ["#/outputs", "产出监督", true, true],
+  // 11-24 包二「做了要像做了」第一件:定时日报等「Markdown 导出」存下来的文件,此前只能从某次运行详情里点到 —— 不知道运行号就找不到
+  ["#/documents", "报告与文件", true, true],
   ["#/health", "智能体健康", true, true],
   ["#/usage", "用量与成本", true, true],
   ["grp", "评测与训练"],
@@ -6377,6 +6379,49 @@ async function 画_文件产物(rid) {
         <td>${x["下载"] ? `<a href="${esc(x["下载"])}" target="_blank"><button>下载 .md</button></a>` : `<span class="k">没存成,不给下载</span>`}</td></tr>`).join("")
     + `</tbody></table><div class="k">下载 = 交出系统,每次都记审计;「生成了」和「存成了」是两件事,只有存成的才有下载。</div>`;
 }
+/* 报告与文件(11-24,包二「做了要像做了」第一件):项目里所有「Markdown 导出」存下来的文件 —— 08:00 定时日报就落在这里。
+ * 此前只能从某次运行详情里的「产出的文件」点到,不知道运行号的人(店长、运营)根本找不到。
+ * 列表和运行详情里那块画的是同一批字段;下载走带身份的 fetch 再落成文件(裸 <a href> 不带 X-Dev-User,开发态会被挡)。 */
+async function 页_报告与文件() {
+  const 头 = `<div class="crumb">日志与监测 / 报告与文件</div>
+    <div class="head"><div><h1>报告与文件</h1>
+      <div class="sub">${md("流程里「Markdown 导出」那一步**存成**的文件(定时日报 / 周报等),最新的在最上面。"
+        + "**「生成了」和「存成了」是两件事**:只有回读核过哈希、状态是「已存」的才有下载;下载 = 交出系统,每次都记审计。"
+        + "登记了门店的成员只看本店或不限门店的。")}</div></div>
+      <div><a class="lk" href="#/outputs">门店助手写的日报 / 建议在「产出监督」</a></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/workflow-documents?limit=100`); }
+  catch (e) { const s = 错误块(e, 页_报告与文件); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 项 = d.items || [];
+  if (!项.length) {
+    $("#main").innerHTML = 头 + `<div class="state">还没有存成的文件。${esc(d.note || "")}<br>
+      <span class="k">定时日报要到点跑过一次才有;要现在就看一份,去「待办与定时 / 定时」对那条日报点「现在跑一次」。</span></div>`;
+    return;
+  }
+  const 期 = (x) => { const p = x.period_detail || {}; return (p.起 || "—") + (p.止 && p.止 !== p.起 ? " ~ " + p.止 : ""); };
+  $("#main").innerHTML = 头 + `<div class="k" style="margin:6px 0">共 ${esc(String(d.total ?? 项.length))} 份,这页 ${项.length} 份${d["我的门店"] ? ` · 只列 ${esc(d["我的门店"])} 门店的` : ""}</div>
+    <table><thead><tr><th>文件</th><th>统计期</th><th>门店</th><th>生成于</th><th>大小</th><th>状态</th><th>来自哪次运行</th><th></th></tr></thead><tbody>`
+    + 项.map((x) => `<tr><td><b>${esc(x.file_name || x.title || x.id)}</b><div class="k">${esc(x.id)} · 哈希 ${esc(String(x.content_hash || "").slice(0, 12))}…</div></td>
+        <td class="k">${esc(期(x))}</td>
+        <td class="k">${esc(x.store_id || "不限")}</td>
+        <td class="k">${esc(String(x.generated_at || x.created_at || "").replace("T", " ").slice(0, 16))}</td>
+        <td class="num">${Number(x.byte_count || 0).toLocaleString()} 字节</td>
+        <td>${x.status === "已存" ? `<span class="pill ok">已存(回读核过)</span>` : `<span class="pill warn">${esc(x.status || "")}</span>`}</td>
+        <td>${x.execution_run_id ? `<a href="#/wfrun/${encodeURIComponent(x.execution_run_id)}">${esc(x.execution_run_id)}</a>` : "—"}</td>
+        <td>${x["下载"] ? `<button data-dl="${esc(x["下载"])}" data-name="${esc(x.file_name || x.id + ".md")}">下载 .md</button>` : `<span class="k">没存成,不给下载</span>`}</td></tr>`).join("")
+    + `</tbody></table>`;
+  $("#main").querySelectorAll("button[data-dl]").forEach((b) => b.onclick = async () => {
+    b.disabled = true; const 原 = b.textContent; b.textContent = "下载中…";
+    try {
+      const r = await fetch(b.dataset.dl, { headers: { "X-Dev-User": 我 } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = b.dataset.name; a.click();
+      URL.revokeObjectURL(a.href); b.textContent = "已下载";
+    } catch (e) { b.textContent = `下载失败:${e.message || e}`; }
+    finally { setTimeout(() => { b.disabled = false; if (b.textContent !== "已下载") b.textContent = 原; }, 2500); }
+  });
+}
 async function 页_运行详情(rid) {
   const d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`);
   const 步 = d["步骤"] || [];
@@ -12182,6 +12227,7 @@ async function 路由() {
     if (h === "#/annotations") return await 页_标注回复();
     if (h === "#/health") return await 页_智能体健康();
     if (h === "#/outputs") return await 页_产出监督();
+    if (h === "#/documents") return await 页_报告与文件();
     if (h.startsWith("#/output/")) return await 页_产出详情(decodeURIComponent(h.slice(9)));
     if (h === "#/runs") return await 页_运行记录();
     if (h === "#/opinions") return await 页_意见受理();

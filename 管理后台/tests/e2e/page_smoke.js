@@ -257,6 +257,8 @@ function 判定() {
    */
   const 对账表 = {
     "#/prompts": { 接口: "/prompts", 列表: "items" },
+    // 报告与文件(11-24):存成的 Markdown 文件清单,行按 items 里的 id 对
+    "#/documents": { 接口: "/workflow-documents", 列表: "items" },
     "#/glossaries": { 接口: "/glossaries", 列表: "items" },
     "#/entities": { 接口: "/entity-dicts", 列表: "items" },
     "#/routes": { 接口: "/routes", 列表: "items" },

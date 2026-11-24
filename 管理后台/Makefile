@@ -361,7 +361,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	    exit 1; fi; \
 	  rc=0; \
 	  for h in '#/prompts' '#/kb' '#/acceptance' '#/knobs' '#/selection' \
-	           '#/members' '#/audit' '#/integrations/tools' '#/integrations/groups' '#/integrations/conns' '#/retrieval' '#/human' '#/runs' '#/outputs' '#/usage' '#/annotations' '#/chat-tasks' '#/lanxiu-skills' '#/lanxiu-mcp' '#/lanxiu-kb-issues'; do \
+	           '#/members' '#/audit' '#/integrations/tools' '#/integrations/groups' '#/integrations/conns' '#/retrieval' '#/human' '#/runs' '#/outputs' '#/usage' '#/annotations' '#/chat-tasks' '#/lanxiu-skills' '#/lanxiu-mcp' '#/lanxiu-kb-issues' '#/documents'; do \
 	    printf "  %-12s " "$$h"; \
 	    out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
 		node tests/e2e/page_smoke.js "$$h" 2>&1); \
