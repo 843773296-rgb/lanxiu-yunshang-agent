@@ -2782,7 +2782,8 @@ function 卡_工作流(r) {
       : r["聊天接管"] ? `聊天里:「${esc(r["对应技能中文"] || r["对应技能"])}」<b>工作流接管中</b> <button class="mini" data-tk="${esc(r.id)}" data-on="0">关掉</button>`
       : `聊天里:「${esc(r["对应技能中文"] || r["对应技能"])}」交给 harness <button class="mini" data-tk="${esc(r.id)}" data-on="1">打开接管</button>`}</div>
     <div class="af"><span class="k">更新于 ${时间(r["更新时间"])}</span><span class="grow"></span>
-      <a href="${链("搭建")}">编辑</a> · <a href="${链("测试")}">运行</a> · <a href="${链("运行记录")}">看记录</a></div>
+      <a href="${链("搭建")}">编辑</a> · <a href="${链("测试")}">运行</a> · <a href="${链("运行记录")}">看记录</a>
+      · <a href="#" class="k" data-arch="${esc(r.id)}" title="行不删:跑过的运行、发布清单、调用记录都还指着它;还有活密钥 / 没跑完的运行 / 开着接管会被拦">归档</a></div>
   </div>`;
 }
 
@@ -2832,6 +2833,21 @@ async function 页_工作室(类, 页) {
         ${智 ? "<br>Agent 的「候选工具」数只表示授权候选集合的规模 —— 规格 §9.1 明写<b>不按工具数量给 Agent 打能力强弱分</b>。" : ""}</div>`;
     $("#new").onclick = 弹_新建应用;
     挂页码($("#list"), (n) => { location.hash = `#/studio/${类}/${n}`; });
+    // 归档(11-24 包二):接口 11-13 就有、带三道闸(活密钥 / 没跑完的运行 / 开着接管 → 409),前端一直没按钮,只能靠脚本清。
+    // 要写理由(进审计);被闸拦下就把接口的话原样显示 —— 它说清了先去哪儿解
+    $("#list").querySelectorAll("[data-arch]").forEach((a) => {
+      a.onclick = async (ev) => {
+        ev.preventDefault();
+        const 理由 = await 问一句("归档这条工作流?", "行不删:跑过的运行、发布清单、调用记录都还指着它,只是不再出现在列表里。<br>还有没吊销的访问密钥、没跑完的运行、开着的聊天接管,会被拦下来并告诉你先去哪儿解。",
+          { 输入: "归档理由(进审计)", 必填: true, 确定: "归档" });
+        if (理由 === null || 理由 === false || 理由 === undefined) return;
+        try {
+          const r = await 请求(`${P()}/workflows/${encodeURIComponent(a.dataset.arch)}/archive`, { method: "POST", body: JSON.stringify({ 理由 }) });
+          if (r && r.note) alert(r.note);
+          页_工作室(类, 页);
+        } catch (e) { 报错(e); }
+      };
+    });
     $("#list").querySelectorAll("[data-tk]").forEach((b) => {
       b.onclick = async () => {   // 11-08 用户拍:接管开关一点就改线上真客户的行为 → 先确认
         const 开 = b.dataset.on === "1";
