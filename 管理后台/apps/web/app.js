@@ -5263,10 +5263,36 @@ async function 页_员工定时(页 = 1) {
         <td class="num">${Number(t["成功次数"] || 0)}</td>
         <td class="k">${t["上次成功"] ? esc(String(t["上次成功"]).slice(5, 16).replace("T", " ")) : "—"}
           <div class="k">${(t["接下来几次"] || [])[0] ? "下次 " + esc(String(t["接下来几次"][0]).slice(5, 16).replace("T", " ")) : ""}</div></td>
-        <td><button data-act="toggle">${t.status === "启用" ? "停用" : "启用"}</button> <span class="k ct-msg"></span></td>
+        <td><button data-act="toggle">${t.status === "启用" ? "停用" : "启用"}</button> <button data-act="runs">执行记录</button> <span class="k ct-msg"></span></td>
       </tr>`).join("")
     + `</tbody></table>${页码条(d)}<div class="note">${md(d.note || "")}</div>`;
   挂页码($("#main"), (n) => 页_员工定时(n));
+  // 执行记录(11-24 包二②的另一半):每一期跑成 / 失败 / 提醒、花了多少、飞书送没送到、失败原因 —— 接口 11-22 就有,页面一直没画
+  $("#main").querySelectorAll("tr[data-id] button[data-act=runs]").forEach((b) => b.onclick = async () => {
+    const tr = b.closest("tr"), id = tr.dataset.id, 旧 = tr.nextElementSibling;
+    if (旧 && 旧.classList.contains("ct-runs")) { 旧.remove(); b.textContent = "执行记录"; return; }
+    b.disabled = true; b.textContent = "取记录…";
+    let r;
+    try { r = await 请求(`${P()}/chat-tasks/${encodeURIComponent(id)}/runs?limit=10`); }
+    catch (e) { b.disabled = false; b.textContent = "执行记录"; tr.querySelector(".ct-msg").textContent = `取不到执行记录:${e.message || e}`; return; }
+    const 行 = document.createElement("tr"); 行.className = "ct-runs";
+    const 时 = (s) => s ? esc(String(s).slice(5, 16).replace("T", " ")) : "—";
+    const 飞 = (x) => {
+      const d = x.feishu_detail || {};
+      if (!d["状态"]) return "—";
+      const 为 = d["为什么"] ? ' <span class="k">(' + esc(String(d["为什么"]).slice(0, 60)) + ')</span>' : "";
+      return esc(d["状态"]) + 为;
+    };
+    行.innerHTML = `<td colspan="8">${(r.items || []).length ? `<table><thead><tr><th>期</th><th>到点</th><th>结果</th><th>完成于</th><th class="num">花费</th><th>飞书</th><th>原因 / 回答</th></tr></thead><tbody>`
+      + r.items.map((x) => `<tr><td class="k">${esc(x.period_key || "")}</td><td>${x.kind === "跑" ? "让助手跑" : "只提醒"}</td>
+          <td><span class="pill ${x.status === "失败" ? "fail" : (x.status === "跑了" || x.status === "提醒") ? "ok" : ""}">${esc(x.status || "")}</span></td>
+          <td class="k">${时(x.ended_at || x.created_at)}</td>
+          <td class="num">${x.cost_amount != null ? "$" + Number(x.cost_amount).toFixed(4) : "—"}</td>
+          <td class="k">${飞(x)}</td>
+          <td class="k">${x.status === "失败" ? esc(定时失败原因(x.error_detail)) : esc(String(x.answer_text || "").slice(0, 120))}${x.trace_id ? ` <a href="#/trace/${encodeURIComponent(x.trace_id)}">trace</a>` : ""}</td></tr>`).join("")
+      + `</tbody></table>` : `<span class="k">还没有跑过一期 —— 到点才会有记录。</span>`}</td>`;
+    tr.after(行); b.disabled = false; b.textContent = "收起记录";
+  });
   $("#main").querySelectorAll("tr[data-id] button[data-act=toggle]").forEach((b) => {
     const tr = b.closest("tr"), id = tr.dataset.id, rev = tr.dataset.rev, 说 = tr.querySelector(".ct-msg");
     b.onclick = async () => {
@@ -6390,8 +6416,9 @@ async function 画_文件产物(rid) {
         <td class="k">${esc(((x.period_detail || {}).起 || "—") + ((x.period_detail || {}).止 && (x.period_detail || {}).止 !== (x.period_detail || {}).起 ? " ~ " + (x.period_detail || {}).止 : ""))}</td>
         <td class="k">${esc(x.store_id || "不限")}</td><td class="num">${Number(x.byte_count || 0).toLocaleString()} 字节</td>
         <td>${x.status === "已存" ? `<span class="pill ok">已存(回读核过)</span>` : `<span class="pill warn">${esc(x.status || "")}</span>`}</td>
-        <td>${x["下载"] ? `<a href="${esc(x["下载"])}" target="_blank"><button>下载 .md</button></a>` : `<span class="k">没存成,不给下载</span>`}</td></tr>`).join("")
-    + `</tbody></table><div class="k">下载 = 交出系统,每次都记审计;「生成了」和「存成了」是两件事,只有存成的才有下载。</div>`;
+        <td>${x["下载"] ? `<button data-dl="${esc(x["下载"])}" data-name="${esc(x.file_name || x.id + ".md")}">下载 .md</button>` : `<span class="k">没存成,不给下载</span>`}</td></tr>`).join("")
+    + `</tbody></table><div class="k">下载 = 交出系统,每次都记审计;「生成了」和「存成了」是两件事,只有存成的才有下载。全部文件在「日志与监测 / <a href="#/documents">报告与文件</a>」。</div>`;
+  挂文件下载(el);   // 11-24:原来是裸 <a href>,不带 X-Dev-User,开发态点了就是 401
 }
 /* 报告与文件(11-24,包二「做了要像做了」第一件):项目里所有「Markdown 导出」存下来的文件 —— 08:00 定时日报就落在这里。
  * 此前只能从某次运行详情里的「产出的文件」点到,不知道运行号的人(店长、运营)根本找不到。
@@ -6425,7 +6452,12 @@ async function 页_报告与文件() {
         <td>${x.execution_run_id ? `<a href="#/wfrun/${encodeURIComponent(x.execution_run_id)}">${esc(x.execution_run_id)}</a>` : "—"}</td>
         <td>${x["下载"] ? `<button data-dl="${esc(x["下载"])}" data-name="${esc(x.file_name || x.id + ".md")}">下载 .md</button>` : `<span class="k">没存成,不给下载</span>`}</td></tr>`).join("")
     + `</tbody></table>`;
-  $("#main").querySelectorAll("button[data-dl]").forEach((b) => b.onclick = async () => {
+  挂文件下载($("#main"));
+}
+/* 带身份的文件下载(11-24):裸 <a href> 不带 X-Dev-User,开发态直接被接口挡回 401 —— 「修下载」修的就是这个。
+ * 报告与文件页和运行详情里的「产出的文件」共用;按钮上写进度和结果,失败不装作成功。 */
+function 挂文件下载(root) {
+  root.querySelectorAll("button[data-dl]").forEach((b) => b.onclick = async () => {
     b.disabled = true; const 原 = b.textContent; b.textContent = "下载中…";
     try {
       const r = await fetch(b.dataset.dl, { headers: { "X-Dev-User": 我 } });
