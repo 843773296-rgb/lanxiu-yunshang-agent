@@ -343,7 +343,9 @@ def recat(conn, verbose=True):
 
 
 if __name__ == "__main__":
-    db = os.path.join(HERE, "lanxiu.db")
+    # 库路径走单源(W02 第③步,11-24):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+    from dbpath import 路径 as _库路径
+    db = _库路径()
     cn = sqlite3.connect(db)
     link(cn); derive(cn); recat(cn)
     cn.commit(); cn.close()

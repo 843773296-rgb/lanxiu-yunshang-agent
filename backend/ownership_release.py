@@ -295,7 +295,9 @@ if __name__ == "__main__":
     from contextlib import closing
     import worldclock
     今天 = worldclock.今天()
-    db = os.environ.get("LANXIU_DB") or os.path.join(HERE, "lanxiu.db")
+    # 库路径走单源(W02 第③步,11-24):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db(原来就是这一套,手抄的第二份收回单源)
+    from dbpath import 路径 as _库路径
+    db = _库路径()
     店 = sys.argv[sys.argv.index("--店") + 1] if "--店" in sys.argv and sys.argv.index("--店") + 1 < len(sys.argv) else None
     全部 = "--全部门店" in sys.argv
     with closing(sqlite3.connect(db, timeout=30)) as c:

@@ -38,7 +38,9 @@
 from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys
 
-DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
+# 库路径走单源(W02 第③步,11-24):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 
 # ── 咬合记录 ──────────────────────────────────────────────────────────
 # 左边「改坏了什么」,右边「预期红的那一条」。规格在 tools/bite_specs.json,

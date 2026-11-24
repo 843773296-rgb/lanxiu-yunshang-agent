@@ -11,7 +11,9 @@ import os
 import sqlite3
 from contextlib import closing
 
-DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
+# 库路径走单源(W02 第③步,11-24):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
+from dbpath import 路径 as _库路径   # noqa: E402
+DB = _库路径()
 类型 = "费用提醒"
 
 
