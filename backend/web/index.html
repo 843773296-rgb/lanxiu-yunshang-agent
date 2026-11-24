@@ -4242,7 +4242,7 @@ function refundPage(d,tid){const p=d.deposit, bad=p.status==="退款失败";
    </div></div>
   <div class="fbar"><button class="btn gray" data-back="finance">返回</button>
    <span class="n" style="margin-right:auto">退款失败后的重新发起、登记已退,在
-     <a class="lk" href="${esc(location.protocol+"//"+(location.hostname||"127.0.0.1")+":8770/queue")}" target="_blank" rel="noopener">研判队列(财务,要填核实结论 / 流水号)</a>
+     <a class="lk" href="${esc((location.protocol||"http:")+"//"+(location.hostname||"127.0.0.1")+":8770/queue")}" target="_blank" rel="noopener">研判队列(财务,要填核实结论 / 流水号)</a>
      里做 —— 这里原来那个「重新退款」按钮后端一直是拒的,11-24 摘了</span>
    <button class="btn sol" data-fin="${esc(tid)}">转财务处理</button></div>`}
 function mergePage(d,tid){const diff=d.compare.filter(c=>!c.same).length;

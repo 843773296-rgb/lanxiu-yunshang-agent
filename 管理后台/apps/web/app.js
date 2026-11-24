@@ -5209,7 +5209,8 @@ const 澜绣治理页 = {
 };
 function 页_澜绣治理(哪页) {
   const [名, 说] = 澜绣治理页[哪页];
-  const 地址 = `${location.protocol}//${location.hostname || "127.0.0.1"}:8760/#${哪页}`;
+  // 协议和主机都给默认值:页面冒烟的假浏览器里 location.protocol 是空的,第一版拼成了「undefined//…」被它逮到
+  const 地址 = `${location.protocol || "http:"}//${location.hostname || "127.0.0.1"}:8760/#${哪页}`;
   $("#main").innerHTML = `<div class="crumb">澜绣 AI 治理 / ${esc(名)}</div>
     <div class="head"><div><h1>${esc(名)}</h1><div class="sub">${md(说 + " 页面由数据后台(8760)提供、嵌在这里;**没登录会提示去登录**(和聊天站同一个登录)。")}</div></div>
       <div><a class="lk" href="${esc(地址)}" target="_blank" rel="noopener">在新窗口打开</a></div></div>
