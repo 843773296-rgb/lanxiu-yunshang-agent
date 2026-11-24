@@ -429,7 +429,13 @@ def main():
         读路 = cfg["读"].replace("{id}", str(rid or ""))
         体 = 打(读路, 项目覆盖=项)
         if 体 is None:
-            坏.append((写, f"`GET {读路}` 打不通或不是 JSON"))
+            # 11-24:gate_w35 整轮 e2e 只红在这一条「GET /access-keys 打不通」,单跑立刻 48/48 全过 —— 服务那一刻的瞬时抖动。
+            # 判「界面拿不到」是判接口形状,不是判服务那一秒忙不忙:歇 2 秒重试一次再下结论。真打不通的两次都 None,照旧红
+            import time as _t
+            _t.sleep(2)
+            体 = 打(读路, 项目覆盖=项)
+        if 体 is None:
+            坏.append((写, f"`GET {读路}` 打不通或不是 JSON(重试一次仍然)"))
             continue
         ok, 值, 断 = 走(体, cfg["字段"])
         if not ok:
