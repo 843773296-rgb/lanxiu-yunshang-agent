@@ -44,7 +44,8 @@ def main():
     print("=" * 84)
     tmp = tempfile.mkdtemp(prefix="storew-")
     副本 = os.path.join(tmp, "lanxiu.db")
-    with closing(sqlite3.connect(os.path.join(HERE, "lanxiu.db"))) as 真, closing(sqlite3.connect(副本)) as 副:
+    import dbpath
+    with closing(sqlite3.connect(dbpath.真库())) as 真, closing(sqlite3.connect(副本)) as 副:
         真.backup(副)
     import server, oplog
     server.DB = oplog.DB = 副本
