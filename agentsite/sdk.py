@@ -1127,6 +1127,20 @@ def 转人工的回答(待办编号, 原因, 轮号, 会话号, 意图结果, �
                 环境故障=None, 工具失败=[], 工具成功=[], answer_turns=0, text_all=f"已转给人工处理,待办编号 {待办编号}(原因:{原因})")
 
 
+def _是系统(me):
+    """这一轮的 me 是不是 `api.系统身份`(11-24)。内部调用(研判队列 / 评测 / V1 V2 子进程)带它**只为一件事**:
+    让工具子进程里点名认它的工具(目前只有 get_customer)取得到数。对这一轮的其余行为必须**中性** ——
+    不追加「现在是谁在跟你说话」那段提示词(提示词变了,评测分数 / 成本不可比)、不走转人工(开关开着会真建待办)、不恢复会话。
+    所以 run 里凡是「有真人身份才做」的分支都用 `me and not _是系统(me)`,只有 mcp_config 照传 me。"""
+    if not me:
+        return False
+    try:
+        import api as _api_s
+        return (me or {}).get("role") == _api_s.系统身份["role"]
+    except Exception:   # backend 不在路径上(单测 / 工具检查)—— 按常量的字面值判,别因为这个炸
+        return (me or {}).get("role") == "系统"
+
+
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
               provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None,
               被判押金=None, 分叉=False, 根属性=None, 后台配置=False, 只读=False):
@@ -1213,7 +1227,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             state["意图结果"] = _意结果
             state["术语"]["这一轮意图"] = _意结果.get("意图")
         # 转人工(11-09):开关默认关。只在有登录店长、不是机器调用的这条路上走 —— 待办要记是谁问的,机器调用后面没有人等答复
-        if me and not 只读:
+        # 系统身份(11-24)不算登录店长:它后面也没有人等答复,评测带它不该真建待办
+        if me and not _是系统(me) and not 只读:
             import glossary_client as _gc转
             if _gc转.转人工开着吗():
                 _转因 = await asyncio.to_thread(_gc转.该转人工, prompt, state["术语"], state.get("意图结果"))
@@ -1232,7 +1247,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 归属和当前权限在 session_state.加载 里先核 —— 角色 / 门店变了不恢复。
     import session_state as _会话
     _恢复版本 = None
-    if resume and me:
+    if resume and me and not _是系统(me):     # 系统身份没有会话可恢复(11-24)
         _恢复, _恢复版本, _恢复说 = _会话.加载(resume, me)
         state.update(_恢复)
         if _恢复说:
@@ -1273,7 +1288,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             f"{me['name']}(工号 {me['no']})· {me['role']}"
             f"{' · ' + me['shop'] if me.get('shop') else ''}。\n"
             f"他能看到什么、能做什么由工号决定 —— 工具已经按他的身份取数了,"
-            f"你不需要(也不能)替他换个身份查。\n" if me else "")),
+            f"你不需要(也不能)替他换个身份查。\n" if me and not _是系统(me) else "")),   # 系统身份不追加这段:提示词要和不带身份时逐字一样(11-24)
         mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹,
                                被判押金=被判押金),
         allowed_tools=工具,           # 和 MCP 暴露的是同一份 —— 不再用 `or`(空集合会被吃掉)

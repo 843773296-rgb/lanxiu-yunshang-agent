@@ -610,7 +610,10 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p == "/healthz":
-            return self._send({"ok": True, "backend": BACKEND, "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")})
+            # 「确认卡」(11-24,体检):写操作确认卡靠 LANXIU_CONFIRM_STORE 这个环境变量,没设就是**直接落库**,而没有任何东西会报。
+            # 把开/关报在健康口上,交接自动区 / 巡检一眼看得到 —— 「开着」和「plist 改了悄悄关了」在页面上原来长得一模一样
+            return self._send({"ok": True, "backend": BACKEND, "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro"),
+                               "确认卡": "开" if os.environ.get("LANXIU_CONFIRM_STORE") else "关(写操作直接落库!)"})
         self._send({"error": "no route"}, code=404)
 
     def do_POST(self):

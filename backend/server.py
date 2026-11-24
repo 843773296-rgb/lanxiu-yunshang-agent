@@ -389,8 +389,7 @@ def workbench(本店=None):
     fail=rows(f"SELECT COUNT(*) c FROM {_押} WHERE d.status='退款失败' AND {片c}",*参c)[0]["c"]
     appr=rows(f"SELECT COUNT(*) c FROM {_押} WHERE d.status='退款审批中' AND {片c}",*参c)[0]["c"]
     retry=rows(f"SELECT AVG(n) a FROM (SELECT COUNT(*) n FROM {_轨} WHERE {片c} GROUP BY t.deposit_id)",*参c)[0]["a"] or 0
-    adopted=sum(1 for v in dr.values() if v.get("status","").find("采纳")>=0)
-    rate="—" if not dr else f"{adopted*100//len(dr)}%"
+    # 草稿采纳率那两行 11-24 随第一代草稿卡一起删了(第一轮 ship 的咬合重放逮到 NameError:删了定义漏了用处 —— merge_check / page_smoke 对照红)
 
     trend=rows(f"""SELECT substr(t.ts,1,10) d, COUNT(*) n, SUM(t.req_amount) amt
                   FROM {_轨} WHERE {片c} GROUP BY 1 ORDER BY 1""",*参c)
