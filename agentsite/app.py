@@ -1206,7 +1206,8 @@ class H(BaseHTTPRequestHandler):
         t0 = _t.time()
         if run_id: _阶段(run_id, "调模型")
         try:
-            r = asyncio.run(asyncio.wait_for(sdk.run("triage", prompt), 单条超时秒))
+            import api as _api   # 研判队列没有真人登录:明说「我是系统」,get_customer 才认(11-24 起没身份一律拒)
+            r = asyncio.run(asyncio.wait_for(sdk.run("triage", prompt, me=_api.系统身份), 单条超时秒))
         except asyncio.TimeoutError:
             raise TimeoutError(f"调模型超过 {单条超时秒 // 60} 分钟没出结果(平时约 30 秒)—— 没有落草稿,可以转人工")
         if run_id: _阶段(run_id, "落库")

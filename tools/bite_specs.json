@@ -9332,8 +9332,8 @@
   "file": [
    {
     "path": "agentsite/app.py",
-    "old": "sdk.run(\"triage\", prompt), 单条超时秒",
-    "new": "sdk.run(\"task\", prompt), 单条超时秒"
+    "old": "sdk.run(\"triage\", prompt, me=_api.系统身份), 单条超时秒",
+    "new": "sdk.run(\"task\", prompt, me=_api.系统身份), 单条超时秒"
    }
   ],
   "预期红": "研判队列 / 隔离试运行 / 三代对比都走 triage;差评研判照旧走 task"
@@ -13473,7 +13473,7 @@
   "file": [
    {
     "path": "backend/api.py",
-    "old": "    限店 = bool(me) and 本店范围(me) is not None",
+    "old": "    限店 = 本店范围(me) is not None",
     "new": "    限店 = False"
    }
   ],

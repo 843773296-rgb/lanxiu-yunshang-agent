@@ -450,6 +450,16 @@ def workbench(本店=None):
         dict(label="客户",value=str(rows(f"SELECT COUNT(*) c FROM customer WHERE {_人头()} AND {片}",*参)[0]["c"]),unit="人",sub="按人数;未确认的疑似重复仍各算一个"),
       ])
 
+def _档案(cid):
+    """任务详情页拿客户档案:这是服务端自己的内部读(页面本身已经过登录),按内部调用的规矩明说「我是系统」——
+    11-24 起 get_customer 没身份就拒,再靠「没身份不限」这一页就打不开了。"""
+    t = backend._ME.set(dict(backend.系统身份))
+    try:
+        return backend.get_customer(cid)
+    finally:
+        backend._ME.reset(t)
+
+
 def task_detail(tid):
     t=rows("SELECT * FROM task WHERE id=?",tid)
     if not t: return {"error":"任务不存在"}
@@ -458,9 +468,9 @@ def task_detail(tid):
         dep=t["ref_id"]
         return dict(task=t,kind="refund",deposit=backend.get_deposit(dep),
             trace=backend.get_refund_trace(dep),flow=backend.get_payment_flow(dep),
-            customer=backend.get_customer(backend.get_deposit(dep).get("customer_id","")))
+            customer=_档案(backend.get_deposit(dep).get("customer_id","")))
     a,b=t["ref_id"].split("|")
-    ca,cb=backend.get_customer(a),backend.get_customer(b)
+    ca,cb=_档案(a),_档案(b)
     fields=[("姓名","name"),("手机号","phone"),("归属门店","shop"),("归属顾问","advisor"),
             ("生日","birthday"),("地址","addr"),("建档日期","created"),("订单数","order_cnt"),
             ("累计实付","paid_amount"),("生命周期","lifecycle"),("会员等级","level"),("最近互动","last_interact")]

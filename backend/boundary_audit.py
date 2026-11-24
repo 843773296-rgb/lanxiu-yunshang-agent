@@ -298,6 +298,37 @@ def a_customer_profile_other_shop():
     raise PermissionError("按客户号、按姓名都翻不到别家店的客户(这正是期望的)")
 
 
+def a_customer_profile_no_identity():
+    """客户档案工具没身份就拒(11-24 翻的,系统身份三步法第三步):把会话身份清空去翻一个真客户,
+    必须拿到 NO_IDENTITY 而不是档案;再拿 api.系统身份(内部调用的显式身份)翻同一个,必须拿得到 ——
+    两头都验,少一头就分不清「拒了」和「坏了」。客户号从库里现挑,不写死。"""
+    import api as _A, sqlite3 as _sq, os as _os
+    c = _sq.connect(f"file:{_A.DB}?mode=ro", uri=True)
+    try:
+        行 = c.execute("SELECT id FROM customer WHERE merged_into IS NULL ORDER BY id LIMIT 1").fetchone()
+    finally:
+        c.close()
+    if not 行:
+        return "库里没有客户 —— 没攻击成,不算守住"
+    旧env = _os.environ.pop("LANXIU_ME", None)
+    t = _A._ME.set(None)
+    try:
+        r = _A.get_customer(行[0])
+        if r.get("id") or r.get("phone") or r.get("phone_tail"):
+            return f"没身份翻到了客户 {行[0]} 的档案 —— 「没身份就拒」没守住"
+        if "NO_IDENTITY" not in str(r.get("error", "")):
+            return f"没身份被拒了,但理由不是 NO_IDENTITY:{str(r)[:80]} —— 拒错了地方"
+        _A._ME.reset(t); t = _A._ME.set(dict(_A.系统身份))
+        r2 = _A.get_customer(行[0])
+        if not r2.get("id"):
+            return f"系统身份也翻不到档案:{str(r2)[:80]} —— 研判队列 / 评测这一路会跟着废掉,不是守住"
+    finally:
+        _A._ME.reset(t)
+        if 旧env is not None:
+            _os.environ["LANXIU_ME"] = 旧env
+    raise PermissionError("没身份 → NO_IDENTITY;系统身份 → 拿得到(这正是期望的)")
+
+
 def a_member_other_scope():
     """会员 / 服务记录只看名下(顾问)、本店(店长)(用户 10-26 拍「收紧,和另外两个一致」;并行会话查到 get_member 原来不判)。
     身份**全自造**:不在名下的顾问、别店店长、没挂店的版师去翻同一个客户;对照:总部运营要看得到,否则攻击证明不了什么。"""
@@ -1985,7 +2016,13 @@ STRUCT = [
  ("智能体的客户档案工具只看本店", "backend/api.py get_customer;api.本店范围",
   a_customer_profile_other_shop, "自造一个挂门店的顾问身份,按客户号、按姓名翻别家店的客户",
   "门店范围从会话身份取(和客户读接口同一个 本店范围);按姓名认人时只在本店里认,别店同名的不进候选。"
-  "⚠️ 没有身份时不限 —— 见约定类「客户档案工具没身份时不限店」"),
+  "没有身份时拒 —— 见下一条"),
+ ("客户档案工具没身份就拒,内部调用要显式带系统身份", "backend/api.py get_customer / 系统身份 / whoami(认系统=True)",
+  a_customer_profile_no_identity, "清空会话身份翻一个真客户要拿到 NO_IDENTITY;再拿 api.系统身份 翻同一个要拿得到",
+  "11-24 从约定升成结构(三步法):① api.系统身份 常量 + whoami(认系统=True) 点名生效,只有 get_customer 点了名;"
+  "② 评测 / V1 V2 子进程 / 隔离试运行 / 研判队列全部显式带 me=api.系统身份;③ 没身份 → 拒。"
+  "原来「没身份不限」的危险在于一条新路径忘带身份会静默放开,现在忘带就当场拒,拒绝文案写明该带什么。"
+  "⚠️ 系统身份不在跨店角色里、写口的闸不认它;其余 40 多个读工具今天本来就是没身份就拒,不受影响"),
  ("Skill 管理里停用的技能,模型调不动", "backend/skill_registry.py 状态;agentsite/guards.py Skill 那一支",
   a_skill_gate, "在库副本上把自有技能标成已停用,问执行闸放不放行;再问一个没登记过的第三方",
   "执行闸读的就是后台里的状态(只放试运行 / 已发布);没登记的按来源取默认,库读不到时退回原来的写死清单(第三方照样拦)。"
@@ -2238,11 +2275,7 @@ CHECKED = [
 
 # ── 约定类:只有提示词说,没有任何东西会失败 ────────────────────────────
 CONVENTION = [
- ("客户档案工具没身份时不限店", "backend/api.py get_customer",
-  "V1/V2 后台研判、评测、研判队列直接调它不带身份,所以没身份时照旧看全部;"
-  "聊天站那条路没登录进不来、登录了必带身份 —— 但**要是哪条新路径忘了带身份,它会静默放开**,没有任何东西会拦。"
-  "**11-24 升结构的路修到一半**:内部调用改成显式带 `api.系统身份`(`whoami(认系统=True)` 点名生效,第一个也是唯一点名的就是 get_customer;"
-  "不在跨店角色里,写口的闸不认它);等评测侧 14 处和研判队列都带上系统身份、本地跑过,再把「没身份 → 拒」翻过来 —— 翻了这条就从约定类挪到结构类"),
+ # 「客户档案工具没身份时不限店」那条 11-24 下午升成结构类(「客户档案工具没身份就拒,内部调用要显式带系统身份」),从这里挪走。
  # 「智能体调工具时没有身份」那条 11-24 删了:它说的「MCP 子进程拿不到登录会话」早就不成立 ——
  # 聊天站 sdk.run 把登录身份经 LANXIU_ME 送进工具进程(agentsite/sdk.py mcp_config),api.whoami 在读它,
  # 工具按**这个人**取数;check_write 返回里也标了「如果是这个角色」只是查询参数。结构类「聊天里写操作要店员点确认卡」那条的

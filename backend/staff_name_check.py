@@ -43,6 +43,8 @@ def main():
     称呼 = api._员工称呼(有["advisor_no"])
     ck("样本里的归属顾问名字从员工表来(不是编的)", (称呼 or "").startswith(f"{有['name']}({有['role']}"), 称呼)
 
+    # 11-24 起客户档案没身份就拒:检查是内部调用,明说「我是系统」(和研判队列 / 评测同一个身份),别靠「没身份不限」
+    _t0 = api._ME.set(dict(api.系统身份))
     c = api.get_customer(有["id"])
     ck("客户档案:归属顾问是「姓名(岗位)」,工号那一栏原样还在",
        c.get("归属顾问") == 称呼 and c.get("advisor_no") == 有["advisor_no"], c.get("归属顾问"))
@@ -67,6 +69,7 @@ def main():
         c3 = api.get_customer(重["name"])
         ck("姓名重名 → 只给候选不给档案", "error" in c3 and len(c3.get("候选") or []) >= 1 and "phone" not in c3, c3)
     ck("客户号姓名都对不上 → 明说不存在", "error" in api.get_customer("不存在的人ZZ"))
+    api._ME.reset(_t0)
     # 只看本店(10-25):本店的人照样看得到 —— 别家店翻不到的那一半在边界审计里真攻击
     _t = api._ME.set({"no": "ZZ0003", "name": "(自造顾问)", "role": "顾问", "shop": 有["shop"]})
     try:

@@ -78,7 +78,7 @@ def 三条单(dbp):
 # `list_tasks` 不在里面了,上面说的那条「错答案顺着 summary 漏出来」的路因此整条没了;
 # 这份基准照旧盯着,换角色时这里和 app.py 那一行一起改。
 研判角色 = "triage"
-研判真跑在 = ("agentsite/app.py", 'sdk.run("triage", prompt)')
+研判真跑在 = ("agentsite/app.py", 'sdk.run("triage", prompt, me=_api.系统身份)')   # 11-24 起研判队列显式带系统身份
 
 # 这笔押金单的痕迹可能从哪些表里漏出来。**一张表都不许漏**:
 # 判据拿它扫「挂给研判的工具里谁读了这几张表」,扫出来的必须都在下面那份取法登记里。

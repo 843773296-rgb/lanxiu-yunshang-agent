@@ -100,7 +100,7 @@ ck("客户合并判定标准(TK05)还在研判提示词里", "TK05" in sdk.TRIAG
 def 源(p):
     return open(os.path.join(ROOT, p), encoding="utf-8").read()
 ck("研判队列 / 隔离试运行 / 三代对比都走 triage;差评研判照旧走 task",
-   'sdk.run("triage", prompt), 单条超时秒' in 源("agentsite/app.py")
+   'sdk.run("triage", prompt, me=_api.系统身份), 单条超时秒' in 源("agentsite/app.py")
    and 'sdk.run("triage", 提示' in 源("agentsite/trial_run.py")      # 不钉右括号:11-24 起带 me=api.系统身份
    and 'sdk.run("triage", p' in 源("agent/gen_compare.py")
    and 'sdk.run("task", prompt, me=me, 被判包裹=ref,' in 源("agentsite/rating_triage.py"))
