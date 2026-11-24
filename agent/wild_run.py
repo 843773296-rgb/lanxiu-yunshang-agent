@@ -186,7 +186,7 @@ if __name__ == "__main__":
         runs = []
         for k in range(reps):
             t0 = time.time()
-            r = asyncio.run(sdk.run("kb", q))
+            r = asyncio.run(sdk.run("kb", q, me=api.系统身份))
             cost += r.get("cost_usd") or 0
             o = observe(r["text"], [x["tool"] for x in r["trajectory"]],
                         r.get("最终违规"))

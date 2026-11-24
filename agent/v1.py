@@ -307,6 +307,7 @@ def one(task_id):
     print(json.dumps(r,ensure_ascii=False))
 
 if __name__=="__main__":
+    backend.as_user(backend.系统身份).__enter__()   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
     if len(sys.argv)>2 and sys.argv[1]=="one":
         one(sys.argv[2]); sys.exit(0)
     pv=provider(); print(f"供应商 {pv['id']} / 模型 {pv['model']}\n")

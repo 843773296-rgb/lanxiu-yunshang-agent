@@ -72,7 +72,8 @@ def 主():
                 TC.渲染(fp, r["type"], r["ref_id"], r["id"])
             t0 = time.time()
             try:
-                out = asyncio.run(asyncio.wait_for(sdk.run("triage", 提示), 180))
+                import api   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
+                out = asyncio.run(asyncio.wait_for(sdk.run("triage", 提示, me=api.系统身份), 180))
                 text, tools, cost, 错 = out["text"], [t["tool"].split("__")[-1] for t in out["trajectory"]], out.get("cost_usd"), None
             except Exception as e:                       # noqa: BLE001
                 text, tools, cost, 错 = "", [], None, f"{type(e).__name__}: {e}"[:300]

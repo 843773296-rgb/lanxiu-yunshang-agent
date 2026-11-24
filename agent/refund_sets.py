@@ -536,6 +536,7 @@ def 跑一题(题):
     评测自己把题面改了,而下一轮读到的材料里就带着上一轮的答案。
     """
     import asyncio
+    import api      # 系统身份(11-24)
     import ops as _ops
     import sdk
     bp, case, prompt = _ops.研判提示词("财务人工任务", 题["押金单"], 题["工单"])
@@ -546,7 +547,7 @@ def 跑一题(题):
     try:
         os.environ["LANXIU_JUDGING_DEPOSIT"] = 题["押金单"]     # ← 遮蔽:出事时的样子
         os.environ[台账env] = 台账                              # ← 遮蔽往这儿记它开了口
-        r = asyncio.run(sdk.run(角色, prompt, 被判押金=题["押金单"]))
+        r = asyncio.run(sdk.run(角色, prompt, 被判押金=题["押金单"], me=api.系统身份))
     finally:
         for k, v in ((("LANXIU_JUDGING_DEPOSIT"), 原), (台账env, 原台账)):
             if v is None:

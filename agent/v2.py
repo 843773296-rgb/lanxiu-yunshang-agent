@@ -415,6 +415,7 @@ def run_task(task_id, use_llm=True):
 
 # ── 离线自测:全部工单跑一遍纯规则,不调模型、不花一分钱 ─────────────
 if __name__ == "__main__":
+    api.as_user(api.系统身份).__enter__()   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
     import collections
     only_rule = "--llm" not in sys.argv
     # 不按状态过滤 —— 研判过一次就变「待复核」,过滤了就再也重跑不了。

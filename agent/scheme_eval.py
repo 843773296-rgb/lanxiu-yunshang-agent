@@ -286,7 +286,8 @@ if __name__ == "__main__":
         for 场, 题 in 题们:
             t0 = time.time()
             try:
-                r = asyncio.run(sdk.run("kb", 题, max_turns=10))
+                import api   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
+                r = asyncio.run(sdk.run("kb", 题, max_turns=10, me=api.系统身份))
             except Exception as ex:
                 rows.append(dict(kind=场["kind"], 题=题, passed=False,
                                  why=[f"跑挂了:{type(ex).__name__}: {ex}"],

@@ -278,7 +278,7 @@ if __name__ == "__main__":
         for cid, risk, q, need, must, forbid in todo:
             t0 = time.time()
             try:
-                r = asyncio.run(sdk.run("kb", q, max_turns=14))
+                r = asyncio.run(sdk.run("kb", q, max_turns=14, me=api.系统身份))
             except Exception as ex:
                 rows.append(dict(case=cid, risk=risk, passed=False,
                                  why=[f"跑挂了:{type(ex).__name__}: {ex}"], tools="",

@@ -339,7 +339,8 @@ def main():
                 prompt, case, bp = v1.BP02.format(a=a, b=b), t["id"][1:], "BP-02"
             tr = T.get(case, {})
             try:
-                r = v1.run_case(pv, prompt, purpose=("退款定因" if bp=="BP-01" else "客户合并"))
+                with v1.backend.as_user(v1.backend.系统身份):   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
+                    r = v1.run_case(pv, prompt, purpose=("退款定因" if bp=="BP-01" else "客户合并"))
             except Exception as e:
                 r = dict(finding=None, error=str(e)[:160])
             f = r.get("finding")

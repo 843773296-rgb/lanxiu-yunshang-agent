@@ -171,7 +171,7 @@ if __name__ == "__main__":
             t0 = time.time()
             try:
                 r = asyncio.run(sdk.run("task", PROMPT.format(mid=c["case_id"]),
-                                        max_turns=14))
+                                        max_turns=14, me=api.系统身份))
             except Exception as ex:
                 # **跑挂了不算答错了** —— rounds.py 有专门的「跑挂」一类,
                 # 先看是不是环境问题,别当能力波动。

@@ -154,7 +154,8 @@ def 跑一题(题, 带示例):
     用了 = E.挑(题["bp"], 题["case_id"]) if 带示例 else []
     示根因 = [r["root_cause"] for r in truthdb.rows(
         "SELECT root_cause FROM truth WHERE case_id IN (%s)" % ",".join("?" * len(用了)), *[u["case_id"] for u in 用了])] if 用了 else []
-    r = asyncio.run(sdk.run("triage", prompt))
+    import api   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
+    r = asyncio.run(sdk.run("triage", prompt, me=api.系统身份))
     文 = r.get("text") or ""
     过, 为什么 = EV.hit(文, 题["真因"], 题["case_id"])
     没答成 = "没有作为正式答复给出" in 文

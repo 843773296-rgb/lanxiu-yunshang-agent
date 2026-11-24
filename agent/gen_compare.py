@@ -38,7 +38,8 @@ def run_v1(t, pv):
         a, b = t["ref_id"].split("|")
         p, purpose = v1.BP02.format(a=a, b=b), "客户合并"
     t0 = time.time()
-    r = v1.run_case(pv, p, purpose=purpose)
+    with v1.backend.as_user(v1.backend.系统身份):   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
+        r = v1.run_case(pv, p, purpose=purpose)
     # **判 V1 要判它的 finding,不是自由文本。**
     # 第一版优先取了 text,结果 6 条只判对 1 条 —— 而 V1 的历史成绩是 18/20。
     # 数字反常得离谱时,先怀疑测量:eval.py 判的一直是 submit_finding 的结构化结果,
@@ -51,7 +52,8 @@ def run_v1(t, pv):
 
 def run_v2(t):
     t0 = time.time()
-    r = v2.run_task(t["id"], use_llm=True)
+    with v1.backend.as_user(v1.backend.系统身份):   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
+        r = v2.run_task(t["id"], use_llm=True)
     return dict(text=r["text"], calls=r["llm_calls"], sec=round(time.time() - t0, 1),
                 rule=r["rule_decided"], root=r["root_cause"])
 
@@ -71,7 +73,7 @@ def run_v3(t):
              "请判断是否为同一客户,给出合并或不合并的建议,并逐项列出比对依据。"
              "按「根因 / 建议动作 / 证据 / 置信度」四段输出,每段单独起一行。")
     t0 = time.time()
-    r = asyncio.run(sdk.run("triage", p))   # 研判专用(10-20):和研判队列真用的是同一条路
+    r = asyncio.run(sdk.run("triage", p, me=api.系统身份))   # 研判专用(10-20):和研判队列真用的是同一条路
     return dict(text=r["text"], calls=len(r["trajectory"]), sec=round(time.time() - t0, 1))
 
 

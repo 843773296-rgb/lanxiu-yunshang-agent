@@ -249,7 +249,7 @@ if __name__ == "__main__":
                 print(f"  ⚠️ {c['spu']} 渲染不了:{e}"); continue
             t0 = time.time()
             try:
-                r = asyncio.run(sdk.run("kb", PROMPT, images=[p]))
+                r = asyncio.run(sdk.run("kb", PROMPT, images=[p], me=api.系统身份))
             except Exception as ex:
                 rows.append(dict(spu=c["spu"], cat=c["cat"], kind=c["kind"], passed=False,
                                  why=[f"跑挂了:{type(ex).__name__}: {ex}"], tools="",

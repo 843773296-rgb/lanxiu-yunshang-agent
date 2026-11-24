@@ -37,7 +37,8 @@ def 跑(臂, 套, cid, q, kind, judge):
     guards._unwrap = 新_unwrap if 臂 == "新" else 旧_unwrap
     t0 = time.time()
     try:
-        r = asyncio.run(sdk.run(kind, q, max_turns=14))
+        import api   # 系统身份(11-24):客户档案没身份改拒,内部评测须显式声明;其余工具仍当没身份,行为不变
+        r = asyncio.run(sdk.run(kind, q, max_turns=14, me=api.系统身份))
     except Exception as e:
         return dict(臂=臂, 套=套, case=cid, 崩=f"{type(e).__name__}: {e}")
     names = [t["tool"] for t in r["trajectory"]]
