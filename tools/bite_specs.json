@@ -23848,5 +23848,29 @@
    }
   ],
   "预期红": "单日查询的口径和近似说明里不出现「周」"
+ },
+ {
+  "script": "backend/store_scope_write_check.py",
+  "改坏": "把 _写口本店 改成永远回 None(谁都算跨店)—— 破坏点选在「算本店」这一步,不是「比不比」:_是本店 还有读口在用,改它会把读口一起带坏,红的就不是指定那条了",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if me.get(\"role\") in backend.跨店角色:\n        return None\n    return me.get(\"shop\") or 没挂门店",
+    "new": "    return None"
+   }
+  ],
+  "预期红": "① 店长改别店预约 → NOT_YOUR_SHOP,被拒留痕,预约表没动"
+ },
+ {
+  "script": "backend/store_scope_write_check.py",
+  "改坏": "把 adjust_lifecycle 里的角色闸删掉(谁都能调)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if me.get(\"role\") not in (\"顾问\",\"店长\") + tuple(backend.跨店角色):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "④ 版师调生命周期 → WRONG_ROLE"
  }
 ]

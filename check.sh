@@ -680,6 +680,7 @@ run "给人看的打码 · 按清单:手机前三后四(固话前三后三)、�
 run "交付签收口径 · 6 位码只认一单用一次、追认满 15 天要理由、不合身判责不默认顾客" python3 knowledge/pickup.py
 run "未来记录回挪 · 自测(签收在未来也算、分钟粒度不许早于下单、在办的单不动)" python3 tools/clamp_future_done.py --selftest
 run "交付签收写口 · 码核验才签收、不合身订单不动、完成要顾客确认或追认(在库副本上跑)" python3 backend/pickup_write_check.py
+run "写口按门店划范围 · 店长改别店的预约 / 押金 / 生命周期被拒且留痕,本店和总部不拦,版师不能调生命周期(在库副本上跑)" python3 backend/store_scope_write_check.py
 run "报修口径 · 店长判完、顾客同意才开工" python3 knowledge/repair.py
 run "供应商 · 两类质量不合成一个分/自己做的工艺不许挂供应商/不是一个SKU一家(14 条)" python3 backend/supplier_check.py
 run "评价口径 · 没签收不许评、≤3 星算差评自动进待处理清单(44 条自测)" python3 knowledge/rating.py

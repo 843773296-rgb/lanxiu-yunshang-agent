@@ -413,8 +413,8 @@ h1{font-size:18px;margin:0 0 3px;font-weight:600}
     <span class="ic" id="bellBtn" title="查看待处理任务"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
       <span class="badge" id="bell">0</span></span>
-    <span class="user" id="roleSw" title="切换角色以演示审批链"><span class="av" id="meAv">魏</span><span id="meName">魏欣新</span>
-      <span style="color:var(--ink3);font-size:12px;margin-left:2px">· <b id="roleTxt">顾问</b></span>
+    <span class="user" id="roleSw" title="登录状态"><span class="av" id="meAv">—</span><span id="meName">未登录</span>
+      <span style="color:var(--ink3);font-size:12px;margin-left:2px">· <b id="roleTxt">点此登录</b></span>
       <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="var(--ink3)" stroke-width="1.6"><path d="M2 4.5 6 8.5 10 4.5"/></svg></span>
   </div>
 </div>
@@ -449,7 +449,7 @@ const MENU=[
  {k:"workbench",i:"workbench",t:"工作台"},
  {k:"customer",i:"customer",t:"客户管理",subs:[["customers","客户档案"],["merge","客户合并确认"],
    ["appts","客户预约"],["lifecycle","客户生命周期类型"],["levels","会员等级"],["tags","客户标签管理"]]},
- {k:"shop",i:"shop",t:"店铺配置",subs:[["shops","店铺管理"],["off","店铺日程(原稿标注:本期不做)"]]},
+ {k:"shop",i:"shop",t:"店铺配置",subs:[["shops","店铺管理"]]},   // 「店铺日程」原稿标注本期不做,11-24 把灰占位摘了(体检)
  {k:"guide",i:"guide",t:"导购",subs:[["schedule","个人日程"],["roster","排班"],["perf","导购业绩"]]},   // 排班:11-11 夜(用户拍「后台页面 + 聊天都能排」)
  {k:"page",i:"page",t:"页面",subs:[["pages","页面配置"]]},
  {k:"mkt",i:"mkt",t:"营销",subs:[["activities","营销活动"],["invites","邀请码管理"]]},
@@ -3252,13 +3252,10 @@ async function downloadList(){
    <div class="card">
     <div class="form">${fld("任务号/类型","q",st,null,"请输入")}
       ${fld("导出类型","kind",st,F.kind)}${fld("状态","status",st,F.status)}${acts()}</div>
-    <div class="ops">
-      <button class="btn sol" data-newdl="客户档案">+ 导出客户档案</button>
-      <button class="btn" data-newdl="操作日志">+ 导出操作日志</button></div>
     <div style="margin:14px 24px 0;background:var(--tile);border-radius:6px;padding:11px 15px;
       font-size:12.5px;color:var(--ink2)">
-      后台 PRD 8.1:批量导出须经总部运营负责人审批,导出文件添加操作人及时间水印,
-      <b style="color:var(--ink)">下载链接 24 小时后失效</b>。</div>
+      <b style="color:var(--ink)">这一页是演示期留下的占位,11-24 起只读。</b>列出来的「任务」不是真文件 —— 原来点一下就直接「已完成」、不经任何审批、不生成文件;
+      设计稿里「须经总部运营审批 / 加水印 / 24 小时失效」那套<b>没有实现</b>。要导数据用各张表上的「导出」按钮(店长以上,每次都进操作日志)。</div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      ${sortTh("任务号","id",st,"170px")}<th style="width:120px">导出类型</th>
      <th>筛选条件</th><th style="width:90px">行数</th><th style="width:90px">大小</th>
@@ -3295,7 +3292,7 @@ async function approvalCenter(定位单){
         <div style="font-size:12.5px;color:var(--ink2)">${l}</div>
         <div class="v mono" style="font-size:24px;font-weight:600;color:${l==="当前角色"?(ROLE==="总部运营"?"var(--ok)":"var(--warn)"):"var(--blue)"};margin-top:5px">
           ${esc(String(v))}<small style="font-size:12px;color:var(--ink2);font-weight:400;margin-left:3px">${u}</small></div>
-        ${l==="当前角色"&&ROLE!=="总部运营"?'<div style="font-size:11.5px;color:var(--ink3);margin-top:4px">点右上角切换为总部运营可审批</div>':""}
+        ${l==="当前角色"&&ROLE!=="总部运营"?'<div style="font-size:11.5px;color:var(--ink3);margin-top:4px">审批要总部运营身份 —— 退出后用总部运营的账号登录</div>':""}
       </div></div>`).join("")}
    </div>
    <div class="card"><div class="hd"><h3>客户合并待审批</h3>
@@ -4174,9 +4171,6 @@ function bindOps(tid){
              "已核验":["标记为非同一人","核验依据"],"待核验":["退回重新核验","退回说明"]}[to];
     modal(L[0],[{k:"note",type:"text",label:L[1],req:1,ph:"例如:生日与地址一致,判为同一人"}],
       v=>doOp("/api/merge",{id:tid,to,note:v.note},()=>view("task",tid)))});
-  M.querySelectorAll("[data-retry]").forEach(e=>e.onclick=async()=>{
-    if(!await sure("重新发起退款?","会把这笔押金退款重新提交给支付渠道 —— 钱会退出去,提交后不能撤回。","重新退款"))return;
-    doTransit("bk-deposit",e.dataset.retry,"退款处理中",{idem_key:e.dataset.idem},()=>view("task",tid))});
   M.querySelectorAll("[data-fin]").forEach(e=>e.onclick=()=>
     modal("转财务人工处理",[{k:"note",type:"text",label:"处理说明",ph:"写明为何转人工、建议的补偿方式"}],
       v=>doOp("/api/task-close",{id:tid,result:"已转财务",note:v.note},()=>view("finance"))));
@@ -4247,7 +4241,9 @@ function refundPage(d,tid){const p=d.deposit, bad=p.status==="退款失败";
       <div class="dd mono">${esc(p.updated)}</div></div></div>`:""}  <!-- 11-08 UI 检查:原来这条每单都显示、时间拼一个写死的 14:35,操作人也是写死的 -->
    </div></div>
   <div class="fbar"><button class="btn gray" data-back="finance">返回</button>
-   <button class="btn sol" data-retry="${esc(p.id)}" data-idem="${esc(p.idem_key)}">重新退款</button>
+   <span class="n" style="margin-right:auto">退款失败后的重新发起、登记已退,在
+     <a class="lk" href="${esc(location.protocol+"//"+(location.hostname||"127.0.0.1")+":8770/queue")}" target="_blank" rel="noopener">研判队列(财务,要填核实结论 / 流水号)</a>
+     里做 —— 这里原来那个「重新退款」按钮后端一直是拒的,11-24 摘了</span>
    <button class="btn sol" data-fin="${esc(tid)}">转财务处理</button></div>`}
 function mergePage(d,tid){const diff=d.compare.filter(c=>!c.same).length;
  const MP={"待核验":"p-warn","待总部审批":"p-blue","已合并":"p-ok","已核验":"p-mut","已驳回":"p-bad"};
@@ -4281,11 +4277,11 @@ function mergePage(d,tid){const diff=d.compare.filter(c=>!c.same).length;
   <div class="card"><div class="hd"><h3>合并规则</h3><span class="n">后台 PRD 6.2</span></div>
    <div class="bd" style="padding:14px 24px 20px">
     <ul class="ev" style="padding-left:20px">
-     <li>由店长发起、总部运营审批</li>
-     <li>保留最早客户编号,被合并档案转为归档状态</li>
-     <li>合并标签、量体、跟进、预约和购买记录</li>
-     <li>订单、积分和支付<b>只建立关联且不重复累计</b></li>
-     <li>冲突字段采用最近一次经确认的数据,保留完整日志</li>
+     <li>两段确认:店长认人 → 总部运营执行</li>
+     <li>保留建档最早的那条当主档,另一条只记「并入了谁」—— <b>是软合并:一条数据都不搬</b>(10-14 起)</li>
+     <li>标签、量体、跟进、预约、订单都留在原档案上,查询时按主档归并着看;积分和支付不重复累计</li>
+     <li><b>能撤销</b>:撤了就各归各,没有丢数据这回事</li>
+     <li>发起、执行、撤销都留完整日志</li>
     </ul></div></div>
   ${d.task&&d.task.summary?`<div class="card"><div class="hd"><h3>处理记录</h3></div>
     <div class="bd" style="padding:14px 24px 20px;font-size:13px;color:var(--ink2)">${esc(d.task.summary)}</div></div>`:""}
@@ -4293,31 +4289,10 @@ function mergePage(d,tid){const diff=d.compare.filter(c=>!c.same).length;
 
 
 
-function draftBox(tid,dr){
-  if(!dr) return `<div class="card"><div class="hd"><h3>Agent 草稿</h3>
-    <span class="n">草稿仅供参考,采纳后仍由人触发原有写入流程,走既有幂等与审批</span></div>
-    <div class="bd"><button class="btn sol" onclick="genDraft('${tid}')">生成草稿</button></div></div>`;
-  const f=dr.finding||{};
-  return `<div class="card"><div class="hd"><h3>Agent 草稿</h3>
-   <span class="pill ${dr.status==="已丢弃"?"p-mut":dr.status==="待采纳"?"p-warn":"p-ok"}">${esc(dr.status)}</span>
-   <span class="n">置信度 ${esc(f.confidence||"—")} · ${dr.calls} 次调用 · ${dr.seconds}s · $${(dr.cost_local||0).toFixed(4)}</span></div>
-   <div class="bd"><dl class="kvl" style="margin-bottom:16px">
-    <dt>根因</dt><dd>${esc(f.root_cause)}</dd>
-    <dt>建议动作</dt><dd>${esc(f.recommended_action)}</dd>
-    <dt>证据</dt><dd><ul class="ev">${(f.evidence||[]).map(e=>`<li>${esc(e)}</li>`).join("")}</ul></dd></dl>
-   <button class="btn sol" onclick="mark('${tid}','已采纳')">采纳</button>
-   <button class="btn" onclick="mark('${tid}','已修改后采纳')" style="margin-left:9px">修改后采纳</button>
-   <button class="btn gray" onclick="mark('${tid}','已丢弃')" style="margin-left:9px">丢弃</button>
-   <div class="note">工具轨迹:<span class="mono">${(dr.trajectory||[]).join(" → ")}</span></div></div></div>`;
-}
-
-async function genDraft(tid){const b=event.target;b.disabled=true;b.textContent="生成中…";
-  const r=await post("/api/draft/"+tid);
-  if(r.error){b.disabled=false;b.textContent="重试";
-    b.insertAdjacentHTML("afterend",`<div class="err">生成失败:${esc(r.error)}</div>`);return}
-  view("task",tid)}
-async function mark(tid,s){await post("/api/draft-status/"+tid,{status:s});view("task",tid)}
-window.view=view;window.genDraft=genDraft;window.mark=mark;
+/* 「Agent 草稿」卡 11-24 删了(用户拍):它走第一代手写循环、结果存在一个 json 文件里、采纳不留痕不记谁点的,
+   和 8770 研判队列(第三代、进 triage 表、有回执)是同一张工单两套结论。研判只走研判队列那一套。
+   这里原来还把地址栏里的任务号直接拼进 onclick 字串,顺带也没了。 */
+window.view=view;
 if(location.search.indexOf("probe")>=0){
   setTimeout(async()=>{
     await view("customers"); await view("cust","C10000");
@@ -4340,13 +4315,19 @@ async function 认人(){
     document.getElementById("meAv").textContent=ME.name.slice(0,1);
     document.getElementById("roleTxt").textContent=ME.role+(ME.shop?" · "+ME.shop.split(" ").pop():"");
     document.getElementById("roleSw").title="当前登录:"+ME.name+"("+ME.no+")· 换人请退出后重新登录";
-  } else setRole(ROLE);
+  } else {
+    // 11-24(体检):没登录不再有「演示模式切角色」那个假开关 —— 服务端一直只认登录身份,切了也不生效,
+    // 还会让人以为右上角写着谁就是谁。没登录就写明「未登录」,点了去登录。
+    ROLE="未登录";
+    document.getElementById("meName").textContent="未登录";
+    document.getElementById("meAv").textContent="—";
+    document.getElementById("roleTxt").textContent="点此登录";
+    document.getElementById("roleSw").title="没登录:带客户 / 员工信息的页面都要登录才看得到";
+  }
 }
 document.getElementById("roleSw").onclick=()=>{
   if(ME&&ME.name){ res(true,"ROLE","身份跟登录走:当前是「"+ME.name+" · "+ME.role+"」—— 换人请退出后重新登录"); return; }
-  setRole(ROLES[(ROLES.indexOf(ROLE)+1)%ROLES.length]);
-  res(true,"ROLE","当前角色已切换为「"+ROLE+"」(演示模式:没登录)");
-  const h=(location.hash||"").slice(1).split("/"); view(h[0]||"workbench",h[1]);
+  location.href=登录地址();
 };
 renderNav();
 认人().then(()=>{const h=(location.hash||"").slice(1).split("/");

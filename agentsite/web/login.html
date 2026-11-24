@@ -45,8 +45,13 @@ button:disabled{opacity:.55;cursor:default}
   <button id="go">登录</button>
   <p id="err"></p>
 
-  <div class="demo">
-    <b>演示账号</b>(这是一套假数据,密码只在本机)
+  <p style="margin:14px 0 0;font-size:13px;opacity:.78">
+    <button type="button" id="demoq" aria-label="演示账号说明" title="演示账号说明"
+      style="width:22px;height:22px;border-radius:50%;border:1px solid currentColor;background:none;color:inherit;cursor:pointer;font-weight:600;line-height:1;padding:0;vertical-align:middle">?</button>
+    第一次来、还没有自己的工号?点左边的问号看演示账号。</p>
+  <!-- 演示账号默认收起(用户 11-24 拍:收进一个「?」小按钮里,不删)。点问号才展开。 -->
+  <div class="demo" id="demo" hidden>
+    <b>演示账号</b>(七个演示身份;正式上线前这组口令会收回,到时各人用自己的工号和密码登录)
     <!-- **七种角色各给一个。**(2026-10-11 加了售后) 只列店长和顾问的时候,看的人会以为
          这个系统只有门店两种身份 —— 而工匠、财务、版师都是后来才补上的,
          **不列出来等于那几个角色不存在**。
@@ -69,6 +74,7 @@ button:disabled{opacity:.55;cursor:default}
 <script>
 const $=s=>document.querySelector(s);
 const err=m=>{const e=$("#err");e.textContent=m;e.style.display=m?"block":"none"};
+$("#demoq").addEventListener("click", ()=>{ const d=$("#demo"); d.hidden=!d.hidden; });
 
 $("#f").addEventListener("submit", async ev=>{
   ev.preventDefault();

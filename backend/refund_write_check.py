@@ -45,8 +45,11 @@ _真 = (RW.DB, oplog.DB, ops.DB, S.DB)
 RW.DB = oplog.DB = ops.DB = S.DB = db
 try:
     c = sqlite3.connect(db)
-    财 = c.execute("SELECT no, name, role FROM staff WHERE role='财务' AND status='启用' LIMIT 1").fetchone()
-    店 = c.execute("SELECT no, name, role FROM staff WHERE role='店长' AND status='启用' LIMIT 1").fetchone()
+    # 11-24:写口按门店划范围了 —— 夹具里的身份要像真登录的人一样**带门店**,店长挑押金那位客户(C10000)所在店的
+    # (原来只取 no / name / role,没 shop,门店闸把它当「没挂门店」拒掉;财务在押金这台状态机上算跨店,带不带都行)
+    财 = c.execute("SELECT no, name, role, shop FROM staff WHERE role='财务' AND status='启用' LIMIT 1").fetchone()
+    店 = c.execute("""SELECT no, name, role, shop FROM staff WHERE role='店长' AND status='启用'
+                      ORDER BY (shop = (SELECT shop FROM customer WHERE id='C10000')) DESC, no LIMIT 1""").fetchone()
     for i in (1, 2, 3, 4):
         did = f"R-检查-{i}"
         c.execute("INSERT INTO deposit(id,customer_id,amount,status,idem_key,created,updated) VALUES(?,?,?,?,?,?,?)",
@@ -59,7 +62,7 @@ try:
     if not (财 and 店):
         ck("库里有在职财务和店长 —— 没有就没验,不算通过", False)
         raise SystemExit
-    财务 = dict(no=财[0], name=财[1], role=财[2]); 店长 = dict(no=店[0], name=店[1], role=店[2])
+    财务 = dict(no=财[0], name=财[1], role=财[2], shop=财[3]); 店长 = dict(no=店[0], name=店[1], role=店[2], shop=店[3])
     状态 = lambda d: sqlite3.connect(db).execute("SELECT status FROM deposit WHERE id=?", (d,)).fetchone()[0]
     轨迹 = lambda d: sqlite3.connect(db).execute(
         "SELECT attempt, resp_code, refund_no FROM refund_trace WHERE deposit_id=? ORDER BY attempt", (d,)).fetchall()

@@ -253,6 +253,31 @@ def _不是本店(本店, 什么="这条记录"):
     return {"error": f"{什么}不是本店的(你是 {本店}),看不了", "code": "NOT_YOUR_SHOP"}
 
 
+def _写口本店(me):
+    """**写操作**按门店划范围(11-24,全项目体检高危第 2 条):读口 11-11 就按店划完了,写口一直没跟上 ——
+    A 店顾问登录后构造请求能批量取消 B 店的预约、把别店客户改成「流失」,页面上看不到别店数据,接口却不拦。
+    None = 跨店(认 `backend.跨店角色`:总部运营 / 售后;财务只放宽了读,写照旧只本店);其余 = 这个人那家店;
+    没挂门店的非跨店角色(版师 / 工匠)给一个谁也对不上的值 → 一条都改不了。
+    me 为 None(没有会话的内部调用)不在这里判 —— 身份闸在各自的调用点。"""
+    if not me:
+        return None
+    if me.get("role") in backend.跨店角色:
+        return None
+    return me.get("shop") or 没挂门店
+
+
+# 状态机 → 目标记录归哪家店。不在表里的:店铺 / 商品 / 活动 / 页面 / 内容 / 下载任务是全公司一份的主数据或个人任务,
+# 归 fsm.主数据岗 的角色闸管;**押金(bk-deposit)故意不按店划** —— 退押金是财务 + 两位店长复核的流程(店长复核要「另一位店长」,
+# 而一家店只有一位店长,另一位必然来自别店),门店闸放上去会把复核规则拦死;它自己的身份规则在 refund_write 里。
+# 方案自己没有门店列,跟着客户档案走。
+_写口记录归店 = {
+    "bk-appt":    lambda r: r["shop"],
+    "bk-task":    lambda r: r["shop"],
+    "bk-order":   lambda r: r["shop"],
+    "fe-scheme":  lambda r: (rows("SELECT shop FROM customer WHERE id=?", r["customer_id"]) or [{"shop": None}])[0]["shop"],
+}
+
+
 def _日志片(本店):
     """操作日志按「谁做的」划门店:只看本店员工留下的那几条(op_log 没有门店列,
     target 又是十几种单据号混着,按 target 反查要逐类型写一遍)。
@@ -328,17 +353,13 @@ def 研判回包(r, tr):
 # 库路径走单源(W02 第③步,11-22):LANXIU_DB 优先;服务进程不设它,照旧是 backend/lanxiu.db
 from dbpath import 路径 as _库路径   # noqa: E402
 DB=_库路径()
-DRAFTS=os.path.join(HERE,"drafts.json")
-
 def rows(sql,*a):
     c=_conn(); c.row_factory=sqlite3.Row
     try: return [dict(r) for r in c.execute(sql,a)]
     finally: c.close()
 
-def load_drafts():
-    try: return json.load(open(DRAFTS))
-    except Exception: return {}
-def save_drafts(d): json.dump(d,open(DRAFTS,"w"),ensure_ascii=False,indent=1)
+# 第一代「Agent 草稿」(drafts.json 文件 + gen_draft / set_draft_status)11-24 删了(用户拍,体检高危第 3 条):
+# 它和 8770 研判队列是同一张工单两套结论,采纳不留痕不记谁点的。研判只走研判队列(backend/ops.py 的 triage 表)那一套。
 
 def workbench(本店=None):
     # 按门店划范围(用户 10-23 拍;11-11 补齐):`本店` 为 None 是跨店(看全部),否则每个数都只算本店
@@ -359,8 +380,6 @@ def workbench(本店=None):
     mrg=_开("客户合并确认")
     待复核 = {类型: sum(1 for x in 开着 if x["type"] == 类型 and x["state"] == "待复核") for 类型 in ("财务人工任务", "客户合并确认")}
     已升级 = {类型: sum(1 for x in 开着 if x["type"] == 类型 and x["state"] == "已升级") for 类型 in ("财务人工任务", "客户合并确认")}
-    dr=load_drafts()
-    if _看 is not None: dr={k:v for k,v in dr.items() if k in _看}   # 按门店划范围(用户 10-23 拍;11-11 补齐)
     # 押金 / 退款轨迹按押金的客户归店(按门店划范围,用户 10-23 拍;11-11 补齐)
     # ⚠️ LEFT JOIN 不是 JOIN:跨店(片 = 1=1)时要和原来一样,押金单 / 客户对不上的轨迹也照算
     #    (workbench_check 自造的那几条轨迹就挂在一个不存在的押金号上);本店时 c2 那一侧的条件自然把它们筛掉
@@ -412,7 +431,6 @@ def workbench(本店=None):
                    for k,v in [("booked","已预约"),("arrived","已到店"),("noshow","爽约")]}),
       oplog=dict(**{k:rows(f"SELECT COUNT(*) c FROM op_log WHERE allowed=? AND {日片}",v,*日参)[0]["c"]
                     for k,v in [("allow",1),("deny",0)]}),
-      drafts={k:v.get("status") for k,v in dr.items()},
       # 待处理卡片的细项 —— 原来「等待复核 4」「已核验 0」「已合并 0」「规则数 14」写死在页面里(10-19 外部复审 3.2)
       pend=dict(finance=dict(待复核=待复核["财务人工任务"], 已升级=已升级["财务人工任务"]),
                 merge=dict(待复核=待复核["客户合并确认"], 已升级=已升级["客户合并确认"])),
@@ -436,12 +454,12 @@ def workbench(本店=None):
 def task_detail(tid):
     t=rows("SELECT * FROM task WHERE id=?",tid)
     if not t: return {"error":"任务不存在"}
-    t=t[0]; d=load_drafts().get(tid)
+    t=t[0]
     if t["type"]=="财务人工任务":
         dep=t["ref_id"]
         return dict(task=t,kind="refund",deposit=backend.get_deposit(dep),
             trace=backend.get_refund_trace(dep),flow=backend.get_payment_flow(dep),
-            customer=backend.get_customer(backend.get_deposit(dep).get("customer_id","")),draft=d)
+            customer=backend.get_customer(backend.get_deposit(dep).get("customer_id","")))
     a,b=t["ref_id"].split("|")
     ca,cb=backend.get_customer(a),backend.get_customer(b)
     fields=[("姓名","name"),("手机号","phone"),("归属门店","shop"),("归属顾问","advisor"),
@@ -449,27 +467,7 @@ def task_detail(tid):
             ("累计实付","paid_amount"),("生命周期","lifecycle"),("会员等级","level"),("最近互动","last_interact")]
     cmp=[dict(label=l,a=ca.get(k),b=cb.get(k),same=(ca.get(k)==cb.get(k))) for l,k in fields]
     st=t["status"] if t["status"]!="待处理" else "待核验"
-    return dict(task=t,kind="merge",a=ca,b=cb,compare=cmp,draft=d,merge_status=st)
-
-def gen_draft(tid):
-    """调用 V1 agent 生成草稿。失败时如实返回错误,不伪造结果。"""
-    t=rows("SELECT * FROM task WHERE id=?",tid)
-    if not t: return {"error":"任务不存在"}
-    t=t[0]
-    r=subprocess.run([sys.executable,os.path.join(HERE,"..","agent","v1.py"),"one",tid],
-                     capture_output=True,text=True,cwd=HERE)
-    try: out=json.loads(r.stdout.strip().splitlines()[-1])
-    except Exception:
-        return {"error": (r.stderr or r.stdout or "agent 无输出")[-400:]}
-    if not out.get("finding"): return {"error": out.get("error","agent 未提交结论")}
-    d=load_drafts(); out["status"]="待采纳"; d[tid]=out; save_drafts(d)
-    return out
-
-def set_draft_status(tid,status,note=""):
-    d=load_drafts()
-    if tid not in d: return {"error":"草稿不存在"}
-    d[tid]["status"]=status; d[tid]["note"]=note; save_drafts(d)
-    return d[tid]
+    return dict(task=t,kind="merge",a=ca,b=cb,compare=cmp,merge_status=st)
 
 def ensure_oplog():
     with _conn() as c:
@@ -641,6 +639,15 @@ def transit(mid, target, to, ctx, actor, me=None):
     else:
         return {"error":f"暂不支持 {mid}"}
 
+    # 写口按门店划范围(11-24):目标记录不是本店的,状态机都不用问,直接拒、**拒绝也留痕**。跨店角色和没会话的内部调用不拦。
+    if me and mid in _写口记录归店:
+        _本 = _写口本店(me)
+        _店串 = _写口记录归店[mid](r[0])
+        if _本 is not None and not _是本店(_本, _店串):
+            why = f"这条记录归 {_店串 or '没登记门店'},你是 {_本},改不了(写操作只能动本店的)"
+            log_op(actor,mid,target,cur,to,False,"NOT_YOUR_SHOP",why,ctx)
+            return dict(ok=False,code="NOT_YOUR_SHOP",reason=why,frm=cur,to=to)
+
     ok,code,why=fsm.check(mid,cur,to,ctx)
     log_op(actor,mid,target,cur,to,ok,code,why,ctx)
     if not ok: return dict(ok=False,code=code,reason=why,frm=cur,to=to)
@@ -714,10 +721,22 @@ def transit(mid, target, to, ctx, actor, me=None):
     return dict(ok=True,code="OK",frm=cur,to=to,reason=f"已从「{cur}」流转到「{to}」",
                 **({"客户归属": {k: 归属.get(k) for k in ("转了吗", "理由", "知会任务", "指定导购任务") if 归属.get(k) is not None}} if 归属 else {}))
 
-def adjust_lifecycle(cid,to,reason,actor):
-    r=rows("SELECT lifecycle,matched FROM customer WHERE id=?",cid)
+def adjust_lifecycle(cid,to,reason,actor,me=None):
+    r=rows("SELECT lifecycle,matched,shop FROM customer WHERE id=?",cid)
     if not r: return {"error":"客户不存在"}
     cur=r[0]["lifecycle"]
+    # 11-24(体检高危第 2 条):原来只取登录人姓名、不看角色不看门店 —— 版师也能把别店客户手工改成「流失」。
+    # 角色:顾问 / 店长 / 跨店角色(总部运营、售后);门店:同写口其他地方,只能动本店客户。拒绝也留痕。
+    if me:
+        if me.get("role") not in ("顾问","店长") + tuple(backend.跨店角色):
+            why=f"{me.get('role') or '?'} 不能人工调生命周期(顾问 / 店长 / 总部运营 / 售后才行)"
+            log_op(actor,"bk-lifecycle",cid,cur,to,False,"WRONG_ROLE",why,{"reason":reason})
+            return dict(ok=False,code="WRONG_ROLE",frm=cur,to=to,reason=why)
+        _本=_写口本店(me)
+        if _本 is not None and not _是本店(_本, r[0]["shop"]):
+            why=f"这位客户归 {r[0]['shop'] or '没登记门店'},你是 {_本},改不了"
+            log_op(actor,"bk-lifecycle",cid,cur,to,False,"NOT_YOUR_SHOP",why,{"reason":reason})
+            return dict(ok=False,code="NOT_YOUR_SHOP",frm=cur,to=to,reason=why)
     with _conn() as c:
         c.execute("UPDATE customer SET lifecycle=?,manual_lc=?,manual_at=wtoday() WHERE id=?",
                   (to,to,cid))
@@ -2247,22 +2266,11 @@ def download_list(q):
     return _simple("download_task",q,["id","kind"],{"id","created"},["kind","status"],"created DESC")
 
 def create_download(kind,filters,actor):
-    import datetime
-    n=rows("SELECT COUNT(*) c FROM download_task")[0]["c"]
-    did=f"DL{_wnow():%y%m%d}{n+1:04d}"
-    cnt={"客户档案":lambda:customer_list({"per":["1"]})["total"],
-         "操作日志":lambda:len(op_logs(100000)),
-         "商品库":lambda:product_list({"per":["1"]})["total"],
-         "交易查询":lambda:order_list({"per":["1"]})["total"]}.get(kind,lambda:0)()
-    with _conn() as c:
-        c.execute("INSERT INTO download_task(id,kind,filters,status,rows_n,size_kb,created_by,created,expire_at) VALUES(?,?,?,?,?,?,?,?,?)",
-          (did,kind,filters or "全部","已完成",cnt,max(1,cnt//8),"60000008",
-           _wnow().strftime("%Y-%m-%d %H:%M"),
-           (_wnow()+datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M")))
-    log_op(actor,"download",did,"—","已完成",True,"EXPORT",
-           f"{kind} 导出 {cnt} 行,筛选:{filters or '全部'};下载链接 24 小时后失效",{})
-    return dict(ok=True,code="EXPORT",id=did,
-      reason=f"导出任务 {did} 已生成({cnt} 行),可在 系统 › 下载中心 获取;链接 24 小时后失效")
+    # 11-24(体检高危第 1 条):这是演示期的假流程 —— 点一下就「已完成」、创建人写死工号、不生成文件,页面却写着要审批加水印。
+    # 不再新建;下载中心只读留历史记录。真导出走 /api/export/<对象>(店长以上,进操作日志)。拒绝也留痕。
+    log_op(actor,"download","—","—","新建",False,"DEMO_RETIRED",f"下载中心不再新建导出任务({kind});真导出走各张表的「导出」按钮",{})
+    return dict(ok=False,code="DEMO_RETIRED",
+      reason="下载中心是演示期留下的占位,11-24 起只读:要导数据用各张表上的「导出」按钮(店长以上,每次进操作日志)")
 
 # ── 四个写接口:路由一直挂着,函数从来没写过 ─────────────────────
 # 发现方式:另一个会话用 AST 把 do_POST / do_GET 里被调用的裸函数名和模块里
@@ -3778,8 +3786,6 @@ def task_list(q, 本店=None):
     import ops as _ops
     _看=_ops.看得到的工单(本店)
     if _看 is not None: rs=[r for r in rs if r["id"] in _看]
-    dr=load_drafts()
-    for r in rs: r["draft"]=dr.get(r["id"],{}).get("status")
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["ref_id"] or "")]
     if stt: rs=[r for r in rs if r["status"]==stt]
     rs=_sort(rs,q,{"id","ref_id","created","status"})
@@ -5433,6 +5439,10 @@ class H(BaseHTTPRequestHandler):
                 reason=f"{len(ids)} 位客户已转至 {adv},未完成预约同步迁移"))
         if p=="/api/task-note":
             tid=body.get("id"); nt=body.get("note") or ""
+            # 11-24:任务(差评 / 财务 / 合并确认 / 判责)是后台的活,版师 / 工匠没有这一页也不该能改备注;其余角色照旧(原来谁登录都能改)
+            if 登录人.get("role") in ("版师","工匠"):
+                log_op(登录人["name"],"task",tid,"—","备注",False,"WRONG_ROLE",f"{登录人.get('role')} 不改任务备注",{})
+                return self._send(dict(ok=False,code="WRONG_ROLE",reason="版师 / 工匠不处理后台任务,备注改不了"),403)
             with _conn() as c:
                 c.execute("UPDATE task SET summary=? WHERE id=?",(nt,tid))
             log_op(登录人["name"],"task",tid,"—","备注",True,"NOTE",nt[:80],{})
@@ -5446,11 +5456,8 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/customer-unmerge":
             return self._send(customer_unmerge(body.get("id"),body.get("note"),me=登录人))
         if p=="/api/lifecycle-adjust":
-            return self._send(adjust_lifecycle(body.get("id"),body.get("to"),body.get("reason"),登录人["name"]))
-        if p.startswith("/api/draft/"): return self._send(gen_draft(p.split("/api/draft/")[1]))
-        if p.startswith("/api/draft-status/"):
-            return self._send(set_draft_status(p.split("/api/draft-status/")[1],
-                                               body.get("status"),body.get("note","")))
+            return self._send(adjust_lifecycle(body.get("id"),body.get("to"),body.get("reason"),登录人["name"],me=登录人))
+        # /api/draft/ 与 /api/draft-status/(第一代草稿卡)11-24 删了:研判只走 8770 研判队列那一套
         self._send({"error":"not found"},404)
 
 if __name__=="__main__":

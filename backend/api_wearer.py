@@ -126,7 +126,8 @@ def 本店范围(me):
     ⚠️ 返回空串(登录的人没挂门店)时,怎么处置由调用方定:客户搜索按「只看空店」收紧(搜不到任何人),
     客户读接口沿用它原来的写法(空串不加门店条件)—— 那一处不是这次改的,没动它的口径。"""
     me = me or {}
-    return None if me.get("role") in api.跨店角色 else (me.get("shop") or "")
+    # 「系统」= 内部调用的显式身份(api.系统身份,11-24):读得全,但**只在这一处**认它,写口的闸不认
+    return None if (me.get("role") in api.跨店角色 or me.get("role") == api.系统身份["role"]) else (me.get("shop") or "")
 
 def search_fit_customers(q, me, 每页=None, 页=1):
     """方案页用:按姓名 / 手机尾号 / 客户号搜**量过体**的客户,只搜得到登录的人那家店的(跨店角色除外)。

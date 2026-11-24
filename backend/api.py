@@ -86,6 +86,13 @@ def _门店条件(值, 别名="", c=None, 列="shop"):
 # 财务能看全部 ≠ 财务能跨店处理差评。读和写分两份,读这份只许比写那份宽。
 读跨店角色 = 跨店角色 + ("财务",)
 
+# 内部调用的**显式**身份(11-24,体检「最该约定升结构的一条」:客户档案工具没身份时不限店,新路径忘带身份就静默放开)。
+# 研判队列 / 评测 / V1 V2 子进程这些没有真人登录的路径,**不再靠「没身份 = 不限」**,而是明说「我是系统」:
+# `sdk.run(..., me=api.系统身份)` 或 `with api.as_user(api.系统身份)`。`api_wearer.本店范围` 只在那一处认这个角色 → 跨店;
+# 它**不在 `跨店角色` 里**,所以写口的门店闸、差评 / 退押金那些按角色的闸都不会因为它放宽 —— 系统只是读得全,不是什么都能写。
+# 不用环境变量开关:开关会被整棵进程树继承(夜跑一设,它拉起的一切都免检),日志里也看不出是谁;身份走现有通道,trace / op_log 记得到。
+系统身份 = {"no": "system", "role": "系统", "name": "系统(内部调用)"}
+
 def _查(c, sql, a):
     """工具层取数的**那三道检查**,`_rows` 和 `_rows2` 共用这一份(11-16 收编:原来 `_rows2` 自己开一条
     **可写**连接、三道一道都不过 —— 现有调用碰巧都是写死的 SELECT,而下一个调用者不一定)。"""
@@ -260,7 +267,7 @@ def get_customer(customer_id):
     # 顾问按客户号或姓名能翻到别家店的档案(消费额、生日、归属顾问)。
     # 跨店角色照旧看全量。**没有身份时不限**:那只会是 V1/V2 后台研判和管理后台内部调用;
     # 聊天站这条路没登录进不来(app.py NO_LOGIN),登录了 sdk 必带 LANXIU_ME —— 这条是约定,登记在边界审计
-    me=whoami()
+    me=whoami(认系统=True)      # 第一个(目前唯一)点名认「系统身份」的工具 —— 系统读得全,但只在这里
     限店 = bool(me) and 本店范围(me) is not None          # 「本店」只有一份口径,和客户读接口 / 方案页搜客户同一个函数
     if 限店:
         import shop_key as _SK, contextlib as _cl
@@ -465,7 +472,7 @@ import contextvars as _cv
 _ME = _cv.ContextVar("lanxiu_me", default=None)
 
 
-def whoami():
+def whoami(认系统=False):
     """当前操作人。没有身份时返回 None —— **不许兜底成某个默认角色**。
 
     两个来源,按优先级:
@@ -473,14 +480,23 @@ def whoami():
       ② 环境变量   —— MCP 子进程,由启动它的那一方注入
     用 contextvar 而不是全局变量:**两个请求同时进来不会互相串身份**,
     而串了不会报错 —— 甲的问题用乙的身份取数,答出来完全正常。
+
+    `认系统`(11-24):`系统身份`(内部调用:研判队列 / 评测 / V1 V2 子进程)**默认当成没身份**,只有调用方写明
+    `whoami(认系统=True)` 才拿得到它。为什么不让它在所有工具里生效:后端 40 多个读工具今天都是「没身份就拒」,
+    只有客户档案那一处放行 —— 系统身份一旦处处被认,这 40 多处全部放行、再各走各的角色 / 门店分支,
+    评测分数不可比,而且它就成了一把比客户档案宽得多的跨店读钥匙。**点名生效**:爆炸半径 = 显式点名的工具,
+    其余零变化;以后哪个工具要给后台用,点名加,边界审计能列出名单。第一版只有 get_customer 认它。
     """
     v = _ME.get()
-    if v: return v
-    import json as _js
-    raw = os.environ.get("LANXIU_ME") or ""
-    if not raw: return None
-    try: return _js.loads(raw)
-    except Exception: return None
+    if not v:
+        import json as _js
+        raw = os.environ.get("LANXIU_ME") or ""
+        if raw:
+            try: v = _js.loads(raw)
+            except Exception: v = None
+    if v and not 认系统 and (v.get("role") == 系统身份["role"] if isinstance(v, dict) else False):
+        return None
+    return v or None
 
 
 class as_user:
