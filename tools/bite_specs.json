@@ -16645,8 +16645,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "        if me and not 只读:\n            import glossary_client as _gc转",
-    "new": "        if me:\n            import glossary_client as _gc转"
+    "old": "        if me and not _是系统(me) and not 只读:\n            import glossary_client as _gc转",
+    "new": "        if me and not _是系统(me):\n            import glossary_client as _gc转"
    }
   ],
   "预期红": "机器调用 → 不转"
