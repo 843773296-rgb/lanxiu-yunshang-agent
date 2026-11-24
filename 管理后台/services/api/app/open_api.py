@@ -86,6 +86,34 @@ def _今天花了(c, project_id, kid):
     return Decimal(r["花了"] or 0), int(r["算不出"] or 0)
 
 
+def _今天花了_整个项目(c, project_id):
+    """→ {密钥id: (已知金额之和, 算不出的行数)},一条查询算完项目里所有密钥;没花过的钥匙不在字典里(取不到按 0)。
+
+    11-24:列表页对每把钥匙各跑一次 `_今天花了` —— 共享库里 e2e 每轮留 8 把、攒到 1506 把之后一次列表 27 秒,
+    页面冒烟的「界面拿得到 If-Match 吗」等 20 秒就判「打不通」,整轮门禁红。把账按钥匙分组一次算完;
+    归属口径和 `_今天花了` 一样(运行按 trace 连回密钥 / 聊天按 caller「访问密钥:<id>」),一行只记给一把钥匙。"""
+    行 = c.execute(text("""
+        select x.k 密钥,
+               coalesce(sum(u.amount) filter (where u.amount_known), 0) 花了,
+               count(*) filter (where not u.amount_known) 算不出
+          from usage_ledger u
+          left join lateral (select e.definition_ref->>'密钥id' kid from execution_runs e
+                              where e.project_id=u.project_id and e.trace_id=u.trace_id
+                                and e.definition_ref->>'密钥id' is not null limit 1) e on true
+          cross join lateral (select coalesce(e.kid,
+                                 case when u.caller like :前缀 || '%' then substr(u.caller, length(:前缀) + 1) end) k) x
+         where u.project_id=:p and u.created_at >= :起 and x.k is not null
+         group by x.k"""),
+        {"p": project_id, "前缀": "访问密钥:", "起": _今天起点()}).mappings().all()
+    return {r["密钥"]: (Decimal(r["花了"] or 0), int(r["算不出"] or 0)) for r in 行}
+
+
+def _列出密钥(c, 行, project_id):
+    """列表页用:一次算完花费再逐把拼样子(别在列表里逐把查账 —— 见 `_今天花了_整个项目`)。"""
+    账 = _今天花了_整个项目(c, project_id)
+    return [_键的样子(r, *账.get(r["id"], (Decimal(0), 0))) for r in 行]
+
+
 def _键的样子(r, 花了=None, 算不出=None):
     return {"id": r["id"], "名字": r["name"], "开头": r["prefix_code"] + "…", "应用id": r["application_id"],
             "聊天助手id": r["chat_assistant_id"],
@@ -111,7 +139,7 @@ def 密钥列表(project_id: str, wid: str, me: 身份 = Depends(要权限("配�
                     "note": "这条工作流还没有应用(从没发布过)—— 发密钥时会建;**但只跑生产那一版,没上生产的调用会被拒**"}
         行 = c.execute(text("""select * from access_keys where project_id=:p and application_id=:a
                                 order by created_at desc"""), {"p": project_id, "a": aid}).mappings().all()
-        密钥们 = [_键的样子(r, *_今天花了(c, project_id, r["id"])) for r in 行]
+        密钥们 = _列出密钥(c, 行, project_id)
         调用 = c.execute(text("""select k.name 密钥, k.prefix_code 开头, x.endpoint_code 接口, x.outcome_code 结果,
                                        x.http_code 码, x.execution_run_id 运行, x.detail_note 说明, x.created_at 时间
                                   from access_key_calls x join access_keys k
@@ -134,7 +162,7 @@ def 项目里的密钥(project_id: str, me: 身份 = Depends(要权限("配置�
     with 连接() as c:
         行 = c.execute(text("select * from access_keys where project_id=:p order by created_at desc"),
                       {"p": project_id}).mappings().all()
-        密钥们 = [_键的样子(r, *_今天花了(c, project_id, r["id"])) for r in 行]
+        密钥们 = _列出密钥(c, 行, project_id)
     return {"条数": len(密钥们), "密钥": 密钥们}
 
 
@@ -798,7 +826,7 @@ def 聊天助手的密钥(project_id: str, cid: str, me: 身份 = Depends(要权
     with 连接() as c:
         行 = c.execute(text("""select * from access_keys where project_id=:p and chat_assistant_id=:a
                                 order by created_at desc"""), {"p": project_id, "a": cid}).mappings().all()
-        密钥们 = [_键的样子(r, *_今天花了(c, project_id, r["id"])) for r in 行]
+        密钥们 = _列出密钥(c, 行, project_id)
         a = c.execute(text("select role_key, production_version_no from chat_assistants where project_id=:p and id=:i"),
                       {"p": project_id, "i": cid}).mappings().first()
     if not a:
