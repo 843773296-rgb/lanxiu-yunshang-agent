@@ -47,7 +47,17 @@
 8. (并进第 5 项的第三轮了:6、7 都在 22:54 那批里;如果那批红了修完再起一轮,过了 0 点就等 05:10 夜跑结束)
 9. 🔎 《还债与收尾计划》核过(执行手册 395–424 行那张 27 行表,23:4x):17 / 20 / 21 / 22 / 24 / 27 都 ✅(**W22 费用上限 11-15 就做完了**:store_usage 月上限 + cost_alert 80% / 到顶 + app.py:825 到顶不升 Opus —— 我 23:0x 那条「没动」是没查表,作废);新人保底 ✅(booking.py:393)。真剩下的:row 26 **W27 标品签收告知 + 换货分支**(「只在工具说明里出现,流程没找到」)、row 18 默认模型接聊天站(要复测模型 + 动 agentsite/sdk.py)、row 11③④ / 6 单源(fc 地界或 fc 在做)、row 23 用户亲手。**W27 也 ✅(11-17 22:1x 核实:换货分支不用另做)** → 还债表里没有我今晚能不占锁、不碰 fc 地界、不用拍板就能做的了。0 点后的时间用来补今晚新面板的 vm 测试(人工介入表单 / 代码执行,照 test_workflow_retrieve_panel.js 的写法)和把规划 1.2 那张「对上了 18 个」的表改成现状。
 
-- **压缩前六项(11-24 15:1x 刷,最新;下面 19:0x 那组是 11-22 日间的)**:
+- **压缩前六项(11-25 02:0x 刷,最新)**:
+  · **未验证的预判** 🔮 gate_w41 会绿 —— 没验;6 笔 管理后台/ 改动(报告与文件页 / 执行记录 / 归档 / 下载)只过了本地 node --check 和 page_smoke 对账表,**端到端没真跑过**(验法:e2e_ci_w41.log 退出码 0;红了先看是不是 page_smoke「#/documents」那条和 nav_smoke 42 页)。🔮 夜跑自动提交今晚只本地提交不推(规则「上游之后恰好 1 笔才推」,主检出领先 4 笔)—— 验法:05:10 后 `git -C 主检出 log --oneline -3` 多一笔且 `git log origin/main -1` 仍是 0bb08202。🔮 rebase 到主检出 HEAD 后我 7 笔(e95ea268…9ff5f90e)哈希会变、前 4 笔不变 —— 汇总里哈希等推完再填。
+  · **判据** 门禁红在「评测题没进结果文件」时,修法是**跑一遍全量**不是改题 / 改标签(eval_tier_check 自己写着「补缺口只能加题,不许改标签去凑」);D01 两轮挂但 eval_tier 绿 —— 那条检查只认「题号出现过」,不认过没过。「体检误报」的真因以 fc 查的为准(金额字面比对),我凭 why 字段猜的「只认 kb_bom」是错的 —— **以后看 guard 红先读 guards.py 那段比对逻辑,别凭理由字串猜**。
+  · **作废的结果** ❌ ops_eval 记录里「花费 $5.77」是价目表估数(登录态不花钱),别写进成本表;❌ 我 01:4x 对 D01 误报原因的判断(「只认 kb_bom」)作废;❌ 「w40 会绿」预判作废(已红)。
+  · **禁区** fc 文件照旧不碰(含 agentsite/guards.py —— D01 修法归 fc,补丁等用户 `!` 打);0 点到夜跑结束不占锁不写共享库;只推自己的提交(夜跑自动提交挡快进时原样带上);永不 git add funnel.jsonl / skill_usage.jsonl / tool-eval.json;rebase 目标是**主检出 HEAD 不是 origin/main**;删 1500 把 E2EAK* 用户说「留着」。
+  · **04:5x 已做**:夜跑 04:4x 结束,留自动提交 cc21d089(远端仍 0bb08202,预判对);w1121 rebase 到 cc21d089 后 7 笔哈希变了(9aa22b92 / 72662cfd / 05aafa71 / b17ba78d / 24cbcfa2 / 00001001 / **64b41711**),w1117 = w1121 = 64b41711;已告 fc。**第一次起 gate_w41 一分钟就停**:主检出有未提交的 `.feynman/select-eval-第一层.json`(夜跑在主检出重跑了 agent/select_eval.py,候选数 103→102 = 我并掉一个工具的后果;夜跑自动提交不带 .feynman/)→ 原样拷进 w1121 提交 **7e6ea7b6**(w1117 对齐),主检出 `git checkout --` 还原(内容同新提交,没丢数据)。**判据:夜跑改写的跟踪结果文件若是代码变化的直接后果,当一笔提交带上;不是的(tool-eval / funnel / skill_usage)才算运行态。** **gate_w41 第二次 04:5x 起(后台任务 byymb0rev;status scratchpad/gate_w41.status,日志 e2e_ci_w41.log / ship_w41.log;脚本备份 w1121/.gate_w41.sh.bak;共 12 笔到 7e6ea7b6)**。HANDOFF 和夜间汇总(已 git add)未提交,随推完那笔。
+  · ✅ **06:24 gate_w41 绿、已推 origin/main 0bb08202 → 7e6ea7b6(13 笔)**:e2e-ci 05:07 退出码 0、咬合重放全过、全量门禁 0;主检出 = w1117 = w1121 = 7e6ea7b6,`merge-base --is-ancestor` 验过主检出在远端上;已告 fc 哈希、锁已放;06:2x kickstart com.lanxiu.backend(首页 200)/ com.lanxiu.agentsite(302,healthz 确认卡「开」)/ com.lanxiu.supervise(backend/ 改了,桥工具要重启);aimc 由 gate 重启、监听 61363 的父进程是 launchd 管的 61356。夜间汇总填好哈希随 HANDOFF 一笔提交在 w1121(**未推,随下一笔业务推送**;只有 md 不值一轮 45 分钟门禁)。
+  · **下一步第一个动作(白天)**:用户醒来先汇报(推了什么、D01 误报真因 + 补丁等他 `!`、真页面要人点);然后一张卡(≤4 题)问包二剩余产品形状项 + ops 日常层 80% 谁盘;拍了再动手。不拍板就能做的:ops 翻面 23 题的判据改查结构(agent/ops_eval.py 我可改;对照先过 judgetest)。
+  · (下面是推之前写的流程,留作下次照抄)→ 绿:`git fetch`(卡就 kill)核远端 → 告 fc 哈希 → kickstart com.lanxiu.backend + com.lanxiu.agentsite(aimc 由 gate 做,验 8801 归属)→ `git merge-base --is-ancestor $(git -C 主检出 rev-parse HEAD) origin/main` → 夜间汇总(已 git add,未提交)填哈希 → `git commit --only 澜绣云裳agent-夜间汇总-20261124.md HANDOFF.md` 随下一轮或单独推 → `FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf python3 tools/feishu_publish.py 澜绣云裳agent-夜间汇总-20261124.md` → ScheduleWakeup stop。红:看 e2e_ci_w41.log / ship_w41.log,**先 `git -C w1117 status --short | grep -v '^??'` 再 rebase**。
+  · **悬而未决** 包二剩余产品形状项(应用归档无接口 / 核对中回写 / 确认卡两档 / 角色进门先亮助手 / 统一失败提示)—— 白天一张卡问用户;ops 日常层 80% 没达标、23 题翻面在说法上 —— 谁盘(我还是 fc)没定;真页面没人点过(报告与文件页 / 执行记录 / 归档 / 核对中链接 / 报错人话 / 登录「?」/ 三个嵌入页)。
+- **压缩前六项(11-24 15:1x 刷;下面 19:0x 那组是 11-22 日间的)**:
   · 六项补刷(15:4x):**未验证** 🔮 D01-D03 真跑两轮能过(判分器只过了人造对照;真跑在后台 bbidcuxh6,结果看 agent/ops-results.jsonl 最后 6 条,挂了先怀疑判分器词表再怀疑模型);🔮 gate_w39 ship 会绿(e2e 退出码 0 已验,全量门禁没出)。**判据** 死工具小活只做「合入口 / 补评测」,不删函数(prompts_check / run_journey / boundary_audit 直接调函数);ai-product-shape 顺序:先改描述再动结构,所以 ② 倾向只改 can_order 描述(方案 B)。**作废** 死工具清单里「规矩没给(4 个规则型)」这一判断不成立 —— TL72/TL95/TL97 都在;「③ 6% + kb_coverage」09-22 已做。**禁区** 不变(fc 文件 / E2EAK* 清理要用户点头 / guards.py 先问 fc)。**悬而未决** ② 等 fc 选 A/B/C;E2EAK* 1500 把钥匙清不清等用户。**下一步第一个动作** 两个后台通知任一来了就处理:w39 绿 → fetch 核远端 → 告 fc 哈希 → kickstart backend + agentsite → 主检出 ff → 汇总补哈希发飞书;真跑结果 → 钉对照 → 提交 ops-results.jsonl。
   · 未验证的预判(15:1x):🔮 密钥列表改一条查询后 page-smoke 那条会绿 —— 本地 0.12 秒、对账一致,但没在 8801 真服务上跑过(验法:gate_w39 的 e2e_ci_w39.log 退出码 0 且 ifmatch 48/48);🔮 gate_w39 全量门禁再没有别的红 —— w38 ship 没跑到,这批里新改的 open_api.py 有没有被咬合 / 契约检查盯着没查(bite_check 绿只说明规格没过期)。
   · 判据(15:1x):w35「瞬时抖动」判错的原因是**单跑绿 = 环境那一刻快**,不是接口形状对;以后「打不通」先量接口耗时再下结论。「死工具」判定只认 spans 表 09-24→11-24 的 execute_tool 记录 + sdk._ROLE_TOOLS,不认提示词里有没有提到。
@@ -57,7 +67,7 @@
   · **23:1x 状态汇总**:远端 0bb08202;gate_w40 ship 在咬合重放 53/109(23:03),之后全量 check.sh 约 40 分钟 → 预计 00:1x–00:3x 推完,**会和 0 点夜跑抢锁**(夜跑等锁上限 3600 秒,应该等得到;若夜跑先拿到锁,ship 的全量会等它几小时 —— 明早看 ship_w40.log 尾和远端哈希判断)。w40 带 4 笔(e64fb0ba 止);w1121 又领先 w1117 6 笔(bcac1b69…e4d831da:死工具 ①④ / 第三步 / 审批中心摘块 / 报告与文件页 / 定时失败原因+核对中出口 / 报错人话 / 修下载+执行记录 / 工作流归档),**都动了 管理后台/ → 明早 gate_w41 要 w35 形(含 make test-e2e-ci)**,夜跑结束(约 05:10)后再起。包三里「对照用例 312 条」写死的数 doc_numbers_check 自己标了「已知缺口:十个 judgetest 汇总格式不一、没有机读出口」,要做就是新检查(make-a-check-that-holds),留白天。
   · **23:5x gate_w40 红(没推,远端 0bb08202;主检出已被 gate ff 到 e64fb0ba,三个服务跑的是它)**:page-smoke 0、咬合 109 条全过,全量只红 1 条 tools/eval_tier_check.py「源码里写了的题都真跑过 —— ops 欠 D01、D02、D03」:它只认 agent/ops-eval-results.jsonl(不认 .partial),而 ops_eval 夜跑**只在周六晚单跑**(nightly_eval 单跑那晚 = 6),上次全量 11-17。处理:**23:5x 后台全量跑 ops_eval(任务 bqhm4k3dg,日志 scratchpad/ops_full_1124.log,132 题约 2.5 小时,Haiku 登录态)**,写进 w1121 的 agent/ops-eval-results.jsonl;和夜跑同时跑,夜跑耗时可能偏高(已告 fc)。❌ 作废:「D01 抖 / D02 判据」那些结论不变,但「w40 会绿」的预判错了。
   · **23:5x fc 提醒 + 我核过**:主检出停在 e64fb0ba(远端没有),服务跑的是没推上去的代码。夜跑自动提交那段(nightly_eval.py 458 起)**只在「上游之后恰好 1 笔」时才推**,主检出领先 4 笔 → 今晚它只本地提交不推,我的 4 笔不会绕过门禁。明早**不 rebase、不改这 4 笔哈希**(远端 0bb08202 没动),w1121 直接 `git rebase <主检出 HEAD>`(把夜跑那笔原样带上,老规矩「夜跑提交挡快进默认原样带上」),w1117 对齐后 gate_w41 ff 主检出就是纯快进;推完 `git merge-base --is-ancestor $(git -C 主检出 rev-parse HEAD) origin/main && echo 主检出在远端上` 验一遍。
-  · **01:4x ops_eval 全量跑完(退出码 0,135 题 × 两轮,约 1 小时 50 分)**:最后一轮 109/135(正向 31/36 · 负向 78/99);日常层 52/65 = 80% **没达标**(门槛 95%)、偶发 27/29 达标、罕见 30/41 只报分;两轮翻面 27 题(轨迹类 1:K10;内容类 23;认不出 3:O06 / R10 / X14);「花费 $5.77」是按价目表算的估数,实际走登录态不花钱。**三道新题**:D02、D03 两轮都过;**D01 两轮都挂,挂的不是判分器也不是题 —— 模型调了 cancel_fee 算对了,答案被交付前体检扣下**(第 1 轮 g23_discount_promise「谈到了价格让步」,第 2 轮 g1_no_source「报了总价 ¥65452.8 但没调 kb_bom」—— 价来自 get_order / cancel_fee,体检只认 kb_bom 当价的来源)。这是 agentsite/guards.py 的误报(fc 地界,**我不碰**),已算进「要告 fc」清单。`python3 tools/eval_tier_check.py` 本地**绿**(27 套源码题号都在结果文件里)。日常层 80% 不在今晚范围 —— ops_eval 周六夜跑才量,翻面 23 题挂在说法上,白天盘。
+  · **01:4x ops_eval 全量跑完(退出码 0,135 题 × 两轮,约 1 小时 50 分)**:最后一轮 109/135(正向 31/36 · 负向 78/99);日常层 52/65 = 80% **没达标**(门槛 95%)、偶发 27/29 达标、罕见 30/41 只报分;两轮翻面 27 题(轨迹类 1:K10;内容类 23;认不出 3:O06 / R10 / X14);「花费 $5.77」是按价目表算的估数,实际走登录态不花钱。**三道新题**:D02、D03 两轮都过;**D01 两轮都挂,挂的不是判分器也不是题 —— 模型调了 cancel_fee 算对了,答案被交付前体检扣下**(第 1 轮 g23_discount_promise「谈到了价格让步」,第 2 轮 g1_no_source「报了总价 ¥65452.8 但没调 kb_bom」—— 我先猜「体检只认 kb_bom 当价的来源」—— **错,fc 02:0x 查清**:总价那一支按字面比对,答案写「¥65,452.80」、返回里是 65452.8,千分位和尾零对不上;同一函数上半段早有「数本身在返回里就算有出处」的判法,总价这一支没用上。fc 的修法是让总价那支走同一判法(不加工具名单),副本上验过(D01 两份原稿放行、编的总价照拦、190 条对照绿、新钉两条用例),**算放宽守卫,补丁交用户 `!` 打,打上后随 fc 下一次推送**。我这边不等它,D01 在我的结果文件里照旧挂)。`python3 tools/eval_tier_check.py` 本地**绿**(27 套源码题号都在结果文件里)。日常层 80% 不在今晚范围 —— ops_eval 周六夜跑才量,翻面 23 题挂在说法上,白天盘。
   · ✅ 已做(01:4x):看 log 尾 → eval_tier_check 绿 → `git commit --only agent/ops-eval-results.jsonl HANDOFF.md`。**下一步第一个动作(05:10 夜跑完后)**:  `git -C w1121 rebase --autostash $(git -C /Users/eureka/Desktop/澜绣云裳agent rev-parse HEAD)`(主检出 HEAD = e64fb0ba + 夜跑那笔;**不是 origin/main**)→ w1117 status 干净后 rebase w1121 → gate_w41 = **w35 形(含 make test-e2e-ci,因为 6 笔都动了 管理后台/)**,sed w35→w41 → 绿后告 fc 哈希、kickstart com.lanxiu.backend + com.lanxiu.agentsite + 验 8801 归属。
   · 下一步第一个动作(23:1x,已过期):等 gate_w40 的后台通知(status gate_w40.status / ship_w40.log)。绿 → `git fetch`(卡住就 kill,用本地 origin/main 引用)核远端 = e64fb0ba → 告 fc 哈希 → `launchctl kickstart -k gui/$(id -u)/com.lanxiu.backend` + com.lanxiu.agentsite(api.py / server.py / app.py / sdk.py / prompts.py 都改了;主检出 ff 已由 gate 做)→ 夜跑期间不占锁不写库,只写代码;05:10 后 `git -C w1121 rebase origin/main --autostash` → w1117 对齐 → gate_w41(w35 形)。红 → 看 ship_w40.log 红在哪,**先 `git -C w1117 status --short | grep -v '^??'` 再 rebase**;夜跑期间不重跑 gate。
   · **12:0x:gate_w36 红在我三个新页 #main 有「undefined//」(冒烟假浏览器 location.protocol 为空)→ 加默认值(71d350f2),gate_w37 起(= w36 形,page-smoke + ship),w1117 = w1121 = 71d350f2 领先 8 笔。fc 的 b 步已本地提交、等我哈希;它提醒:我改 app.py:1206 加 me= 时要连 agentsite/triage_scope_check.py:103 的锚 `'sdk.run("triage", prompt), 单条超时秒'` 和 bite_specs「研判队列那一路还跑 task」那条 old 一起改(归 c 步)。今天汇总《澜绣云裳agent-日间汇总-20261124.md》已写(w1121 根目录,未提交,哈希待补),推完发飞书。**
@@ -2183,13 +2193,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-24 11:27。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-25 06:26。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `w1121` |
-| 最新提交 | 98972d91 · 2026-11-24 · 乐观锁可达检查:GET 打不通先歇 2 秒重试一次 —— gate_w35 整轮 e2e 只红在它一条瞬时抖动 |
-| 代码量 | 1230 个 Python 文件 / 212845 行(不含 .venv) |
+| 最新提交 | 7e6ea7b6 · 2026-11-25 · 工具选择评测结果跟上工具数 110→109:候选数 103→102 |
+| 代码量 | 1230 个 Python 文件 / 213021 行(不含 .venv) |
 | 验收 | `./check.sh` 共 445 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
@@ -2198,7 +2208,8 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ```
 M HANDOFF.md
  M agentsite/evals/funnel.jsonl
- M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\346\255\273\345\267\245\345\205\267\346\270\205\345\215\225-20261124.md"
+ M agentsite/evals/skill_usage.jsonl
+AM "\346\276\234\347\273\243\344\272\221\350\243\263agent-\345\244\234\351\227\264\346\261\207\346\200\273-20261124.md"
 ?? .feynman/weekly-review.log
 ?? .gate_w29.sh.bak
 ?? .gate_w30.sh.bak
@@ -2207,6 +2218,11 @@ M HANDOFF.md
 ?? .gate_w33.sh.bak
 ?? .gate_w35.sh.bak
 ?? .gate_w36.sh.bak
+?? .gate_w37.sh.bak
+?? .gate_w38.sh.bak
+?? .gate_w39.sh.bak
+?? .gate_w40.sh.bak
+?? .gate_w41.sh.bak
 ?? agentsite/.venv
 ?? "\347\256\241\347\220\206\345\220\216\345\217\260/.models"
 ```
@@ -2215,11 +2231,11 @@ M HANDOFF.md
 **最近 5 次提交:**
 
 ```
-98972d91 乐观锁可达检查:GET 打不通先歇 2 秒重试一次 —— gate_w35 整轮 e2e 只红在它一条瞬时抖动
-3c9aaf6e 咬合规格跟上 sdk 转人工那行的改动;待办清单重生成(新检查进了门禁数字变了)
-f485c046 8760 的 Skill 管理 / MCP 服务与工具 / 知识问题三页收到 AI 管理后台「澜绣 AI 治理」(用户 11-24 拍)
-e4d59294 MCP 客户端:起子进程显式带身份、进程池按 (kind, 身份) 复用 —— 原来继承父进程环境、按 kind 复用会串身份
-3274ccdf 包一第二批:修工作台 NameError、边界审计两条约定归位、健康口报确认卡开关、系统身份在 sdk 里中性、死工具清单
+7e6ea7b6 工具选择评测结果跟上工具数 110→109:候选数 103→102
+64b41711 评测:运维评测全量跑了一遍(135 题 × 两轮),让门禁认得三道新负向题
+00001001 工作室里的工作流卡加「归档」:接口 11-13 就有、带三道闸,前端一直没按钮(包二「做了要像做了」)
+24cbcfa2 运行详情里的文件下载带身份;员工定时每行能展开最近 10 期执行记录(包二「做了要像做了」)
+b17ba78d 聊天站报错说人话:出了什么事、编号、能做什么;异常类型名和原文进 detail 和执行记录(包二「做了要像做了」第四件)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
