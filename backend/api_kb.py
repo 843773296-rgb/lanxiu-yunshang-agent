@@ -248,7 +248,14 @@ def kb_combo(craft, material):
     return api._nz(_combo_caveat(d))
 
 def kb_tables(topic=None):
-    """决策表 —— 「客户说 X 该推什么」这类问题的答案在这里,不在条目里。"""
+    """决策表 —— 「客户说 X 该推什么」这类问题的答案在这里,不在条目里。
+
+    topic 填「待核实」时转去看待核实队列(哪些工艺×面料被问到了却没依据,按被问次数排)——
+    2026-11-24 把 get_review_queue 并进来:它两个月零调用,而模型要的「知识层里还有什么没定」
+    本来就是在这儿问的;函数本体留在 api_aftersale(边界审计直接调它),这里只是入口。"""
+    if topic and "核实" in str(topic):
+        import api_aftersale as _as
+        return _as.get_review_queue(top=15)
     rs=api._rows("SELECT * FROM kb_table ORDER BY topic")
     if topic: rs=[r for r in rs if topic in r["topic"]]
     if not rs:

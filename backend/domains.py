@@ -18,7 +18,7 @@
 领域 = {
     "knowledge": (   # 知识与工艺:制度、工艺、面料、版型、BOM、工期;版师核数
         "kb_lookup", "kb_detail", "kb_combo", "kb_rag", "kb_read", "kb_tables",
-        "kb_pattern", "kb_size", "kb_lead", "kb_bom", "get_review_queue",
+        "kb_pattern", "kb_size", "kb_lead", "kb_bom",
         "pattern_queue", "grading_audit", "set_piece_ratio",
         "set_grade_diff",
         # 纹样核定(2026-10-27):纹样是**面料和商品知识**,归这个领域。
