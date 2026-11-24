@@ -5219,6 +5219,17 @@ function 页_澜绣治理(哪页) {
     <iframe title="${esc(名)}" src="${esc(地址)}" style="width:100%;height:calc(100vh - 180px);border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>`;
 }
 
+/* 员工定时「上次失败」的原因(11-24 包二②):接口把最近一次运行的 error_detail 原样给出来({http, 回:{error, 怎么办}}),
+ * 这里压成一句人话;解析不了就给原文前 160 字 —— 「失败了」三个字对看的人没有信息量。 */
+function 定时失败原因(raw) {
+  let d = raw;
+  try { if (typeof raw === "string") d = JSON.parse(raw); } catch (e) { return String(raw).slice(0, 160); }
+  if (!d || typeof d !== "object") return String(raw).slice(0, 160);
+  const 回 = d["回"] || {};
+  const 句 = 回.error || 回["错误"] || 回.detail || (typeof 回 === "string" ? 回 : "") || d.error || "";
+  const 码 = d.http ? `聊天站回 ${d.http}` : "";
+  return [码, String(句).slice(0, 160), 回["怎么办"] ? `→ ${String(回["怎么办"]).slice(0, 80)}` : ""].filter(Boolean).join(":") || String(raw).slice(0, 160);
+}
 async function 页_员工定时(页 = 1) {
   const 头 = `<div class="crumb">待办与定时 / 员工定时</div>
     <div class="head"><div><h1>员工定时任务</h1>
@@ -5245,6 +5256,7 @@ async function 页_员工定时(页 = 1) {
         <td class="k">${esc(t["频率说明"] || "")}</td>
         <td>${t.task_mode === "跑" ? "让助手跑" : "只提醒"}</td>
         <td><span class="pill ${t.status === "启用" ? "ok" : ""}">${esc(t.status)}</span>${t["上次结果"] === "失败" ? ` <span class="pill fail">上次失败</span>` : ""}
+            ${t["上次结果"] === "失败" && t["上次错误"] ? `<div class="k" title="${esc(String(t["上次错误"]).slice(0, 400))}">原因:${esc(定时失败原因(t["上次错误"]))}</div>` : ""}
             ${t.note ? `<div class="k">${esc(t.note)}</div>` : ""}</td>
         <td class="num">${Number(t["成功次数"] || 0)}</td>
         <td class="k">${t["上次成功"] ? esc(String(t["上次成功"]).slice(5, 16).replace("T", " ")) : "—"}

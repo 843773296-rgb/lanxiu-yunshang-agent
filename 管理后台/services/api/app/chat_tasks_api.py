@@ -169,7 +169,9 @@ def 任务列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
             select count(*) over () 全量, t.*,
                    (select count(*) from chat_task_runs r where r.project_id=t.project_id and r.chat_task_id=t.id and r.status in ('跑了','提醒')) 成功次数,
                    (select max(r.ended_at) from chat_task_runs r where r.project_id=t.project_id and r.chat_task_id=t.id and r.status in ('跑了','提醒')) 上次成功,
-                   (select r.status from chat_task_runs r where r.project_id=t.project_id and r.chat_task_id=t.id order by r.created_at desc limit 1) 上次结果
+                   (select r.status from chat_task_runs r where r.project_id=t.project_id and r.chat_task_id=t.id order by r.created_at desc limit 1) 上次结果,
+                   (select cast(r.error_detail as text) from chat_task_runs r where r.project_id=t.project_id and r.chat_task_id=t.id
+                     order by r.created_at desc limit 1) 上次错误
               from chat_tasks t
              where t.project_id=:p and t.archived_at is null
                and (cast(:sc as text) is null or t.staff_code = cast(:sc as text))

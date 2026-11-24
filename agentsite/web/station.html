@@ -1209,7 +1209,10 @@ function actCards(m, i){
     else if(态 === "已失败") 尾 = `<div style="color:var(--bad,#b42318)">❌ 执行失败:${esc(String((k.结果 || {}).error || JSON.stringify(k.结果 || {})).slice(0, 300))}</div>`;
     else if(态 === "未执行") 尾 = `<div class="note">⛔ 没有执行:${esc(String((k.结果 || {}).error || "").slice(0, 300))} —— 要做的话让助手重新查一遍、重新生成</div>`;
     else if(态 === "核对中") 尾 = `<div style="color:var(--warn,#b54708)"><b>⏳ 可能已执行,正在核对</b> —— 工具没有及时回结果,这一笔<b>可能已经落库</b>。<b>请不要重复操作</b>,也不要再让助手生成一张;`
-      + `${(k.结果 || {}).转人工待办 ? `已转人工核对(待办 ${esc(String(k.结果.转人工待办))})` : `转人工没建成:${esc(String((k.结果 || {}).转人工失败 || ""))}`},核对结果出来会在管理后台待办里。</div>`;
+      + `${(k.结果 || {}).转人工待办 ? `已转人工核对(待办 ${esc(String(k.结果.转人工待办))})` : `转人工没建成:${esc(String((k.结果 || {}).转人工失败 || ""))}`},核对结果出来会在管理后台待办里。</div>`
+      // 11-24 包二③:「核对中」原来是条死路 —— 说了结果在待办里,却没有一条路过去。给两个出口:去待办看;本页的「人工待办」页签也能看
+      + `<div class="note"><a href="${esc((location.protocol || "http:") + "//" + (location.hostname || "127.0.0.1") + ":8801/#/human")}" target="_blank" rel="noopener">去管理后台待办看核对结果</a>`
+      + ` · 或点左边「人工待办」页签${(k.结果 || {}).转人工待办 ? `,找待办 ${esc(String(k.结果.转人工待办))}` : ""};核对完这张卡不会自己变,以待办里的结论为准</div>`;
     else if(态 === "已过期") 尾 = `<div class="note">已过期,没有执行 —— 要做的话让助手重新查一遍、重新生成</div>`;
     else if(态 === "已取消") 尾 = `<div class="note">已选择暂不执行,没有执行</div>`;
     else 尾 = `<div class="note">${esc(态 || "")}</div>`;
