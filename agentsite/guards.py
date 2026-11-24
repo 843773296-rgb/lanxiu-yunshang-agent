@@ -382,7 +382,9 @@ def g1_no_source(text, calls, prompt="", 规矩=""):
             return (f"答案给了{叫}({v:g}),但**没调 {' / '.join(sorted(可接受))} "
                     f"里的任何一个** —— 调了别的工具不等于查过了这个数")
     for v, i in monies:
-        if _near(text, i, TOTAL_M) and not _called(calls, "kb_bom") and not _原样出处(text, i, calls):
+        # 11-25 运营评测 D01 真跑钉回:取消退款「应退 ¥65,452.80」是 get_order 原样查到的订单额(返回里是 65452.8),
+        # 片段带千分位和尾零,_原样出处 按字面比对不上,两轮整份扣下。和上面那段同一条原则:**数本身在返回里就是有出处**
+        if _near(text, i, TOTAL_M) and not _called(calls, "kb_bom") and not _查到过(v, text, i, 查到的数, calls):
             return f"答案报了总价/报价(¥{v:g}),但没调 kb_bom 算过 —— 价格不能凭印象说"
     for a, b, i in days:
         # ⚠️ 10-06 人工任务角色真跑:「**逾期** 6 天(交期 09-30)」「交付时间 09-30,**距今** 6 天」—— 是**已经过去的天数**,
