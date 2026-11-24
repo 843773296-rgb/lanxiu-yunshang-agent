@@ -8,6 +8,13 @@
     `json.dumps(out, ensure_ascii=False)` 原样可用
 
 进程是**懒启动、长驻、复用**的 —— 每次调用都拉一个子进程会慢到没法评测。
+
+身份(11-24,体检 / fc 查出的两个坑):
+  · 原来 Popen 不传 env,子进程的 LANXIU_ME **继承父进程环境** —— 父进程里 `api.as_user(...)` 的 contextvar 身份过不去,
+    而父进程环境里若碰巧留着别人的 LANXIU_ME,子进程就顶着那个人的身份取数;
+  · 池按 kind 复用:就算起进程时带了身份,**第二个身份也复用第一个的进程 = 串身份**,而串了不会报错。
+  现在:起进程时 env 显式带 `api.whoami(认系统=True)` 的身份(没有就把继承来的 LANXIU_ME 删掉,不让它顶别人的),
+  池键 = (kind, 身份工号) —— 换一个人就是另一条进程。
 """
 import atexit, json, os, subprocess, sys, threading
 
@@ -17,12 +24,26 @@ _POOL = {}
 _LOCK = threading.Lock()
 
 
+def _当前身份():
+    """起子进程那一刻的身份:api.whoami(认系统=True)(contextvar 或本进程环境变量)。拿不到 api 就当没身份。"""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(HERE), "backend"))
+        import api as _api
+        return _api.whoami(认系统=True)
+    except Exception:
+        return None
+
+
 class MCPClient:
-    def __init__(self, script):
+    def __init__(self, script, me=None):
+        env = {k: v for k, v in os.environ.items() if k != "LANXIU_ME"}   # 不继承别人的身份
+        if me:
+            env["LANXIU_ME"] = json.dumps(me, ensure_ascii=False)
+        self.me = me
         self.p = subprocess.Popen(
             [sys.executable, os.path.join(HERE, script)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, bufsize=1)
+            text=True, bufsize=1, env=env)
         self.n = 0
         self._rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                  "clientInfo": {"name": "lanxiu-agent", "version": "1.0.0"}})
@@ -65,11 +86,13 @@ class MCPClient:
 
 
 def get(kind):
-    """懒启动 + 复用。kind: kb / task"""
+    """懒启动 + 复用。kind: kb / task / shop。**按 (kind, 身份) 复用** —— 不同的人各自一条进程,串不了身份。"""
+    me = _当前身份()
+    键 = (kind, (me or {}).get("no") or "")
     with _LOCK:
-        if kind not in _POOL:
-            _POOL[kind] = MCPClient(SERVERS[kind])
-        return _POOL[kind]
+        if 键 not in _POOL:
+            _POOL[键] = MCPClient(SERVERS[kind], me=me)
+        return _POOL[键]
 
 
 def enabled():
