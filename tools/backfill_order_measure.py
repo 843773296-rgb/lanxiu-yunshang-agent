@@ -31,7 +31,8 @@ import body_gen as B
 # 而且在新规下它**正好也是「没有下单量体就不许下单」的反例**。同一份名单,不另抄。
 from fix_order_measure import 夹具着装人集
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 12 批(重建配方里的回填步骤跟 seed 同源)
+DB = _库路径()
 
 
 def main():

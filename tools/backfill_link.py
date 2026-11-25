@@ -40,7 +40,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "knowledge"))
 import linkage as _口径
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+sys.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 12 批(重建配方里的回填步骤跟 seed 同源)
+DB = _库路径()
 
 
 def 接待场次(c):

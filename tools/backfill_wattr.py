@@ -26,7 +26,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "knowledge"), os.path.join(ROOT, "backend")]
 import attribution as _归因, journey as _旅程, linkage as _链
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 12 批(重建配方里的回填步骤跟 seed 同源)
+DB = _库路径()
 METHOD = "W型归因 v1·全量"
 角色映射 = {"首次接待": "首次接待", "量体": "量体", "成交": "成交",
             "成交(无量体节点)": "成交"}
