@@ -63,7 +63,9 @@ import order_mix as OM        # noqa: E402  事实 + 受保护客户
 import worldclock as W        # noqa: E402
 
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 14 批
+DB = _库路径()
 for _i, _a in enumerate(sys.argv):
     if _a == "--db" and _i + 1 < len(sys.argv):
         DB = sys.argv[_i + 1]

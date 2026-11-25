@@ -12,6 +12,23 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-25 19:1x · 本地 1 笔待推 99ba2d2e(库路径第 14 批,欠债 238);等并行会话 gate_w46(约 20:00 推完)(Opus 5.5)
+- **下一步第一个动作**:收到它的哈希 → `git pull --rebase --autostash -q origin main` → dbpath_check / bite_check 单独跑看退出码 → ship(日志名 ship-20261125-<HHMM>a.log)→ ff 主检出 + kickstart + curl → 报哈希。**必须 0 点前推完**(0 点起不许用锁)。
+- 它那笔改了 tools/import_images.py,我这批特意没碰,下批可以做(先看 rebase 后那一行还在不在)。
+- 守卫提示:提交命令里别用「检查 | tail」当通行证(管道吞退出码),先单独跑看 rc。
+
+### ✅ 11-25 18:5x · 已推 7e2177d3(库路径第 13 批,欠债 243);主检出已 ff、三服务已重启;锁空,并行会话今天不再占锁(Opus 5.5)
+- **下一步第一个动作**:库路径欠债接着降(`python3 tools/dbpath_check.py` 现看)。挑「没有咬合锚在 DB 那一行」的先做(`grep -c tools/<名>.py tools/bite_specs.json`);
+  有锚的(clamp_future_done 12 条、daily_fresh 1 条、backfill_rating)要拿锁重放,单独做。check_copy.py 不迁。
+- 0 点到夜跑结束不许用锁。
+- **六项(11-25 19:0x,压缩前)**
+  - 未验证的预判:🔮 还有别的咬合砍的是「m.DB = 副本 / sqlite 连库改道」这类已成冗余的层,会在下次按改动重放时冒出「改坏没红」—— 没全量扫过,只修了 819 / 763 两条。验法:`grep -n '"m.DB = \|_sq.connect\|指到副本' tools/bite_specs.json` 逐条看攻击是否还能观测。
+  - 判据:「改坏没红」先疑冗余保险(地址单源后 api.DB / dbpath 启动即读 LANXIU_DB),攻击挪到源头(env 根本不进进程),**不标只报不拦**(要用户)。库路径迁移只挑「咬合不锚那一行」的,import 断言 DB == dbpath.路径(),不跑 main。
+  - 作废的结果:并行会话 11-25 那次 dbpath_check 咬合「对照就是红的」—— 在我树上锁内重放 1/1 绿,是它树的问题,不是规格坏。
+  - 禁区:并行会话的文件(server.py / fsm.py / api*.py / sdk.py / app.py / prompts.py / index.html / login.html / boundary_audit.py / mcp/client.py 与协议 / 管理后台/);主检出只 ff 不 reset(它的提交它自己处理);check_copy.py 两处故意认真库不迁。
+  - 下一步第一个动作:`python3 tools/dbpath_check.py` 看剩几处 → 挑无锚的 5–6 个一批 → 本地提交 → 锁空时 rebase + ship → ff 主检出 + kickstart 三服务 + curl → 报哈希给用户和并行会话。
+  - 悬而未决:并行会话的日常档评测 80%(门槛 95%,27 题两轮翻面)归它查;access_keys 那堆用户决定保留。
+
 ### ✅ 11-25 傍晚 · 已推 916192b1(库路径第 10–12 批,欠债 248);主检出已 ff、三服务已重启(Opus 5.5)
 - **下一步第一个动作**:接着库路径欠债(跑 dbpath_check 现看)。backfill_rating 那行有咬合锚,要拿锁重放 —— 单独做;check_copy.py 两处故意认真库,不迁。
 - 并行会话本地还有一笔 md(成本口径一节一句)待推,不是我的。

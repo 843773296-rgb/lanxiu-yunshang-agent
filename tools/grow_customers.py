@@ -41,7 +41,9 @@ import os, sys, random, sqlite3, hashlib, argparse, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 14 批
+DB = _库路径()
 
 SEED = 20260919
 # 用户拍板「客户 1000」,又说「数量别是 5000、100 这种,要有随机性,看起来真实」——
