@@ -23983,7 +23983,7 @@
     "new": "  const 带号=(话)=>话;"
    }
   ],
-  "预期红": "编号 101010-ab12"
+  "预期红": "②b 接口报错带请求编号(HTTP 500 + 人话体)"
  },
  {
   "script": "tools/judge_cases_check.py",
