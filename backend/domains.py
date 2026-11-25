@@ -30,6 +30,7 @@
         "record_measure", "forecast_growth", "revive_list", "churn_watch",
         "call_opportunity", "ownerless_list", "recovery_queue", "recovery_followup", "points_ledger",
         "approval_queue", "apply_adjust", "decide_approval",
+        "list_appointments", "book_appointment", "reschedule_appointment",   # 预约查 / 约 / 改(包四第一件,11-25)
     ),
     "commerce": (    # 商品与交易:商品、库存、方案、下单、订单
         "get_scheme", "get_order", "get_stock", "stock_alert", "can_order",

@@ -12438,15 +12438,15 @@
  },
  {
   "script": "tools/insert_shape_check.py",
-  "改坏": "把 create_appointment 的 `advisor_no` 键改回 `advisor`(表上没有这一列)—— 这条路**绕开了这份检查原有的四条**:它不写 `INSERT INTO`,那个正则一个字都看不见它,而它照样在往库里写。2026-10-24 真栽过:两条写口传的都是 `advisor`,而 `_insert` 当时对非必填的未知列只在 stderr 打一行就丢 —— **从页面建的每一条预约和跟进,顾问都是空的,而接口返回 ok:true**",
+  "改坏": "预约 INSERT 的 VALUES 少一个占位(11 列 10 值)—— 11-25 起写预约在 backend/appt_write,原来攻 server.create_appointment 的 _insert 键",
   "file": [
    {
-    "path": "backend/server.py",
-    "old": "             \"advisor_no\": 顾问工号(d.get(\"advisor\")), \"status\": \"待确认\",",
-    "new": "             \"advisor\": 顾问工号(d.get(\"advisor\")), \"status\": \"待确认\","
+    "path": "backend/appt_write.py",
+    "old": "        c.execute(\"INSERT INTO appointment(id,customer_id,shop,shop_code,advisor_no,start_ts,end_ts,status,named_advisor_no,named_state,channel)\"\n                  \" VALUES(?,?,?,?,?,?,?,'待确认',?,?,?)\",",
+    "new": "        c.execute(\"INSERT INTO appointment(id,customer_id,shop,shop_code,advisor_no,start_ts,end_ts,status,named_advisor_no,named_state,channel)\"\n                  \" VALUES(?,?,?,?,?,?,?,'待确认',?,?)\","
    }
   ],
-  "预期红": "每个 _insert 传的键都是表上真有的列"
+  "预期红": "列数和建表语句对得上"
  },
  {
   "script": "backend/shop_key_check.py",
@@ -20831,12 +20831,12 @@
  },
  {
   "script": "backend/appt_ops_write_check.py",
-  "改坏": "把 edit_appointment 的「只能改本店的预约」去掉",
+  "改坏": "把编辑预约的「只能改本店的预约」去掉(11-25 起逻辑在 backend/appt_write.编辑,server.edit_appointment 只是转调)",
   "file": [
    {
-    "path": "backend/server.py",
-    "old": "        if not 我店 or 我店 != a[\"shop_code\"]:\n",
-    "new": "        if False:\n"
+    "path": "backend/appt_write.py",
+    "old": "    if 我店 and (a[\"shop_code\"] or \"\") != 我店:\n        return 拒(\"OTHER_SHOP\", \"只能改本店的预约 —— 这条预约在别的门店\")\n",
+    "new": "    if False:\n        return 拒(\"OTHER_SHOP\", \"只能改本店的预约 —— 这条预约在别的门店\")\n"
    }
   ],
   "预期红": "① 别店的人改不了"
@@ -24032,5 +24032,17 @@
    }
   ],
   "预期红": "一套该有几张"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把 AP03(改已完成的预约)的「不许说改好了」那一轴去掉 —— 说改好了也放过(11-25 预约三件)",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "                  must_not_promise(\"已改\", \"改好了\", \"已经改\", \"改成功\", \"已为您改\",\n                                   why=\"没改成说成改好了,客户会按新时间来\"))),",
+    "new": "                  )),"
+   }
+  ],
+  "预期红": "AP03·说改好了 —— 该挂"
  }
 ]

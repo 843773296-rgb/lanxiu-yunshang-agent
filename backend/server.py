@@ -2483,108 +2483,23 @@ def create_customer(d, actor, _role=None):
 
 def edit_appointment(d, me):
     """编辑预约:改时间、换顾问(11-14,台账第四十八条「和新建预约同一套权限」)。
+    11-25 起逻辑在 backend/appt_write.编辑 —— 聊天工具 reschedule_appointment 调的是同一个函数;这里只把页面字段名对过去,
+    edit_log 仍用本文件的 log_edit 记(来源「后台」)。"""
+    import appt_write as _AW
+    def _记(me_, aid, 改了):
+        log_edit((me_ or {}).get("name") or "?", (me_ or {}).get("no"), "预约", aid, f"编辑预约 {aid}", 改了)
+    return _AW.编辑({"预约号": d.get("id"), "开始": d.get("start"), "结束": d.get("end"), "顾问": d.get("advisor"), "方式": d.get("way")}, me, 记编辑=_记)
 
-    · 谁能改:门店的人改**本店**的预约;总部运营改全部(和 _店范围 同口径)
-    · 时间规则和新建**同一个函数**(rules.validate_appointment):提前量、补录过去的时间只有店长及以上
-    · 已到店 / 完成 / 取消 / 过期 / 爽约的不能改 —— 那是已经发生过的事
-    · 换的顾问要是**这家店在职的顾问**(预约归店,顾问跟着店走)
-    """
-    import shop_key as _SK
-    aid = str(d.get("id") or "").strip()
-    角色 = (me or {}).get("role"); 谁 = (me or {}).get("name") or "?"
-    def 拒(码, 为何):
-        log_op(谁, "appointment", aid or "?", "编辑", "拒绝", False, 码, 为何, {"role": 角色})
-        return dict(ok=False, code=码, reason=为何)
-    if not me: return 拒("NO_LOGIN", "请先登录")
-    a = rows("SELECT * FROM appointment WHERE id=?", aid)
-    if not a: return 拒("NO_APPT", f"没有预约 {aid}")
-    a = a[0]
-    if a["status"] not in 预约可改的状态:
-        return 拒("WRONG_STATE", f"预约已是「{a['status']}」—— 只有 {' / '.join(预约可改的状态)} 的能改")
-    if 角色 != "总部运营":
-        with _conn() as _c:
-            我店 = _SK.码(_c, me.get("shop"))
-        if not 我店 or 我店 != a["shop_code"]:
-            return 拒("OTHER_SHOP", "只能改本店的预约")
-    st = (d.get("start") or a["start_ts"] or "").replace("T", " ")
-    en = (d.get("end") or a["end_ts"] or "").replace("T", " ")
-    if (st, en) != (a["start_ts"], a["end_ts"]):
-        ok, code, why = rules.validate_appointment({"start": st, "end": en, "way": d.get("way")},
-                                                   now=_wnow(), actor_role=角色)
-        if not ok: return 拒(code, why)
-    adv = a["advisor_no"]
-    if d.get("advisor"):
-        adv = 顾问工号(d.get("advisor")) or str(d.get("advisor")).strip()
-        with _conn() as _c:
-            _片, _参 = _SK.门店条件(_c, a["shop_code"] or a["shop"])
-        if not rows(f"SELECT 1 FROM staff WHERE no=? AND role='顾问' AND status='启用' AND {_片}", adv, *_参):
-            return 拒("BAD_ADVISOR", f"{d.get('advisor')} 不是这家店在职的顾问")
-    新值 = dict(start_ts=st, end_ts=en, advisor_no=adv)
-    with _conn() as c:
-        # ⚠️ SET 的字段 = 预约字段名
-        c.execute("UPDATE appointment SET start_ts=?,end_ts=?,advisor_no=? WHERE id=?", (st, en, adv, aid))
-    改了 = diff_fields(dict(a), 新值, 预约字段名)
-    log_op(谁, "appointment", aid, "编辑", "已保存", True, "UPDATE", "、".join(x["字段"] for x in 改了) or "无改动", {"role": 角色})
-    log_edit(谁, me.get("no"), "预约", aid, f"编辑预约 {aid}", 改了)
-    return dict(ok=True, code="UPDATE", id=aid, reason=f"已保存:{'、'.join(x['字段'] for x in 改了)}" if 改了 else "没有改动(也留了一条记录)")
 
-def create_appointment(d, actor, _role=None):
-    """新建预约。PRD:早于当前时间的补录只有店长及以上能做 —— 判据在 rules.py。"""
-    import datetime
-    role = _role or "顾问"
-    ok, code, why = rules.validate_appointment(d, now=_wnow(), actor_role=role)   # 世界的当下(10-15):原来不传,落到机器时钟
-    if ok:
-        import shop_key as _SK0
-        with _conn() as _c0:
-            _停 = _SK0.停业理由(_c0, d.get("shop"))
-        if _停:
-            ok, code, why = False, "SHOP_INACTIVE", _停
-    if not ok:
-        log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
-        return dict(ok=False, code=code, reason=why)
-    # 客户点名了谁 / 预约渠道(W21,用户 11-12 拍第十二条)。**点名 ≠ 派单**:只记客户意愿,
-    # 派单建议读它(booking.suggest_why)、店长确认。表单里可能填「A01 林岚」这种显示串 ——
-    # 先认成工号;认不出就原样交给校验,让它**拒并说清**,不静默丢掉(丢掉就成了「不详」)。
-    import booking as _bk
-    _点 = dict(d)
-    _raw = str(d.get("named_advisor_no") or "").strip()
-    if _raw and not rows("SELECT 1 FROM staff WHERE no=?", _raw):
-        _点["named_advisor_no"] = 顾问工号(_raw) or _raw
-    ok, code, why, 点名列 = _bk.校验点名(d.get("shop"), _点)
-    if not ok:
-        log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
-        return dict(ok=False, code=code, reason=why)
-    n = rows("SELECT COUNT(*) c FROM appointment")[0]["c"]
-    aid = f"AP{_wnow():%y%m%d}{n + 1:04d}"
-    # 列名以**表**为准:appointment 是 start_ts / end_ts,不是 appt_at。
-    # 校验读的也是 d["start"] / d["end"](见 rules.validate_appointment),两头对齐。
-    # ⚠️ 列名是 `advisor_no`,**不是 `advisor`**。原来这儿写的是后者,
-    # 而 `_insert` 对非必填的未知列只在 stderr 打一行就丢掉 ——
-    # 于是**从页面建的每一条预约,顾问都是空的**,而接口返回 ok:true。
-    # 库里现有那些预约都带着顾问,是 seed 直接写进去的,所以一直没人发现。
-    # (2026-10-24 数据工厂那条线查出来的;`create_followup` 那一处同病,归他修。)
-    # ⚠️ `shop_code` 也是这次补的:**这是预约的第二条写口**,
-    # 而我给门店键加列那一轮是按字面 `INSERT INTO` 普查写口的,
-    # **用辅助函数写库的这一条压根没进视野**。
-    # > 一个用辅助函数写库的写口,和一个不存在的写口,在 grep 眼里长得一模一样。
-    import shop_key as _SK
-    # ⚠️ 在 `with` 里算 —— `_conn()` 返回的是**裸连接**,直接当参数传进去
-    # 会每建一条预约漏一个连接(它不是会自己关的那种上下文管理器)。
-    with _conn() as _c:
-        _门店码 = _SK.码(_c, d.get("shop"))
-    _insert("appointment",
-            {"id": aid, "customer_id": d.get("customer_id"), "shop": d.get("shop"),
-             "shop_code": _门店码,
-             "advisor_no": 顾问工号(d.get("advisor")), "status": "待确认",
-             "start_ts": (d.get("start") or "").replace("T", " "),
-             "end_ts": (d.get("end") or "").replace("T", " "),
-             "named_advisor_no": 点名列["named_advisor_no"],
-             "named_state": 点名列["named_state"], "channel": 点名列["channel"]},
-            required=["id", "customer_id", "start_ts", "end_ts", "status"])
-    log_op(actor, "appointment", aid, "—", "待确认", True, "CREATE",
-           f"新建预约 {aid},客户 {d.get('customer_id')},"
-           f"{d.get('start')} → {d.get('end')}", {"role": role})
-    return dict(ok=True, code="CREATE", id=aid, reason=f"已建预约 {aid},状态「待确认」")
+def create_appointment(d, actor, _role=None, me=None):
+    """新建预约。11-25 起逻辑在 backend/appt_write.新建(聊天工具 book_appointment 调的同一个函数):
+    时间规则 rules.validate_appointment、停业门店、点名校验、只约本店、台账,都在那边。`me` 不传时用 actor + _role 拼一个
+    (老调用方);页面那条路传登录人。"""
+    import appt_write as _AW
+    身份 = dict(me) if me else {"name": actor, "role": _role or "顾问", "no": (me or {}).get("no") or actor, "shop": d.get("shop")}
+    return _AW.新建({"客户": d.get("customer_id"), "开始": d.get("start"), "结束": d.get("end"), "方式": d.get("way"),
+                     "顾问": d.get("advisor"), "点名三态": d.get("named_state"), "点名工号": d.get("named_advisor_no"),
+                     "渠道": d.get("channel")}, 身份)
 
 
 def create_followup(d, actor, ctx=None):
@@ -5430,7 +5345,7 @@ class H(BaseHTTPRequestHandler):
             import targeted_ops as _to
             return self._send(_to.发起(body, 登录人))
         if p=="/api/appt-create":
-            return self._send(create_appointment(body, 登录人["name"], 登录人.get("role")))
+            return self._send(create_appointment(body, 登录人["name"], 登录人.get("role"), me=登录人))
         if p=="/api/followup-create":
             return self._send(create_followup(body, 登录人["name"]))
         if p=="/api/factory-rollback": return self._send(factory_rollback(body, _me(self)))

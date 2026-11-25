@@ -38,6 +38,7 @@ def main():
         真.backup(副)
     import server, oplog, tasks, targeted_ops
     server.DB = oplog.DB = tasks.DB = targeted_ops.DB = 副本
+    import appt_write; appt_write.DB = 副本      # 11-25:预约的写逻辑挪到了 appt_write,副本也要指给它(不然读真库写副本)
     assert all(m.DB == 副本 for m in (server, oplog, tasks, targeted_ops)), "库没切到副本"
     def q(sql, *a):
         with closing(sqlite3.connect(副本)) as _c:

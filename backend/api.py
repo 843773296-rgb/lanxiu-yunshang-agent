@@ -560,7 +560,9 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
                "report_production",
                # 发起被接管的工作流(用户 10-24 拍「打开时聊天站改走工作流」)。它本身不改澜绣的库,
                # 但会在管理后台排一条**最后要写进系统**的运行 —— 按写口管:一轮只发一次、同参数不许重试
-               "start_workflow")
+               "start_workflow",
+               # 预约(包四第一件,用户 11-25 拍):帮客户约 / 改时间。两个都是高档确认卡(预约是对客承诺);规则在 backend/appt_write
+               "book_appointment", "reschedule_appointment")
 
 
 
@@ -1155,6 +1157,34 @@ TOLERANT_XZ_CHILD = ("XZ39",)
 
 
 
+
+# ── 预约:查 / 约 / 改(包四第一件,用户 2026-11-25 拍)。业务逻辑在 backend/appt_write,旧后台页面调的也是它 ──
+def list_appointments(customer=None, date=None, advisor=None, status=None, limit=20):
+    """本店(跨店角色:全部)的预约。筛客户 / 日期 / 顾问 / 状态;默认只给进行中的(待确认 / 已预约 / 已到店)。"""
+    import appt_write as _AW
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="没有身份,看不了预约 —— 请先登录", 范围="本店")
+    return _nz(_AW.列(me, 客户=customer, 日期=date, 顾问=advisor, 状态=status, 限=limit))
+
+def book_appointment(customer, start, end=None, way="到店量体", advisor=None, named_state=None, named_advisor=None, channel=None):
+    """(写)帮客户约:只约本店客户;时间按预约规则(提前量 / 补录只许店长及以上);落「待确认」。发起人是谁从登录会话取。"""
+    import appt_write as _AW
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在约 —— 请先登录")
+    r = _AW.新建({"客户": customer, "开始": start, "结束": end, "方式": way, "顾问": advisor,
+                  "点名三态": named_state, "点名工号": named_advisor, "渠道": channel}, me)
+    if r.get("ok"): _agent_log(me, "BOOK_APPT", f"建预约 {r.get('id')}:客户 {r.get('客户')} {r.get('开始')}")
+    return _nz(r)
+
+def reschedule_appointment(appointment_id, start=None, end=None, advisor=None):
+    """(写)改预约时间 / 换顾问:只改本店、只改待确认 / 已预约的;新时间按同一套预约规则。要预约号(先 list_appointments)。"""
+    import appt_write as _AW
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在改 —— 请先登录")
+    r = _AW.编辑({"预约号": appointment_id, "开始": start, "结束": end, "顾问": advisor}, me)
+    if r.get("ok"): _agent_log(me, "RESCHEDULE_APPT", f"改预约 {appointment_id}:{r.get('原时间')} → {r.get('新时间')}")
+    return _nz(r)
+
 SHOP_SCHEMAS=[
  {"name":"get_tasks","description":"**查任务 —— 四种问法一个口。** 不给参数=我自己的活;给 task_id=某一条的详情;scope=\"待分配\"=待分配池(客户约了时间但没自动派出去的,每条带 agent 的人选建议和依据,**建议不是决定**,要店长确认);scope=\"团队\" 或给 assignee=按人看(带每人在办件数、最近到期、在办明细,还会列出手上没活的人)。\n\n**范围跟身份走,隔离在查询层不在界面**:顾问只看得到派给自己的(知道单号也看不到别人的),店长看本店,总部看全部。⚠️ **「你看不到他的活」和「他没有活」是两回事**,返回里会分开说。status 可选只看某一档(有效/完结/取消/无效)。",
   "input_schema":{"type":"object","properties":{
@@ -1252,6 +1282,9 @@ SHOP_SCHEMAS=[
  {"name":"monthly_review","description":"**月度复盘**:这个月做完了多少、几条逾期、逾期都在谁身上、改派几次和理由、**agent 的派单建议采纳率**、智能体代做了几笔、待分配积压、订单走完一轮要多久。month 写 `2026-09`,不给就是当月。按**截止时间**归月(复盘看的是「这个月该做完的做完了没有」)。范围跟身份走:顾问只看自己的,店长看本店。⚠️ **分母为零的地方不给比率,给一句话** —— 「没发生过分派」和「分派了但一次没采纳」是两件事。",
   "input_schema":{"type":"object","properties":{"week":{"type":"string","description":"周报用:看**某一个业务周**(周一到周日),给那一周里任意一天 `YYYY-MM-DD`;给了就不看 month"},
     "month":{"type":"string","description":"哪个月,写 2026-09。不给就是当月。"},"start":{"type":"string","description":"自由区间的**起**那天 `YYYY-MM-DD`。⚠️ **要和 end 一起给**,只给一个会被拒。给了区间就不看 week / month —— 用它来答「9 月 15 日到 10 月 15 日这一段」这种现成档位表达不了的跨度"},"end":{"type":"string","description":"自由区间的**止**那天 `YYYY-MM-DD`(含当天)。要和 start 一起给"}},"required":[]}},
+ {"name":"list_appointments","description":"**查预约**(本店;总部运营 / 售后看全部):按客户(号或名)、日期(2026-11-28)、顾问、状态筛;默认只给进行中的(待确认 / 已预约 / 已到店),按开始时间排,给预约号。客户问「我约了几号」、顾问问「明天谁来」用它。改时间要先在这里拿到预约号。","input_schema":{"type":"object","properties":{"customer":{"type":"string","description":"客户号或姓名(可省)"},"date":{"type":"string","description":"哪一天,2026-11-28(可省)"},"advisor":{"type":"string","description":"顾问工号或姓名(可省)"},"status":{"type":"string","description":"待确认 / 已预约 / 已到店 / 已完成 / 已取消 / 已过期 / 爽约(可省,省了只给进行中)"},"limit":{"type":"integer","description":"最多几条,默认 20"}}}},
+ {"name":"book_appointment","description":"**(写)帮客户约**:客户(号或名)+ 开始时间(2026-11-28 14:00),结束省了就按一小时;方式默认到店量体;顾问省了就是你自己(顾问)或客户的归属顾问(店长代约)。**只能约本店客户**;时间要符合预约规则(提前量;早于现在的只有店长及以上能补录、且 7 天内);停业门店不接。落「待确认」,客户来了在后台点到店。动手前要跟用户对清:哪位客户、几号几点、谁接待 —— 这是对客户的承诺。","input_schema":{"type":"object","properties":{"customer":{"type":"string","description":"客户号或姓名"},"start":{"type":"string","description":"开始时间 2026-11-28 14:00"},"end":{"type":"string","description":"结束时间(可省,默认 +60 分钟)"},"way":{"type":"string","description":"到店量体 / 试衣 / 取件…(可省)"},"advisor":{"type":"string","description":"接待顾问工号或姓名(可省)"},"named_state":{"type":"string","description":"客户点名了没有:点名 / 没点 / 不详(可省,没问就是不详)"},"named_advisor":{"type":"string","description":"客户点名的顾问工号(可省)"},"channel":{"type":"string","description":"预约渠道(可省)"}},"required":["customer","start"]}},
+ {"name":"reschedule_appointment","description":"**(写)改预约时间 / 换顾问**:要预约号(先 list_appointments 查);只能改本店的、只能改「待确认 / 已预约」的(已到店 / 完成 / 取消 / 过期 / 爽约是已经发生的事,改不了);新时间按同一套预约规则。只给新开始时间就保持原来的时长。回话里要把**原时间和新时间**都说出来,别只说「改好了」。","input_schema":{"type":"object","properties":{"appointment_id":{"type":"string","description":"预约号,AP 开头"},"start":{"type":"string","description":"新开始时间(可省)"},"end":{"type":"string","description":"新结束时间(可省)"},"advisor":{"type":"string","description":"换成哪位顾问,工号或姓名(可省)"}},"required":["appointment_id"]}},
  {"name":"appt_funnel","description":"**预约到店转化漏斗**:约了多少 → 我们确认了多少 → 真到店多少 → 量体多少 → 下单多少;以及**流失分四种**(待确认烂掉 / 客户取消 / 爽约 / 已过期),每种带一句该怎么办。since/until 写 2026-08-01,不给就是全部。范围跟身份走。⚠️ 报**两种**转化率:环节转化率(÷上一环,看哪一环漏得最狠)和整体转化率(÷总预约,看一百个最后剩几个)——只报一个会答错另一个问题。⚠️ 最后两环(量体/下单)和预约之间**没有外键**,按「同一个客户、预约之后」连,**会高估**。",
   "input_schema":{"type":"object","properties":{
     "since":{"type":"string","description":"起始日,写 2026-08-01。不给就是不限。"},
@@ -1578,6 +1611,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
               "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"get_product_images":get_product_images,"draft_capability_request":draft_capability_request,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"return_rate":return_rate,"part_options":part_options,"order_parts":order_parts,"draft_delivery_notice":draft_delivery_notice,"record_delivery_notice":record_delivery_notice,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"recovery_followup":recovery_followup,"shift_preview":shift_preview,"shift_draft":shift_draft,"shift_publish":shift_publish,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
               "ownerless_list":ownerless_list,
+              "list_appointments":list_appointments,"book_appointment":book_appointment,"reschedule_appointment":reschedule_appointment,
               "call_opportunity":call_opportunity,
               "revive_list":revive_list,
               "churn_watch":churn_watch,

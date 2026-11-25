@@ -501,6 +501,8 @@ SHOP_TOOLS = [
     "mcp__fulfillment__draft_delivery_notice", "mcp__fulfillment__record_delivery_notice",
     # 人工回退(写):发错件 / 到店返工。规矩 TL56:只有店长能点,原因和理由只能照用户说的填
     "mcp__fulfillment__rollback_order",
+    # 预约查 / 约 / 改(包四第一件,用户 11-25 拍):顾问和店长都要;两个写口高档确认卡。规矩 TL108
+    "mcp__customer__list_appointments", "mcp__customer__book_appointment", "mcp__customer__reschedule_appointment",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。

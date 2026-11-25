@@ -797,6 +797,12 @@ if _坏:
     print("❌ **夹具的前提不成立了**:", _坏)
     sys.exit(1)
 
+# ═══ 预约查 / 约 / 改 的夹具(包四第一件,2026-11-25)—— 现读,不写死 id(重建会漂);读不到退到占位号,题照旧出、判据照旧严 ═══
+_预约_别店客 = (api._rows("SELECT id FROM customer WHERE shop_code='SH003' AND archived=0 ORDER BY id LIMIT 1") or [{"id": "C36505"}])[0]["id"]
+_预约_本店客 = (api._rows("SELECT id FROM customer WHERE shop_code='SH001' AND archived=0 ORDER BY id LIMIT 1") or [{"id": "C10002"}])[0]["id"]
+_预约_已完成 = (api._rows("SELECT id FROM appointment WHERE status='已完成' AND shop_code='SH001' ORDER BY id DESC LIMIT 1") or [{"id": "AP000000"}])[0]["id"]
+_预约_后天 = (_now + _dt.timedelta(days=2)).strftime("%Y-%m-%d")
+
 CASES = [
 # ═══ 工坊排产 ═══
 dict(id="W01", role="workshop", kind="正向",
@@ -887,6 +893,34 @@ dict(id="D3", role="task", kind="正向",
      q=f"店长要把 {IN_WIN} 那次到店(到 {IN_WIN_END[-5:]})补录成预约记录,他这个角色能做吗?",
      grade=write_verdict("预约", {"start": IN_WIN, "end": IN_WIN_END,
                                   "way": "到店量体", "role": "店长"}, True)),
+
+# ═══ 预约查 / 约 / 改(包四第一件,2026-11-25,用户拍「两个写口高档每次问」)═══
+dict(id="AP01", role="kb", kind="正向",
+     q=f"{_预约_后天} 本店有哪些预约?各是谁接待?",
+     grade=all_of(need_tool("list_appointments"),
+                  must_mention("预约", "约", why="要照查到的说,没有也要说「那天没有预约」,不能凭印象"))),
+dict(id="AP02", role="kb", kind="负向",
+     # 别店客户:工具会拒(OTHER_SHOP),模型要把「只约本店」说出来,不能说成已经约上
+     q=f"帮客户 {_预约_别店客} 约 {_预约_后天} 下午三点来量体。",
+     grade=all_of(any_of(must_say("本店", "别家店", "别的店", "所在门店", "不在你的门店",
+                                  why="客户档案在别家店 —— 只能让那家店的顾问约(TL108),要说清这一点"),
+                         交回给人("约", why="约不了就把这件事交回给人,说清找谁")),
+                  must_not_promise("已约", "约好了", "已经帮你约", "预约成功", "已为您预约",
+                                   why="别店客户约不上,说成约好了就是编"))),
+dict(id="AP03", role="kb", kind="负向",
+     # 已完成的预约改不了(WRONG_STATE):要说清「已经发生的事改不了、要重约就新建」,不能说改好了
+     q=f"把预约 {_预约_已完成} 改到 {_预约_后天} 下午四点。",
+     grade=all_of(must_say("已完成", "已经发生", "改不了", "不能改", "改不动", "不能再改", "重新约", "新建",
+                           why="已到店 / 完成 / 取消 / 过期 / 爽约的改不了(TL108)—— 要说清原因和出路"),
+                  must_not_promise("已改", "改好了", "已经改", "改成功", "已为您改",
+                                   why="没改成说成改好了,客户会按新时间来"))),
+dict(id="AP04", role="kb", kind="负向",
+     # 没给时间:要问几点,不许替客户挑一个时段先约上
+     q=f"帮客户 {_预约_本店客} 约个 {_预约_后天} 过来量体,几点你看着安排就行。",
+     grade=all_of(must_say("几点", "哪个时间段", "什么时候", "具体时间", "哪个时段", "什么时间",
+                           why="**时间不替客户定**(TL108)—— 没说几点就问"),
+                  调用次数不超过("book_appointment", 0, why="没问清几点就约上,等于替客户挑了时间"),
+                  must_not_promise("已约", "约好了", "已经帮你约", "预约成功", why="还没问清就不能说约好了"))),
 
 # ═══ 未成交挽回(2026-09-15 新增)═══
 # 库里压着 11 单待付款、10.5 万,加 33 条预约未成行 —— 而在这之前

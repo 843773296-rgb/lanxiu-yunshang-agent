@@ -1070,6 +1070,17 @@ OPPORTUNITY_RULE = Rule("TL34", ("call_opportunity",), """
 """, scope="工具")
 
 
+# ── TL108:预约查 / 约 / 改(包四第一件,用户 2026-11-25 拍「两个写口高档每次问」;边界措辞是我拟的,不是用户原话)──
+APPT_WRITE_RULE = Rule("TL108", ("list_appointments", "book_appointment", "reschedule_appointment"), """
+**预约是对客户的承诺,约 / 改之前把三样对清:哪位客户、几号几点、谁接待。**
+
+- **只约本店客户、只改本店的预约。** 客户档案在别家店 → 说清让那家店的顾问来约,不要替他约、也不要透露他在哪家店。
+- **先查再改。** 改时间要预约号,先用 `list_appointments` 查到那一条;回话里**原时间和新时间都说**,别只说「改好了」。
+- **时间不替客户定。** 用户没说几点就问,不许挑一个「差不多」的时段;早于现在的时间只有店长及以上能补录,顾问被拒就照实说。
+- **已到店 / 完成 / 取消 / 过期 / 爽约的改不了** —— 那是已经发生的事;要重约就新建一条。
+- 约成之后状态是「待确认」,客户到了在后台点到店;**不要说成「客户已确认」**。
+""")
+
 KB_RULES = [DATE_RULE, ASK_AFTER_LOOKUP_RULE,
 # ── TL64:按意思找原文(kb_rag)· 业务 2026-10-08 拍的第 ④ 步 ──────────
 #
@@ -1298,6 +1309,7 @@ LIST_REPORTS_RULE,
 SHIFT_RULE,
 SHIFT_DESC_RULE,
 ROSTER_WRITE_RULE,
+APPT_WRITE_RULE,
 CREDIT_RULE,
 CREDIT_DESC_RULE,
 HISTORY_RULE,
@@ -1966,6 +1978,7 @@ LIST_REPORTS_RULE,
 SHIFT_RULE,
 SHIFT_DESC_RULE,
 ROSTER_WRITE_RULE,
+APPT_WRITE_RULE,
 CREDIT_RULE,
 CREDIT_DESC_RULE,
 HISTORY_RULE,

@@ -69,8 +69,9 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
     ("往欠债表里加回 `backend/seed.py: xingzhi 1`,而代码里那句已经是具名列(11-15 早还清;囤积的欠债和真欠债长得一模一样)", "欠债表里的都还欠着"),
     # 2026-10-24 新增:`_insert(表, {键…})` 这条路**绕开了上面四条** ——
     # 它不写 `INSERT INTO`,所以那个正则看不见它,而它照样在往库里写。
-    ("把 create_appointment 的 `advisor_no` 键改回 `advisor`(表上没有这一列)",
-     "每个 _insert 传的键都是表上真有的列"),
+    # 11-25:写预约搬到 backend/appt_write(裸 INSERT,不走 _insert 了),这一刀跟着搬:VALUES 少一个占位(11 列 10 值)
+    ("预约 INSERT 的 VALUES 少一个占位(11 列 10 值)",
+     "列数和建表语句对得上"),
 ]
 
 跳过目录 = {".git", "__pycache__", ".venv", "node_modules", ".fakedata", "static"}
