@@ -4269,9 +4269,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code); self.send_header("content-type","application/json; charset=utf-8")
         self.send_header("X-Request-Id", rid)
         self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b)
-    def do_GET(self):  return _兜底(self, H._GET真)
-    def do_POST(self): return _兜底(self, H._POST真)
-    def _GET真(self):
+    def do_GET(self):
         p=_u(unquote(urlparse(self.path).path))
         if _u(unquote(urlparse(self.path).path)) == "/api/me":
             u = _me(self)
@@ -4918,7 +4916,7 @@ class H(BaseHTTPRequestHandler):
                                    "code": "NOT_YOUR_SHOP"}, 403)
             return self._send(appt_detail(_id))
         self._send({"error":"not found"},404)
-    def _POST真(self):
+    def do_POST(self):
         p=_u(unquote(urlparse(self.path).path))
         n=int(self.headers.get("content-length") or 0)
         body=json.loads(self.rfile.read(n) or "{}") if n else {}
@@ -5502,6 +5500,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(adjust_lifecycle(body.get("id"),body.get("to"),body.get("reason"),登录人["name"],me=登录人))
         # /api/draft/ 与 /api/draft-status/(第一代草稿卡)11-24 删了:研判只走 8770 研判队列那一套
         self._send({"error":"not found"},404)
+
+# ── 总兜底接在类外面(11-25):**不改 do_GET / do_POST 的定义**,十来条检查(authgate / read_route_registry / page_smoke /
+# write_smoke / fetch_route / boundary_audit …)是拿 ast 读 `def do_GET` / `def do_POST` 的函数体抽路由、抽可达函数的 ——
+# 改名它们就全瞎(11-25 重放时 9 个脚本一起红,就是这个)。真处理函数原样留在类里,这里只把名字换成包了一层的版本;
+# delivery_check_col_check 那类假 handler 调 `server.H.do_POST(h)` 照样走到路由。
+H._GET真, H._POST真 = H.do_GET, H.do_POST
+H.do_GET = lambda self: _兜底(self, H._GET真)
+H.do_POST = lambda self: _兜底(self, H._POST真)
+
 
 if __name__=="__main__":
     port=int(os.environ.get("PORT","8760"))

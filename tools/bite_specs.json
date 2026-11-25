@@ -8936,17 +8936,12 @@
  },
  {
   "script": "backend/triage_trial_check.py",
-  "改坏": "工具服务不改读副本(11-19 起有两层:改模块 DB + 连库层改道,两层都拆掉才算「不改读」)",
+  "改坏": "工具服务进程不认启动方给的 LANXIU_DB(11-25 换到源头:地址单源后 api.DB 启动即读 env,protocol.py 的改模块 DB / 连库改道两层成了冗余,单砍不红)",
   "file": [
    {
-    "path": "mcp/protocol.py",
-    "old": "            m.DB = 副; n += 1",
-    "new": "            n += 1"
-   },
-   {
-    "path": "mcp/protocol.py",
-    "old": "        _sq.connect = _连\n",
-    "new": ""
+    "path": "mcp/task_server.py",
+    "old": "import os, sys\n",
+    "new": "import os, sys\nos.environ.pop(\"LANXIU_DB\", None)\n"
    }
   ],
   "预期红": "真起一个工具服务、给它副本:查客户拿到的是代号,并且留了「副本生效」凭证"
