@@ -58,7 +58,9 @@
   · **判据** 咬合规格「预期红」要跟着判据改名走:加了新结构 / 新对照 / 改了保证名之后,**先 `bite_replay_touched --基线 origin/main` 本地跑一遍再起门禁**(它要工作区干净 —— 两个运行态 jsonl 先挪开)。「红了但红的不是那一条」多半是**我自己的改动把老攻击的红点挪了**,不是判据坏;「对照就是红的」要先去跑那个脚本本身。放宽确认闸(三档)是用户拍的,fc 的提醒记下但不算否决;**不替 fc 批、fc 也不替用户批**(819 那次 fc 明说了)。对照用例的数要和 PRD 对账,靠的是 `[cases]` 那一行,**名 = PRD 括号里的标签**。成本数:**有口径词才算标了**,预算上限 / SDK 自报不是成本数。
   · **作废的结果** ❌ 我今天上午对时刻的记法(写过 11:xx–13:xx)—— 以 status 文件和 `date` 为准,现在真实时间 13:4x;❌ quick_gate 那条「咬合副本 rc=124」是等锁 900 秒超时,不是代码红;❌ 「应用归档没接口」这个前提(接口 11-17 就有);❌ 819 规格「数据漂了 / 判据漏了」两个猜测都不对 —— fc 查实是攻击点砍在第二道保险上。
   · **禁区** fc 文件照旧不碰(含 agent/rounds.py,它今天改了各轮why);0 点到夜跑结束不占锁不写共享库;只推自己的提交;永不 add 三个运行态文件;**bite_specs.json 只末尾追加,改现有规格只改 old/new/预期红**;删数据要用户点头;放宽守卫被拦就留补丁给用户 `!`;rebase 目标是最新远端(主检出已落后、要 reset);`cd` 一律用绝对路径 / `git -C`。
-  · **下一步第一个动作** 等 bnd1gws0d 的通知 → 读 scratchpad/bite_touched_w44b.log:绿 → `git -C ../w1117 status --short | grep -v '^??'` → `git -C ../w1117 rebase w1121 --autostash` → `git -C /Users/eureka/Desktop/澜绣云裳agent reset --keep origin/main`(拒了就先把主检出的三个运行态文件 cp 到 scratchpad、checkout、reset、cp 回)→ `bash scratchpad/gate_w44.sh`(后台;status gate_w44.status;日志 e2e_ci_w44.log / ship_w44.log)→ 告 fc → 绿后 kickstart com.lanxiu.backend + com.lanxiu.agentsite + com.lanxiu.supervise,curl 8760 首页 200 / 8770 302 / 一条 /api 带 X-Request-Id → 汇总(澜绣云裳agent-日间汇总-20261125.md)填哈希、`FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf python3 tools/feishu_publish.py` 发飞书 → 告用户。红 → 看 ship_w44.log 哪条红,老规矩「先 w1117 status 再 rebase」。
+  · **15:4x 状态**:三次重放后 108 个脚本全绿(第 1 次红 9 个脚本 = server.py 改名 do_GET/do_POST 把 ast 检查弄瞎 → 改成类外包;763 按 fc 给的改法换到源头;page_load 新规格预期红改用例名);主检出 `reset --keep origin/main` 成功(13259595,四个运行态脏文件保住);w1117 = w1121 = 12573c41(17 笔);**gate_w44 15:4x 起(w41 形含 e2e-ci;status scratchpad/gate_w44.status;日志 e2e_ci_w44.log / ship_w44.log;备份 .gate_w44.sh.bak 没存 —— 脚本在 scratchpad,丢了按 .gate_w41.sh.bak sed w41→w44 重做)**。fc 本地领先 1 笔 d8962892 等我推完。
+  · ✅ **17:19 gate_w44 绿、已推 origin/main 13259595 → 12573c41(17 笔)**:e2e-ci 16:01 退出码 0、ship 0;主检出 = w1117 = 远端 = 12573c41;17:2x kickstart backend / agentsite / supervise(aimc 由 gate 重启);已告 fc 哈希、锁已放。w1121 领先 1 笔 b4ec2441(成本口径一节一句)+ 汇总 md 未提交 → 随下次推。
+  · **下一步第一个动作**:汇总发飞书(`FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf python3 tools/feishu_publish.py 澜绣云裳agent-日间汇总-20261125.md`,文件名 ≤19 字已满足)→ 告用户 → 包三剩下(import_images.该有 提模块级 + README 进 doc_numbers 扫描名单,或先问要不要做)/ 真页面点检要用户。(原文:等 bnd1gws0d 的通知 → 读 scratchpad/bite_touched_w44b.log:绿 → `git -C ../w1117 status --short | grep -v '^??'` → `git -C ../w1117 rebase w1121 --autostash` → `git -C /Users/eureka/Desktop/澜绣云裳agent reset --keep origin/main`(拒了就先把主检出的三个运行态文件 cp 到 scratchpad、checkout、reset、cp 回)→ `bash scratchpad/gate_w44.sh`(后台;status gate_w44.status;日志 e2e_ci_w44.log / ship_w44.log)→ 告 fc → 绿后 kickstart com.lanxiu.backend + com.lanxiu.agentsite + com.lanxiu.supervise,curl 8760 首页 200 / 8770 302 / 一条 /api 带 X-Request-Id → 汇总(澜绣云裳agent-日间汇总-20261125.md)填哈希、`FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf python3 tools/feishu_publish.py` 发飞书 → 告用户。红 → 看 ship_w44.log 哪条红,老规矩「先 w1117 status 再 rebase」。
   · **悬而未决** 真页面没人点过(今天加的:应用归档按钮 / 中档卡提示 / 直接执行卡 / 撤按钮 / 核对中自己变 / 后台三个结论按钮 / 按岗位先亮 / 错误块新形 / 旧后台编号);包三 C 剩两处已知缺口(图序 ↔ 预期张数 已半收;import_images.该有() 提模块级 + README 不在 doc_numbers 扫描名单);ops 日常层 95% 要周六夜跑或下次全量才有新数;13 道翻面题第一轮理由 —— fc 的各轮why 已推,下次全量就有。
 - **压缩前六项(11-25 早上 · 用户醒来后刷)**:
   · **用户第一句话**:「fc 推完了告诉我」—— 等的是 fc 那笔体检补丁(guards.py 总价走「数在返回里就算有出处」,用户 `!` 打过后随 fc 推送)。已做:给 fc 发话请它推完告哈希(带 notify_when_idle);挂了 Monitor 盯 `git ls-remote origin main` 离开 7e6ea7b6(30 分钟一期,到期**再挂**,别靠猜)。fc 回(刚刚):用户已 `!` 打补丁,体检那笔 9b6e9d0f、前面还有库路径第 8 批 2becdb53,**ship 已起、锁归它约 45 分钟、这期间我不占锁**,推完它发「推完,哈希 xxx」。✅ **09:09 fc 推完:origin/main = 9b6e9d0f**(两笔:9b6e9d0f 体检总价按数值认出处,碰 guards.py / guards_test.py;2becdb53 库路径第 8 批)。已告用户;w1121 `rebase origin/main --autostash` 干净,我的 md 笔变 **4713d13e**(= 9b6e9d0f + 汇总 md + HANDOFF),w1117 还在 593604d8 要对齐。fc 09:1x 回:主检出已 ff 到 9b6e9d0f、三个服务重启(8760 200 / 8770 302 / supervise 跑着),我核了主检出 = 9b6e9d0f、8770 302;w1117 `rebase w1121 --autostash` 对齐到 4713d13e。**D01 的体检修法已在线上。**
@@ -2235,13 +2237,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-25 13:36。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-25 17:21。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `w1121` |
-| 最新提交 | 12ed5d40 · 2026-11-25 · 产品说明发布脚本预期几张图改成由 标记 现算,不再写死 3;doc_numbers_check 那条「已知缺口」豁免改成说明(包三收尾) |
-| 代码量 | 1232 个 Python 文件 / 213930 行(不含 .venv) |
+| 最新提交 | b4ec2441 · 2026-11-25 · 成本口径一节写一次:判据从「前十行」改成「上一个标题起这一节里有口径词」,重复插的口径去掉(fc 11-25 指出 CLAUDE.md 一节里重复了五遍) |
+| 代码量 | 1232 个 Python 文件 / 213941 行(不含 .venv) |
 | 验收 | `./check.sh` 共 446 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
@@ -2249,6 +2251,10 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 
 ```
 M HANDOFF.md
+ M README.md
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+ M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\346\227\245\351\227\264\346\261\207\346\200\273-20261125.md"
 ?? .feynman/weekly-review.log
 ?? .gate_w29.sh.bak
 ?? .gate_w30.sh.bak
@@ -2264,19 +2270,17 @@ M HANDOFF.md
 ?? .gate_w41.sh.bak
 ?? .gate_w42.sh.bak
 ?? .gate_w43.sh.bak
-?? agentsite/.venv
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/.models"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+b4ec2441 成本口径一节写一次:判据从「前十行」改成「上一个标题起这一节里有口径词」,重复插的口径去掉(fc 11-25 指出 CLAUDE.md 一节里重复了五遍)
+12573c41 咬合规格(旧后台请求编号那条)预期红改成用例名 —— 原来写的是页面里该出现的编号,改坏后那串正好不在红行里
+f73606eb 交接刷新(11-25 13:4x–14:3x:fc 推完、rebase、重放照出的几处、主检出要 reset 的判据)
+c01c0719 旧后台总兜底改接在类外面:不改 do_GET / do_POST 的定义;咬合 763 换到源头(工具服务进程不认 LANXIU_DB);待办清单重生成
 12ed5d40 产品说明发布脚本预期几张图改成由 标记 现算,不再写死 3;doc_numbers_check 那条「已知缺口」豁免改成说明(包三收尾)
-05067d05 文档里的成本数一律标口径(用户 11-25 拍「按 API 价目表折算并标明」):带 $ 的数附近必须有口径词,检查守着
-75c383bd 对照用例条数有了统一机读出口:32 个判分器各打一行 [cases],新检查跑它们并和 PRD 逐行对账(包三第一件)
-806918b8 失败提示全站统一(用户 11-25 拍):一句人话 + 编号 + 能做什么,程序原文折叠;旧后台一起加请求编号
-bbf596ac 聊天站进门按岗位先亮助手(用户 11-25 拍):顾问→门店顾问、版师→版师核料、工匠→工坊、总部运营/售后/财务→后台运营、店长→全能
 ```
 <!--/AUTO-->
 ## 一句话在做什么
