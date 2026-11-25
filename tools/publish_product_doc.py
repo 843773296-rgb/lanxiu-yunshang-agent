@@ -90,8 +90,8 @@ def 做飞书版():
     """把 mermaid 代码块换成一行占位 —— 飞书不认 mermaid,留着只会变成代码块。"""
     src = (ROOT / "澜绣云裳agent-产品说明.md").read_text(encoding="utf-8")
     块 = re.findall(r"```mermaid\n.*?\n```", src, re.S)
-    if len(块) != 3:
-        sys.exit(f"❌ 预期 3 张图,源文件里有 {len(块)} 个 mermaid 块")
+    if len(块) != len(标记):   # 11-25:预期几张由 标记 定,不再写死(doc_numbers_check 那条「已知缺口」收掉)
+        sys.exit(f"❌ 预期 {len(标记)} 张图,源文件里有 {len(块)} 个 mermaid 块")
     for b, mk in zip(块, 标记):
         src = src.replace(b, mk, 1)
     out = pathlib.Path("/tmp/澜绣云裳agent-产品说明.md")
