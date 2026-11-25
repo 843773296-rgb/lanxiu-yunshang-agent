@@ -715,6 +715,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"error": "缺确认卡编号"}, code=400)
             码, d = (_ac.确认 if p.endswith("confirm") else _ac.取消)(aid, me)
             return self._send(d, code=码)
+        if p == "/api/action/forget":
+            # 三档(用户 11-25 拍):「中」档记住了的工具,本人点「以后还是先问我」撤掉。只撤自己的,工具名从页面来但只当键查
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            import action_confirm as _ac
+            me = _who(self)
+            if not me:
+                return self._send({"error": "没登录"}, code=401)
+            码, d = _ac.忘掉(me, body.get("tool"))
+            return self._send(d, code=码)
         if p == "/api/handoff":
             # 手动转人工(用户 11-11 拍:内部流程要找人沟通时的后路,留一个按钮):只认这一轮的提问人,待办进管理后台「人工待办」
             try: body = json.loads(raw or b"{}")

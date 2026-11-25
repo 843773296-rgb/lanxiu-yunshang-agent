@@ -6,6 +6,7 @@
 原来「动手前先跟用户对一遍」**只写在提示词里**(boundary_audit 记成「约定」):模型不问就写,没有任何东西会拦。
 用户 11-11 拍板(一张卡,四问):
   · 聊天里 **29 个写操作全部出卡**,只读不出;新加的写操作没登记就禁止(登记处是 api.WRITE_TOOLS)
+    —— **11-25 用户拍分三档**(见下面 `风险档`):高 照旧每次出卡;中 本人点过一次就记住、以后直接做;低 直接做、留「直接执行」卡
   · 审批类(提审批 / 批审批 / 启动流程)也出卡,**点卡就算本人那一步**,不另外再批
   · 卡 **30 分钟**过期;过期了要重新查状态、重新生成
   · 只回一句「好 / 确认」**不算**,必须点卡
@@ -41,8 +42,37 @@ import uuid
 #   未执行   **确定**没碰业务库:找不到工具服务 / 指纹对不上(工具服务自己说「还没有执行」)
 #   核对中   **不知道**做没做:120 秒没回、进程没回结果 —— 可能已落库。不记失败、不许重试,页面写「可能已执行,正在核对」,自动转人工
 # 「超时」≠「没做」:原来把超时记成已失败,员工看到失败再点一次,就重复派单了。
-终态 = ("已成功", "已失败", "未执行", "核对中", "已取消", "已过期")
+终态 = ("已成功", "已失败", "未执行", "核对中", "已取消", "已过期", "直接执行")
 结束状态们 = ("已成功", "已失败", "未执行", "核对中")
+
+# ── 三档(用户 2026-11-25 拍,包二那张卡:「确认卡分三档」)────────────────────────────────
+#   高  碰钱、碰货、对外承诺、不可逆:**每次都出卡**(11-11 的规矩原样保留)
+#   中  内部流转、能回头的:**第一次出卡,本人点过确认就记住(按人 × 按工具),以后同一个人用这个工具不再问**;
+#       「记住」能撤(卡上有「以后还是先问我」);「同一个人同一份参数 30 分钟内办过」那道闸三档都在,记住了也不会重复派
+#   低  草稿、完成标记这类改错了当场能改回来的:**直接做,留一张「直接执行」卡**(谁、什么时候、什么参数,和出过的卡一样能查)
+# ⚠️ **不在表里的写工具一律按「高」**(新加的写口默认最严;登记在 api.WRITE_TOOLS 之后再来这里定档)。
+# ⚠️ 这张表是**单一来源**:工具服务(mcp/protocol)拦截时查它,页面显示档位也查它。要挪档只改这里。
+# 分档理由(我 11-25 按「错了的代价」定的,用户没逐条过;挪档只动这张表):
+#   高:开单 / 确认下单 / 回滚(钱、货);开裁 / 报工 / 签收 / 核码 / 追认(货和状态不可逆);返修四步(判责牵涉顾客赔付);
+#      关差评 / 确认经营报告 / 记已告知(对外或对上的定论);审批两步;发布排班(影响全店排班);启动流程(会写系统)
+#   中:派任务 / 分派 / 改派 / 批量两种 / 建挽回跟进(内部派活,能改派回来);登记量体 / 白坯试衣(登记类,能补一条更正);
+#      核裁片占比 / 核档差(版师核一遍的记录)
+#   低:保存经营报告草稿、排班草稿(都是草稿,发布另有一步);完成任务(状态能改回)
+风险档 = {
+    "open_order": "高", "confirm_order": "高", "rollback_order": "高", "start_cutting": "高", "report_production": "高",
+    "record_pickup": "高", "verify_fit_code": "高", "ratify_complete": "高",
+    "create_repair": "高", "decide_repair": "高", "advance_repair": "高", "verify_repair_return": "高",
+    "close_bad_rating": "高", "confirm_report": "高", "mark_delay_told": "高", "record_delivery_notice": "高",
+    "apply_adjust": "高", "decide_approval": "高", "shift_publish": "高", "start_workflow": "高",
+    "assign_task": "中", "dispatch_task": "中", "reassign_task": "中", "assign_batch": "中", "dispatch_batch": "中",
+    "recovery_followup": "中", "record_measure": "中", "record_fitting": "中", "set_piece_ratio": "中", "set_grade_diff": "中",
+    "save_report": "低", "shift_draft": "低", "finish_task": "低",
+}
+
+
+def 档位(tool):
+    """这个写工具属于哪一档;不认识的一律「高」(默认最严 —— 新加的写口没定档就先每次都问)。"""
+    return 风险档.get(tool, "高")
 摘要字数 = 200           # 结果里单个字串超过它就在卡上截短(完整结果另存一份,带哈希)
 摘要项数 = 30
 
@@ -73,6 +103,14 @@ create table if not exists pending_action_result (
     sha256      text not null,
     byte_count  integer not null,
     truncated   integer not null default 0
+);
+-- 11-25(用户拍三档):「中」档本人点过确认就记住 —— 按人 × 按工具;撤了就删行。新表 if not exists,不动老表
+create table if not exists confirm_memory (
+    asker_no      text not null,
+    tool          text not null,
+    remembered_at real not null,
+    from_aid      text,
+    primary key (asker_no, tool)
 );
 """
 
@@ -112,15 +150,11 @@ def 建(路径, tool, domain, args, me, trace=None, session=None, 现在=None):
         raise PermissionError("没有登录身份 —— 写操作要记是谁发起的,确认时也只认这个人")
     现在 = time.time() if 现在 is None else 现在
     指 = 参数指纹(tool, args)
+    办过 = 办过的(路径, tool, args, me, 现在)
+    if 办过 is not None:
+        return 办过
     c = _连(路径)
     try:
-        # 同一个人、同一份参数,30 分钟内已经点卡执行成功过 → 不再出新卡,拿回那张(模型下一轮以为没办成又调一次)
-        # 11-21:「核对中」(不知道做没做)也算 —— 这时再出一张新卡让人点,正是重复派单的入口
-        办过 = c.execute("""select * from pending_action where asker_no=? and fingerprint=? and status in ('已成功', '核对中')
-                            and decided_at>? order by decided_at desc limit 1""",
-                         (str(me["no"]), 指, 现在 - 有效秒)).fetchone()
-        if 办过 is not None:
-            return _行(办过, 现在)
         if trace:
             旧 = c.execute("""select * from pending_action where trace=? and fingerprint=? and status='待确认'
                               order by created_at desc limit 1""", (trace, 指)).fetchone()
@@ -133,6 +167,121 @@ def 建(路径, tool, domain, args, me, trace=None, session=None, 现在=None):
                    json.dumps({k: me.get(k) for k in ("no", "name", "role", "shop")}, ensure_ascii=False),
                    trace, session, 现在, 现在 + 有效秒))
         return _行(c.execute("select * from pending_action where id=?", (aid,)).fetchone(), 现在)
+    finally:
+        c.close()
+
+
+def 办过的(路径, tool, args, me, 现在=None):
+    """同一个人、同一份参数,30 分钟内已经点卡执行成功过(或「核对中」)→ 那张卡;没有 → None。
+    原来写在 建() 里;11-25 拆出来是因为**三档都要先过这道闸**:「中」记住了、「低」直接做,也不许 30 分钟内同参数再来一遍
+    (模型下一轮以为没办成又调一次,正是重复派单的入口;11-21 把「核对中」也算进来)。"""
+    现在 = time.time() if 现在 is None else 现在
+    if not (me or {}).get("no"):
+        return None
+    c = _连(路径)
+    try:
+        r = c.execute("""select * from pending_action where asker_no=? and fingerprint=? and status in ('已成功', '核对中', '直接执行')
+                         and decided_at>? order by decided_at desc limit 1""",
+                      (str(me["no"]), 参数指纹(tool, args), 现在 - 有效秒)).fetchone()
+        return _行(r, 现在) if r is not None else None
+    finally:
+        c.close()
+
+
+def 要出卡吗(路径, tool, args, me, 现在=None):
+    """工具服务拦下一个写操作时问这一句 → ("出卡", None) / ("直接", 档) / ("办过", 卡)。
+    · 没有登录身份 → 出卡(建卡那一步会抛「没有登录身份」,不执行 —— 拦住是安全的那一边)
+    · 30 分钟内同人同参数办过 → 办过(不执行、不建新卡,把那张卡给模型)
+    · 高 → 出卡;中 → 本人记住过这个工具就直接,否则出卡;低 → 直接"""
+    if not (me or {}).get("no"):
+        return "出卡", None
+    办过 = 办过的(路径, tool, args, me, 现在)
+    if 办过 is not None:
+        return "办过", 办过
+    档 = 档位(tool)
+    if 档 == "低":
+        return "直接", 档
+    if 档 == "中" and 记得吗(路径, me, tool):
+        return "直接", 档
+    return "出卡", None
+
+
+def 直接执行留痕(路径, tool, domain, args, me, 档, trace=None, session=None, 现在=None):
+    """「中(记住过)/ 低」直接执行前先落一张「直接执行」卡 —— 和出过的卡同一张表、同一套查法(本轮卡 / 完整结果都能看到它),
+    页面上标着档位和「以后还是先问我」。执行完用 记结果() 把回执写上。"""
+    if not (me or {}).get("no"):
+        raise PermissionError("没有登录身份 —— 直接执行也要记是谁发起的")
+    现在 = time.time() if 现在 is None else 现在
+    aid = "act_" + uuid.uuid4().hex[:12]
+    c = _连(路径)
+    try:
+        c.execute("""insert into pending_action (id, tool, domain, args_json, fingerprint, asker_no, asker_json,
+                         trace, session, status, created_at, expires_at, decided_at) values (?,?,?,?,?,?,?,?,?,'直接执行',?,?,?)""",
+                  (aid, tool, domain, json.dumps(args or {}, ensure_ascii=False), 参数指纹(tool, args), str(me["no"]),
+                   json.dumps({k: me.get(k) for k in ("no", "name", "role", "shop")}, ensure_ascii=False),
+                   trace, session, 现在, 现在 + 有效秒, 现在))
+        return _行(c.execute("select * from pending_action where id=?", (aid,)).fetchone(), 现在)
+    finally:
+        c.close()
+
+
+def 记结果(路径, aid, 结果):
+    """直接执行那张卡的回执(状态不变,还是「直接执行」;结果摘要上卡、完整另存,和 收尾 同一套存法)。"""
+    完整 = json.dumps(结果, ensure_ascii=False, default=str)
+    摘要, 截 = 摘要化(json.loads(完整))
+    c = _连(路径)
+    try:
+        n = c.execute("update pending_action set result_json=? where id=? and status='直接执行'",
+                      (json.dumps(摘要, ensure_ascii=False), aid)).rowcount
+        if n == 1:
+            c.execute("insert or replace into pending_action_result (aid, result_full, sha256, byte_count, truncated) values (?,?,?,?,?)",
+                      (aid, 完整, hashlib.sha256(完整.encode("utf-8")).hexdigest(), len(完整.encode("utf-8")), 1 if 截 else 0))
+    finally:
+        c.close()
+
+
+def 记住(路径, me, tool, from_aid=None, 现在=None):
+    """「中」档:本人点过确认 → 记住(按人 × 按工具)。再记一次只刷时间。"""
+    if not (me or {}).get("no") or 档位(tool) != "中":
+        return False
+    c = _连(路径)
+    try:
+        c.execute("insert or replace into confirm_memory (asker_no, tool, remembered_at, from_aid) values (?,?,?,?)",
+                  (str(me["no"]), tool, time.time() if 现在 is None else 现在, from_aid))
+        return True
+    finally:
+        c.close()
+
+
+def 记得吗(路径, me, tool):
+    if not (me or {}).get("no"):
+        return False
+    c = _连(路径)
+    try:
+        return c.execute("select 1 from confirm_memory where asker_no=? and tool=?", (str(me["no"]), tool)).fetchone() is not None
+    finally:
+        c.close()
+
+
+def 忘掉(路径, me, tool):
+    """撤销「记住」→ 这个人用这个工具下次又会先出卡。只能撤自己的。→ 删了几行(0 = 本来就没记)。"""
+    if not (me or {}).get("no"):
+        return 0
+    c = _连(路径)
+    try:
+        return c.execute("delete from confirm_memory where asker_no=? and tool=?", (str(me["no"]), tool)).rowcount
+    finally:
+        c.close()
+
+
+def 记住的(路径, me):
+    """这个人记住了哪些工具 → [{tool, remembered_at}]。"""
+    if not (me or {}).get("no"):
+        return []
+    c = _连(路径)
+    try:
+        return [dict(r) for r in c.execute("select tool, remembered_at from confirm_memory where asker_no=? order by remembered_at desc",
+                                           (str(me["no"]),)).fetchall()]
     finally:
         c.close()
 
@@ -200,6 +349,8 @@ def 领取(路径, aid, me, 现在=None):
     if n != 1:
         return None, (409, "这张卡刚被处理过(可能点了两次)—— 不会再执行一次")
     卡["status"] = "执行中"
+    # 11-25 三档:「中」档本人点了确认 → 记住这个人 × 这个工具,以后不再问(高档永远不记;记不记在这里定,不在页面)
+    记住(路径, me, 卡["tool"], from_aid=卡["id"], 现在=现在)
     return 卡, None
 
 
@@ -285,6 +436,9 @@ def 给模型的话(卡):
         return (f"✅ 这一步**已经办过了**:确认卡 {卡['id']}({卡['tool']})用户点过确认、执行成功,结果:"
                 f"{json.dumps(卡.get('result'), ensure_ascii=False)[:600]}。**不要再做一遍**,照这个结果答;"
                 f"要确认现状就用查询工具查。")
+    if 卡["status"] == "直接执行":
+        return (f"✅ 这一步**刚刚已经直接执行过了**(确认卡 {卡['id']},{卡['tool']} 属于不用再问的档位),结果:"
+                f"{json.dumps(卡.get('result'), ensure_ascii=False)[:600]}。**不要再做一遍**,照这个结果答;要确认现状就用查询工具查。")
     if 卡["status"] == "核对中":
         return (f"⚠️ 这一步**结果还在核对**:确认卡 {卡['id']}({卡['tool']})用户点过确认,但工具没有及时回结果 —— "
                 f"**可能已经落库**。**绝对不要再做一遍**,也不要生成新卡;照实告诉用户「可能已执行,正在核对,请不要重复操作」,"

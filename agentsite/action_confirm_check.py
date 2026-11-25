@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""写操作确认卡 · 守得住吗(用户 2026-11-11 拍:29 个写操作全部出卡、点了才执行、30 分钟过期、只回文字不算)。
+"""写操作确认卡 · 守得住吗(用户 2026-11-11 拍:写操作出卡、点了才执行、30 分钟过期、只回文字不算;2026-11-25 拍分三档,见 ⑨)。
 
 判据真调被测代码(backend/pending_actions.py、mcp/protocol.Server.handle、agentsite/action_confirm.py),不在这里重实现。
 库用临时文件,不碰任何共享库。
@@ -15,6 +15,9 @@
   ⑥ 接线:聊天站有确认 / 取消两个口、sdk 把卡库路径透传给工具服务、页面每个写操作都有中文名(新加写工具漏了会红)
   ⑧ 11-21 复审两条(用户拍):长回执不截 JSON(卡上是摘要、完整另存带哈希);工具超时 / 没回执 → 「核对中」不记失败、
      同一份参数不再出新卡、页面写「可能已执行,正在核对」并转人工;找不到服务 / 指纹对不上 → 「未执行」
+  ⑨ 11-25 用户拍**三档**(backend/pending_actions.风险档 唯一来源):高 每次出卡;中 本人点过一次就记住(按人 × 按工具)、
+     以后直接做、能撤;低 直接做。直接做的留「直接执行」卡(谁 / 何时 / 参数 / 回执),并且先过「30 分钟同人同参数办过」那道闸;
+     不认识的写工具按高;没有登录身份一律不执行
 """
 import ast
 import json
@@ -32,6 +35,8 @@ import pending_actions as PA      # noqa: E402
 咬合 = [
     ('工具服务的确认卡拦截被关掉', '带卡库:写工具**没执行**'),
     ('领取不认发起人', '别人领 → 404'),
+    ('档位表的默认值从「高」改成「低」(没定档的写口直接执行)', '不认识的写工具按「高」'),
+    ('领取时不再记住中档', '中档本人点过确认 → 记住'),
 ]
 
 过, 挂 = [], []
@@ -252,6 +257,85 @@ def 接线():
        and 'querySelectorAll("[data-act]")' in 页)
 
 
+def 三档(库):
+    """⑨ 用户 2026-11-25 拍三档:高 每次出卡;中 本人点过一次就记住、以后直接做;低 直接做。直接做的留「直接执行」卡,
+    并且先过「30 分钟内同人同参数办过」那道闸。档位表 backend/pending_actions.风险档 是唯一来源。"""
+    print("▸ ⑨ 三档(11-25):高每次问 / 中记住 / 低直接做,直接做的留痕、过办过闸、能撤")
+    import api
+    import protocol
+    ck("⑨ 不认识的写工具按「高」(新加写口没定档就先每次都问)", PA.档位("某个还没定档的新写口") == "高", PA.档位("某个还没定档的新写口"))
+    漏 = sorted(set(api.WRITE_TOOLS) - set(PA.风险档))
+    ck("⑨ 登记的每个写工具都定了档(没定的会按高,但得有人看一眼 —— 新加写工具没定档会红)", not 漏, 漏)
+    多 = sorted(set(PA.风险档) - set(api.WRITE_TOOLS))
+    ck("⑨ 档位表里没有已经下架的写工具(表漂了没人知道)", not 多, 多)
+    ck("⑨ 三档各至少一个工具、钱货类在高", {PA.档位(t) for t in PA.风险档} == {"高", "中", "低"} and PA.档位("open_order") == "高"
+       and PA.档位("confirm_order") == "高" and PA.档位("assign_task") == "中" and PA.档位("finish_task") == "低")
+    调了 = []
+    def 工(名, 中文):
+        return (名, 中文, {"type": "object"}, lambda **kw: 调了.append((名, kw)) or {"ok": True, "kw": kw})
+    工具们 = [工("open_order", "开单"), 工("assign_task", "派任务"), 工("finish_task", "完成任务")]
+    旧 = {k: os.environ.get(k) for k in ("LANXIU_CONFIRM_STORE", "LANXIU_CONFIRMED", "LANXIU_ME", "LANXIU_TRACE", "LANXIU_TOOLS")}
+    try:
+        for k in 旧:
+            os.environ.pop(k, None)
+        os.environ["LANXIU_ME"] = json.dumps(店长, ensure_ascii=False)
+        os.environ["LANXIU_CONFIRM_STORE"] = 库
+        def 调(nm, args, trace):
+            os.environ["LANXIU_TRACE"] = trace
+            s = protocol.Server("t", "1", 工具们)
+            r = s.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": nm, "arguments": args}})
+            return "".join(c.get("text", "") for c in r["result"]["content"])
+        # 低:直接做 + 留痕
+        调了.clear(); 文 = 调("finish_task", {"task": "T1"}, "tr9-a")
+        卡 = PA.本轮的(库, "tr9-a")
+        ck("⑨ 低档(完成任务):**直接执行**,不出待确认卡;留一张「直接执行」卡,回执记在卡上", 调了 == [("finish_task", {"task": "T1"})]
+           and len(卡) == 1 and 卡[0]["status"] == "直接执行" and (卡[0]["result"] or {}).get("isError") is False and "T1" in str(卡[0]["result"]), (调了, 卡))
+        ck("⑨ 直接执行那张卡:发起人是登录身份、有决定时间、是终态(领不了)", 卡[0]["asker_no"] == 店长["no"] and 卡[0]["decided_at"]
+           and 卡[0]["status"] in PA.终态 and PA.领取(库, 卡[0]["id"], 店长)[1][0] == 409, 卡[0])
+        调了.clear(); 文 = 调("finish_task", {"task": "T1"}, "tr9-b")
+        ck("⑨ 低档 30 分钟内同人同参数再来 → 不执行、不再留痕,告诉模型「已经直接执行过了,不要再做一遍」",
+           调了 == [] and "直接执行过了" in 文 and "不要再做一遍" in 文 and PA.本轮的(库, "tr9-b") == [], (调了, 文[:160]))
+        # 高:永远出卡,点过也不记
+        调了.clear(); 文 = 调("open_order", {"c": "C1"}, "tr9-c")
+        高卡 = PA.本轮的(库, "tr9-c")
+        ck("⑨ 高档(开单):出卡、没执行", 调了 == [] and len(高卡) == 1 and 高卡[0]["status"] == "待确认", (调了, 高卡))
+        PA.领取(库, 高卡[0]["id"], 店长); PA.收尾(库, 高卡[0]["id"], True, {"ok": True})
+        ck("⑨ 高档点过确认**不记住**", not PA.记得吗(库, 店长, "open_order"))
+        调了.clear(); 文 = 调("open_order", {"c": "C2"}, "tr9-d")
+        ck("⑨ 高档换一份参数再来 → 还是出卡、没执行", 调了 == [] and PA.本轮的(库, "tr9-d") and PA.本轮的(库, "tr9-d")[0]["status"] == "待确认", 调了)
+        # 中:第一次出卡,点过就记住,以后直接做;能撤
+        调了.clear(); 文 = 调("assign_task", {"task": "T2", "to": "60000011"}, "tr9-e")
+        中卡 = PA.本轮的(库, "tr9-e")
+        ck("⑨ 中档(派任务)第一次:出卡、没执行", 调了 == [] and len(中卡) == 1 and 中卡[0]["status"] == "待确认", (调了, 中卡))
+        ck("⑨ 中档没点确认之前不记住", not PA.记得吗(库, 店长, "assign_task"))
+        PA.领取(库, 中卡[0]["id"], 店长); PA.收尾(库, 中卡[0]["id"], True, {"ok": True})
+        ck("⑨ 中档本人点过确认 → 记住(按人 × 按工具)", PA.记得吗(库, 店长, "assign_task") and not PA.记得吗(库, {"no": "60000099"}, "assign_task"))
+        调了.clear(); 文 = 调("assign_task", {"task": "T3", "to": "60000011"}, "tr9-f")
+        卡f = PA.本轮的(库, "tr9-f")
+        ck("⑨ 中档记住后换一份参数 → **直接执行**,留「直接执行」卡", 调了 == [("assign_task", {"task": "T3", "to": "60000011"})]
+           and len(卡f) == 1 and 卡f[0]["status"] == "直接执行", (调了, 卡f))
+        调了.clear(); 文 = 调("assign_task", {"task": "T2", "to": "60000011"}, "tr9-g")
+        ck("⑨ 中档记住后,30 分钟内点卡办过的那份参数再来 → 不执行(办过闸在记住之前)", 调了 == [] and "办过" in 文, (调了, 文[:160]))
+        ck("⑨ 撤记住:只撤自己的,撤了几行照实说", PA.忘掉(库, {"no": "60000099"}, "assign_task") == 0 and PA.忘掉(库, 店长, "assign_task") == 1
+           and not PA.记得吗(库, 店长, "assign_task"))
+        调了.clear(); 文 = 调("assign_task", {"task": "T4", "to": "60000011"}, "tr9-h")
+        ck("⑨ 撤了以后再来 → 又先出卡", 调了 == [] and PA.本轮的(库, "tr9-h") and PA.本轮的(库, "tr9-h")[0]["status"] == "待确认", 调了)
+        ck("⑨ 记住的清单只列自己的", PA.记住的(库, 店长) == [] and PA.记住(库, 店长, "dispatch_task") and [r["tool"] for r in PA.记住的(库, 店长)] == ["dispatch_task"])
+        ck("⑨ 高 / 低 不进记住表(记住() 只收中档)", not PA.记住(库, 店长, "open_order") and not PA.记住(库, 店长, "finish_task"))
+        os.environ["LANXIU_ME"] = "null"
+        调了.clear(); 文 = 调("finish_task", {"task": "T5"}, "tr9-i")
+        ck("⑨ 没有登录身份:低档也**不执行**(拦住是安全的那一边)", 调了 == [] and "没有执行" in 文, (调了, 文[:160]))
+    finally:
+        for k, v in 旧.items():
+            if v is None: os.environ.pop(k, None)
+            else: os.environ[k] = v
+    页 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()
+    应用 = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+    ck("⑨ 接线:页面画「直接执行」卡、中档卡有「以后还是先问我」(data-forget)并绑了点击;聊天站有 /api/action/forget 路由",
+       '"直接执行"' in 页 and "data-forget" in 页 and 'querySelectorAll("[data-forget]")' in 页 and '"/api/action/forget"' in 页
+       and '"/api/action/forget"' in 应用)
+
+
 def main():
     with tempfile.TemporaryDirectory() as d:
         库 = os.path.join(d, "actions.db")
@@ -259,6 +343,7 @@ def main():
         指纹()
         工具服务那一层(os.path.join(d, "actions2.db"))
         复审两条(os.path.join(d, "actions3.db"))
+        三档(os.path.join(d, "actions4.db"))
     接线()
     print()
     if 挂:

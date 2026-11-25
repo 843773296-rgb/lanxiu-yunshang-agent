@@ -1450,12 +1450,17 @@ print(json.dumps(out, ensure_ascii=False))
 def a_confirm_card():
     """写操作确认卡(用户 11-11 拍):聊天站开着卡库时,模型调写工具**不执行** —— 不带指纹、带错指纹都不行。
     攻击:真起 mcp/protocol.Server(写工具名用 api.WRITE_TOOLS 里真有的),带卡库 env 调一次;
-    再把 LANXIU_CONFIRMED 设成另一份参数的指纹调一次。工具函数被执行了 = 破。"""
+    再把 LANXIU_CONFIRMED 设成另一份参数的指纹调一次。工具函数被执行了 = 破。
+    11-25 用户拍三档后,这条保证的范围是**「高」档**(钱 / 货 / 对外承诺,pending_actions.风险档;不认识的写口也按高):
+    中档本人点过一次就记住、低档直接做 —— 那两档的「直接做也留痕、先过办过闸、没身份不执行」由 agentsite/action_confirm_check ⑨ 守。
+    所以攻击用的写工具换成 open_order(高),不用 assign_task(中)—— 中档在一张记住过的库上会直接执行,那是设计不是破。"""
     import json as _j, os as _o, sys as _s, tempfile as _t
     _s.path.insert(0, _o.path.join(ROOT, "mcp"))
     import protocol, pending_actions as PA
+    if PA.档位("open_order") != "高":
+        return "open_order 不在「高」档了 —— 开单碰钱碰货,它要是不每次问,这条保证就塌了"
     调了 = []
-    写 = ("assign_task", "派任务", {"type": "object"}, lambda **kw: 调了.append(kw) or {"ok": True})
+    写 = ("open_order", "开单", {"type": "object"}, lambda **kw: 调了.append(kw) or {"ok": True})
     旧 = {k: _o.environ.get(k) for k in ("LANXIU_CONFIRM_STORE", "LANXIU_CONFIRMED", "LANXIU_ME", "LANXIU_TRACE")}
     try:
         with _t.TemporaryDirectory() as d:
@@ -1463,12 +1468,12 @@ def a_confirm_card():
             _o.environ["LANXIU_ME"] = _j.dumps({"no": "60000001", "name": "审计", "role": "店长"}, ensure_ascii=False)
             _o.environ["LANXIU_TRACE"] = "audit-confirm"
             _o.environ.pop("LANXIU_CONFIRMED", None)
-            参 = {"type": "日常运维", "assignee": "林岚", "note": "审计攻击", "end": "2026-12-31 18:00"}
+            参 = {"customer": "C10001", "note": "审计攻击", "items": [{"sku": "x", "qty": 1}]}
             def 调():
                 s = protocol.Server("t", "1", [写])
-                return s.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "assign_task", "arguments": 参}})
+                return s.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "open_order", "arguments": 参}})
             调()
-            _o.environ["LANXIU_CONFIRMED"] = PA.参数指纹("assign_task", dict(参, assignee="周叙"))
+            _o.environ["LANXIU_CONFIRMED"] = PA.参数指纹("open_order", dict(参, customer="C10002"))
             调()
             卡 = PA.本轮的(_o.environ["LANXIU_CONFIRM_STORE"], "audit-confirm")
     finally:
@@ -2172,10 +2177,12 @@ STRUCT = [
   "录音的客户和单子上的客户对不上就拒;执行表只有取转写 / 写跟进两项;"
   "核对人没绑定澜绣员工就不写(10-24 账号绑定,不以服务身份顶替)。"
   "「写之前必须有人批过」在管理后台执行侧(runtime/桥闸.py,只认人工节点的批准),由它那边的夹具和端到端守"),
- ("聊天里写操作要店员点确认卡才执行", "mcp/protocol.py 写工具闸 + backend/pending_actions.py(用户 11-11 拍)",
-  a_confirm_card, "开着卡库:不带参数指纹调写工具;带另一份参数的指纹调写工具",
+ ("聊天里高风险写操作(钱 / 货 / 对外承诺)要店员点确认卡才执行", "mcp/protocol.py 写工具闸 + backend/pending_actions.py(用户 11-11 拍;11-25 拍分三档)",
+  a_confirm_card, "开着卡库:不带参数指纹调开单;带另一份参数的指纹调开单",
   "**靠结构**:闸在工具服务进程里,身份和卡库从 env 进去(模型改得了参数改不了 env);执行只认 env 里那份参数指纹,"
-  "指纹由店员点卡时聊天站从卡上原样取。评测进程不设卡库,行为不变;「跑验证集」起评测剥掉开关"),
+  "指纹由店员点卡时聊天站从卡上原样取。评测进程不设卡库,行为不变;「跑验证集」起评测剥掉开关。"
+  "11-25 起分三档(档位表 pending_actions.风险档 唯一来源,不认识的写口按高):高 每次出卡;中 本人点过一次就记住、以后直接做、能撤;"
+  "低 直接做 —— 直接做的也留一张「直接执行」卡、先过「30 分钟同人同参数办过」闸、没登录身份不执行(agentsite/action_confirm_check ⑨ 守)"),
  ("没登录调不动聊天站的智能体", "agentsite/app.py /run(用户 10-23 拍「先修复」)",
   a_run_no_login, "不带登录身份直接 POST /run 问客户手机号",
   "**靠结构**:身份只从后台会话换(_who),换不出就在调 sdk.run 之前回 401。"

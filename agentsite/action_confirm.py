@@ -35,8 +35,26 @@ def 评测环境(基=None, **加):
 
 
 def 卡给页面(卡):
-    return {"id": 卡["id"], "工具": 卡["tool"], "参数": 卡["args"], "状态": 卡["status"],
+    # 11-25 三档:页面要知道这张卡是哪一档(中档待确认时提示「点了以后不再问」;直接执行的卡给「以后还是先问我」)
+    return {"id": 卡["id"], "工具": 卡["tool"], "参数": 卡["args"], "状态": 卡["status"], "档": PA.档位(卡["tool"]),
             "有效至": 卡["expires_at"], "结果": 卡.get("result"), "结果元": 卡.get("result_meta")}
+
+
+def 记住的(me):
+    """这个人「中」档记住了哪些工具(用户 11-25 拍三档)。→ (HTTP 码, 返回体)"""
+    库 = 卡库()
+    if not 库:
+        return 404, {"error": "确认卡功能没开"}
+    return 200, {"记住的": [{"工具": r["tool"], "档": PA.档位(r["tool"]), "记于": r["remembered_at"]} for r in PA.记住的(库, me)]}
+
+
+def 忘掉(me, tool):
+    """撤销「记住」:下次这个人用这个工具又会先出卡。只撤自己的。→ (HTTP 码, 返回体)"""
+    库 = 卡库()
+    if not 库:
+        return 404, {"error": "确认卡功能没开"}
+    n = PA.忘掉(库, me, str(tool or ""))
+    return 200, {"ok": True, "撤了": n, "note": "以后这个操作会先出确认卡" if n else "本来就没记住这个操作"}
 
 
 def 完整结果(aid, me):

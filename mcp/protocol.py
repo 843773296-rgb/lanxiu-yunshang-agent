@@ -277,27 +277,47 @@ class Server:
                         "text": f"工具 {nm} 一分钟内已经调了 {len(q)} 次,到了后台设的上限 —— 先用已经拿到的结果"}],
                         "isError": True})
                 q.append(_t.time())
-            # ── 写操作确认卡(用户 2026-11-11 拍:聊天里 29 个写操作全部出卡,点了才执行)──
+            # ── 写操作确认卡(用户 2026-11-11 拍:聊天里的写操作出卡,点了才执行;11-25 拍分三档,见下面)──
             # 只有聊天站带了 LANXIU_CONFIRM_STORE 才生效(评测 / V1 / V2 / 自测不带,行为不变)。
             # 写工具这一次**不执行**,只建一张待确认卡;店员点卡后聊天站用同一个服务、同一份参数再调,
             # env 里带着那份参数的指纹 —— 对得上才放行。模型改得了参数,改不了 env(见 backend/pending_actions.py)
+            # 11-25 用户拍**三档**(backend/pending_actions.风险档 是唯一来源):高 → 照旧每次出卡;
+            # 中 → 本人点过一次确认就记住、以后直接做;低 → 直接做。直接做的也落一张「直接执行」卡(谁 / 何时 / 什么参数 / 回执),
+            # 并且**先过「30 分钟内同人同参数办过」那道闸** —— 记住了也不许重复派。没有登录身份一律走出卡那条(建卡会抛 → 不执行)。
             卡库 = os.environ.get("LANXIU_CONFIRM_STORE")
+            直接卡 = None
             if 卡库 and _是写(nm):
                 import pending_actions as _pa
                 if os.environ.get("LANXIU_CONFIRMED") != _pa.参数指纹(nm, args):
                     try:
                         import domains as _dm
                         me = json.loads(os.environ.get("LANXIU_ME") or "null")
-                        卡 = _pa.建(卡库, nm, _dm.归属.get(nm, ""), args, me, trace=os.environ.get("LANXIU_TRACE"))
-                    except Exception as e:      # 建不了卡就**不执行**(拦住是安全的那一边)
+                        怎么办, 附 = _pa.要出卡吗(卡库, nm, args, me)
+                        if 怎么办 == "办过":
+                            卡 = 附
+                        elif 怎么办 == "直接":
+                            直接卡 = _pa.直接执行留痕(卡库, nm, _dm.归属.get(nm, ""), args, me, 附, trace=os.environ.get("LANXIU_TRACE"))
+                            卡 = None
+                        else:
+                            卡 = _pa.建(卡库, nm, _dm.归属.get(nm, ""), args, me, trace=os.environ.get("LANXIU_TRACE"))
+                    except Exception as e:      # 建不了卡 / 留不了痕就**不执行**(拦住是安全的那一边)
                         return self._ok(rid, {"content": [{"type": "text",
                             "text": f"这一步没有执行:生成确认卡失败({type(e).__name__}: {e})。照实告诉用户,不要说已经办好"}],
                             "isError": True})
-                    return self._ok(rid, {"content": [{"type": "text", "text": _pa.给模型的话(卡)}], "isError": False})
+                    if 卡 is not None:
+                        return self._ok(rid, {"content": [{"type": "text", "text": _pa.给模型的话(卡)}], "isError": False})
             import contextlib as _cl
             观 = self._观测.一次调用(nm, args) if self._观测 else _cl.nullcontext()
             with 观:
-                return self._执行一次(rid, nm, args, t, c)
+                回 = self._执行一次(rid, nm, args, t, c)
+            if 直接卡 is not None:
+                try:
+                    内 = (回.get("result") or {}) if isinstance(回, dict) else {}
+                    _pa.记结果(卡库, 直接卡["id"], {"isError": bool(内.get("isError")),
+                                                  "text": "".join(x.get("text", "") for x in (内.get("content") or []))[:20000]})
+                except Exception as e:  # noqa: BLE001 —— 回执记不上不影响已经执行的结果,只在日志里留一句
+                    log("直接执行回执没记上", nm, f"{type(e).__name__}: {e}")
+            return 回
         if rid is None:
             return None                                   # 未知通知,忽略
         return self._err(rid, -32601, f"未实现的方法 {m}")

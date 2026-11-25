@@ -1184,7 +1184,9 @@ function fbBar(m, i){
     + `<button data-fb="${i}" data-fbv="有帮助">👍 有帮助</button><button data-fb="${i}" data-fbv="反馈问题">反馈问题</button>${hoBtn(m, i)}</div>${hoBar(m, i)}`;
 }
 /* ── 写操作确认卡(用户 11-11 拍)──────────────────────────────────────────
- * 聊天里 29 个写操作全部出卡:模型调写工具时工具服务**不执行**,只建一张卡;店员核对后点「确认」才执行。
+ * 聊天里的写操作出卡:模型调写工具时工具服务**不执行**,只建一张卡;店员核对后点「确认」才执行。
+ * 11-25 用户拍分三档(档位表在 backend/pending_actions.风险档):高 → 每次出卡;中 → 点过一次就记住、以后不问(卡上可撤);
+ * 低 → 直接做,留一张「直接执行」卡。
  * 卡 30 分钟过期;只回一句「好」不算 —— 必须点卡。卡上的参数就是会被执行的那一份(服务端按参数指纹核对)。
  * 是谁点的不从页面传 —— 聊天站从登录会话取,只认发起人本人(agentsite/action_confirm.py)。 */
 const 写操作名 = {recovery_followup: "建挽回跟进", shift_draft: "排班(草稿)", shift_publish: "发布排班", apply_adjust: "提交审批", decide_approval: "审批决定", assign_task: "分派任务", dispatch_task: "派任务",
@@ -1202,8 +1204,14 @@ function actCards(m, i){
     const 至 = k.有效至 ? new Date(k.有效至 * 1000).toTimeString().slice(0, 5) : "";
     const 态 = k.状态 === "待确认" && k.有效至 && Date.now() / 1000 >= k.有效至 ? "已过期" : k.状态;
     let 尾 = "";
-    if(态 === "待确认") 尾 = `<div class="note">核对上面每一项,确认无误再点 · 有效至 ${esc(至)}(30 分钟)· 只回一句「好」不算</div>`
+    // 11-25 用户拍三档:高 → 每次问;中 → 点过一次确认就记住、以后这个操作不再问(卡上先说清);低 → 直接做、留一张「直接执行」卡
+    const 档注 = k.档 === "中" ? `<div class="note">这类操作属于「中风险」:<b>点了确认,以后你再做「${esc(写操作名[k.工具] || k.工具)}」就不再问</b>(在之后的卡上点「以后还是先问我」可以撤)</div>` : "";
+    if(态 === "待确认") 尾 = `<div class="note">核对上面每一项,确认无误再点 · 有效至 ${esc(至)}(30 分钟)· 只回一句「好」不算</div>${档注}`
       + `<button data-act="${i}" data-actj="${j}" data-actv="confirm">确认执行</button> <button data-act="${i}" data-actj="${j}" data-actv="cancel">暂不执行</button>`;
+    else if(态 === "直接执行") 尾 = `<div class="${(k.结果 || {}).isError ? "" : "done"}" style="${(k.结果 || {}).isError ? "color:var(--bad,#b42318)" : ""}">${(k.结果 || {}).isError ? "❌ 直接执行了,但工具报错" : "✅ 已直接执行"}`
+      + `(${k.档 === "低" ? "低风险操作不用确认" : "你之前确认过这类操作,这次没再问"})</div>`
+      + `<details><summary>执行回执</summary><pre style="white-space:pre-wrap">${esc(String((k.结果 || {}).text || JSON.stringify(k.结果 || {}, null, 1)).slice(0, 3000))}</pre></details>`
+      + (k.档 === "中" ? `<div class="note"><button data-forget="${esc(k.工具)}">以后还是先问我</button> 撤掉对「${esc(写操作名[k.工具] || k.工具)}」的记住,下次先出确认卡</div>` : "");
     else if(态 === "已成功") 尾 = `<div class="done">✅ 已执行</div><details><summary>执行结果${k.结果元 && k.结果元.已截短 ? "(卡上是摘要)" : ""}</summary><pre style="white-space:pre-wrap">${esc(JSON.stringify(k.结果, null, 1).slice(0, 2000))}</pre>`
       + (k.结果元 ? `<div class="note">完整结果 ${esc(String(k.结果元.字节 || ""))} 字节 · 哈希 ${esc(String(k.结果元.哈希 || "").slice(0, 12))}… · <a href="/api/action/result?id=${encodeURIComponent(k.id)}" target="_blank">看完整结果</a></div>` : "") + `</details>`;
     else if(态 === "已失败") 尾 = `<div style="color:var(--bad,#b42318)">❌ 执行失败:${esc(String((k.结果 || {}).error || JSON.stringify(k.结果 || {})).slice(0, 300))}</div>`;
@@ -1230,6 +1238,15 @@ async function 点确认卡(b){
   if(r.卡){ m.待确认卡[+b.dataset.actj] = r.卡; save(); drawStream(); return; }
   b.disabled = false;
   alert(r.error || "没处理成");   // 失败不装作成功
+}
+async function 撤记住(b){
+  // 三档(11-25):撤掉「中」档的记住 —— 只撤自己的;撤成了只换按钮文字,卡本身不变(那一笔已经执行了)
+  b.disabled = true;
+  const r = await fetch("/api/action/forget", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({tool: b.dataset.forget})})
+    .then(x => x.json()).catch(e => ({error: String(e)}));
+  if(r.ok){ b.textContent = "已撤,下次先问"; return; }
+  b.disabled = false;
+  alert(r.error || "没撤成");
 }
 /* ── 手动转人工(用户 11-11 拍)──────────────────────────────────────────
  * 「转人工,应该是内部业务流程需要沟通留下的后路」—— 系统办不了、要找同事 / 店长 / 总部拍板时,店员自己点。
@@ -1785,6 +1802,9 @@ function drawStream(){
   });
   s.querySelectorAll("[data-act]").forEach(b => {
     b.onclick = () => 点确认卡(b);
+  });
+  s.querySelectorAll("[data-forget]").forEach(b => {
+    b.onclick = () => 撤记住(b);
   });
   s.querySelectorAll("[data-req]").forEach(b => {
     b.onclick = () => 提申请(b);

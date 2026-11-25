@@ -23901,5 +23901,29 @@
    }
   ],
   "预期红": "真跑·I06(2026-11-25)"
+ },
+ {
+  "script": "agentsite/action_confirm_check.py",
+  "改坏": "档位表的默认值从「高」改成「低」—— 没定档的新写口会直接执行而不出卡(11-25 三档)",
+  "file": [
+   {
+    "path": "backend/pending_actions.py",
+    "old": "    return 风险档.get(tool, \"高\")",
+    "new": "    return 风险档.get(tool, \"低\")"
+   }
+  ],
+  "预期红": "不认识的写工具按「高」"
+ },
+ {
+  "script": "agentsite/action_confirm_check.py",
+  "改坏": "领取时不再记住中档 —— 「点过一次就不再问」这条就从没生效过,而页面上照样写着(11-25 三档)",
+  "file": [
+   {
+    "path": "backend/pending_actions.py",
+    "old": "    记住(路径, me, 卡[\"tool\"], from_aid=卡[\"id\"], 现在=现在)",
+    "new": "    pass  # 记住(路径, me, 卡[\"tool\"], from_aid=卡[\"id\"], 现在=现在)"
+   }
+  ],
+  "预期红": "中档本人点过确认 → 记住"
  }
 ]
