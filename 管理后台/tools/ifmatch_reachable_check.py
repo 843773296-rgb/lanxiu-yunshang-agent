@@ -417,7 +417,18 @@ def main():
                 # 列表里按某个字段挑第一个**有它的**(10-27 版本命名:按更新时间排第一的流程常常一个版本都没有,
                 # 取 items[0] 会「拿不到」—— 那是挑错了样本,不是界面拿不到)
                 键, 字 = cfg["挑"]
-                体 = {键: [x for x in (体.get(键) or []) if isinstance(x, dict) and x.get(字)]}
+                有 = [x for x in (体.get(键) or []) if isinstance(x, dict) and x.get(字)]
+                # 11-25 第四十二轮门禁红在这儿:演示项目**最近 100 条**工作流全是端到端留下的草稿、一条冻结版本都没有,
+                # 第一页挑不到就判「拿不到」—— 红不红取决于库里最近攒了多少草稿,不是界面拿不拿得到(CLAUDE.md 第 8 节那条)。
+                # 修法不是放宽:往后翻几页接着挑;翻完 5 页还没有才算真没有(那时列表大概真空了)。
+                页 = 1
+                while not 有 and 页 < 5:
+                    页 += 1
+                    再 = 打(f"{列路}{'&' if '?' in 列路 else '?'}page={页}", 项目覆盖=项)
+                    if not isinstance(再, dict) or not (再.get(键) or []):
+                        break
+                    有 = [x for x in 再.get(键) if isinstance(x, dict) and x.get(字)]
+                体 = {键: 有}
             ok, 值, 断 = 走(体 or {}, id路)
             if not ok:
                 # ⚠️ **拿不到 id ≠ 通过。** 列表是空的时候这一条什么都没验到,

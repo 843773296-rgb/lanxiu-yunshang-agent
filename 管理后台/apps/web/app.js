@@ -9891,7 +9891,7 @@ async function 页_应用与发布() {
       return;
     }
     $("#list").innerHTML = `<table><thead><tr><th>应用</th><th>流水线</th>
-      <th>生产在跑哪一版</th><th>预发</th><th>测试</th><th>候选</th>
+      <th>生产在跑哪一版</th><th>预发</th><th>测试</th><th>候选</th><th></th>
       </tr></thead><tbody>`
       + d["应用"].map((r) => {
         const 指 = r["各环境指着哪一版"] || {};
@@ -9908,9 +9908,25 @@ async function 页_应用与发布() {
                 : `<span class="pill warn">还差 ${(r["候选还差什么"] || []).length} 项</span>`}
             ${(r["候选还差什么"] || []).length
               ? `<div class="k">${md((r["候选还差什么"] || [])[0].slice(0, 46))}</div>` : ""}
-          </td></tr>`; }).join("")
+          </td>
+          <td><a href="#" class="k" data-arch-app="${esc(r.id)}" title="行不删:出过的清单、跑过的运行、调用记录都还指着它;挂着工作流的要去工作流那里归档,还有活密钥的会被拦">归档</a></td></tr>`; }).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}<br>
         <b>点应用名进详情</b> —— 发布那四步(出清单 / 审核 / 切指针 / 回滚)在那一页。</div>`;
+    // 归档(11-25 包二,用户拍「做归档」):接口 11-17 就有(apps_api.归档应用,两道闸:挂着工作流 / 还有活密钥 → 409),
+    // 前端一直没按钮。要写理由(进审计);被闸拦下就把接口的话原样显示 —— 它说清了该去哪儿解(挂着工作流的去工作流卡上归档)
+    $("#list").querySelectorAll("[data-arch-app]").forEach((a) => {
+      a.onclick = async (ev) => {
+        ev.preventDefault();
+        const 理由 = await 问一句("归档这个应用?", "行不删:出过的发布清单、跑过的运行、调用记录都还指着它,只是不再出现在列表里、不再给用户跑。<br>挂着工作流的应用要到「工作流」卡上连工作流一起归档;还有没吊销的访问密钥会被拦下来并告诉你先去哪儿解。",
+          { 输入: "归档理由(进审计)", 必填: true, 确定: "归档" });
+        if (理由 === null || 理由 === false || 理由 === undefined) return;
+        try {
+          const r = await 请求(`${P()}/applications/${encodeURIComponent(a.dataset.archApp)}/archive`, { method: "POST", body: JSON.stringify({ 理由 }) });
+          if (r && r.note) alert(r.note);
+          页_应用与发布();
+        } catch (e) { 报错(e); }
+      };
+    });
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
 
