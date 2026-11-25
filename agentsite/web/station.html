@@ -632,6 +632,16 @@ const KINDS = {};      // kind → 角色对象,拉到之后填
 // 顾问那条会话里模型手上有 17 个工具,工坊那条只有 6 个。
 let PICKING = false;   // 正在选角色
 
+// 进门先亮哪个助手(用户 11-25 拍「按岗位亮」;店长单独拍了「全能」):岗位从登录身份(/api/me 的 role)来,页面不另问。
+// 纯函数,model_route_check 用 node 真调它。全能助手仍在,只是不是默认;不认识的岗位(或没登录)→ 全能。
+const 岗位到助手 = {顾问: "kb", 店长: "all", 版师: "pattern", 工匠: "workshop", 总部运营: "task", 售后: "task", 财务: "task"};
+function 岗位推荐(role){ return 岗位到助手[String(role || "").trim()] || "all"; }
+// 选助手屏的顺序:推荐的那个排第一、带「按你的岗位先亮」;其余保持后端给的顺序。返回 [{r, i}],i 是在 ROLES 里的原下标(按钮靠它找回角色)
+function 排助手(roles, 推荐){
+  const 列 = roles.map((r, i) => ({r, i}));
+  return 列.filter(x => x.r.kind === 推荐).concat(列.filter(x => x.r.kind !== 推荐));
+}
+
 // 新会话用哪个模型。纯函数,model_route_check 用 node 真调它。
 // 10-25 修:原来直接抄下拉框当前值 —— 老会话是默认还是 Opus 5 那几天开的,新会话就悄悄继承 Opus 5,
 // 而它既不是网站默认、又没标手选,难题分流一次都不开(那一轮 $0.68)。
@@ -643,7 +653,7 @@ function 新会话模型(前, 默认, 下拉){
 function newConv(kind){
   const 模 = 新会话模型(cur(), MODEL_DEFAULT, $("#model").value);
   const c = {id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-             title:"新会话", kind: kind || "all",
+             title:"新会话", kind: kind || 岗位推荐(ME.role),     // 11-25:没指定就按岗位,不再一律全能
              model: 模.model, 模型手选: 模.模型手选,
              session:null, at:Date.now(), msgs:[]};
   DB.convs.unshift(c); DB.cur = c.id; save(); return c;
@@ -1691,11 +1701,11 @@ function drawRoles(){
       所以换助手要新开一条会话。<br>
       有的助手手上有<b>会真的改数据</b>的工具(下单、派任务、量体录入……),卡片上写着有几个;
       退款、判责、赔付这类结论一律只出建议,由人签字。</div>
-    <div class="roles">${ROLES.map((r,i) => `
-      <div class="role" style="--c:${esc(r.color || '#2f5bff')}">
+    <div class="roles">${排助手(ROLES, 岗位推荐(ME.role)).map(({r, i}) => `
+      <div class="role" style="--c:${esc(r.color || '#2f5bff')}${r.kind === 岗位推荐(ME.role) ? ";border-color:var(--c);box-shadow:0 3px 18px rgba(20,20,30,.09)" : ""}">
         <div class="av" style="color:${esc(r.color)};background:${esc(r.color)}18">${esc(r.emoji)}</div>
         <div class="nm">${esc(r.name)}</div>
-        <div class="who" style="color:${esc(r.color)}">${esc(r.who)}</div>
+        <div class="who" style="color:${esc(r.color)}">${esc(r.who)}${r.kind === 岗位推荐(ME.role) && ME.role ? ` · <b>按你的岗位(${esc(ME.role)})先亮</b>` : ""}</div>
         <div class="desc">${esc(r.intro || r.desc)}</div>
         <div class="cnt">${r.tools} 个工具 · ${r.rules} 条规矩 · ${r.writes ? `<b>${r.writes} 个会改数据</b>` : "只读"}</div>
         <button class="go" data-act="go" data-i="${i}"

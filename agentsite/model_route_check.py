@@ -92,8 +92,30 @@ def main():
     ck("接线:选助手时复用空会话也按 新会话模型 重定,选完同步下拉框",
        "Object.assign(c, 新会话模型(c, MODEL_DEFAULT" in 页 and "PICKING = false; 同步模型();" in 页)
 
+    # ── 进门先亮哪个助手(用户 11-25 拍「按岗位亮」,店长单独拍「全能」;station.html 的 岗位推荐 / 排助手,node 真调)──
+    # 放在这个检查里是因为它已经会从页面抠纯函数用 node 跑;岗位 → 助手是和「新会话用哪个模型」同一处决定的事(都在 newConv 里)。
+    m2 = re.search(r"const 岗位到助手 = \{.*?\};\nfunction 岗位推荐\(role\)\{.*?\}\n", 页, re.S)
+    m3 = re.search(r"function 排助手\(roles, 推荐\)\{.*?\n\}", 页, re.S)
+    ck("station.html 里找得到 岗位推荐 / 排助手(找不到下面几条就是没验)", bool(m2) and bool(m3))
+    def 荐(*表达式):
+        js = (m2.group(0) if m2 else "") + (m3.group(0) if m3 else "") + "\nconsole.log(JSON.stringify([" + ",".join(表达式) + "]));"
+        r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30)
+        return json.loads(r.stdout) if r.returncode == 0 else [{"node": r.stderr[-200:]}]
+    x = 荐('岗位推荐("顾问")', '岗位推荐("店长")', '岗位推荐("版师")', '岗位推荐("工匠")', '岗位推荐("总部运营")', '岗位推荐("售后")', '岗位推荐("财务")')
+    ck("按岗位:顾问 → 门店顾问(kb)、店长 → 全能(用户单独拍)、版师 → 版师核料、工匠 → 工坊、总部运营 / 售后 / 财务 → 后台运营",
+       x == ["kb", "all", "pattern", "workshop", "task", "task", "task"], x)
+    x = 荐('岗位推荐("")', '岗位推荐(undefined)', '岗位推荐("打杂")', '岗位推荐(" 顾问 ")')
+    ck("不认识的岗位 / 没登录 → 全能;前后空格不算另一个岗位", x == ["all", "all", "all", "kb"], x)
+    角色键 = set(re.findall(r'^    "(all|kb|pattern|workshop|task)": dict\(', sdk if (sdk := open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()) else "", re.M))
+    表值 = set(re.findall(r':\s*"([a-z]+)"', m2.group(0).split("function")[0])) if m2 else set()
+    ck("岗位表里指向的助手,sdk 里都真有(表漂了没人知道)", 表值 and 表值 <= 角色键, (表值, 角色键))
+    x = 荐('排助手([{kind:"all"},{kind:"kb"},{kind:"task"}], "task").map(x => x.r.kind + ":" + x.i).join(",")',
+           '排助手([{kind:"all"},{kind:"kb"}], "打杂").map(x => x.r.kind + ":" + x.i).join(",")')
+    ck("选助手屏:推荐的排第一、其余保持原顺序、按钮仍指回原下标;推荐的不在列表里就原样", x == ["task:2,all:0,kb:1", "all:0,kb:1"], x)
+    ck("接线:新建会话没指定助手时按岗位;选助手屏按 排助手 画、推荐那张写明「按你的岗位先亮」",
+       "kind: kind || 岗位推荐(ME.role)" in 页 and "排助手(ROLES, 岗位推荐(ME.role)).map(({r, i})" in 页 and "按你的岗位" in 页)
+
     app = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
-    sdk = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
     ck("接线:/run 按 model_route 判分流和升级、只升级一次;sdk 回传报错和调成功的工具;该上报的记到根上",
        "_mr.分流开着吗(" in app and app.count("_mr.该升级吗(") == 1 and "_mr.该上报吗(r)" in app and "_sp.记上报(" in app and "工具成功=[c.get(\"tool\")" in sdk
        and "fork_session=bool(分叉 and resume)" in sdk)

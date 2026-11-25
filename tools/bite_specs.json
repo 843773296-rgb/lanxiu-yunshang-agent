@@ -23937,5 +23937,29 @@
    }
   ],
   "预期红": "已执行 → 已成功"
+ },
+ {
+  "script": "agentsite/model_route_check.py",
+  "改坏": "不认识的岗位默认改成门店顾问(没登录 / 新岗位进来就被塞进顾问的工具集)—— 11-25 按岗位亮",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "function 岗位推荐(role){ return 岗位到助手[String(role || \"\").trim()] || \"all\"; }",
+    "new": "function 岗位推荐(role){ return 岗位到助手[String(role || \"\").trim()] || \"kb\"; }"
+   }
+  ],
+  "预期红": "不认识的岗位 / 没登录 → 全能"
+ },
+ {
+  "script": "agentsite/model_route_check.py",
+  "改坏": "排助手不再把推荐的排第一(页面照旧按后端顺序画,「先亮」就没了)—— 11-25 按岗位亮",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "  return 列.filter(x => x.r.kind === 推荐).concat(列.filter(x => x.r.kind !== 推荐));",
+    "new": "  return 列;"
+   }
+  ],
+  "预期红": "选助手屏:推荐的排第一"
  }
 ]
