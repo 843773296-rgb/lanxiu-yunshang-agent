@@ -34,6 +34,22 @@ router = APIRouter()
 状态们 = ("待处理", "已处理")
 原话最长 = 4000
 说明最长 = 1000
+# 11-25 用户拍「核对中回写」:聊天站写操作确认卡「核对中」(工具没及时回结果,可能已落库)转来的待办,
+# 处理时**必须说清结论**(已执行 / 未执行 / 说不清),聊天站拿这个结论把卡改成对的状态 —— 只写一句「已核对」聊天站不知道该把卡改成什么。
+# 不加列:结论存进 note 的固定前缀「【已执行】…」,这里是**唯一**写和读它的地方(_核对结论 解析),聊天站只认详情里的「核对结论」字段。
+核对意图 = "写操作结果核对"        # 聊天站 action_confirm._转人工核对 建待办时带的意图,和它一致
+核对结论们 = ("已执行", "未执行", "说不清")
+
+
+def _核对结论(r):
+    """已处理的核对待办,从 note 的前缀读结论;不是核对待办 / 还没处理 / 旧数据没前缀 → None。"""
+    if r.get("intent_name") != 核对意图 or r.get("status") != "已处理":
+        return None
+    n = str(r.get("note") or "")
+    for x in 核对结论们:
+        if n.startswith(f"【{x}】"):
+            return x
+    return None
 
 
 def 校验(体):
@@ -65,7 +81,8 @@ def 校验(体):
 
 def _列表行(r):
     return {"id": r["id"], "status": r["status"], "intent_name": r["intent_name"], "reason_note": r["reason_note"],
-            "asker_snapshot": r["asker_snapshot"], "created_at": r["created_at"], "revision": r["revision"]}
+            "asker_snapshot": r["asker_snapshot"], "created_at": r["created_at"], "revision": r["revision"],
+            "是核对待办": r["intent_name"] == 核对意图, "核对结论": _核对结论(r)}
 
 
 @router.post(前缀 + "/chat-handoffs", status_code=201)
@@ -141,8 +158,9 @@ async def 处理转人工(project_id: str, handoff_id: str, request: Request, if
     说明 = str((体 or {}).get("说明") or "").strip() if isinstance(体, dict) else ""
     if not 说明 or len(说明) > 说明最长:
         raise _错(422, "VALIDATION", "要写一句怎么处理的", f"1~{说明最长} 字", field_errors={"说明": "必填"})
+    结论 = str((体 or {}).get("结论") or "").strip() if isinstance(体, dict) else ""
     with 事务() as c:
-        r = c.execute(text("select status, revision from chat_handoffs where project_id=:p and id=:i for update"),
+        r = c.execute(text("select status, revision, intent_name from chat_handoffs where project_id=:p and id=:i for update"),
                       {"p": project_id, "i": handoff_id}).mappings().first()
         if not r:
             raise _错(404, "NOT_FOUND", "没有这条转人工", "确认编号")
@@ -150,7 +168,13 @@ async def 处理转人工(project_id: str, handoff_id: str, request: Request, if
             raise _错(409, "ALREADY_HANDLED", "这条已经处理过了", "刷新看处理结果")
         if str(r["revision"]) != if_match.strip().strip('"'):
             raise _错(409, "REVISION_CONFLICT", "别人刚改过", "刷新后再处理")
+        if r["intent_name"] == 核对意图:
+            # 11-25 核对中回写:这条是「店员点了确认、工具没回结果」转来的,聊天站等着结论把卡改过去 —— 结论必填、只认三种
+            if 结论 not in 核对结论们:
+                raise _错(422, "VALIDATION", "这条是写操作结果核对,要选结论", "已执行 / 未执行 / 说不清 三选一,再写一句说明",
+                          field_errors={"结论": f"只认 {' / '.join(核对结论们)}"})
+            说明 = f"【{结论}】{说明}"
         c.execute(text("""update chat_handoffs set status='已处理', handled_by=:u, handled_at=now(), note=:n,
                           updated_at=now(), revision=revision+1 where project_id=:p and id=:i"""),
                   {"u": me.user_id, "n": 说明, "p": project_id, "i": handoff_id})
-    return {"id": handoff_id, "status": "已处理"}
+    return {"id": handoff_id, "status": "已处理", "核对结论": 结论 if r["intent_name"] == 核对意图 else None}

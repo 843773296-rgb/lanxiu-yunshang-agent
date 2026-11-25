@@ -55,7 +55,9 @@
   · ✅ **① 应用归档(11:1x,w1121)**:卡上「应用归档无接口」的前提**错了** —— 接口 11-17 就有(apps_api.归档应用:只收不挂工作流的应用,两道闸 挂着工作流 / 还有活密钥 → 409;挂工作流的随 归档工作流 连带归档),缺的只是「应用与发布」页的按钮。加了:列表每行「归档」(data-arch-app,问理由,409 把接口的话原样显示),同工作流卡那套。node --check 过;**页面没人点过**。
   · ✅ 提交 b9273086(① + ifmatch 翻页),**gate_w43 11:2x 起(w41 形含 e2e-ci;后台 bi9xij59y;status gate_w43.status;备份 .gate_w43.sh.bak)**,fc 等哈希。
   · ✅ **③ 确认卡三档(12:xx,w1121 未提交,等 quick_gate 后台 b4e432rn1 绿就 commit)**:fc 说它没在改这些文件。单一来源 **backend/pending_actions.风险档**(高 20 / 中 10 / 低 3;不认识的写口按高;分档理由写在表上方,**用户没逐条过,挪档只改这张表**):高 = 开单 / 确认下单 / 回滚 / 开裁 / 报工 / 签收 / 核码 / 追认 / 返修四步 / 关差评 / 确认报告 / 记已告知 ×2 / 审批 ×2 / 发布排班 / 启动流程;中 = 派 / 分派 / 改派 / 批量 ×2 / 建挽回跟进 / 登记量体 / 白坯试衣 / 核占比 / 核档差;低 = 保存报告草稿 / 排班草稿 / 完成任务。机制:mcp/protocol 拦截时问 `要出卡吗` → 办过(30 分钟同人同参数,三档都先过这道闸)/ 直接(低;中且记住)/ 出卡;直接做的先落一张「直接执行」卡(新终态)再执行、回执 `记结果`;「记住」在 `领取` 时写 confirm_memory(按人 × 工具,永久到手动撤),只收中档;撤 = /api/action/forget(只撤自己的),卡上「以后还是先问我」按钮;中档待确认卡上先说清「点了以后不再问」。没登录身份一律不执行。验:action_confirm_check 46→67 全绿(新 ⑨ 22 条)、boundary_audit 70/70(那条保证改成「高风险写操作」、攻击工具换 open_order)、js_check 绿、安全边界审计.md 重生成;bite_specs 追加 2 条(1997/1998,**还没重放 —— 要等 gate_w43 放锁**)。⚠️ 这是放宽确认闸(fc 提醒),**用户 11-25 拍的三档**;改的时候自动权限没拦。**真页面没人点过**(中档卡提示 / 直接执行卡 / 撤按钮)。
-  · **下一步**:quick_gate 绿 → `git commit --only backend/pending_actions.py mcp/protocol.py agentsite/action_confirm.py agentsite/app.py agentsite/web/station.html agentsite/action_confirm_check.py backend/boundary_audit.py 安全边界审计.md tools/bite_specs.json HANDOFF.md` → w43 绿推完后(告 fc 哈希)起 w44 推 ③(不碰 管理后台/ → w38 形)→ 做 ② 核对中回写(先摸 answer_feedback.建转人工 建的待办在哪张表、谁结案)。
+  · ✅ ③ 提交 **49519580**(quick_gate 49 条绿;唯一红「咬合副本」自测是等锁 900 秒超时 —— 锁在 gate_w43 手里,不是代码错,**w43 放锁后要单跑 `python3 tools/bite_run.py --自测` 和新规格 1997/1998/1999 重放**)。
+  · ✅ **② 核对中回写(12:xx–13:xx,w1121 未提交)**:管理后台 chat_handoffs_api —— 意图「写操作结果核对」(= 聊天站 _转人工核对 建待办时带的)的待办处理时**结论三选一必填**(已执行 / 未执行 / 说不清),存进 note 固定前缀「【已执行】…」,**只在那个文件里写和读**(_核对结论),列表 / 详情带「是核对待办 / 核对结论」;app.js 开_聊天转人工 对核对待办给三个按钮(别的转人工照旧一个「标记已处理」);聊天站 **拉不推**(卡库是聊天站的 sqlite,后台够不着):页面画到「核对中」卡时问一次 GET /api/action/followup?id=(每张卡一个会话只问一次)→ action_confirm.跟进核对 → answer_feedback.查转人工(内部通道,服务账号 U001 读列表验过 200)→ PA.核对回写:已执行 → 已成功 / 未执行 → 未执行 / 说不清 → 还是核对中但带上人的说明;只动核对中的卡、原结果字段不丢。验:action_confirm_check 67 → 75(⑩ 8 条)、js_check / node --check 绿、bite_specs +1(1999:映射改坏)、test_chat_handoff_flow 加 ⑤b 9 条(**要等 gate 的 e2e-ci 才真跑** —— 8801 上还是旧代码)。**真页面没人点过。**
+  · **下一步**:commit ②(`--only 管理后台/services/api/app/chat_handoffs_api.py 管理后台/apps/web/app.js 管理后台/tests/e2e/test_chat_handoff_flow.py backend/pending_actions.py agentsite/action_confirm.py agentsite/answer_feedback.py agentsite/app.py agentsite/web/station.html agentsite/action_confirm_check.py tools/bite_specs.json HANDOFF.md`)→ w43 绿推完告 fc 哈希 → 锁空时先 bite_run 新规格 4 条 + `--自测` → w1117 rebase w1121 → **gate_w44 = w41 形(含 e2e-ci,② 改了 管理后台/)** 带 ③② 两笔 → 绿后 kickstart 8770(agentsite 改了)+ backend(pending_actions / protocol 被 8770 的工具服务子进程读,不用重启 8760;supervise 不碰) → 汇总发飞书 → 问用户剩下两件(角色进门先亮哪个助手 / 失败提示统一)。
   · **下一步第一个动作**(原计划):先做 ④(不占锁、不碰 fc 文件、不改 管理后台/):读 agent/ops-eval-results.jsonl 最后两轮,列出翻面 23 题的 why,挨个读 agent/ops_eval.py 里那题的判据,改成查结构;`python3 agent/ops_judgetest.py`(名字现看)绿后再真跑。①②③ 之后按顺序,①③ 都要等 ④ 提交。
   · **未验证的预判** 🔮 fc 推上来的会包含 guards.py 那笔 —— 没验;验法:`git log origin/main --oneline -5` 里有「体检 / 金额 / 字面」字样的提交,且 `git show --stat` 碰 agentsite/guards.py。🔮 fc 推完我 593604d8(只含汇总 md + HANDOFF)rebase 到新远端不会冲突 —— 没验,HANDOFF 是双方都写的文件,**rebase 冲突就留两边、别拿备份恢复**。
   · **判据** 同下面 02:0x 那组(门禁红在题没进结果文件 → 跑全量;看 guard 红先读 guards.py 比对逻辑)。「fc 推完没推完」看远端哈希 + 它的消息,**别看锁**。
@@ -2209,21 +2211,20 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-25 09:15。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-25 10:09。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `w1121` |
-| 最新提交 | 4713d13e · 2026-11-25 · 夜间汇总 11-24→11-25:包一收尾 + 包二五件推上主干 7e6ea7b6;交接刷到推完 |
-| 代码量 | 1230 个 Python 文件 / 213042 行(不含 .venv) |
+| 最新提交 | 49519580 · 2026-11-25 · 写操作确认卡分三档(用户 11-25 拍):高每次问、中点过一次就记住、低直接做并留痕 |
+| 代码量 | 1230 个 Python 文件 / 213398 行(不含 .venv) |
 | 验收 | `./check.sh` 共 445 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M agentsite/evals/funnel.jsonl
+M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
 ?? .feynman/weekly-review.log
 ?? .gate_w29.sh.bak
@@ -2238,6 +2239,8 @@ M HANDOFF.md
 ?? .gate_w39.sh.bak
 ?? .gate_w40.sh.bak
 ?? .gate_w41.sh.bak
+?? .gate_w42.sh.bak
+?? .gate_w43.sh.bak
 ?? agentsite/.venv
 ?? "\347\256\241\347\220\206\345\220\216\345\217\260/.models"
 ```
@@ -2246,11 +2249,11 @@ M HANDOFF.md
 **最近 5 次提交:**
 
 ```
+49519580 写操作确认卡分三档(用户 11-25 拍):高每次问、中点过一次就记住、低直接做并留痕
+b9273086 应用与发布页加「归档」按钮;If-Match 可达检查挑样本时往后翻页,不再被一页草稿判红
+f78571c4 运维评测判据改查结构:11-25 全量翻面 27 题逐条读原文,7 道是判据吃措辞、5 道模型真错一起钉住
 4713d13e 夜间汇总 11-24→11-25:包一收尾 + 包二五件推上主干 7e6ea7b6;交接刷到推完
 9b6e9d0f 交付前体检:总价那一支按数值认出处 —— 「¥65,452.80」是订单 / 取消扣费原样返回的,不该被当成编的
-2becdb53 库路径单源第③步第 8 批:费用提醒 / 简体对照 / 商机评测 / 归属释放 / 两个修数脚本改走 dbpath(欠债 273→267)
-7e6ea7b6 工具选择评测结果跟上工具数 110→109:候选数 103→102
-64b41711 评测:运维评测全量跑了一遍(135 题 × 两轮),让门禁认得三道新负向题
 ```
 <!--/AUTO-->
 ## 一句话在做什么

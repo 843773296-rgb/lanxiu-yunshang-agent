@@ -399,6 +399,28 @@ def 收尾(路径, aid, 成功, 结果, 状态=None):
         c.close()
 
 
+def 核对回写(路径, aid, 结论, 说明, 处理人=None, 处理时间=None):
+    """「核对中」的卡,人工核对出结论后写回(用户 11-25 拍「核对中要回写」):
+        已执行 → 已成功;未执行 → 未执行;说不清 → 还是核对中(但把人的说明带上卡,店员看得到有人核过)。
+    只动 status 还是「核对中」的卡;结果里加「核对结论 / 核对说明 / 核对人 / 核对时间」,原结果其余字段不动。→ 改了几行。"""
+    映 = {"已执行": "已成功", "未执行": "未执行", "说不清": "核对中"}
+    if 结论 not in 映:
+        raise ValueError(f"核对结论只认 {tuple(映)},拿到 {结论!r}")
+    c = _连(路径)
+    try:
+        r = c.execute("select result_json from pending_action where id=? and status='核对中'", (str(aid),)).fetchone()
+        if r is None:
+            return 0
+        结果 = json.loads(r["result_json"]) if r["result_json"] else {}
+        if not isinstance(结果, dict):
+            结果 = {"原结果": 结果}
+        结果.update({"核对结论": 结论, "核对说明": str(说明 or "")[:1000], "核对人": 处理人, "核对时间": 处理时间})
+        return c.execute("update pending_action set status=?, result_json=? where id=? and status='核对中'",
+                         (映[结论], json.dumps(结果, ensure_ascii=False), str(aid))).rowcount
+    finally:
+        c.close()
+
+
 def 取完整结果(路径, aid):
     """完整结果(原样 JSON 文本)+ 哈希 + 字节;没有就 None。页面上的「看完整结果」走这里,不从摘要还原。"""
     c = _连(路径)

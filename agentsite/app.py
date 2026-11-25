@@ -380,6 +380,17 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"error": "缺确认卡编号"}, code=400)
             码, d = _ac.完整结果(aid, me)
             return self._send(d, code=码)
+        if p == "/api/action/followup":
+            # 「核对中」回写(用户 11-25 拍):页面打开时问一次管理后台那条待办有没有结论,有了就写回卡。只给发起人本人
+            import action_confirm as _ac
+            me = _who(self)
+            if not me:
+                return self._send({"error": "没登录"}, code=401)
+            aid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0].strip()
+            if not aid:
+                return self._send({"error": "缺确认卡编号"}, code=400)
+            码, d = _ac.跟进核对(aid, me)
+            return self._send(d, code=码)
         if p in ("/api/human-requests", "/api/human-request"):
             # 人工待办(四期 4-1 聊天站一半,11-22):以登录工号绑定的管理后台账号去取 —— 门店范围 / 能不能批都由管理后台判。
             # ⚠️ 必须写在下面那行转发之前,否则被当成后台(8760)的接口转走

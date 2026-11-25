@@ -91,6 +91,32 @@ def main():
         c, b = 打("POST", 办, {"说明": "再来一次"}, {"If-Match": str((rev or 0) + 1)})
         ck("再处理 → 409 ALREADY_HANDLED", c == 409 and 码(b) == "ALREADY_HANDLED", (c, b))
 
+        print("⑤b 核对待办要结论(11-25 用户拍「核对中回写」)")
+        c, b = 打("POST", 路, 体(标 + "-2", 意图="写操作结果核对", 原因="店员点了确认,工具没有及时回结果 —— 可能已落库"), 内)
+        核号 = (b or {}).get("id")
+        ck("核对待办建得出来", c == 201 and 核号, (c, b))
+        c, b = 打("GET", 路 + "?status=待处理&page_size=100")
+        行 = [x for x in (b or {}).get("items", []) if x["id"] == 核号]
+        ck("列表行标了「是核对待办」,结论还空着", 行 and 行[0].get("是核对待办") is True and 行[0].get("核对结论") is None, 行)
+        c, b = 打("GET", P + f"/chat-handoffs/{核号}")
+        核rev = (b or {}).get("revision")
+        c, b = 打("POST", P + f"/chat-handoffs/{核号}/resolve", {"说明": "查了订单表"}, {"If-Match": str(核rev)})
+        ck("核对待办不带结论 → 422 点名「结论」", c == 422 and "结论" in str(b), (c, b))
+        c, b = 打("POST", P + f"/chat-handoffs/{核号}/resolve", {"说明": "查了订单表", "结论": "差不多吧"}, {"If-Match": str(核rev)})
+        ck("结论乱写 → 422", c == 422, (c, b))
+        c, b = 打("POST", P + f"/chat-handoffs/{核号}/resolve", {"说明": "订单表里有这一单", "结论": "已执行"}, {"If-Match": str(核rev)})
+        ck("带结论处理成功,返回里带结论", c == 200 and b.get("status") == "已处理" and b.get("核对结论") == "已执行", (c, b))
+        c, b = 打("GET", P + f"/chat-handoffs/{核号}")
+        ck("详情:结论读得出来、说明带固定前缀(聊天站只认「核对结论」字段)", c == 200 and b.get("核对结论") == "已执行"
+           and str(b.get("note") or "").startswith("【已执行】订单表里有这一单"), (c, b))
+        c, b = 打("POST", 路, 体(标 + "-3", 意图="写操作结果核对"), 内); 号3 = (b or {}).get("id")
+        c, b = 打("GET", P + f"/chat-handoffs/{号3}"); rev3 = (b or {}).get("revision")
+        c, b = 打("POST", P + f"/chat-handoffs/{号3}/resolve", {"说明": "两边都查不到", "结论": "说不清"}, {"If-Match": str(rev3)})
+        c, b = 打("GET", P + f"/chat-handoffs/{号3}")
+        ck("「说不清」也是合法结论,读得出来", b.get("核对结论") == "说不清", b)
+        c, b = 打("GET", 详)
+        ck("普通转人工(投诉)不是核对待办,结论字段为空、不要求结论", b.get("是核对待办") is False and b.get("核对结论") is None, b)
+
         print("⑥ 库约束")
         try:
             with 库.begin() as k:

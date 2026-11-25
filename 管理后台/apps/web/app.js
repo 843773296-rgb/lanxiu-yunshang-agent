@@ -7687,17 +7687,26 @@ async function 开_聊天转人工(编号) {
   const 原话 = r["原话看得到吗"] ? `<div class="k">店长原话</div><div>${esc(r.question_note || "")}</div>`
     : `<div class="note">你没有受理权限,看不到店长原话。</div>`;
   const 已办 = r.status === "已处理" ? `<div class="k">处理说明</div><div>${esc(r.note || "")}</div>` : "";
-  提示(`转人工 ${r.id}`, `${原话}<div class="k">为什么转人工</div><div>${esc(r.reason_note || "")}</div>${已办}
-    ${r["还能处理吗"] ? `<div class="acts" style="margin-top:12px"><button id="ho-do">标记已处理</button></div>` : ""}`);
-  const 钮 = $("#ho-do");
-  if (钮) 钮.onclick = 只跑一次(async () => {
-    const 说明 = await 问一句("标记已处理", "写一句怎么处理的,之后不能再改。", { 输入: "比如 已电话联系客户", 必填: true, 确定: "标记已处理" });
+  // 11-25 用户拍「核对中回写」:聊天站确认卡「核对中」转来的待办,处理时要三选一说结论 —— 聊天站拿结论把卡改成对的状态。
+  // 别的转人工照旧一个「标记已处理」按钮。
+  const 核对 = !!r["是核对待办"];
+  const 按钮们 = !r["还能处理吗"] ? ""
+    : 核对 ? `<div class="note" style="margin-top:12px">这条是<b>写操作结果核对</b>:店员点了确认、工具没及时回结果。请到业务系统核实后<b>三选一</b>,聊天站那张卡会照结论自己变:</div>
+        <div class="acts"><button id="ho-done">已执行(落库了)</button> <button id="ho-undone">未执行(没落库)</button> <button id="ho-unsure">说不清</button></div>`
+    : `<div class="acts" style="margin-top:12px"><button id="ho-do">标记已处理</button></div>`;
+  提示(`转人工 ${r.id}`, `${原话}<div class="k">为什么转人工</div><div>${esc(r.reason_note || "")}</div>${已办}${按钮们}`);
+  const 办 = (结论) => 只跑一次(async () => {
+    const 说明 = await 问一句(结论 ? `结论:${结论}` : "标记已处理", 结论 ? "写一句你是怎么核实的(查了哪张表 / 哪条记录),之后不能再改。" : "写一句怎么处理的,之后不能再改。",
+      { 输入: 结论 ? "比如 订单表里有这一单,状态待确认" : "比如 已电话联系客户", 必填: true, 确定: 结论 ? `记为「${结论}」` : "标记已处理" });
     if (!说明) return;
     try {
-      await 请求(`${P()}/chat-handoffs/${encodeURIComponent(编号)}/resolve`, { method: "POST", headers: { "If-Match": String(r.revision) }, body: JSON.stringify({ 说明 }) });
-      await 页_人工待办(); 轻提示("已标记处理");
+      await 请求(`${P()}/chat-handoffs/${encodeURIComponent(编号)}/resolve`, { method: "POST", headers: { "If-Match": String(r.revision) }, body: JSON.stringify(结论 ? { 说明, 结论 } : { 说明 }) });
+      await 页_人工待办(); 轻提示(结论 ? `已记为「${结论}」,聊天站那张卡会跟着变` : "已标记处理");
     } catch (e) { 提示("没处理成功", `<div>${esc(e.message || String(e))}</div>`); }
   });
+  const 钮 = $("#ho-do");
+  if (钮) 钮.onclick = 办(null);
+  [["#ho-done", "已执行"], ["#ho-undone", "未执行"], ["#ho-unsure", "说不清"]].forEach(([id, 结论]) => { const b = $(id); if (b) b.onclick = 办(结论); });
 }
 
 /* ── 人工核对(工作流里的 human 节点,2026-10-24)──────────────────────

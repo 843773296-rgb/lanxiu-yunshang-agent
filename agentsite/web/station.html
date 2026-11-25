@@ -1220,7 +1220,12 @@ function actCards(m, i){
       + `${(k.结果 || {}).转人工待办 ? `已转人工核对(待办 ${esc(String(k.结果.转人工待办))})` : `转人工没建成:${esc(String((k.结果 || {}).转人工失败 || ""))}`},核对结果出来会在管理后台待办里。</div>`
       // 11-24 包二③:「核对中」原来是条死路 —— 说了结果在待办里,却没有一条路过去。给两个出口:去待办看;本页的「人工待办」页签也能看
       + `<div class="note"><a href="${esc((location.protocol || "http:") + "//" + (location.hostname || "127.0.0.1") + ":8801/#/human")}" target="_blank" rel="noopener">去管理后台待办看核对结果</a>`
-      + ` · 或点左边「人工待办」页签${(k.结果 || {}).转人工待办 ? `,找待办 ${esc(String(k.结果.转人工待办))}` : ""};核对完这张卡不会自己变,以待办里的结论为准</div>`;
+      + ` · 或点左边「人工待办」页签${(k.结果 || {}).转人工待办 ? `,找待办 ${esc(String(k.结果.转人工待办))}` : ""}`
+      // 11-25 用户拍「核对中要回写」:待办出了结论,再打开聊天这张卡会自己变(已执行 → ✅ / 未执行 → ⛔ / 说不清 → 还是核对中但带上人的说明)
+      + `;核对出结论后这张卡会自己变(每次打开问一次)</div>`
+      + ((k.结果 || {}).核对结论 ? `<div class="note">人工核对过,结论「${esc(k.结果.核对结论)}」:${esc(String(k.结果.核对说明 || ""))}</div>` : "");
+    if((k.结果 || {}).核对结论 && (态 === "已成功" || 态 === "未执行")) 尾 += `<div class="note">这是人工核对后写回的结论(待办 ${esc(String((k.结果 || {}).转人工待办 || ""))}):${esc(String(k.结果.核对说明 || ""))}</div>`;
+    if(态 === "核对中" && !核对已问.has(k.id)){ 核对已问.add(k.id); setTimeout(() => 跟进核对(i, j, k.id), 0); }
     else if(态 === "已过期") 尾 = `<div class="note">已过期,没有执行 —— 要做的话让助手重新查一遍、重新生成</div>`;
     else if(态 === "已取消") 尾 = `<div class="note">已选择暂不执行,没有执行</div>`;
     else 尾 = `<div class="note">${esc(态 || "")}</div>`;
@@ -1238,6 +1243,15 @@ async function 点确认卡(b){
   if(r.卡){ m.待确认卡[+b.dataset.actj] = r.卡; save(); drawStream(); return; }
   b.disabled = false;
   alert(r.error || "没处理成");   // 失败不装作成功
+}
+/* 核对中回写(11-25):画到一张「核对中」卡时问一次服务端(服务端去问管理后台待办);变了就换卡重画。一个会话里每张卡只问一次,失败不弹窗(下次打开再问) */
+const 核对已问 = new Set();
+async function 跟进核对(i, j, aid){
+  const r = await fetch(`/api/action/followup?id=${encodeURIComponent(aid)}`).then(x => x.json()).catch(() => null);
+  if(!r || !r.卡 || !r.变了) return;
+  const c = cur(), m = c && c.msgs[i];
+  if(!m || !(m.待确认卡 || [])[j] || m.待确认卡[j].id !== aid) return;
+  m.待确认卡[j] = r.卡; save(); drawStream();
 }
 async function 撤记住(b){
   // 三档(11-25):撤掉「中」档的记住 —— 只撤自己的;撤成了只换按钮文字,卡本身不变(那一笔已经执行了)

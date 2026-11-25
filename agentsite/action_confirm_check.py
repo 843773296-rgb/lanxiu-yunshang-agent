@@ -336,6 +336,44 @@ def 三档(库):
        and '"/api/action/forget"' in 应用)
 
 
+def 核对回写(库):
+    """⑩ 用户 2026-11-25 拍「核对中要回写」:管理后台那条核对待办出了结论 → 写回卡。已执行 → 已成功;未执行 → 未执行;
+    说不清 → 还是核对中但带上人的说明。只动「核对中」的卡;接线是聊天站拉(页面打开问一次),不是管理后台推。"""
+    print("▸ ⑩ 核对中回写(11-25)")
+    t0 = 1_700_000_000.0
+    def 一张核对中(轮):
+        a = PA.建(库, "assign_task", "task", {"task": 轮, "to": "60000011"}, 店长, trace=轮, 现在=t0)
+        PA.领取(库, a["id"], 店长, 现在=t0 + 1)
+        PA.收尾(库, a["id"], False, {"error": "超时", "转人工待办": "ho_" + 轮}, 状态="核对中")
+        return a["id"]
+    a = 一张核对中("hb1")
+    ck("⑩ 已执行 → 已成功,结果里带核对结论 / 说明 / 人,原来的「转人工待办」还在", PA.核对回写(库, a, "已执行", "订单表里有", 处理人="U9") == 1
+       and PA.取(库, a)["status"] == "已成功" and PA.取(库, a)["result"]["核对结论"] == "已执行" and PA.取(库, a)["result"]["核对人"] == "U9"
+       and PA.取(库, a)["result"]["转人工待办"] == "ho_hb1", PA.取(库, a))
+    b = 一张核对中("hb2")
+    ck("⑩ 未执行 → 未执行", PA.核对回写(库, b, "未执行", "两张表都没有") == 1 and PA.取(库, b)["status"] == "未执行")
+    c = 一张核对中("hb3")
+    ck("⑩ 说不清 → 还是核对中,但说明带上了卡", PA.核对回写(库, c, "说不清", "查不到") == 1 and PA.取(库, c)["status"] == "核对中"
+       and PA.取(库, c)["result"]["核对说明"] == "查不到")
+    ck("⑩ 说不清之后再来一次「已执行」还能改(核对中没结束)", PA.核对回写(库, c, "已执行", "后来查到了") == 1 and PA.取(库, c)["status"] == "已成功")
+    ck("⑩ 不在核对中的卡(已成功)不动 → 0 行", PA.核对回写(库, a, "未执行", "再来") == 0 and PA.取(库, a)["status"] == "已成功")
+    try:
+        PA.核对回写(库, b, "差不多", "x"); ck("⑩ 结论乱写 → 抛", False)
+    except ValueError:
+        ck("⑩ 结论乱写 → 抛", True)
+    页 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()
+    应用 = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+    胶 = open(os.path.join(HERE, "action_confirm.py"), encoding="utf-8").read()
+    反馈 = open(os.path.join(HERE, "answer_feedback.py"), encoding="utf-8").read()
+    ck("⑩ 接线:页面画核对中卡时问一次 /api/action/followup(每张卡一个会话只问一次)、聊天站有这条路由、胶水层去问管理后台待办详情",
+       "/api/action/followup" in 页 and "核对已问" in 页 and '"/api/action/followup"' in 应用 and "def 跟进核对" in 胶
+       and "def 查转人工" in 反馈 and "核对结论" in 胶)
+    后台 = open(os.path.join(ROOT, "管理后台", "services", "api", "app", "chat_handoffs_api.py"), encoding="utf-8").read()
+    ck("⑩ 管理后台那头:核对待办的意图名和聊天站建待办时带的一致、结论三选一、详情带「核对结论」",
+       '核对意图 = "写操作结果核对"' in 后台 and '意图="写操作结果核对"' in 胶 and '"核对结论": _核对结论(r)' in 后台
+       and all(x in 后台 for x in ("已执行", "未执行", "说不清")))
+
+
 def main():
     with tempfile.TemporaryDirectory() as d:
         库 = os.path.join(d, "actions.db")
@@ -344,6 +382,7 @@ def main():
         工具服务那一层(os.path.join(d, "actions2.db"))
         复审两条(os.path.join(d, "actions3.db"))
         三档(os.path.join(d, "actions4.db"))
+        核对回写(os.path.join(d, "actions5.db"))
     接线()
     print()
     if 挂:
