@@ -1254,6 +1254,28 @@ async function 点确认卡(b){
   b.disabled = false;
   alert(r.error || "没处理成");   // 失败不装作成功
 }
+/* 定时任务跑挂了给店员看什么(11-25 用户拍「失败提示全站统一」):一句人话 + 编号 + 能做什么;程序原文折叠。
+ * error_detail 是后台存的 {http, 回:{code, error, message, advice, trace_id}};纯函数,chat_tasks_check 用 node 真调。 */
+function 失败人话(err){
+  const e = err || {}, 回 = (e.回 && typeof e.回 === "object") ? e.回 : {}, 码 = String(e.http ?? "");
+  let 话 = 回.error || 回.message || "";
+  if(!话){
+    if(码 === "0" ||码 === "None" || 码 === "") 话 = "到点时连不上聊天站,这一期没跑";
+    else if(码 === "403") 话 = "到点时聊天站不认这个工号(可能已不在职),这一期没跑";
+    else if(码 === "429") 话 = "到点时门店这个月的模型额度到顶了,这一期没跑";
+    else if(码.startsWith("5")) 话 = "到点时聊天站出错了,这一期没出结果";
+    else 话 = "这一期没跑成";
+  }
+  const 编 = 回.trace_id ? `(编号 ${回.trace_id})` : "";
+  const 办 = 回.advice || 回.怎么办 || "可以点「跑一次」再试;连着失败三期会自动停用,到时在这里重新启用";
+  const 原 = JSON.stringify(e);
+  return {话: 话 + 编, 办, 原: 原 === "{}" ? "" : 原};
+}
+function 画失败(err){
+  const h = 失败人话(err);
+  return `<div style="color:var(--bad,#b42318)">❌ ${esc(h.话)}</div><div class="note">${esc(h.办)}</div>`
+    + (h.原 ? `<details><summary class="note">给排障看的原文</summary><code style="white-space:pre-wrap">${esc(h.原.slice(0, 600))}</code></details>` : "");
+}
 /* 核对中回写(11-25):画到一张「核对中」卡时问一次服务端(服务端去问管理后台待办);变了就换卡重画。一个会话里每张卡只问一次,失败不弹窗(下次打开再问) */
 const 核对已问 = new Set();
 async function 跟进核对(i, j, aid){
@@ -1467,7 +1489,7 @@ async function 开我的定时(页签){
     if(!(d.items || []).length){ 框.textContent = "还没有结果 —— 任务到点跑过之后会出现在这里"; 刷定时角标(0); return; }
     框.innerHTML = d.items.map(r => `<div class="kv" style="${r.read_at ? "" : "font-weight:600"}"><span>${esc(String(r.inbox_at || "").slice(5, 16).replace("T", " "))}</span><span>
         <b>${esc(r.title || "")}</b> · ${esc(r.status)}${r.kind === "手动" ? " · 手动" : ""}${r.cost_amount != null ? " · $" + Number(r.cost_amount).toFixed(3) : ""}
-        <div class="ct-raw" style="white-space:pre-wrap;font-weight:400">${esc(r.answer_text || (r.error_detail ? JSON.stringify(r.error_detail).slice(0, 300) : ""))}</div>
+        ${r.answer_text ? `<div class="ct-raw" style="white-space:pre-wrap;font-weight:400">${esc(r.answer_text)}</div>` : r.error_detail ? 画失败(r.error_detail) : ""}
         ${r.read_at ? "" : `<button data-ct-read="${esc(r.id)}">标已读</button>`}</span></div>`).join("");
     框.querySelectorAll("[data-ct-read]").forEach(b => { b.onclick = async () => {
       await fetch("/api/chat-task-run/read", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({run_id: b.dataset.ctRead})});
@@ -1506,7 +1528,7 @@ async function 开定时结果(id){
   bx.innerHTML = `<button id="odclose">关闭</button><h3>执行记录</h3><div class="sub"><button id="ct-back">← 回我的任务</button></div>
     <div class="sub">${!d.ok ? `<b>${esc(d.error || "取不到")}</b>` : !(d.items || []).length ? "还没跑过" : d.items.map(r => `<div class="kv"><span>${esc(String(r.created_at || "").slice(5, 16).replace("T", " "))}</span><span>
       ${esc(r.kind)} · <b>${esc(r.status)}</b>${r.cost_amount != null ? " · $" + Number(r.cost_amount).toFixed(3) : ""}
-      <div class="ct-raw" style="white-space:pre-wrap">${esc(r.answer_text || (r.error_detail ? JSON.stringify(r.error_detail).slice(0, 300) : ""))}</div></span></div>`).join("")}</div>`;
+      ${r.answer_text ? `<div class="ct-raw" style="white-space:pre-wrap">${esc(r.answer_text)}</div>` : r.error_detail ? 画失败(r.error_detail) : ""}</span></div>`).join("")}</div>`;
   $("#odclose").onclick = closeOrder; $("#ct-back").onclick = () => 开我的定时("任务");
 }
 async function 刷定时角标(n){

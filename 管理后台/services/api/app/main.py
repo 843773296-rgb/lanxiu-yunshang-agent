@@ -99,10 +99,13 @@ async def _兜底(request: Request, exc: Exception):
     一个 500 只返回「Internal Server Error」的接口,把「服务器出问题了」
     和「你的请求有问题」压成了同一句话,而这两种的下一步动作完全不同。
     """
-    return JSONResponse(status_code=500, content=ER.错(
-        "INTERNAL", f"{type(exc).__name__}", "这是服务端问题,不是你的请求有问题;"
-                                            "把 trace_id 给运维,他们能在日志里定位",
-        http=500, retryable=True))
+    # 11-25 用户拍「失败提示全站统一」:message 是给人看的一句话,**不带异常类型名**(TypeError 对操作的人没有信息量,
+    # 还会被当成「系统坏了」截图发群里);类型名和原文放 detail,页面折叠着给排障的人看。和聊天站 _对人说错 同一个形状:
+    # 一句人话 + 编号(trace_id)+ 怎么办(advice)+ detail。
+    体 = ER.错("INTERNAL", "服务端这一步出错了,没有做成", "这不是你的请求有问题;可以再试一次,还不行把下面的请求号给运维,他们能在日志里定位",
+               http=500, retryable=True, trace_id=getattr(getattr(request, "state", None), "trace_id", None))
+    体["detail"] = f"{type(exc).__name__}: {exc}"[:300]
+    return JSONResponse(status_code=500, content=体)
 
 
 def _列表(items, total=None, next_cursor=None):
@@ -187,6 +190,19 @@ def _审计(c, me, action, target, result="ok", reason=None, diff=None):
 #
 # ⚠️ 它仍然**不证明断言是对的**:打过一次和「行为被断言对了」是两件事。
 # 这条限制写在生成的报告里,不靠读的人自己想起来。
+# 11-25 用户拍「失败提示全站统一」:每个请求一个短编号(request.state.trace_id,也回在 X-Trace-Id 头里),
+# 兜底 500 的错误体带上它 —— 页面显示「一句人话 + 编号 + 能做什么」,排障的人拿编号到日志里找。
+# 短:时分秒 + 4 位随机,够人念给运维;不用 uuid(店员念不清)。已经带 trace_id 的响应不覆盖。
+@app.middleware("http")
+async def _请求编号(request: Request, call_next):
+    import time as _t, secrets as _se
+    request.state.trace_id = _t.strftime("%H%M%S") + "-" + _se.token_hex(2)
+    resp = await call_next(request)
+    if "x-trace-id" not in resp.headers:
+        resp.headers["X-Trace-Id"] = request.state.trace_id
+    return resp
+
+
 _路由账 = os.environ.get("AIMC_TRACE_ROUTES")
 if _路由账:
     @app.middleware("http")

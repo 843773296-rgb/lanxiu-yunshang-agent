@@ -518,13 +518,17 @@ async function get(u){
   finally{ clearTimeout(表); }
   if(号!==载入序号) throw 已被取代;
   let d;
+  // 11-25 统一失败提示:请求编号从响应头取(后台每个响应都带),出错时带在话里 —— 排障的人拿它去日志里找
+  const 编号=(r.headers&&r.headers.get&&r.headers.get("x-request-id"))||"";
+  const 带号=(话)=>编号?`${话}(编号 ${编号})`:话;
   try{ d=await r.json(); }
-  catch(e){ throw r.ok ? 载入错("不是数据","接口返回的不是数据") : 载入错("接口报错","HTTP "+r.status); }
+  catch(e){ throw r.ok ? 载入错("不是数据",带号("接口返回的不是数据")) : 载入错("接口报错",带号("后台回了 HTTP "+r.status+",没有数据")); }
   if(号!==载入序号) throw 已被取代;
   // 客户资料要登录(用户 10-23 拍)。401 / 403 回的是一份带 error 的数据 —— 不在这里拦,
   // 页面会拿它当客户去画,画出一张空壳,看着像「这位客户什么都没有」。
   if(r.status===401) throw 载入错("要先登录",(d&&d.error)||"这一页要登录才能看");
   if(r.status===403) throw 载入错("没有权限",(d&&d.error)||"你的账号看不了这一页");
+  if(r.status>=500) throw 载入错("接口报错",(d&&d.error?带号(d.error):带号("后台这一步出错了"))+((d&&d.怎么办)?" —— "+d.怎么办:""));
   return d;
 }
 // 11-08 UI 检查:顶栏铃铛有手型光标和「查看待处理任务」提示,原来没绑任何事件。待处理任务在工作台
@@ -541,8 +545,18 @@ async function post(u,b){
   try{ r=await fetch(u,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b||{})}) }
   catch(e){ return {ok:false,code:"NETWORK",error:"连不上后台(断网或服务没起)—— 这次没有提交成功",reason:"连不上后台,这次没有提交成功"} }
   let d=null; try{ d=await r.json() }catch(e){}
-  if(d===null) return {ok:false,code:"HTTP_"+r.status,error:`后台返回了看不懂的内容(HTTP ${r.status})—— 这次可能没有提交成功`,reason:`后台出错(HTTP ${r.status})`};
+  // 11-25 统一失败提示:编号从响应头取;后台的错误体自己也带 编号 / 怎么办,这里只补没带的
+  const 编号=(r.headers&&r.headers.get&&r.headers.get("x-request-id"))||"";
+  if(d===null) return {ok:false,code:"HTTP_"+r.status,error:`后台返回了看不懂的内容(HTTP ${r.status})—— 这次可能没有提交成功`,reason:`后台出错(HTTP ${r.status})`+(编号?`(编号 ${编号})`:""),编号};
+  if(d&&typeof d==="object"&&!d.编号&&编号&&(d.error||d.reason||d.ok===false)) d.编号=编号;
   return d;
+}
+// 11-25 统一失败提示:提交类接口没办成时给人看的一句 —— 人话 + 编号 + 能做什么(两处 alert 原来只说「没记下来」)
+function 没办成的话(r,默认){
+  const 话=(r&&(r.reason||r.error))||默认;
+  const 编=(r&&r.编号)?`(编号 ${r.编号})`:"";
+  const 办=(r&&r.怎么办)?r.怎么办:"可以再点一次;还不行把编号告诉运维";
+  return `${话}${编} —— ${办}`;
 }
 
 const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合并确认",finance:"押金退款异常",
@@ -3803,7 +3817,7 @@ async function factoryPage(){
     e.disabled=true; e.textContent="记下中…";
     const r=await post("/api/delay-told",{delay_id:Number(e.dataset.told)});
     if(r&&r.ok){ factoryPage(); }
-    else { e.disabled=false; e.textContent="已通知顾客"; alert((r&&r.reason)||"没记下来"); }
+    else { e.disabled=false; e.textContent="已通知顾客"; alert(没办成的话(r,"没记下来")); }
   });
   // 店长人工回退:**内联一行表单**,不弹窗 —— 原因和理由都要,理由不写写口会拒
   M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>{
@@ -3824,7 +3838,7 @@ async function factoryPage(){
       const r=await post("/api/factory-rollback",{order_id:oid,
         cause:f.querySelector(".bkc").value, note:f.querySelector(".bkn").value});
       if(r&&r.ok){ factoryPage(); }
-      else { b.disabled=false; b.textContent="确认回退"; alert((r&&r.reason)||"回退没成"); }
+      else { b.disabled=false; b.textContent="确认回退"; alert(没办成的话(r,"回退没成")); }
     };
   });
   // ── 自有工坊报工 ────────────────────────────────────────────────

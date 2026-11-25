@@ -115,6 +115,11 @@ async function 跑() {
   const 失败形状 = [
     ["② 接口报错(HTTP 500、回的不是数据)", t => t.ok({ ok: false, status: 500, json: async () => { throw new SyntaxError("bad"); } }), "接口报错"],
     ["③ 接口回 200 但不是数据", t => t.ok({ ok: true, status: 200, json: async () => { throw new SyntaxError("bad"); } }), "不是数据"],
+    // 11-25 用户拍「失败提示统一 + 旧后台一起加请求编号」:后台每个响应带 X-Request-Id,出错时页面要把编号带在话里
+    ["②b 接口报错带请求编号(HTTP 500 + 人话体)", t => t.ok({ ok: false, status: 500, headers: { get: (k) => k === "x-request-id" ? "101010-ab12" : null },
+      json: async () => ({ error: "后台这一步出错了,没有做成", code: "INTERNAL", 编号: "101010-ab12", 怎么办: "可以再试一次" }) }), "编号 101010-ab12"],
+    ["②c 接口报错回的不是数据、但头里有编号", t => t.ok({ ok: false, status: 500, headers: { get: (k) => k === "x-request-id" ? "101011-cd34" : null },
+      json: async () => { throw new SyntaxError("bad"); } }), "编号 101011-cd34"],
     ["④ 服务关了(连不上)", t => t.no(new TypeError("Failed to fetch")), "连不上"],
   ];
   for (const [名, 结束, 因] of 失败形状) {

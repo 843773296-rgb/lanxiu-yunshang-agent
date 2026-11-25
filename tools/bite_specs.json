@@ -23961,5 +23961,33 @@
    }
   ],
   "预期红": "选助手屏:推荐的排第一"
+ },
+ {
+  "script": "agentsite/chat_tasks_check.py",
+  "改坏": "失败人话 不再把编号带进话里(店员看到「出错了」却没编号,运维对不上日志)—— 11-25 失败提示统一",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "  const 编 = 回.trace_id ? `(编号 ${回.trace_id})` : \"\";",
+    "new": "  const 编 = \"\";"
+   }
+  ],
+  "预期红": "后台给了人话 / 编号 / 建议 → 原样用"
+ },
+ {
+  "script": "backend/page_load_check.mjs",
+  "命令": [
+   "node",
+   "backend/page_load_check.mjs"
+  ],
+  "改坏": "旧后台页面出错时不再把响应头里的请求编号带进话里 —— 11-25 旧后台一起加请求编号",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "  const 带号=(话)=>编号?`${话}(编号 ${编号})`:话;",
+    "new": "  const 带号=(话)=>话;"
+   }
+  ],
+  "预期红": "编号 101010-ab12"
  }
 ]

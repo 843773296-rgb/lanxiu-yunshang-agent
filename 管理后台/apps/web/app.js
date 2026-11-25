@@ -90,10 +90,14 @@ function 错误块(e, 重试) {
   const b = e.体 || {};
   // **接口失败要保留已有数据并标明最后更新时间**(§5.4)—— 这里没有已有数据,
   // 所以至少把「怎么继续」显示出来:advice 是服务端明确给的下一步
-  return 状态("err", `${b.code || "出错了"} · ${e.message}`,
+  // 11-25 用户拍「失败提示全站统一」:标题是人话(message),不再把 code 顶在前面;下一步 / 请求号 照旧;
+  // 异常原文(detail)折叠着给排障的人看 —— 和聊天站、旧后台同一个形状:一句人话 + 编号 + 能做什么
+  return 状态("err", e.message || "这一步出错了,没有做成",
     (b.advice ? `**下一步:**${b.advice}` : "服务端没给建议 —— 这本身是个契约问题") +
     (b.retryable ? "\n\n(服务端说这个错**可以重试**)" : "") +
-    (b.trace_id ? `\n\n请求号 \`${b.trace_id}\`` : ""),
+    (b.trace_id ? `\n\n请求号 \`${b.trace_id}\`` : "") +
+    (b.code ? `\n\n<span class="k">错误码 ${esc(b.code)}</span>` : "") +
+    (b.detail ? `\n\n<details><summary class="k">给排障看的原文</summary><code>${esc(String(b.detail))}</code></details>` : ""),
     重试 ? { 文: "重试", 做: 重试 } : null);
 }
 
@@ -2731,7 +2735,10 @@ function 报错(e) {
   }).join("");
   弹层(b.code === "VALIDATION" ? "跑不了,先改这几处" : "没办成",
     `<p>${md(e.message)}</p>${条 ? `<ul>${条}</ul>` : ""}<p>下一步:${md(b.advice || "—")}</p>`
-    + (b.code === "VALIDATION" ? `<p class="k">关掉这个框,下面的问题列表里点一条就能定位到那一步。</p>` : ""));
+    + (b.code === "VALIDATION" ? `<p class="k">关掉这个框,下面的问题列表里点一条就能定位到那一步。</p>` : "")
+    // 11-25 统一失败提示:请求号给排障用;异常原文折叠(店员不用看)
+    + (b.trace_id ? `<p class="k">请求号 <code>${esc(String(b.trace_id))}</code></p>` : "")
+    + (b.detail ? `<details><summary class="k">给排障看的原文</summary><code>${esc(String(b.detail))}</code></details>` : ""));
 }
 const 时间 = (s) => esc(String(s || "").slice(0, 16).replace("T", " "));
 

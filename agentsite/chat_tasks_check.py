@@ -93,6 +93,25 @@ st = open(os.path.join(这, "web", "station.html"), encoding="utf-8").read()
 ck("按钮 / 面板 / 结果 / 角标 四样都在", all(s in st for s in ('id="ctbtn"', "async function 开我的定时", "async function 开定时结果", "async function 刷定时角标")))
 ck("周几 0 = 周一(和 runtime/定时.py 一致),规则读写走同一对函数", 'const _ct周几名 = ["一", "二"' in st and "function _ct规则读" in st and "function _ct规则控件" in st)
 
+print("\n▸ ⑦ 失败提示(11-25 用户拍「全站统一」):跑挂的那一期给店员看「一句人话 + 编号 + 能做什么」,程序原文折叠 —— node 真调 失败人话")
+import re as _re, json as _json, subprocess as _sp
+_m = _re.search(r"function 失败人话\(err\)\{.*?\n\}", st, _re.S)
+ck("station.html 里找得到 失败人话(找不到下面几条就是没验)", bool(_m))
+def _人话(err):
+    js = (_m.group(0) if _m else "") + f"\nconsole.log(JSON.stringify(失败人话({_json.dumps(err, ensure_ascii=False)})));"
+    r = _sp.run(["node", "-e", js], capture_output=True, text=True, timeout=30)
+    return _json.loads(r.stdout) if r.returncode == 0 else {"node": r.stderr[-200:]}
+x = _人话({"http": "500", "回": {"code": "INTERNAL", "error": "聊天站这一步出错了", "trace_id": "tr-9", "advice": "再跑一次"}})
+ck("后台给了人话 / 编号 / 建议 → 原样用:话里带编号、办照 advice、原文折叠着还在", x["话"] == "聊天站这一步出错了(编号 tr-9)" and x["办"] == "再跑一次" and "INTERNAL" in x["原"], x)
+x = _人话({"http": "500", "回": {"error": "TypeError: 'NoneType' object"}})
+ck("后台只给了原文 → 原样当话(这是后台该修的,页面不替它编);没编号就不写编号", x["话"] == "TypeError: 'NoneType' object" and "编号" not in x["话"], x)
+x = _人话({"http": 0, "回": {}})
+ck("连不上(http 0)→ 「到点时连不上聊天站,这一期没跑」+ 默认怎么办(跑一次 / 三期停用)", "连不上" in x["话"] and "跑一次" in x["办"], x)
+x = _人话({"http": "403", "回": {"code": "NO_STAFF"}})
+ck("403 → 说工号不认(可能已不在职),不是「服务端出错」", "工号" in x["话"], x)
+ck("没有 error_detail → 不编原文", _人话(None)["原"] == "" and _人话({})["原"] == "")
+ck("接线:结果页签和执行记录都用 画失败 画失败的那一期,不再把 JSON 原文直接贴给店员", st.count("画失败(r.error_detail)") == 2 and "JSON.stringify(r.error_detail).slice(0, 300)" not in st)
+
 print()
 if 挂:
     print(f"❌ {len(挂)} 条挂了:{挂}")

@@ -4231,13 +4231,47 @@ POST_内部口 = {
 }
 
 
+def _新请求号():
+    """请求编号:时分秒 + 4 位随机,够人念给运维、够日志里 grep。不用 uuid —— 太长,店员念不清。"""
+    import time as _t, secrets as _se
+    return _t.strftime("%H%M%S") + "-" + _se.token_hex(2)
+
+
+def _兜底(h, 真):
+    """do_GET / do_POST 的总兜底(11-25 用户拍「失败提示全站统一」)。
+    原来没预料到的异常直接炸在 socketserver 里:浏览器那头连接断掉,页面只能显示「连不上 / 不是数据」,
+    而真因只在服务端 stderr 里 —— 两边对不上号。现在:同一个请求编号,给页面一份(人话 + 编号 + 怎么办 + detail),
+    给 stderr 一份(编号 + 原文),排障的人拿编号就能对上。⚠️ `真` 以普通函数方式调(H._GET真(h)),
+    delivery_check_col_check 等检查造的假 handler 不是 H 的实例,照旧能打到路由那一段。"""
+    h._rid = _新请求号()
+    try:
+        return 真(h)
+    except Exception as e:  # noqa: BLE001 —— 总兜底就是要接住一切
+        import traceback as _tb
+        print(f"[{h._rid}] {h.command} {h.path} 没做成:{type(e).__name__}: {e}\n{_tb.format_exc()}", file=sys.stderr, flush=True)
+        try:
+            h._send({"error": "后台这一步出错了,没有做成", "code": "INTERNAL", "编号": h._rid,
+                     "怎么办": "可以再试一次;还不行把编号给运维,他们能在日志里定位",
+                     "detail": f"{type(e).__name__}: {e}"[:200]}, 500)
+        except Exception:  # noqa: BLE001 —— 连错误都发不出去(连接已断)就只留日志
+            pass
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def _send(self,obj,code=200):
+        # 11-25 用户拍「失败提示全站统一 + 旧后台一起加请求编号」:每个响应带 X-Request-Id;
+        # 出错的体(有 error 没 编号)顺手把编号写进去 —— 页面显示「一句人话 + 编号 + 能做什么」,排障的人拿编号到日志里找
+        rid = getattr(self, "_rid", None) or _新请求号()
+        if isinstance(obj, dict) and obj.get("error") and "编号" not in obj:
+            obj = dict(obj, 编号=rid)
         b=json.dumps(obj,ensure_ascii=False).encode()
         self.send_response(code); self.send_header("content-type","application/json; charset=utf-8")
+        self.send_header("X-Request-Id", rid)
         self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b)
-    def do_GET(self):
+    def do_GET(self):  return _兜底(self, H._GET真)
+    def do_POST(self): return _兜底(self, H._POST真)
+    def _GET真(self):
         p=_u(unquote(urlparse(self.path).path))
         if _u(unquote(urlparse(self.path).path)) == "/api/me":
             u = _me(self)
@@ -4884,7 +4918,7 @@ class H(BaseHTTPRequestHandler):
                                    "code": "NOT_YOUR_SHOP"}, 403)
             return self._send(appt_detail(_id))
         self._send({"error":"not found"},404)
-    def do_POST(self):
+    def _POST真(self):
         p=_u(unquote(urlparse(self.path).path))
         n=int(self.headers.get("content-length") or 0)
         body=json.loads(self.rfile.read(n) or "{}") if n else {}
