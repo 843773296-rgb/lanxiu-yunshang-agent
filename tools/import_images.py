@@ -20,6 +20,10 @@ DB = os.path.join(ROOT, "backend", "lanxiu.db")
 目的地 = os.path.join(ROOT, "backend", "static", "img")
 备份 = os.path.join(ROOT, "商品图备份")   # gitignore;核对:delivered_images.py 验 --在 商品图备份
 _单段 = ("main", "intro", "d1", "d2", "d3") + tuple(f"sku{i}" for i in range(1, 20))
+# 一套该有几张 —— **规则常量提到模块级**(11-25 包三):原来写在 main() 里的内层函数里,tools/doc_numbers_check 对不了账,
+# README 那句「配饰 / 面料部件 3 张,服装 5 张」只能靠人看。服装多背面(intro)和领袖结构(d3);平铺的配饰 / 面料部件没有背面。
+服装一套 = ("main", "intro", "d1", "d2", "d3")
+配饰一套 = ("main", "d1", "d2")
 # ── 两段式图位:`sku2-main` = 第 2 个 SKU 那一套的主图 ──────────────────────
 #
 # 🔺 2026-10-13 用户拍「按颜色换整套图」(点一个颜色,主图/背面/细节**全换**)。
@@ -131,7 +135,7 @@ def main():
         "SELECT spu FROM product WHERE pattern IS NOT NULL AND pattern!=''")}
 
     def 该有(spu):
-        return {"main", "intro", "d1", "d2", "d3"} if spu in 有版型 else {"main", "d1", "d2"}
+        return set(服装一套) if spu in 有版型 else set(配饰一套)
 
     全 = {s: 已存.get(s, set()) | 有.get(s, set()) for s in set(已存) | set(有)}
     齐 = [s for s, vs in 全.items() if 该有(s) <= vs]
@@ -139,7 +143,7 @@ def main():
     print(f"\n覆盖:{len(全)}/{len(spus)} 款有图,其中 {len(齐)} 款整套齐了、{len(缺的)} 款还缺图")
     for s, miss in list(缺的.items())[:5]:
         print(f"  · {名字.get(s, s)} 缺 {'、'.join(sorted(miss))}")
-    print(f"  (配饰 / 面料部件一套是 3 张:主图 + 两张细节;服装是 5 张,多背面和领袖结构)")
+    print(f"  (配饰 / 面料部件一套是 {len(配饰一套)} 张:主图 + 两张细节;服装是 {len(服装一套)} 张,多背面和领袖结构)")
 
 
 if __name__ == "__main__":
