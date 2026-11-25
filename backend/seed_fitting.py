@@ -144,7 +144,9 @@ def 开裁了吗(status):
 
 
 def main(apply=True):
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+    # 库路径走单源(W02 第③步,11-25):LANXIU_DB 优先;不设时照旧是 backend/lanxiu.db
+    from dbpath import 路径 as _库路径
+    c = sqlite3.connect(_库路径())
     c.row_factory = sqlite3.Row
     c.executescript(DDL)
     该, 不必, 判不了 = 该试的行(c)

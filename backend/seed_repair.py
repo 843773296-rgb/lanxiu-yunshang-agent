@@ -110,7 +110,9 @@ def _造公差用例(c):
 
 
 def main(db=None):
-    c = sqlite3.connect(db or os.path.join(HERE, "lanxiu.db"))
+    # 库路径走单源(W02 第③步,11-25):LANXIU_DB 优先;不设时照旧是 backend/lanxiu.db
+    from dbpath import 路径 as _库路径
+    c = sqlite3.connect(db or _库路径())
     c.executescript(DDL)
     # **缺列就补**:CREATE TABLE IF NOT EXISTS 对**已经存在**的表一个字都不改 ——
     # 新加的列只有从零建库才有,已有的库跑起来会在写入时才报「no such column」,
