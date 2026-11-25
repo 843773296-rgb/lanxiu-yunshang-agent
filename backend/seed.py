@@ -7,7 +7,9 @@
 import sqlite3, sys, json, os, random
 
 HERE=os.path.dirname(os.path.abspath(__file__))
-DB=os.path.join(HERE,"lanxiu.db")
+sys.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-25 库路径单源:重建配方里后面几步早走 dbpath 了,只有这第一步还自己拼 —— 设了 LANXIU_DB 时会一半建在真库、一半建在副本
+DB=_库路径()
 random.seed(20260830)   # 固定种子,数据可复现
 
 SCHEMA="""

@@ -35,6 +35,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
 # 「签收满 15 天」按**演示世界的今天**数,不按机器的今天 —— 后者每天都在变,
 # 同一份代码今天和明天数出来不一样(重建可复现检查当场抓到第一版用了机器时钟)
 from seed import TODAY
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 10 批
 
 DDL = """
 CREATE TABLE IF NOT EXISTS pickup(
@@ -144,7 +145,7 @@ def _铺到包裹和件(c):
 
 
 def main(db=None):
-    c = sqlite3.connect(db or os.path.join(HERE, "lanxiu.db"))
+    c = sqlite3.connect(db or _库路径())
     c.row_factory = sqlite3.Row
     c.executescript(DDL)
     # **不清表** —— 旅程脚本(第 3 步)开完的单是真走过签收流程的(到店、出码、核验),
@@ -190,7 +191,7 @@ def main(db=None):
           f"(其中转寄 {计['转寄']});"
           f"已发货到店 {计['已发货·到店']}、还在路上 {计['已发货·在路上']}")
     # 覆盖要**按整张表数**,不按这一次补了几行 —— 第二次跑一行不补,按补的数会报「一条都没有」
-    c = sqlite3.connect(db or os.path.join(HERE, "lanxiu.db"))
+    c = sqlite3.connect(db or _库路径())
     全 = {"转寄": c.execute("SELECT COUNT(*) FROM pickup WHERE mode='转寄'").fetchone()[0],
          "可追认": c.execute("""SELECT COUNT(*) FROM pickup p JOIN ordr o ON o.id=p.order_id
                                WHERE o.status='待完成' AND p.fit_at <= datetime(?, '-15 days')""", (TODAY,)).fetchone()[0],
@@ -246,7 +247,7 @@ def _分批的活用例(c):
 
 def 铺(db=None):
     """重建里工厂那一步之后再跑一次:把订单级的签收记录铺到包裹和件上。"""
-    c = sqlite3.connect(db or os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(db or _库路径()); c.row_factory = sqlite3.Row
     c.executescript(DDL)
     if not _有包裹表(c):
         print("❌ 包裹表还不在 —— 这一步要排在工厂那一步之后"); sys.exit(1)
