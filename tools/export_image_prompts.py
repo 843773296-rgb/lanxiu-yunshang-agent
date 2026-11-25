@@ -27,7 +27,8 @@ sys.path[:0] = [os.path.join(ROOT, "backend"), os.path.join(ROOT, "tools"), os.p
 import img as V1
 import motif as _motif
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 13 批
+DB = _库路径()
 # ⚠️ **参数里的开关不是输出目录。** 2026-09-24 踩过:`--重导` 被当成第一个位置参数,
 # 整份清单导进了一个叫「--重导」的文件夹,而终端上打印的是「✅ 导出 979 条」—— 看起来完全正常。
 _位置 = [a for a in sys.argv[1:] if not a.startswith("--")]

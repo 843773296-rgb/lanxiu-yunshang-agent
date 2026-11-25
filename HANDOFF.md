@@ -12,6 +12,10 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### ✅ 11-25 傍晚 · 已推 916192b1(库路径第 10–12 批,欠债 248);主检出已 ff、三服务已重启(Opus 5.5)
+- **下一步第一个动作**:接着库路径欠债(跑 dbpath_check 现看)。backfill_rating 那行有咬合锚,要拿锁重放 —— 单独做;check_copy.py 两处故意认真库,不迁。
+- 并行会话本地还有一笔 md(成本口径一节一句)待推,不是我的。
+
 ### 🟡 11-25 下午 · 已推 13259595;本地 2 笔待推(d8962892 库路径第 10 批 seed / seed_pickup、f6ac9564 第 11 批六个回填,欠债 → 253)(Opus 5.5)
 - **一句话**:等并行会话 w44 推完报哈希 → 我 rebase → 跑 pickup_write_check 等相关检查(要锁)→ ship → 报哈希。
 - **上次停在哪**:咬合 763(triage_trial_check「工具服务不改读副本」)同 819 病根,攻击点改到 mcp/task_server.py 开头 pop LANXIU_DB —— **规格由并行会话改并锁内重放**,我树上没改,rebase 时别冲突。主检出那 3 笔不在远端的是它的,它自己 reset --keep。

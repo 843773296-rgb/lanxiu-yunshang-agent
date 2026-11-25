@@ -34,7 +34,9 @@
 import ast, io, os, re, sqlite3, sys, collections
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 13 批
+DB = _库路径()
 
 # ── 唯一需要人给的:表 → 业务面 ────────────────────────────────
 # 改这里就改了整份报告的口径。漏一张表会红。

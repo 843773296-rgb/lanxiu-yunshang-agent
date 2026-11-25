@@ -47,7 +47,8 @@ from datetime import datetime, timedelta
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "backend")]
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 13 批
+DB = _库路径()
 for _i, _a in enumerate(sys.argv):
     if _a == "--db" and _i + 1 < len(sys.argv):
         DB = sys.argv[_i + 1]
