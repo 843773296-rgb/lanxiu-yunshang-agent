@@ -21,7 +21,8 @@ import os, sqlite3, sys, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "backend"))
-DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-25 库路径单源第 11 批(重建配方里的回填步骤跟 seed 同源)
+DB = _库路径()
 from seed import TODAY
 import roster as R
 
