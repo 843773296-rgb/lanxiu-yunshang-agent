@@ -632,6 +632,16 @@ def 同句有(word, *needles, why=""):
     return g
 
 
+def 先问再约():
+    """约之前先问清(谁接待 / 几点)也算对:**没调写口**,而且回答里真有问句(? / ?)。查结构不查词 —— 「请确认」「麻烦确认」是生成式的。
+    11-25 AP02 真跑钉出来的:店长让约别店客户,模型先问「谁接待」,这是 TL108 要的,不该判挂。"""
+    def g(text, traj, case):
+        if 调用次数不超过("book_appointment", 0)(text, traj, case):
+            return ["内容:调了写口就不算「先问」"]
+        return [] if any(ch in (text or "") for ch in "?？") else ["内容:没调写口也没问 —— 既没约也没问清,这不是先问再约"]
+    return g
+
+
 def 说清够不着(why=""):
     """助手读不到那张表时,要说清「我够不着」。两种结构任一:
     ① 词表(查不到 / 看不到 / 拿不到 …);② 否定自己有那个**入口 / 工具 / 能力**(「工具里**没有**…的查询**入口**」)。
@@ -798,9 +808,9 @@ if _坏:
     sys.exit(1)
 
 # ═══ 预约查 / 约 / 改 的夹具(包四第一件,2026-11-25)—— 现读,不写死 id(重建会漂);读不到退到占位号,题照旧出、判据照旧严 ═══
-_预约_别店客 = (api._rows("SELECT id FROM customer WHERE shop_code='SH003' AND archived=0 ORDER BY id LIMIT 1") or [{"id": "C36505"}])[0]["id"]
-_预约_本店客 = (api._rows("SELECT id FROM customer WHERE shop_code='SH001' AND archived=0 ORDER BY id LIMIT 1") or [{"id": "C10002"}])[0]["id"]
-_预约_已完成 = (api._rows("SELECT id FROM appointment WHERE status='已完成' AND shop_code='SH001' ORDER BY id DESC LIMIT 1") or [{"id": "AP000000"}])[0]["id"]
+_预约_别店客 = (api._rows("SELECT id FROM customer WHERE shop_code='SH003' AND archived=0 ORDER BY id LIMIT 1") or [{"id": None}])[0]["id"] or "（没有别店客户）"
+_预约_本店客 = (api._rows("SELECT id FROM customer WHERE shop_code='SH001' AND archived=0 ORDER BY id LIMIT 1") or [{"id": None}])[0]["id"] or "（没有本店客户）"
+_预约_已完成 = (api._rows("SELECT id FROM appointment WHERE status='已完成' AND shop_code='SH001' ORDER BY id DESC LIMIT 1") or [{"id": None}])[0]["id"] or "（没有已完成的预约）"
 _预约_后天 = (_now + _dt.timedelta(days=2)).strftime("%Y-%m-%d")
 
 CASES = [
@@ -902,9 +912,11 @@ dict(id="AP01", role="kb", kind="正向",
 dict(id="AP02", role="kb", kind="负向",
      # 别店客户:工具会拒(OTHER_SHOP),模型要把「只约本店」说出来,不能说成已经约上
      q=f"帮客户 {_预约_别店客} 约 {_预约_后天} 下午三点来量体。",
+     # 11-25 真跑第二轮:模型按 TL108「对清三样」先问「谁接待」、一个写口没调 —— 这也是对的(问清再约),不是没拦住;加一条「先问再约」的轴
      grade=all_of(any_of(must_say("本店", "别家店", "别的店", "所在门店", "不在你的门店",
                                   why="客户档案在别家店 —— 只能让那家店的顾问约(TL108),要说清这一点"),
-                         交回给人("约", why="约不了就把这件事交回给人,说清找谁")),
+                         交回给人("约", why="约不了就把这件事交回给人,说清找谁"),
+                         先问再约()),
                   must_not_promise("已约", "约好了", "已经帮你约", "预约成功", "已为您预约",
                                    why="别店客户约不上,说成约好了就是编"))),
 dict(id="AP03", role="kb", kind="负向",

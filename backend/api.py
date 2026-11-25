@@ -1159,12 +1159,12 @@ TOLERANT_XZ_CHILD = ("XZ39",)
 
 
 # ── 预约:查 / 约 / 改(包四第一件,用户 2026-11-25 拍)。业务逻辑在 backend/appt_write,旧后台页面调的也是它 ──
-def list_appointments(customer=None, date=None, advisor=None, status=None, limit=20):
+def list_appointments(customer=None, date=None, advisor=None, status=None, limit=20, appointment_id=None):
     """本店(跨店角色:全部)的预约。筛客户 / 日期 / 顾问 / 状态;默认只给进行中的(待确认 / 已预约 / 已到店)。"""
     import appt_write as _AW
     try: me = _need_me()
     except _NoIdentity: return dict(error="没有身份,看不了预约 —— 请先登录", 范围="本店")
-    return _nz(_AW.列(me, 客户=customer, 日期=date, 顾问=advisor, 状态=status, 限=limit))
+    return _nz(_AW.列(me, 客户=customer, 日期=date, 顾问=advisor, 状态=status, 限=limit, 预约号=appointment_id))
 
 def book_appointment(customer, start, end=None, way="到店量体", advisor=None, named_state=None, named_advisor=None, channel=None):
     """(写)帮客户约:只约本店客户;时间按预约规则(提前量 / 补录只许店长及以上);落「待确认」。发起人是谁从登录会话取。"""
@@ -1282,7 +1282,7 @@ SHOP_SCHEMAS=[
  {"name":"monthly_review","description":"**月度复盘**:这个月做完了多少、几条逾期、逾期都在谁身上、改派几次和理由、**agent 的派单建议采纳率**、智能体代做了几笔、待分配积压、订单走完一轮要多久。month 写 `2026-09`,不给就是当月。按**截止时间**归月(复盘看的是「这个月该做完的做完了没有」)。范围跟身份走:顾问只看自己的,店长看本店。⚠️ **分母为零的地方不给比率,给一句话** —— 「没发生过分派」和「分派了但一次没采纳」是两件事。",
   "input_schema":{"type":"object","properties":{"week":{"type":"string","description":"周报用:看**某一个业务周**(周一到周日),给那一周里任意一天 `YYYY-MM-DD`;给了就不看 month"},
     "month":{"type":"string","description":"哪个月,写 2026-09。不给就是当月。"},"start":{"type":"string","description":"自由区间的**起**那天 `YYYY-MM-DD`。⚠️ **要和 end 一起给**,只给一个会被拒。给了区间就不看 week / month —— 用它来答「9 月 15 日到 10 月 15 日这一段」这种现成档位表达不了的跨度"},"end":{"type":"string","description":"自由区间的**止**那天 `YYYY-MM-DD`(含当天)。要和 start 一起给"}},"required":[]}},
- {"name":"list_appointments","description":"**查预约**(本店;总部运营 / 售后看全部):按客户(号或名)、日期(2026-11-28)、顾问、状态筛;默认只给进行中的(待确认 / 已预约 / 已到店),按开始时间排,给预约号。客户问「我约了几号」、顾问问「明天谁来」用它。改时间要先在这里拿到预约号。","input_schema":{"type":"object","properties":{"customer":{"type":"string","description":"客户号或姓名(可省)"},"date":{"type":"string","description":"哪一天,2026-11-28(可省)"},"advisor":{"type":"string","description":"顾问工号或姓名(可省)"},"status":{"type":"string","description":"待确认 / 已预约 / 已到店 / 已完成 / 已取消 / 已过期 / 爽约(可省,省了只给进行中)"},"limit":{"type":"integer","description":"最多几条,默认 20"}}}},
+ {"name":"list_appointments","description":"**查预约**(本店;总部运营 / 售后看全部):按客户(号或名)、日期(2026-11-28)、顾问、状态筛;默认只给进行中的(待确认 / 已预约 / 已到店),按开始时间排,给预约号。客户问「我约了几号」、顾问问「明天谁来」用它。改时间要先在这里拿到预约号;手上已有预约号就传 appointment_id 查它(任何状态都给)。","input_schema":{"type":"object","properties":{"customer":{"type":"string","description":"客户号或姓名(可省)"},"date":{"type":"string","description":"哪一天,2026-11-28(可省)"},"advisor":{"type":"string","description":"顾问工号或姓名(可省)"},"status":{"type":"string","description":"待确认 / 已预约 / 已到店 / 已完成 / 已取消 / 已过期 / 爽约(可省,省了只给进行中)"},"limit":{"type":"integer","description":"最多几条,默认 20"},"appointment_id":{"type":"string","description":"预约号(AP 开头):给了就只查这一条、不管状态 —— 要改时间先这样查它现在是什么状态"}}}},
  {"name":"book_appointment","description":"**(写)帮客户约**:客户(号或名)+ 开始时间(2026-11-28 14:00),结束省了就按一小时;方式默认到店量体;顾问省了就是你自己(顾问)或客户的归属顾问(店长代约)。**只能约本店客户**;时间要符合预约规则(提前量;早于现在的只有店长及以上能补录、且 7 天内);停业门店不接。落「待确认」,客户来了在后台点到店。动手前要跟用户对清:哪位客户、几号几点、谁接待 —— 这是对客户的承诺。","input_schema":{"type":"object","properties":{"customer":{"type":"string","description":"客户号或姓名"},"start":{"type":"string","description":"开始时间 2026-11-28 14:00"},"end":{"type":"string","description":"结束时间(可省,默认 +60 分钟)"},"way":{"type":"string","description":"到店量体 / 试衣 / 取件…(可省)"},"advisor":{"type":"string","description":"接待顾问工号或姓名(可省)"},"named_state":{"type":"string","description":"客户点名了没有:点名 / 没点 / 不详(可省,没问就是不详)"},"named_advisor":{"type":"string","description":"客户点名的顾问工号(可省)"},"channel":{"type":"string","description":"预约渠道(可省)"}},"required":["customer","start"]}},
  {"name":"reschedule_appointment","description":"**(写)改预约时间 / 换顾问**:要预约号(先 list_appointments 查);只能改本店的、只能改「待确认 / 已预约」的(已到店 / 完成 / 取消 / 过期 / 爽约是已经发生的事,改不了);新时间按同一套预约规则。只给新开始时间就保持原来的时长。回话里要把**原时间和新时间**都说出来,别只说「改好了」。","input_schema":{"type":"object","properties":{"appointment_id":{"type":"string","description":"预约号,AP 开头"},"start":{"type":"string","description":"新开始时间(可省)"},"end":{"type":"string","description":"新结束时间(可省)"},"advisor":{"type":"string","description":"换成哪位顾问,工号或姓名(可省)"}},"required":["appointment_id"]}},
  {"name":"appt_funnel","description":"**预约到店转化漏斗**:约了多少 → 我们确认了多少 → 真到店多少 → 量体多少 → 下单多少;以及**流失分四种**(待确认烂掉 / 客户取消 / 爽约 / 已过期),每种带一句该怎么办。since/until 写 2026-08-01,不给就是全部。范围跟身份走。⚠️ 报**两种**转化率:环节转化率(÷上一环,看哪一环漏得最狠)和整体转化率(÷总预约,看一百个最后剩几个)——只报一个会答错另一个问题。⚠️ 最后两环(量体/下单)和预约之间**没有外键**,按「同一个客户、预约之后」连,**会高估**。",

@@ -93,7 +93,15 @@
 8. (并进第 5 项的第三轮了:6、7 都在 22:54 那批里;如果那批红了修完再起一轮,过了 0 点就等 05:10 夜跑结束)
 9. 🔎 《还债与收尾计划》核过(执行手册 395–424 行那张 27 行表,23:4x):17 / 20 / 21 / 22 / 24 / 27 都 ✅(**W22 费用上限 11-15 就做完了**:store_usage 月上限 + cost_alert 80% / 到顶 + app.py:825 到顶不升 Opus —— 我 23:0x 那条「没动」是没查表,作废);新人保底 ✅(booking.py:393)。真剩下的:row 26 **W27 标品签收告知 + 换货分支**(「只在工具说明里出现,流程没找到」)、row 18 默认模型接聊天站(要复测模型 + 动 agentsite/sdk.py)、row 11③④ / 6 单源(fc 地界或 fc 在做)、row 23 用户亲手。**W27 也 ✅(11-17 22:1x 核实:换货分支不用另做)** → 还债表里没有我今晚能不占锁、不碰 fc 地界、不用拍板就能做的了。0 点后的时间用来补今晚新面板的 vm 测试(人工介入表单 / 代码执行,照 test_workflow_retrieve_panel.js 的写法)和把规划 1.2 那张「对上了 18 个」的表改成现状。
 
-- **压缩前六项(11-25 13:4x 刷,最新)**:
+- **压缩前六项(11-25 21:4x 刷,最新)**:
+  · **未验证的预判** 🔮 AP01–AP04 真跑两轮会过 —— 没验;ops 全量 21:3x 起(后台 bf0q0oau8,日志 scratchpad/ops_full_1125.log,约 2 小时,和 0 点夜跑重叠);验法:`agent/ops-eval-results.jsonl` 最后 139 行里 AP* 的 各轮过,红了先看是判据词表还是工具真拒(AP02 工具该回 OTHER_SHOP;AP03 该回 WRONG_STATE),**别急着改题**。🔮 `python3 tools/eval_tier_check.py` 跑完全量后会绿 —— 没验。🔮 gate_w47(w41 形,含 e2e-ci)会绿 —— 没验:口径 json 加了两条可撤,import_lanxiu_tools 要吃到;旧后台 create/edit_appointment 转调新模块,页面那条路只过了 appt_ops_write_check,**没在 8760 真服务上点过**。🔮 夜跑会在主检出重写 .feynman/select-eval-第一层.json(工具 109→112)—— 明早当一笔原样带上(同 11-25 早那次)。
+  · **判据** 新模块的库路径要能被检查指到副本(`appt_write.DB=None` 跟 api.DB;检查里 `appt_write.DB = 副本`)—— **今晚真库 AP4006 被改就是没做这一步**;以后抽模块先问「谁会在副本上调它」。咬合规格跟着代码搬家:逻辑挪模块,锚在旧文件的 old 找不到了,**预期红也可能换**(1052 从 `_insert 键` 换成 `列数和建表语句对得上`,脚本里的 `咬合` 清单第二元要同改)。写口三件套登记顺序:WRITE_TOOLS → domains → 风险档 → station 写操作名 → sdk 名单 → 口径 json → TL 规矩(prompts_check P5:多工具的规矩不写 scope="工具")→ 边界审计约定类。新评测题 = 要跑一轮全量才能推(eval_tier_check),别晚上 10 点后才想起。
+  · **作废的结果** ❌ 我 20:4x 告 fc「真库 op_log / edit_log 多了两条测试痕迹」—— 查了是 0 条(当时日志走的副本),不用报用户删数据;❌ 第一版 appt_write 用 api._c()(只读连接)写库 —— 已换 _w();❌ TL108 第一版 scope="工具"(P5 红)—— 已去掉。
+  · **禁区** 不变:fc 文件(今晚它准了 api.py 注册区 + prompts.py TL108 这一次,范围就这些);0 点–05:10 不占锁不写共享库(ops 全量不占锁、只写 w1121 的结果文件);只推自己的;永不 add 三个运行态文件;bite_specs 末尾追加;删数据要用户点头。
+  · **23:1x ops 全量跑完:117/139(上次 109/135)**;AP01 [T,T]、AP02 [T,F]、AP03 [F,F]、AP04 [F,F]。逐条读原话:AP04 **模型真错**(没问几点就约上 14:30,TL108 没听,留着);AP02 第二轮模型先问「谁接待」没调写口 —— 判据没给路 → 加 `先问再约()`(没调写口 + 有问句);AP03 模型用 list_appointments 查不到已完成那条(默认只给进行中)说「查不到」被体检扣(g27 判对:号没出现在任何入参 / 返回里)→ list_appointments 加 `appointment_id`(给了就不管状态);g28 那条 fc 查实是误报(把「有没有」正反问当断言),**fc 明早备补丁给用户 `!`**,我不动 guards。分层表 knowledge/17 加 AP 一行(日常 143→147)、`eval_tier_check --登记` 推了基线;夹具占位号不能长得像题号(eval_tier 扫源码 `"id": "…"`),改成 None 再兜底。judgetest 420 条;23:4x 单跑 AP02 / AP03 复验(后台 b1wpwze1f)。**这些都还没提交**(ops_eval.py / judgetest / api.py / appt_write.py / knowledge/17 / tools/评测分层基线.json / 两个结果文件)。
+  · **下一步第一个动作** 等 AP02 / AP03 复验通知 → 看两轮 → `python3 tools/eval_tier_check.py` 绿 → commit(含 agent/ops-eval-results.jsonl;partial 那份也进)→ 睡;05:10 后照下面原文走。(原文:等 ops 全量通知 → 看 AP* 两轮 + `eval_tier_check` → `git commit --only agent/ops-eval-results.jsonl`(w1121)→ 睡到 05:10 后:`git -C w1121 fetch && rebase origin/main --autostash`(夜跑若在主检出留了提交 / 改写了 select-eval 文件,照 11-25 早的办法原样带上)→ w1117 status 干净后 `rebase w1121` → **gate_w47 = .gate_w41.sh.bak sed w41→w47**(含 e2e-ci)→ 绿后 kickstart backend / agentsite / supervise(api / server / prompts / sdk 都改了)+ aimc 由 gate 做 → 告 fc 哈希 → 汇总(新建 澜绣云裳agent-日间汇总-20261126.md 或续 25 日那份)发飞书 → 告用户(AP4006 事故、预约三件没人点)→ 包四第二块「活动与内容只读」(activity 6 / content 16 / page 6 条,只读工具 + 规矩 + 题)。
+  · **悬而未决** 预约三件 / 今天所有新页面没人点过;纹样核定(归版师)排在包四最后;ops 日常层 95% 看今晚全量的新数;select-eval 候选数会变。
+- **压缩前六项(11-25 13:4x 刷)**:
   · **未验证的预判** 🔮 gate_w44 会绿 —— 没验;14 笔里 管理后台/ 改了 app.js(归档按钮 / 核对结论按钮 / 错误块)、chat_handoffs_api(结论三选一)、main.py(请求编号 middleware + 兜底人话)、ifmatch 翻页、test_chat_handoff_flow ⑤b 9 条 —— **这些只在本地 import / node --check 过,没在真服务上跑过**(验法:e2e_ci_w44.log 退出码 0;红了先看 test_chat_handoff_flow 和 page_smoke)。🔮 旧后台 server.py 包了总兜底(`_兜底` 包 `_GET真`/`_POST真`)—— 三条真打 handler 的检查绿,但 **8760 真服务没重启过这版**(验法:gate 推完 kickstart com.lanxiu.backend 后 curl 首页 200 + 任一 /api 响应头带 X-Request-Id)。🔮 bite_replay_touched(后台 bnd1gws0d)会绿 —— 没验;上一轮同样的重放红在 4 条过期记录上(都修了),这一轮多了 ⑤⑥ 和包三的 8 条新规格(2000–2007)**还没单独重放过**。🔮 主检出 `reset --keep origin/main` 能保住运行态脏文件(tool-eval.json 等)—— 没验;`--keep` 在改动文件和 reset 目标不重叠时保留工作区,重叠就拒(那就先 ship 式挪开再 reset)。
   · **判据** 咬合规格「预期红」要跟着判据改名走:加了新结构 / 新对照 / 改了保证名之后,**先 `bite_replay_touched --基线 origin/main` 本地跑一遍再起门禁**(它要工作区干净 —— 两个运行态 jsonl 先挪开)。「红了但红的不是那一条」多半是**我自己的改动把老攻击的红点挪了**,不是判据坏;「对照就是红的」要先去跑那个脚本本身。放宽确认闸(三档)是用户拍的,fc 的提醒记下但不算否决;**不替 fc 批、fc 也不替用户批**(819 那次 fc 明说了)。对照用例的数要和 PRD 对账,靠的是 `[cases]` 那一行,**名 = PRD 括号里的标签**。成本数:**有口径词才算标了**,预算上限 / SDK 自报不是成本数。
   · **作废的结果** ❌ 我今天上午对时刻的记法(写过 11:xx–13:xx)—— 以 status 文件和 `date` 为准,现在真实时间 13:4x;❌ quick_gate 那条「咬合副本 rc=124」是等锁 900 秒超时,不是代码红;❌ 「应用归档没接口」这个前提(接口 11-17 就有);❌ 819 规格「数据漂了 / 判据漏了」两个猜测都不对 —— fc 查实是攻击点砍在第二道保险上。
@@ -111,7 +119,8 @@
   · **预约三件(包四第一件)20:xx–21:xx 做了,w1121 未提交**:fc 准了 api.py 注册 + prompts.py TL108 的范围。新模块 **backend/appt_write.py**(列 / 新建 / 编辑;口径全部复用:rules.validate_appointment、booking.OPEN_HOUR / 校验点名、shop_key、oplog;只约 / 改本店、只改待确认 / 已预约;`DB=None` 跟 api.DB,检查在副本上跑要 `appt_write.DB = 副本`);server.create_appointment / edit_appointment 改成转调它(签名不动,页面那条路传 me=登录人);api.py 三工具 list_appointments / book_appointment / reschedule_appointment(+WRITE_TOOLS +2、SHOP_SCHEMAS 三条描述、TOOLS 映射);domains.customer +3;风险档 高 ×2;station 写操作名 +2;sdk SHOP_TOOLS +3;prompts TL108(措辞是我拟的,交付时标「拟」)进 KB_RULES / TASK_RULES;boundary_audit CONVENTION +1;管理后台 口径 json 可撤 +2;ops_eval AP01–AP04(夹具现读)+ judgetest 8 钉 + 咬合 +1;咬合 1052 / 1743 搬到 appt_write;sync_docs 刷了产品说明 / README / SOP,PRD / 产品说明 / publish 脚本里 109→112、33→35、127→128、93→96、76→77 手改。
   · **⚠️ 20:4x 事故**:appt_ops_write_check 在副本上跑,但 appt_write 当时还跟 api.DB → 真库 AP4006 时间被改到 11-28;已锁内改回 11-15 16:00–17:00(op_log / edit_log 查了没残留:当时日志走的是副本)。**判据:新模块的库路径必须能被检查指到副本,写之前先验 `_db()` 指哪**(memory lanxiu-copy-db-import-order 同类)。
   · **验过**:副本上 smoke(约 / 改 / 别店拒 / 过去拒 / 已完成拒 / 半夜拒 / 没身份拒 / 店长补录允);isolation / prompts_check / tool_schema / tool_input / mcp_registry / action_confirm 75 / boundary_audit 70 / appt_ops_write_check / doc_numbers 绿;judgetest + vocab 见本轮日志。**没验**:🔮 真页面没点;🔮 e2e-ci(口径 json 改了,import_lanxiu_tools 要吃到 可撤 新两条);🔮 **AP01–AP04 还没真跑 —— eval_tier_check 会红,要先跑一轮 ops 全量(约 1 小时 50 分,登录态不花钱)**;🔮 工具选择评测候选数 112 又要变(夜跑会改 select-eval 文件,明早当一笔带上)。
-  · **下一步第一个动作**:commit(文件见 git status,新文件 appt_write.py 要 `git add`)→ 今晚起 ops 全量(`python3 agent/ops_eval.py` 按 11-24 夜那次的命令,日志进 scratchpad)→ 明早 05:10 后 w1117 rebase → gate_w47(**w41 形含 e2e-ci**)→ 绿后 kickstart backend / agentsite / supervise → 汇总发飞书 → 告用户 AP4006 那事 + 预约三件没人点过。然后包四第二块:活动与内容只读。
+  · ✅ 21:3x 提交 **da591bc9**(预约三件全部,含文档同步);安全边界审计.md 重生成。**ops 全量 21:3x 起**(后台;日志 scratchpad/ops_full_1125.log;写 agent/ops-eval-results.jsonl;约 2 小时;和 0 点夜跑会重叠、夜跑耗时偏高,fc 知道我今晚不占锁);跑完看 AP01–AP04 两轮、`python3 tools/eval_tier_check.py` 绿 → `git commit --only agent/ops-eval-results.jsonl`。
+  · **下一步第一个动作**(原文):commit(文件见 git status,新文件 appt_write.py 要 `git add`)→ 今晚起 ops 全量(`python3 agent/ops_eval.py` 按 11-24 夜那次的命令,日志进 scratchpad)→ 明早 05:10 后 w1117 rebase → gate_w47(**w41 形含 e2e-ci**)→ 绿后 kickstart backend / agentsite / supervise → 汇总发飞书 → 告用户 AP4006 那事 + 预约三件没人点过。然后包四第二块:活动与内容只读。
   · **下一步第一个动作(原文)**(包四 / 包五等用户拍;真页面点检等用户): 问用户要不要做包三那一小件(import_images.该有 提模块级 + README 进扫描名单)/ 包四 / 包五;真页面点检等用户。(原文:汇总发飞书(`FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf python3 tools/feishu_publish.py 澜绣云裳agent-日间汇总-20261125.md`,文件名 ≤19 字已满足)→ 告用户 → 包三剩下(import_images.该有 提模块级 + README 进 doc_numbers 扫描名单,或先问要不要做)/ 真页面点检要用户。(原文:等 bnd1gws0d 的通知 → 读 scratchpad/bite_touched_w44b.log:绿 → `git -C ../w1117 status --short | grep -v '^??'` → `git -C ../w1117 rebase w1121 --autostash` → `git -C /Users/eureka/Desktop/澜绣云裳agent reset --keep origin/main`(拒了就先把主检出的三个运行态文件 cp 到 scratchpad、checkout、reset、cp 回)→ `bash scratchpad/gate_w44.sh`(后台;status gate_w44.status;日志 e2e_ci_w44.log / ship_w44.log)→ 告 fc → 绿后 kickstart com.lanxiu.backend + com.lanxiu.agentsite + com.lanxiu.supervise,curl 8760 首页 200 / 8770 302 / 一条 /api 带 X-Request-Id → 汇总(澜绣云裳agent-日间汇总-20261125.md)填哈希、`FEISHU_FOLDER=QexpfF7ejlotM8db6JEcZH5tnZf python3 tools/feishu_publish.py` 发飞书 → 告用户。红 → 看 ship_w44.log 哪条红,老规矩「先 w1117 status 再 rebase」。
   · **悬而未决** 真页面没人点过(今天加的:应用归档按钮 / 中档卡提示 / 直接执行卡 / 撤按钮 / 核对中自己变 / 后台三个结论按钮 / 按岗位先亮 / 错误块新形 / 旧后台编号);包三 C 剩两处已知缺口(图序 ↔ 预期张数 已半收;import_images.该有() 提模块级 + README 不在 doc_numbers 扫描名单);ops 日常层 95% 要周六夜跑或下次全量才有新数;13 道翻面题第一轮理由 —— fc 的各轮why 已推,下次全量就有。
 - **压缩前六项(11-25 早上 · 用户醒来后刷)**:
@@ -2289,13 +2298,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-25 19:00。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-25 23:23。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `w1121` |
-| 最新提交 | 706ec524 · 2026-11-25 · 商品图「一套该有几张」提到模块级常量,README 那句由 doc_numbers_check 对账(包三收尾,最后一处「已知缺口」) |
-| 代码量 | 1232 个 Python 文件 / 213999 行(不含 .venv) |
+| 最新提交 | da591bc9 · 2026-11-25 · 预约查 / 约 / 改三个工具(包四第一件,用户 11-25 拍):聊天助手能查预约、帮本店客户约、改时间;两个写口高档确认卡 |
+| 代码量 | 1233 个 Python 文件 / 214337 行(不含 .venv) |
 | 验收 | `./check.sh` 共 446 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
@@ -2303,8 +2312,16 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 
 ```
 M HANDOFF.md
+ M agent/ops-eval-results.jsonl
+ M agent/ops-eval-results.partial.jsonl
+ M agent/ops_eval.py
+ M agent/ops_eval_judgetest.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
+ M backend/api.py
+ M backend/appt_write.py
+ M "knowledge/17-\350\257\204\346\265\213\351\233\206\351\242\221\347\216\207\345\210\206\345\261\202.md"
+ M "tools/\350\257\204\346\265\213\345\210\206\345\261\202\345\237\272\347\272\277.json"
 ?? .feynman/weekly-review.log
 ?? .gate_w29.sh.bak
 ?? .gate_w30.sh.bak
@@ -2314,25 +2331,17 @@ M HANDOFF.md
 ?? .gate_w35.sh.bak
 ?? .gate_w36.sh.bak
 ?? .gate_w37.sh.bak
-?? .gate_w38.sh.bak
-?? .gate_w39.sh.bak
-?? .gate_w40.sh.bak
-?? .gate_w41.sh.bak
-?? .gate_w42.sh.bak
-?? .gate_w43.sh.bak
-?? .gate_w44.sh.bak
-?? .gate_w45.sh.bak
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+da591bc9 预约查 / 约 / 改三个工具(包四第一件,用户 11-25 拍):聊天助手能查预约、帮本店客户约、改时间;两个写口高档确认卡
 706ec524 商品图「一套该有几张」提到模块级常量,README 那句由 doc_numbers_check 对账(包三收尾,最后一处「已知缺口」)
 7e2177d3 库路径单源第③步第 13 批:覆盖率 / 出图提示词导出 / 坏时间戳 / 支付流水号 / 夹具清理五个工具改走 dbpath(欠债 248→243)
 f0634d02 日间汇总 11-25 填哈希(17:19 推主干 12573c41,17 笔);交接刷到推完
 82f7a690 成本口径一节写一次:判据从「前十行」改成「上一个标题起这一节里有口径词」,重复插的口径去掉(fc 11-25 指出 CLAUDE.md 一节里重复了五遍)
-916192b1 库路径单源第③步第 12 批:再五个回填(客户关联 / 商机 / 订单量体 / 条款 / 归因)改走 dbpath(欠债 253→248)
 ```
 <!--/AUTO-->
 ## 一句话在做什么

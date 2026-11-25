@@ -143,8 +143,9 @@ def _记编辑(me, aid, 改了):
 
 
 # ── 查 ─────────────────────────────────────────────────────────────────────
-def 列(me, 客户=None, 日期=None, 顾问=None, 状态=None, 限=20):
-    """本店(跨店角色:全部)的预约。筛客户(号或名)/ 哪一天 / 顾问(工号或名)/ 状态;默认只给进行中的,按开始时间排。"""
+def 列(me, 客户=None, 日期=None, 顾问=None, 状态=None, 限=20, 预约号=None):
+    """本店(跨店角色:全部)的预约。筛客户(号或名)/ 哪一天 / 顾问(工号或名)/ 状态;默认只给进行中的,按开始时间排。
+    给了预约号就只查那一条、**不管状态**(11-25 真跑 AP03:要改一条已完成的,默认筛掉了它,模型只能说查不到)。"""
     api = _api()
     if not (me or {}).get("no"):
         return {"error": "没有身份,看不了预约 —— 请先登录"}
@@ -165,7 +166,9 @@ def 列(me, 客户=None, 日期=None, 顾问=None, 状态=None, 限=20):
     if 顾问:
         no = _顾问(api, 顾问, 我店) if 我店 else None
         片 += " AND a.advisor_no=?"; 参.append(no or str(顾问))
-    if 状态:
+    if 预约号:
+        片 += " AND a.id=?"; 参.append(str(预约号).strip())
+    elif 状态:
         片 += " AND a.status=?"; 参.append(状态)
     else:
         片 += f" AND a.status IN ({','.join('?' * len(进行中))})"; 参.extend(进行中)
@@ -173,7 +176,7 @@ def 列(me, 客户=None, 日期=None, 顾问=None, 状态=None, 限=20):
                               a.named_state, a.channel
                        FROM appointment a LEFT JOIN customer c ON c.id=a.customer_id LEFT JOIN staff s ON s.no=a.advisor_no
                        WHERE {片} ORDER BY a.start_ts LIMIT ?""", *参, int(限 or 20))
-    return {"范围": "本店" if 我店 else "全部", "条数": len(rs), "只给进行中": not 状态,
+    return {"范围": "本店" if 我店 else "全部", "条数": len(rs), "只给进行中": not 状态 and not 预约号,
             "预约": [{"预约号": r["id"], "客户": r["客户"], "客户号": r["customer_id"], "门店": r["shop"],
                      "顾问": r["顾问"] or r["advisor_no"], "开始": r["start_ts"], "结束": r["end_ts"], "状态": r["status"],
                      "点名": r["named_state"], "渠道": r["channel"]} for r in rs],
