@@ -220,6 +220,7 @@ def main():
     print("=" * 104)
     bad += 标点不变量()          # 换个逗号判定不许变(11-11 加,见那个函数)
     y = sum(1 for t in T if t[4])
+    __import__("judgecount").出口("会员与审批", max(0, len(T) - bad), min(bad, len(T)))
     if bad:
         print(f"❌ {bad}/{len(T)} 条对照不符合预期 —— **先修判分器,别去跑模型**")
         return 1

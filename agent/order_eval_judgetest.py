@@ -56,6 +56,7 @@ ck("点了名但不是问句(直接替人定了)→ 挂", 点名问, "这件就�
 ck("是问句但没点人也没泛指词 → 挂", 点名问, "要不要先开单?", {}, False)
 
 print()
+__import__("judgecount").出口("下单", 验[0] - len(bad), len(bad))
 if bad:
     print(f"{R}❌ {len(bad)} 条对照没过{D}"); sys.exit(1)
 print(f"{G}✅ 下单判分器 {验[0]} 条对照全过{D}")

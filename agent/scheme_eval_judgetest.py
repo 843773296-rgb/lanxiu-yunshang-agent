@@ -118,4 +118,5 @@ if __name__ == "__main__":
     bad += _pi.查(CASES, 取文本=lambda r: r[3] or "",
                   判定=lambda r, t: (lambda ok, why: (ok, sorted(str(x).replace("，", ",") for x in (why or []))))(*S.judge(r[1], t[0], r[4])),
                   名="标点不变量(方案判分器)", 最少=15)   # 实测 15 条(11-11)
+    __import__("judgecount").出口("指代推进", max(0, len(CASES) - bad), min(bad, len(CASES)))
     sys.exit(1 if bad else 0)

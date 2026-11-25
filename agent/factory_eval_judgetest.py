@@ -108,6 +108,7 @@ import punct_invariant as _pi
 if _pi.查(_记, 取文本=lambda r: r[1] or "", 判定=lambda r, t: sorted(str(x).replace("，", ",") for x in (r[0](t[0], [], r[2]) or [])),   # 理由里原样引了回答原文,逗号先归一再比
          名="标点不变量(工厂判分器)", 最少=16):   # 实测 16 条(11-11);掉到下面算不过
     bad.append("标点不变量")
+__import__("judgecount").出口("工厂回传", 验[0] - len(bad), len(bad))
 if bad:
     print(f"{R}❌ {len(bad)} 条对照没过{D}"); sys.exit(1)
 print(f"{G}✅ 工厂回传判分器 {验[0]} 条对照全过{D}")

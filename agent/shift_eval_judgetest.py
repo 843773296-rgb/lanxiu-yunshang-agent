@@ -165,5 +165,6 @@ finally:
     ("S-N5 退回只认「提到休」(反问不算)", "S-N5 没写草稿、先问清是哪五个人 → 过(11-12 判法和 S-N1 对齐,台账第二十八条)"),
 ]
 
+__import__("judgecount").出口("店长排班", 过, 挂)
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 sys.exit(1 if 挂 else 0)

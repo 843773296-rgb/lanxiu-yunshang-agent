@@ -229,6 +229,7 @@ if 标点不变量():
     bad.append("标点不变量")
 
 print()
+__import__("judgecount").出口("评价", 验[0] - len(bad), len(bad))
 if bad:
     print(f"{R}❌ {len(bad)} 条对照没过 —— **判分器自己错了,别急着去怪模型**{D}")
     sys.exit(1)

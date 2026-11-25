@@ -36,6 +36,7 @@ D = "\033[0m"
 题 = {t["押金单"]: t for t in S.题们()}
 
 
+_验计 = [0]   # 11-25 机读出口要知道验了几条
 def ck(名, 取):
     try:
         ok = bool(取()); 说 = ""
@@ -44,6 +45,8 @@ def ck(名, 取):
     print(f"  {'✅' if ok else '❌'} {名}{说}")
     if not ok:
         坏.append(名)
+    _验计[0] += 1
+
 
 
 def 判(单, 文, 工具=()):
@@ -429,6 +432,7 @@ def 标点不变量():
 if 标点不变量():
     坏.append("标点不变量")
 
+__import__("judgecount").出口("退款判分", _验计[0] - len(坏), len(坏))
 print()
 if 坏:
     print(f"{R}❌ {len(坏)} 条对照没过{D}")

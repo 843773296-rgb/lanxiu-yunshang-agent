@@ -171,5 +171,6 @@ _坏 = _pi.查(录, 取文本=lambda r: r[1] or "",
              名="标点不变量(工坊报工判分器)", 最少=11)   # 实测 11 条(11-11 夜)
 (过 if not _坏 else 挂).append("标点不变量(工坊报工判分器)")
 
+__import__("judgecount").出口("工坊报工", 过, 挂)
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 sys.exit(1 if 挂 else 0)

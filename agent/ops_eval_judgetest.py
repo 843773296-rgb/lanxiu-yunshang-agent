@@ -1549,6 +1549,7 @@ if __name__ == "__main__":
             if len(实) < 上限:
                 print(f"     ℹ️ 降到 {len(实)} 了 —— 把 `{名.replace('「','').replace('」','')}下限` 改成 {len(实)}")
 
+    __import__("judgecount").出口("工坊与任务", max(0, len(T) - bad), min(bad, len(T)))
     print("=" * 104)
     if bad:
         print(f"❌ {bad} 条判分器行为不符预期 —— **先修判分器再跑模型**")

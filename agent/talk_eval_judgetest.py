@@ -216,6 +216,7 @@ for 句, 该像, 名 in [
     坏 += 0 if 对 else 1
     print(f"  {'✅' if 对 else '❌'} {名}" + ("" if 对 else f"  → 判成 {'像' if 像 else '不像'}"))
 
+__import__("judgecount").出口("话术", len(CASES) + 14 - 坏, 坏)
 print("=" * 96)
 if 坏:
     print(f"❌ {坏} 条不符合预期")

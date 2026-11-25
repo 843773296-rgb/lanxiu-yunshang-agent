@@ -328,6 +328,7 @@ def main():
         print(f"  ❌ 现读库崩了:{type(e).__name__}: {e}")
         坏.append("现读库")
 
+    __import__("judgecount").出口("客户召回", len(例) + 2 - len(坏), len(坏))
     print(f"\n{'✅' if not 坏 else '❌'} 客户召回判分器对照 {len(例) + 2 - len(坏)}/{len(例) + 2}")
     return 1 if 坏 else 0
 

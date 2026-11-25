@@ -156,6 +156,7 @@ ck("配置改一个字,指纹就变(否则「用哪份配置跑的」查不出�
 
 print()
 print(f"  (验了 {n} 条)")
+__import__("judgecount").出口("意图", n - len(坏), len(坏))
 if n == 0:
     print(f"{R}❌ 一条都没验{D}"); sys.exit(1)
 if 坏:

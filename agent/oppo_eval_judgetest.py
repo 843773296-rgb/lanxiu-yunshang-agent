@@ -190,6 +190,7 @@ for 该过, 类, 说明, 回答, 稿, 标注 in CASES:
         for w in why or ["(判分器什么都没说)"]:
             print(f"        理由:{w[:88]}")
 
+__import__("judgecount").出口("商机判断", len(CASES) - 坏, 坏)
 print("=" * 96)
 if 坏:
     print(f"❌ {坏} 条不符合预期")

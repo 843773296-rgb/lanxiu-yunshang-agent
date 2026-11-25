@@ -23989,5 +23989,29 @@
    }
   ],
   "预期红": "编号 101010-ab12"
+ },
+ {
+  "script": "tools/judge_cases_check.py",
+  "改坏": "从量体录入判分器里删掉 judgecount.出口 那一行(它又回到只打人话)—— 11-25 包三机读出口",
+  "file": [
+   {
+    "path": "agent/measure_eval_judgetest.py",
+    "old": "__import__(\"judgecount\").出口(\"量体录入\", 验[0] - len(bad), len(bad))\n",
+    "new": ""
+   }
+  ],
+  "预期红": "没有机读出口"
+ },
+ {
+  "script": "tools/judge_cases_check.py",
+  "改坏": "把 PRD 里「离线对照用例 31 条(知识问答)」改成 20(回到 9 月的旧数)—— 11-25 包三机读出口",
+  "file": [
+   {
+    "path": "澜绣云裳agent-产品需求文档.md",
+    "old": "离线对照用例 31 条（知识问答）全部通过",
+    "new": "离线对照用例 20 条（知识问答）全部通过"
+   }
+  ],
+  "预期红": "和现算不一致"
  }
 ]

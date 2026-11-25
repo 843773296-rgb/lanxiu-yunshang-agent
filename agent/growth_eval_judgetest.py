@@ -162,6 +162,7 @@ if __name__ == "__main__":
           f"该挂 {len(CASES)-n_pass},{'全部符合预期' if not bad else f'{bad} 条不符'}")
     print("  判分器太松 → 满分成绩单是假的;判分器太严 → 你会去改本来正确的提示词。")
     bad += 标点不变量()
+    __import__("judgecount").出口("成长推算", max(0, len(CASES) - bad), min(bad, len(CASES)))
     sys.exit(1 if bad else 0)
 
 # ── 咬合记录 ──────────────────────────────────────────────────────────

@@ -121,6 +121,7 @@ if __name__ == "__main__":
           f"{'全部符合预期' if not bad else f'{bad} 条不符'}")
     print("  **先写对照再跑模型** —— 判分器的错比模型的错便宜得多,也好抓得多。")
     bad += 标点不变量()
+    __import__("judgecount").出口("售后判责", max(0, len(CASES) - bad), min(bad, len(CASES)))
     sys.exit(1 if bad else 0)
 
 # ── 咬合记录 ──────────────────────────────────────────────────────────

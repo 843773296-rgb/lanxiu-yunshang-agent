@@ -106,6 +106,7 @@ if 标点不变量():
     bad.append("标点不变量")
 
 print()
+__import__("judgecount").出口("白坯试衣", 验[0] - len(bad), len(bad))
 if bad:
     print(f"{R}❌ {len(bad)} 条对照没过{D}"); sys.exit(1)
 print(f"{G}✅ 白坯试衣判分器 {验[0]} 条对照全过{D}")

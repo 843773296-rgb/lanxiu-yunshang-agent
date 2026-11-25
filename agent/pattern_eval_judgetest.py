@@ -429,6 +429,7 @@ def main():
                   名="标点不变量(版师判分器)", 最少=60)   # 实测 60 条(11-11)
     print("=" * 104)
     y = sum(1 for t in T if t[4])
+    __import__("judgecount").出口("版型与推档", max(0, len(T) - bad), min(bad, len(T)))
     if bad:
         print(f"❌ {bad}/{len(T)} 条对照不符合预期 —— **先修判分器,别去跑模型**")
         return 1

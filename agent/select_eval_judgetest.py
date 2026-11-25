@@ -119,6 +119,7 @@ def main():
        len(双向) >= 8, f"{len(双向)} 个:{sorted(双向)[:6]}…")
 
     print("\n" + "=" * 84)
+    __import__("judgecount").出口("工具选择", 过, 挂)
     print(f"过 {len(过)} · 挂 {len(挂)}")
     for x in 挂: print("   ❌", x)
     return 1 if 挂 else 0

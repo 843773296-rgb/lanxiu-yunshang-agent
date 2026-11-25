@@ -329,6 +329,7 @@ for 盐 in ("0", "12345"):
 ck(f"换 PYTHONHASHSEED 题型不变(比的是 20 道题的整串,不是一道)",
    lambda: _出[0] and _出[0] == _出[1], f"两串不一样:{_出[0][:40]} / {_出[1][:40]}")
 
+__import__("judgecount").出口("研判题集", n - len(bad), len(bad))
 print()
 if bad:
     print(f"{R}❌ {len(bad)} 条不过(验了 {n} 条){D}")

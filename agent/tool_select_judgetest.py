@@ -194,6 +194,7 @@ def main():
         except OSError: pass
 
     print("\n" + "=" * 84)
+    __import__("judgecount").出口("工具选择兜底", 过, 挂)
     print(f"过 {len(过)} · 挂 {len(挂)}")
     for x in 挂: print("   ❌", x)
     return 1 if 挂 else 0

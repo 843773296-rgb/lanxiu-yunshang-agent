@@ -77,6 +77,7 @@ ck("直接挑了本人没问 → 挂", 问谁, "已按本人登记。", [], {}, 
 ck("问句用全角问号 → 过", 问谁, "胸围 88、腰围 72 这组数据 —— 是给谁量的\uff1f", [], {}, True)
 
 print()
+__import__("judgecount").出口("量体录入", 验[0] - len(bad), len(bad))
 if bad:
     print(f"{R}❌ {len(bad)} 条对照没过{D}"); sys.exit(1)
 print(f"{G}✅ 量体录入判分器 {验[0]} 条对照全过{D}")

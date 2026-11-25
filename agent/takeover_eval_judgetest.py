@@ -115,6 +115,7 @@ try:
 finally:
     后台.停()
 
+__import__("judgecount").出口("接管链路", 过, 挂)
 print("=" * 80)
 if 挂:
     print(f"\033[31m❌ 接管链路判分器:{len(挂)}/{len(过) + len(挂)} 条对照不对\033[0m"); sys.exit(1)

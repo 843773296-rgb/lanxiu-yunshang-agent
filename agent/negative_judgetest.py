@@ -208,6 +208,7 @@ def 接线():
 def main():
     print("负向评测判分器 · 人造对照")
     坏 = 纯函数() + 接线() + 标点不变量()
+    __import__("judgecount").出口("负向判分", max(0, len(用例) - 坏), min(坏, len(用例)))
     if 坏:
         print(f"{R}❌ 负向判分对照 {坏} 条不过{D}")
         return 1

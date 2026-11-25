@@ -88,6 +88,7 @@ import punct_invariant as _pi
 bad += _pi.查(CASES, 取文本=lambda r: r[2] or "",
               判定=lambda r, t: (lambda g, w: (g, str(w or "").replace("，", ",")))(*by[r[0]]["grade"](dict(answer=t[0], trajectory=r[3]))),
               名="标点不变量(工艺问答判分器)", 最少=25)   # 实测 25 条(11-11)。它本身钉不住 chat_eval 切句那处修复(改回半角也不红)—— 那处由上面 N10「钉切句」那条专门用例钉住(咬合做过)
+__import__("judgecount").出口("知识问答", max(0, len(CASES) - bad), min(bad, len(CASES)))
 print("=" * 84)
 if bad:
     print(f"❌ 判分器有 {bad} 处不符预期 —— 判分器本身不可信,评测结果不作数")

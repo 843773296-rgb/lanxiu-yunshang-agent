@@ -156,6 +156,7 @@ r = EV.hit("余额已补足,最后一次是收款账户已注销。", 补, "D201
 ck("真库 D2019(三次都是余额不足,不是这一类)→ 不算过,并说明题面不成立",
    (not r[0]) and "题面不成立" in r[1], r)
 
+__import__("judgecount").出口("研判命中", n - len(bad), len(bad))
 print()
 if bad:
     print(f"{R}❌ {len(bad)} 条不过(验了 {n} 条){D}"); sys.exit(1)

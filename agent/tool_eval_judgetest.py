@@ -186,6 +186,7 @@ print(f"  {'✅' if not _写死 else '❌'} 题面里的日期都是现算的(�
       + (f"  写死的:{_写死}" if _写死 else ""))
 if _写死 or not _日期: bad += 1
 
+__import__("judgecount").出口("工具使用", max(0, len(CASES) - bad), min(bad, len(CASES)))
 n_pass = sum(1 for c in CASES if c[1])
 print(f"{'✅' if not bad else '❌'} {len(CASES)} 对照用例:该过 {n_pass} / 该挂 {len(CASES)-n_pass},"
       f"{'全部符合预期' if not bad else f'{bad} 条不符'}")
