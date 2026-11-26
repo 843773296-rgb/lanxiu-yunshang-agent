@@ -93,13 +93,32 @@
 8. (并进第 5 项的第三轮了:6、7 都在 22:54 那批里;如果那批红了修完再起一轮,过了 0 点就等 05:10 夜跑结束)
 9. 🔎 《还债与收尾计划》核过(执行手册 395–424 行那张 27 行表,23:4x):17 / 20 / 21 / 22 / 24 / 27 都 ✅(**W22 费用上限 11-15 就做完了**:store_usage 月上限 + cost_alert 80% / 到顶 + app.py:825 到顶不升 Opus —— 我 23:0x 那条「没动」是没查表,作废);新人保底 ✅(booking.py:393)。真剩下的:row 26 **W27 标品签收告知 + 换货分支**(「只在工具说明里出现,流程没找到」)、row 18 默认模型接聊天站(要复测模型 + 动 agentsite/sdk.py)、row 11③④ / 6 单源(fc 地界或 fc 在做)、row 23 用户亲手。**W27 也 ✅(11-17 22:1x 核实:换货分支不用另做)** → 还债表里没有我今晚能不占锁、不碰 fc 地界、不用拍板就能做的了。0 点后的时间用来补今晚新面板的 vm 测试(人工介入表单 / 代码执行,照 test_workflow_retrieve_panel.js 的写法)和把规划 1.2 那张「对上了 18 个」的表改成现状。
 
-- **压缩前六项(11-25 21:4x 刷,最新)**:
+- **15:1x 状态(最新)**:w47 第二次(10:0x 起)e2e 0、**ship 红在咬合重放**:write_check W2(旧后台建预约转调 appt_write 后:夹具客户 C10000 在徐汇店 → OTHER_SHOP;页面传「A01 林岚」认不出)+ make_readme(README 没重生成)。排查时 **W2 在真库写了一条测试预约 AP26112614313(C10002 / 11-29 14:00)—— 已锁内删,只此一条**(根子:write_check 只指 server.DB,appt_write 只认 api.DB)。修:appt_write._db() 跟着调用方改过的 server.DB / api.DB 走、`_顾问` 取显示串最后一段、W2 夹具现取 SH001 客户 + 14:00;六条调预约入口的检查跑过,真库预约行数前后 14312。提交 **48dea91e**(w1117 对齐)。**15:1x 后台:先锁内 bite_replay_touched,绿才接着跑 gate_w47 第三次**(日志 scratchpad/bite_touched_w47.log、gate_w47.status)。已告 9f。**要告用户:真库被测试写了两次(AP4006 改时间 / AP26112614313 新建),都已撤回。**
+- **压缩前六项(11-26 10:0x 刷)**:
+  · **状态**:会话 09:4x 重启过。飞书直连 09:52 已恢复(200),早上两次 w47 红的「飞书送达」是当时直连 TLS 不通,**用户没改代理,网络自己好了**。9f(工作树「工」那边的会话,不是 fc)10:0x 前推了 2 笔(g28「有没有」误报修复 + 排班两条检查夹具)远端 = **15a8038d**。我 w1121 rebase 到它上面 3 笔 = **5f906bba**(夜跑 039fc458 / 预约三件 cd699a76 / 预约四题真跑 5f906bba),w1117 对齐,主检出 `reset --keep` 到 15a8038d(可快进)。**gate_w47 10:0x 起(后台 bqiog3c37;status scratchpad/gate_w47.status;e2e_ci_w47.log / ship_w47.log)**。已告 9f。
+  · **未验证的预判** 🔮 w47 这次会绿 —— 没验;红了先看是不是又是飞书送达(再 `env -i curl` 打一次飞书)。🔮 预约三件在真服务上没点过。
+  · **判据** 并行会话有两个:fc(eureka-fc)和 9f(eureka-9f,工作树「工」);推完要告**当时在等的那个**。网络类红先分直连 / 代理,别改代码。
+  · **下一步第一个动作** w47 绿 → 告 9f(和 fc)哈希 → kickstart com.lanxiu.backend / agentsite / supervise,curl 8760 200 / 8770 302 → 汇总 澜绣云裳agent-日间汇总-20261126.md(草稿在 w1121,补「飞书直连夜里断、上午恢复」「9f 推了 g28 修复」两条 + 哈希)发飞书 → 刷交接 → 告用户 → 问包四第二块「活动与内容只读」开不开工。红 → 看日志。
+  · **悬而未决 / 禁区 / 作废** 同下面 06:1x 那组(代理选项那条作废:直连已恢复,不用用户动)。
+- **压缩前六项(11-26 06:1x 刷)**:
+  · **未验证的预判** 🔮 代理软件切回 TUN / 或 plist 加代理环境后,gate_w47 那条「飞书送达」会绿、整轮会绿 —— 没验(验法:重跑 `scratchpad/gate_w47.sh`,看 e2e_ci_w47.log 退出码 0;主检出已在 006e9d75,脚本 ff 是 no-op)。🔮 今天 06:40 日志发飞书(com.lanxiu.daily-log)和 08:00 日报推飞书会挂 —— 没验(验法:`.feynman/daily-log-launchd.log` 尾、supervise 日志里 rc=35)。🔮 预约三件在 8770 真服务上没点过。
+  · **判据** e2e 红在「curl rc=35 / 拿令牌失败」:先 `env -i … curl` 和带代理 curl 各打一次飞书 —— **直连 000/35、代理 200 = 服务进程缺代理环境,不是代码**;open.feishu.cn 解析到 198.18.x 是代理软件的假 IP,握手就断说明它没在 TUN 模式接管。服务的网络环境看 plist `EnvironmentVariables` 和 `launchctl getenv`,别拿自己 shell 的结论当服务的。改 plist / launchctl setenv 是用户的系统配置,**我不动,给他命令**。
+  · **作废的结果** ❌ 06:0x 我说「飞书瞬时抖」并重跑 —— 错,是直连持续不通(三次 35);❌ 「06:40 日志发飞书成功了」那条看的是昨天的日志,今天的还没到点。
+  · **禁区** 同前(fc 文件 / 只推自己的 / 不 add 运行态文件 / bite_specs 末尾追加 / 删数据与系统配置要用户);**HANDOFF 只写 w1121 那份**(cwd 会漂到主检出,门禁报的路径别信,用绝对路径)。
+  · **下一步第一个动作** 等用户拍(① 代理切 TUN;② 我备好三个 plist 的 EnvironmentVariables 补丁给他 `!`)→ 重跑 gate_w47 → 绿后告 fc 哈希、kickstart backend / agentsite / supervise → 汇总 澜绣云裳agent-日间汇总-20261126.md(草稿已写,填哈希 + 这段网络事故)发飞书 → 刷交接 → 告用户 → 问「活动与内容只读」开不开工。
+  · **悬而未决** 预约三件 / 昨天所有新页面没人点;g28 体检误报补丁(fc 备,用户 `!`);AP04 模型真错留着;纹样核定排包四最后。
+- **压缩前六项(11-25 21:4x 刷)**:
   · **未验证的预判** 🔮 AP01–AP04 真跑两轮会过 —— 没验;ops 全量 21:3x 起(后台 bf0q0oau8,日志 scratchpad/ops_full_1125.log,约 2 小时,和 0 点夜跑重叠);验法:`agent/ops-eval-results.jsonl` 最后 139 行里 AP* 的 各轮过,红了先看是判据词表还是工具真拒(AP02 工具该回 OTHER_SHOP;AP03 该回 WRONG_STATE),**别急着改题**。🔮 `python3 tools/eval_tier_check.py` 跑完全量后会绿 —— 没验。🔮 gate_w47(w41 形,含 e2e-ci)会绿 —— 没验:口径 json 加了两条可撤,import_lanxiu_tools 要吃到;旧后台 create/edit_appointment 转调新模块,页面那条路只过了 appt_ops_write_check,**没在 8760 真服务上点过**。🔮 夜跑会在主检出重写 .feynman/select-eval-第一层.json(工具 109→112)—— 明早当一笔原样带上(同 11-25 早那次)。
   · **判据** 新模块的库路径要能被检查指到副本(`appt_write.DB=None` 跟 api.DB;检查里 `appt_write.DB = 副本`)—— **今晚真库 AP4006 被改就是没做这一步**;以后抽模块先问「谁会在副本上调它」。咬合规格跟着代码搬家:逻辑挪模块,锚在旧文件的 old 找不到了,**预期红也可能换**(1052 从 `_insert 键` 换成 `列数和建表语句对得上`,脚本里的 `咬合` 清单第二元要同改)。写口三件套登记顺序:WRITE_TOOLS → domains → 风险档 → station 写操作名 → sdk 名单 → 口径 json → TL 规矩(prompts_check P5:多工具的规矩不写 scope="工具")→ 边界审计约定类。新评测题 = 要跑一轮全量才能推(eval_tier_check),别晚上 10 点后才想起。
   · **作废的结果** ❌ 我 20:4x 告 fc「真库 op_log / edit_log 多了两条测试痕迹」—— 查了是 0 条(当时日志走的副本),不用报用户删数据;❌ 第一版 appt_write 用 api._c()(只读连接)写库 —— 已换 _w();❌ TL108 第一版 scope="工具"(P5 红)—— 已去掉。
   · **禁区** 不变:fc 文件(今晚它准了 api.py 注册区 + prompts.py TL108 这一次,范围就这些);0 点–05:10 不占锁不写共享库(ops 全量不占锁、只写 w1121 的结果文件);只推自己的;永不 add 三个运行态文件;bite_specs 末尾追加;删数据要用户点头。
   · **23:1x ops 全量跑完:117/139(上次 109/135)**;AP01 [T,T]、AP02 [T,F]、AP03 [F,F]、AP04 [F,F]。逐条读原话:AP04 **模型真错**(没问几点就约上 14:30,TL108 没听,留着);AP02 第二轮模型先问「谁接待」没调写口 —— 判据没给路 → 加 `先问再约()`(没调写口 + 有问句);AP03 模型用 list_appointments 查不到已完成那条(默认只给进行中)说「查不到」被体检扣(g27 判对:号没出现在任何入参 / 返回里)→ list_appointments 加 `appointment_id`(给了就不管状态);g28 那条 fc 查实是误报(把「有没有」正反问当断言),**fc 明早备补丁给用户 `!`**,我不动 guards。分层表 knowledge/17 加 AP 一行(日常 143→147)、`eval_tier_check --登记` 推了基线;夹具占位号不能长得像题号(eval_tier 扫源码 `"id": "…"`),改成 None 再兜底。judgetest 420 条;23:4x 单跑 AP02 / AP03 复验(后台 b1wpwze1f)。**这些都还没提交**(ops_eval.py / judgetest / api.py / appt_write.py / knowledge/17 / tools/评测分层基线.json / 两个结果文件)。
-  · **下一步第一个动作** 等 AP02 / AP03 复验通知 → 看两轮 → `python3 tools/eval_tier_check.py` 绿 → commit(含 agent/ops-eval-results.jsonl;partial 那份也进)→ 睡;05:10 后照下面原文走。(原文:等 ops 全量通知 → 看 AP* 两轮 + `eval_tier_check` → `git commit --only agent/ops-eval-results.jsonl`(w1121)→ 睡到 05:10 后:`git -C w1121 fetch && rebase origin/main --autostash`(夜跑若在主检出留了提交 / 改写了 select-eval 文件,照 11-25 早的办法原样带上)→ w1117 status 干净后 `rebase w1121` → **gate_w47 = .gate_w41.sh.bak sed w41→w47**(含 e2e-ci)→ 绿后 kickstart backend / agentsite / supervise(api / server / prompts / sdk 都改了)+ aimc 由 gate 做 → 告 fc 哈希 → 汇总(新建 澜绣云裳agent-日间汇总-20261126.md 或续 25 日那份)发飞书 → 告用户(AP4006 事故、预约三件没人点)→ 包四第二块「活动与内容只读」(activity 6 / content 16 / page 6 条,只读工具 + 规矩 + 题)。
+  · ✅ 23:2x AP02 / AP03 单跑复验都过(不写基线);提交 86751f87。**11-26 05:17 早班**:夜跑结束、主检出留自动提交 7b6c5507(未推),w1121 rebase 到它上面 → 3 笔 = 006e9d75(夜跑 + 预约三件 3996c91e + 评测 006e9d75),w1117 对齐;**gate_w47 05:2x 起(w41 形含 e2e-ci;status gate_w47.status;备份 .gate_w47.sh.bak)**;已告 fc。
+  · ❌ w47 第一次 05:42 e2e-ci 退出码 2:只红 test_chat_tasks_flow「飞书送达」—— 拿应用令牌 curl rc=35(TLS/网络瞬抖),05:4x 核飞书令牌口 200 → **同一批重跑 gate_w47(后台 b7t5ubt7z)**;主检出已在 006e9d75。汇总草稿 澜绣云裳agent-日间汇总-20261126.md 已写(未提交),等哈希。**判据:e2e 红在「curl rc=35 / 令牌失败」先核外网再判,别去改代码。**
+  · ❌ **w47 第二次 06:06 同一条又红,不是瞬抖**:aimc 的 worker 用 curl 拿飞书令牌 rc=35(TLS 连不上)。查实:**这台机器直连 open.feishu.cn 不通,必须走本机代理 127.0.0.1:8787(hicc)**;我的 shell 有 HTTPS_PROXY 所以通,launchd 起的 aimc / supervise / daily-log **plist 里没有代理环境、launchctl getenv 也空** → 服务进程里一切飞书调用都挂(不只这条测试:08:00 日报推飞书、06:40 日志发飞书多半也挂)。昨天 w44 的 e2e 过了说明昨天直连还通 —— 网络环境夜里变了,**不是代码,不能靠改代码过**。
+  · **判据**:e2e 红在「curl rc=35 / 拿令牌失败」→ 先 `env -i curl` 和带代理 curl 各打一次飞书,分清是直连不通还是飞书挂了;服务进程的网络环境看 plist / `launchctl getenv`,别拿自己 shell 的结论当服务的结论。
+  · **下一步第一个动作**:**等用户拍**(改 plist 加代理环境是他亲手装的东西,也是放宽 / 系统配置):① 给 com.lanxiu.aimc / supervise / daily-log 三个 plist 加 `EnvironmentVariables` HTTPS_PROXY / HTTP_PROXY / NO_PROXY(和 shell 一样)后 kickstart;或 ② `launchctl setenv HTTPS_PROXY …`(对所有 launchd agent 生效,重启失效);或 ③ 等直连恢复。拍了 ① / ② 就重跑 gate_w47(主检出已在 006e9d75,脚本 ff 是 no-op)。**没推的 3 笔还在 w1117 = w1121 = 006e9d75。**
+  · **下一步第一个动作(原文,w47 绿后)**:告 fc 哈希 → kickstart backend / agentsite / supervise,curl 8760 200 / 8770 302 → 新建 澜绣云裳agent-日间汇总-20261126.md(预约三件 / 评测 117 / AP4006 事故 / g28 fc 补丁)发飞书 → 刷交接 → 告用户,问「活动与内容只读」开不开工。(原文:等 AP02 / AP03 复验通知 → 看两轮 → `python3 tools/eval_tier_check.py` 绿 → commit(含 agent/ops-eval-results.jsonl;partial 那份也进)→ 睡;05:10 后照下面原文走。(原文:等 ops 全量通知 → 看 AP* 两轮 + `eval_tier_check` → `git commit --only agent/ops-eval-results.jsonl`(w1121)→ 睡到 05:10 后:`git -C w1121 fetch && rebase origin/main --autostash`(夜跑若在主检出留了提交 / 改写了 select-eval 文件,照 11-25 早的办法原样带上)→ w1117 status 干净后 `rebase w1121` → **gate_w47 = .gate_w41.sh.bak sed w41→w47**(含 e2e-ci)→ 绿后 kickstart backend / agentsite / supervise(api / server / prompts / sdk 都改了)+ aimc 由 gate 做 → 告 fc 哈希 → 汇总(新建 澜绣云裳agent-日间汇总-20261126.md 或续 25 日那份)发飞书 → 告用户(AP4006 事故、预约三件没人点)→ 包四第二块「活动与内容只读」(activity 6 / content 16 / page 6 条,只读工具 + 规矩 + 题)。
   · **悬而未决** 预约三件 / 今天所有新页面没人点过;纹样核定(归版师)排在包四最后;ops 日常层 95% 看今晚全量的新数;select-eval 候选数会变。
 - **压缩前六项(11-25 13:4x 刷)**:
   · **未验证的预判** 🔮 gate_w44 会绿 —— 没验;14 笔里 管理后台/ 改了 app.js(归档按钮 / 核对结论按钮 / 错误块)、chat_handoffs_api(结论三选一)、main.py(请求编号 middleware + 兜底人话)、ifmatch 翻页、test_chat_handoff_flow ⑤b 9 条 —— **这些只在本地 import / node --check 过,没在真服务上跑过**(验法:e2e_ci_w44.log 退出码 0;红了先看 test_chat_handoff_flow 和 page_smoke)。🔮 旧后台 server.py 包了总兜底(`_兜底` 包 `_GET真`/`_POST真`)—— 三条真打 handler 的检查绿,但 **8760 真服务没重启过这版**(验法:gate 推完 kickstart com.lanxiu.backend 后 curl 首页 200 + 任一 /api 响应头带 X-Request-Id)。🔮 bite_replay_touched(后台 bnd1gws0d)会绿 —— 没验;上一轮同样的重放红在 4 条过期记录上(都修了),这一轮多了 ⑤⑥ 和包三的 8 条新规格(2000–2007)**还没单独重放过**。🔮 主检出 `reset --keep origin/main` 能保住运行态脏文件(tool-eval.json 等)—— 没验;`--keep` 在改动文件和 reset 目标不重叠时保留工作区,重叠就拒(那就先 ship 式挪开再 reset)。
@@ -2298,13 +2317,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-25 23:23。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-26 13:16。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `w1121` |
-| 最新提交 | da591bc9 · 2026-11-25 · 预约查 / 约 / 改三个工具(包四第一件,用户 11-25 拍):聊天助手能查预约、帮本店客户约、改时间;两个写口高档确认卡 |
-| 代码量 | 1233 个 Python 文件 / 214337 行(不含 .venv) |
+| 最新提交 | 5f906bba · 2026-11-25 · 预约四题真跑一轮(ops 全量 117/139,上次 109/135)+ 两处跟着真跑改:查预约可按预约号查任何状态;「先问清再约」也算对 |
+| 代码量 | 1233 个 Python 文件 / 214362 行(不含 .venv) |
 | 验收 | `./check.sh` 共 446 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
@@ -2312,16 +2331,8 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 
 ```
 M HANDOFF.md
- M agent/ops-eval-results.jsonl
- M agent/ops-eval-results.partial.jsonl
- M agent/ops_eval.py
- M agent/ops_eval_judgetest.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M backend/api.py
- M backend/appt_write.py
- M "knowledge/17-\350\257\204\346\265\213\351\233\206\351\242\221\347\216\207\345\210\206\345\261\202.md"
- M "tools/\350\257\204\346\265\213\345\210\206\345\261\202\345\237\272\347\272\277.json"
 ?? .feynman/weekly-review.log
 ?? .gate_w29.sh.bak
 ?? .gate_w30.sh.bak
@@ -2331,17 +2342,25 @@ M HANDOFF.md
 ?? .gate_w35.sh.bak
 ?? .gate_w36.sh.bak
 ?? .gate_w37.sh.bak
+?? .gate_w38.sh.bak
+?? .gate_w39.sh.bak
+?? .gate_w40.sh.bak
+?? .gate_w41.sh.bak
+?? .gate_w42.sh.bak
+?? .gate_w43.sh.bak
+?? .gate_w44.sh.bak
+?? .gate_w45.sh.bak
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-da591bc9 预约查 / 约 / 改三个工具(包四第一件,用户 11-25 拍):聊天助手能查预约、帮本店客户约、改时间;两个写口高档确认卡
-706ec524 商品图「一套该有几张」提到模块级常量,README 那句由 doc_numbers_check 对账(包三收尾,最后一处「已知缺口」)
-7e2177d3 库路径单源第③步第 13 批:覆盖率 / 出图提示词导出 / 坏时间戳 / 支付流水号 / 夹具清理五个工具改走 dbpath(欠债 248→243)
-f0634d02 日间汇总 11-25 填哈希(17:19 推主干 12573c41,17 笔);交接刷到推完
-82f7a690 成本口径一节写一次:判据从「前十行」改成「上一个标题起这一节里有口径词」,重复插的口径去掉(fc 11-25 指出 CLAUDE.md 一节里重复了五遍)
+5f906bba 预约四题真跑一轮(ops 全量 117/139,上次 109/135)+ 两处跟着真跑改:查预约可按预约号查任何状态;「先问清再约」也算对
+cd699a76 预约查 / 约 / 改三个工具(包四第一件,用户 11-25 拍):聊天助手能查预约、帮本店客户约、改时间;两个写口高档确认卡
+039fc458 夜跑评测结果 2026-11-26(自动提交:评测结果、报告、压缩过的运行日志)
+15a8038d 排班两条检查的夹具在副本上连日程一起清 —— 每日造数把派好的单铺进了夹具那周
+15749caa 交付前体检 g28:正反疑问「有没有」不算断言没有 —— 预约题 AP03 两轮被扣是误报
 ```
 <!--/AUTO-->
 ## 一句话在做什么
