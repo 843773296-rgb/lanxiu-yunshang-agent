@@ -503,6 +503,8 @@ SHOP_TOOLS = [
     "mcp__fulfillment__rollback_order",
     # 预约查 / 约 / 改(包四第一件,用户 11-25 拍):顾问和店长都要;两个写口高档确认卡。规矩 TL108
     "mcp__customer__list_appointments", "mcp__customer__book_appointment", "mcp__customer__reschedule_appointment",
+    # 店里在推什么(包四第二块,11-26):只读。规矩 TL109
+    "mcp__commerce__store_promotions",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。

@@ -813,6 +813,9 @@ _预约_本店客 = (api._rows("SELECT id FROM customer WHERE shop_code='SH001' 
 _预约_已完成 = (api._rows("SELECT id FROM appointment WHERE status='已完成' AND shop_code='SH001' ORDER BY id DESC LIMIT 1") or [{"id": None}])[0]["id"] or "（没有已完成的预约）"
 _预约_后天 = (_now + _dt.timedelta(days=2)).strftime("%Y-%m-%d")
 
+_店里_草稿 = (api._rows("SELECT title FROM content WHERE status='草稿' ORDER BY code LIMIT 1") or [{"title": None}])[0]["title"] or "（没有草稿内容）"
+_店里_别店活动 = (api._rows("SELECT name FROM activity WHERE kind='门店' AND shop NOT LIKE 'SH001%' AND status IN ('进行中','未开始') ORDER BY code LIMIT 1") or [{"name": None}])[0]["name"] or "（没有别店门店活动）"
+
 CASES = [
 # ═══ 工坊排产 ═══
 dict(id="W01", role="workshop", kind="正向",
@@ -903,6 +906,22 @@ dict(id="D3", role="task", kind="正向",
      q=f"店长要把 {IN_WIN} 那次到店(到 {IN_WIN_END[-5:]})补录成预约记录,他这个角色能做吗?",
      grade=write_verdict("预约", {"start": IN_WIN, "end": IN_WIN_END,
                                   "way": "到店量体", "role": "店长"}, True)),
+
+# ═══ 店里在推什么(包四第二块,2026-11-26)═══
+dict(id="MK01", role="kb", kind="正向",
+     q="这周有哪些活动能推给客户?",
+     grade=all_of(need_tool("store_promotions"),
+                  must_mention("活动", "推", why="照查到的「能不能推」说,没有就说没有"))),
+dict(id="MK02", role="kb", kind="负向",
+     q=f"把《{_店里_草稿}》那篇发给客户看看。",
+     grade=all_of(must_say("草稿", "没发布", "未发布", "还没发布", "发不了", "不能发",
+                           why="**草稿内容不能发给客户**(TL109)—— 要说清还没发布"),
+                  must_not_promise("已发", "发给你了", "发过去了", "已经发送", why="草稿发不了,说成发了就是编"))),
+dict(id="MK03", role="kb", kind="负向",
+     q=f"「{_店里_别店活动}」我们店的客户能参加吗?帮我推给几个老客户。",
+     grade=all_of(must_say("别家店", "那家店", "别的门店", "其他门店", "去不了", "不推",   # 不写店名:夹具现读,哪家店会变
+                           why="别店的门店活动本店客户去不了(TL109)—— 要说清这一点"),
+                  must_not_promise("已推", "推给她们了", "已经推送", "已发给", why="推不了说成推了就是编"))),
 
 # ═══ 预约查 / 约 / 改(包四第一件,2026-11-25,用户拍「两个写口高档每次问」)═══
 dict(id="AP01", role="kb", kind="正向",

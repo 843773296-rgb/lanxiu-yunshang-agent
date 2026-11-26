@@ -1185,6 +1185,49 @@ def reschedule_appointment(appointment_id, start=None, end=None, advisor=None):
     if r.get("ok"): _agent_log(me, "RESCHEDULE_APPT", f"改预约 {appointment_id}:{r.get('原时间')} → {r.get('新时间')}")
     return _nz(r)
 
+
+# ── 店里在推什么:活动 / 内容 / 页面(包四第二块,用户 2026-11-26 拍开工)。口径在 knowledge/promotions ──
+def store_promotions(what="all", status=None, limit=20):
+    """只读。活动(带「能不能推给客户」)、内容(带「能不能对客发」)、页面。门店的人只看全渠道 + 本店的门店活动;
+    跨店角色看全部。**不返回预算,也不返回活动表的报名 / 成交两列(那两列是随机数,见 activity_roi)**。"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge"))
+    import promotions as _PM, shop_key as _SK, contextlib as _cl
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="没有身份,看不了 —— 请先登录")
+    店 = 本店范围(me)
+    with _cl.closing(_c()) as _x:
+        本店码 = _SK.码(_x, 店) if 店 else None
+        码 = lambda shop: None if (not shop or shop == _PM.全渠道) else _SK.码(_x, shop)
+        w = (what or "all").strip()
+        出 = {"范围": "本店 + 全渠道" if 店 else "全部门店"}
+        if w in ("all", "activity", "活动"):
+            acts = []
+            for r in _x.execute("SELECT code,name,kind,status,start_d,end_d,shop FROM activity ORDER BY start_d DESC").fetchall():
+                r = dict(r); 店码 = 码(r["shop"])
+                if 店 and 店码 not in (None, 本店码):
+                    continue                      # 别店的门店活动:门店的人不看(不透露别店在办什么)
+                if status and r["status"] != status:
+                    continue
+                能, 为何 = _PM.活动能推吗(r["status"], 店码 or _PM.全渠道, 本店码)
+                acts.append({"活动": r["code"], "名称": r["name"], "形式": r["kind"], "状态": r["status"],
+                             "起止": f"{r['start_d']} ~ {r['end_d']}", "在哪办": r["shop"], "能推给客户吗": "能" if 能 else "不能", "为什么": 为何})
+            出["活动"] = acts[: int(limit or 20)]
+        if w in ("all", "content", "内容"):
+            cs = []
+            for r in _x.execute("SELECT code,title,kind,status,channel,published FROM content ORDER BY published DESC").fetchall():
+                r = dict(r)
+                if status and r["status"] != status:
+                    continue
+                能, 为何 = _PM.内容能发吗(r["status"])
+                cs.append({"内容": r["code"], "标题": r["title"], "类别": r["kind"], "状态": r["status"], "发在哪": r["channel"],
+                           "能发给客户吗": "能" if 能 else "不能", "为什么": 为何})
+            出["内容"] = cs[: int(limit or 20)]
+        if w in ("all", "page", "页面"):
+            出["页面"] = [{"页面": r["code"], "名称": r["name"], "渠道": r["channel"], "状态": r["status"]}
+                        for r in _x.execute("SELECT code,name,channel,status FROM page ORDER BY code").fetchall()]
+    出["note"] = "活动花了多少、带来多少成交看 activity_roi;这里不给预算和成交"
+    return _nz(出)
+
 SHOP_SCHEMAS=[
  {"name":"get_tasks","description":"**查任务 —— 四种问法一个口。** 不给参数=我自己的活;给 task_id=某一条的详情;scope=\"待分配\"=待分配池(客户约了时间但没自动派出去的,每条带 agent 的人选建议和依据,**建议不是决定**,要店长确认);scope=\"团队\" 或给 assignee=按人看(带每人在办件数、最近到期、在办明细,还会列出手上没活的人)。\n\n**范围跟身份走,隔离在查询层不在界面**:顾问只看得到派给自己的(知道单号也看不到别人的),店长看本店,总部看全部。⚠️ **「你看不到他的活」和「他没有活」是两回事**,返回里会分开说。status 可选只看某一档(有效/完结/取消/无效)。",
   "input_schema":{"type":"object","properties":{
@@ -1310,6 +1353,7 @@ SHOP_SCHEMAS=[
     "agree":{"type":"boolean","description":"true=通过,false=驳回"},
     "note":{"type":"string","description":"批注。必填,至少 4 个字"}},
    "required":["approval_id","agree","note"]}},
+ {"name":"store_promotions","description":"**店里现在在推什么**(只读):活动(进行中 / 未开始 / 已结束…,每条带「能不能推给客户」—— 只有进行中 / 未开始、且全渠道或本店的门店活动能推)、内容(品牌故事 / 穿搭 / 工艺科普 / 活动预告,每条带「能不能对客发」—— 只有已发布的能发)、小程序 / Pad 页面。门店的人只看全渠道 + 本店的活动。顾问问「这周有什么活动能跟客户说」「有没有能发给客户看的文章」用它。**不给预算和成交**(那看 activity_roi)。","input_schema":{"type":"object","properties":{"what":{"type":"string","description":"all / activity / content / page,默认 all"},"status":{"type":"string","description":"只看某个状态(可省)"},"limit":{"type":"integer","description":"每类最多几条,默认 20"}}}},
  {"name":"activity_roi","description":"**活动投入产出**:花了多少、带来多少成交、投入产出比、单均获客成本。不给 code 就是全部活动的排名,给了就看那一个。⚠️ 三件事别处看不到:① **活动表上的「报名/成交」两列是随机数**,和订单表毫无关系,一律不读也不许引用;② **归因期外的订单分开报,不并进成交** —— 实测有活动 100% 的订单创建于活动期外,要么归因错了要么活动日期错了;③ 成本和成交**各有三个口径**(预算/已发生/已开票、应收/实收/完成),默认「已发生」和「实收」,三个都给。算不出 ROI 的(未开始、已取消)**单独列,不当 0 排最后** —— 那会把「还没开始」和「效果最差」画等号。管理视角,顾问看不到。",
   "input_schema":{"type":"object","properties":{
     "code":{"type":"string","description":"活动编号,如 AC2601。不给就是全部活动的排名。"}},"required":[]}},
@@ -1611,6 +1655,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
               "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"get_product_images":get_product_images,"draft_capability_request":draft_capability_request,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"return_rate":return_rate,"part_options":part_options,"order_parts":order_parts,"draft_delivery_notice":draft_delivery_notice,"record_delivery_notice":record_delivery_notice,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"recovery_followup":recovery_followup,"shift_preview":shift_preview,"shift_draft":shift_draft,"shift_publish":shift_publish,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
               "ownerless_list":ownerless_list,
+              "store_promotions":store_promotions,
               "list_appointments":list_appointments,"book_appointment":book_appointment,"reschedule_appointment":reschedule_appointment,
               "call_opportunity":call_opportunity,
               "revive_list":revive_list,

@@ -419,6 +419,7 @@ run "写口得有门(没有入口的写口只许降不许涨)" python3 backend/e
 # ⚠️ 判差评能看什么 —— 要害全在「刻意不看」那一半(消费总额 / 会员等级 / 身体数据)。
 #    攻击点放在**返回的键名**上,不放在「有没有写那句 SQL」:后者换个写法就绕过去了。
 run "运费口径 · 分区固定价 + 满额免邮(算不出来不许回落到免邮)" python3 knowledge/freight.py
+run "店里在推什么 · 只有进行中 / 未开始且本店能参加的活动能推、草稿内容不能对客发" python3 knowledge/promotions.py
 run "运费表配不出一张会静默免邮的表(没兜底/两个兜底/一省两登 都存不进去)" python3 backend/freight_check.py
 run "判差评的服务记录范围(刻意不看的按键名拦住)" python3 backend/service_records_check.py
 # ⚠️ 上面那条管「判一条新差评时不许看什么」;下面这条管「回测已处理的那批时不许看什么」。

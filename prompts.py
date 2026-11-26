@@ -1070,6 +1070,15 @@ OPPORTUNITY_RULE = Rule("TL34", ("call_opportunity",), """
 """, scope="工具")
 
 
+# ── TL109:店里在推什么(包四第二块,用户 2026-11-26 拍开工;措辞是我拟的)──
+PROMOTIONS_RULE = Rule("TL109", ("store_promotions",), """
+**活动和内容,照 `store_promotions` 返回的「能不能推 / 能不能发」说,不自己判。**
+
+- 只推「能推给客户」的活动;别店的门店活动不推(客户去不了那家店参加),已结束 / 已取消的不推。
+- **草稿内容不能发给客户** —— 那是还没定稿的话;被要求发草稿,说清还没发布、发不了。
+- 活动的预算、花了多少、带来多少成交**这里没有**,要看效果用 `activity_roi`;别拿报名人数当效果(活动表那两列不可信)。
+""", scope="工具")
+
 # ── TL108:预约查 / 约 / 改(包四第一件,用户 2026-11-25 拍「两个写口高档每次问」;边界措辞是我拟的,不是用户原话)──
 APPT_WRITE_RULE = Rule("TL108", ("list_appointments", "book_appointment", "reschedule_appointment"), """
 **预约是对客户的承诺,约 / 改之前把三样对清:哪位客户、几号几点、谁接待。**
@@ -1310,6 +1319,7 @@ SHIFT_RULE,
 SHIFT_DESC_RULE,
 ROSTER_WRITE_RULE,
 APPT_WRITE_RULE,
+PROMOTIONS_RULE,
 CREDIT_RULE,
 CREDIT_DESC_RULE,
 HISTORY_RULE,
@@ -1979,6 +1989,7 @@ SHIFT_RULE,
 SHIFT_DESC_RULE,
 ROSTER_WRITE_RULE,
 APPT_WRITE_RULE,
+PROMOTIONS_RULE,
 CREDIT_RULE,
 CREDIT_DESC_RULE,
 HISTORY_RULE,

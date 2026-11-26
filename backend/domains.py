@@ -38,6 +38,7 @@
         "open_order", "confirm_order", "orders_by_date", "order_log",
         "summarize_products", "plan_for_event",
         "get_product_images", "draft_capability_request",   # 11-11:看商品图 / 起草能力申请(都只读)
+        "store_promotions",   # 店里在推什么:活动 / 内容 / 页面(包四第二块,11-26)
     ),
     "fulfillment": ( # 生产与交付:产能、工单、报工、工厂回传、延期、白坯、开裁、签收
         "get_capacity", "get_workorder", "my_workorders", "report_production",
