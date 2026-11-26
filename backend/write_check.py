@@ -104,9 +104,12 @@ check("W1", "建客户:接口说成功,库里就得有,且字段不能变形", w
       "返回 ok:true 但字段没落库 —— 状态码正常、返回体正常,只有读回来才看得见")
 
 # ── W2 建预约:**时间必须真的存下来** ──────────────────────────
-st = (datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
-et = (datetime.datetime.now() + datetime.timedelta(days=3, hours=1)).strftime("%Y-%m-%d %H:%M")
-r2 = server.create_appointment(dict(customer_id="C10000", shop="SH001 静安旗舰店",
+# 11-26:建预约改走 backend/appt_write(只约本店客户、要在营业时间内)—— 夹具跟着改:客户现取 SH001 的,时间固定下午两点
+# (原来写死 C10000,它在 SH002;时间取「现在 + 3 天」,夜里跑会落在营业时间外)
+_d = (datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+st, et = f"{_d} 14:00", f"{_d} 15:00"
+_本店客 = (q("SELECT id FROM customer WHERE shop_code='SH001' AND archived=0 ORDER BY id LIMIT 1") or [{"id": "C10002"}])[0]["id"]
+r2 = server.create_appointment(dict(customer_id=_本店客, shop="SH001 静安旗舰店",
                                     advisor="A01 林岚", start=st, end=et,
                                     way="到店量体", role="店长"), "检查")
 w2 = []

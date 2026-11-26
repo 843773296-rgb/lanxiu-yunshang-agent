@@ -43,7 +43,21 @@ def _api():
 
 
 def _db():
-    return DB or _api().DB
+    """读写哪份库。**跟着调用方已经指好的副本走**(11-26 门禁 W2 又让真库多了一条测试预约之后改的):
+    检查在副本上跑时,有的只把 server.DB 指过去(write_check / write_smoke / shop_inactive…),有的只把 api.DB 指过去 ——
+    原来这里只认 api.DB,于是「业务写副本、预约写真库」。现在:显式 DB > 被改离默认路径的 server.DB / api.DB > 默认真库。"""
+    if DB:
+        return DB
+    import dbpath
+    默认 = os.path.realpath(dbpath.路径())
+    候选 = []
+    if "server" in sys.modules:
+        候选.append(getattr(sys.modules["server"], "DB", None))
+    候选.append(_api().DB)
+    for c in 候选:
+        if c and os.path.realpath(c) != 默认:
+            return c
+    return _api().DB
 
 
 def _w():
@@ -117,6 +131,9 @@ def _顾问(api, 谁, 店码):
     v = str(谁 or "").strip()
     if not v:
         return None
+    # 旧后台页面传的是显示串「A01 林岚」(短号 + 姓名)—— 取最后一段当姓名再认(11-26:转调后页面那条路认不出,门禁 W2 抓到)
+    if " " in v:
+        v = v.split()[-1]
     with contextlib.closing(_w()) as c:
         import shop_key as SK
         片, 参 = SK.门店条件(c, 店码)
