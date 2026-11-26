@@ -199,6 +199,9 @@ def 挑():
         if os.path.realpath(DBP) != 真:
             c.execute(f"DELETE FROM roster WHERE created_by='system' AND d IN ({','.join('?'*14)})",
                       (*甲, *乙))
+            # 11-26 起每日造数把派好的日程也铺进了甲那周(SC21341:林岚 11-30 电话回电)—— 发布被「有已派的单做不了」拦下,
+            # 撞单夹具 assert 崩。同上一段的理由:**只在副本上**清这两周的日程;判分器要的撞单由夹具自己造(SCEVAL1)
+            c.execute(f"DELETE FROM schedule WHERE substr(start_ts,1,10) IN ({','.join('?'*14)})", (*甲, *乙))
             c.commit()
         占 = c.execute(f"SELECT COUNT(*) FROM roster WHERE d IN ({','.join('?'*14)})", (*甲, *乙)).fetchone()[0]
     finally:

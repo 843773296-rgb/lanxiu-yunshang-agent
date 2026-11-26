@@ -86,6 +86,9 @@ def _跑(db):
     周 = ["2026-11-30", "2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04", "2026-12-05", "2026-12-06"]
     with closing(sqlite3.connect(db)) as c, c:
         c.execute("DELETE FROM roster WHERE d >= '2026-11-30'")      # 副本上清场,别被以后铺的数据干扰
+        # 11-26 起每日造数把派好的日程也铺进了这一周(SC21341:林岚 11-30 09:00 电话回电,09:40 派的)——
+        # 发布时它被算成「受影响」,① ② ④ 一串红。那是数据在往前走,不是写口坏了;副本上一并清掉,受影响清单只剩本检查自己造的那张
+        c.execute("DELETE FROM schedule WHERE start_ts >= '2026-11-30'")
         # 真库里本来就可能有 ROSTER_PUBLISH(11-16 凌晨夜跑 shift_eval 在真库留了 2 笔),副本拷自真库 ——
         # 下面 ④ 数日志只许数**这次跑新增的**,不许数总数(总数取决于库里碰巧有什么,不是代码)
         if c.execute("SELECT 1 FROM sqlite_master WHERE name='op_log'").fetchone():
