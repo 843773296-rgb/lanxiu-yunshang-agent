@@ -11,7 +11,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 import img as V1
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 16 批
+DB = _库路径()
 
 纱类 = ("纱", "罗", "绡", "雪纺", "乔其", "莨")
 锦缎 = ("锦", "缎", "妆花", "织金", "缂丝", "提花")

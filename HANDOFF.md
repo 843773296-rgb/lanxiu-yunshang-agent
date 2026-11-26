@@ -12,6 +12,9 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### ✅ 11-26 16:2x · 已推 e9b94496(库路径第 15 批,8 个造数,欠债 230);本地无待推;主检出照旧压着并行会话 w47 三笔没 ff(它的事),服务没重启(这笔不影响运行时)(Opus 5.5)
+- 下一步第一个动作:库路径欠债接着降 —— 无锚候选还有 img_v2_proto / refresh_kb / import_images(并行会话 706ec524 推过它,先看那行还在不在);有锚的(clamp_future_done / daily_fresh / backfill_rating)要锁内重放,单独做。
+
 ### ⚠️ 11-26 下午 · 并行会话新预约写模块第二次写了真库(Opus 5.5 记)
 - w47 第二次 ship 红在写入检查 W2;查的时候 backend/appt_write 往真库插了一条测试预约 AP26112614313,它已锁内删(我只读核过:真库里 0 条、今天 AP261126* 0 条)。**删的是它自己误插的那一行,但「删数据要用户点头」—— 已报用户。**
 - 根因同 11-25 AP4006:新模块只认 api.DB,检查只把 server.DB 指到副本。它 48dea91e 改成 显式 DB > 被改离默认的 server.DB / api.DB > 默认真库。长远解是检查一律设 LANXIU_DB(dbpath 单源),别再逐个模块指。

@@ -16,7 +16,9 @@
 import os, re, shutil, sqlite3, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 16 批
+DB = _库路径()
 目的地 = os.path.join(ROOT, "backend", "static", "img")
 备份 = os.path.join(ROOT, "商品图备份")   # gitignore;核对:delivered_images.py 验 --在 商品图备份
 _单段 = ("main", "intro", "d1", "d2", "d3") + tuple(f"sku{i}" for i in range(1, 20))

@@ -40,7 +40,9 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "knowledge"))
 import kb as _kb                                            # noqa: E402
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 16 批
+DB = _库路径()
 
 # md 解析结果的列名 → craft 表的列名。**两边不同名的只有这三个**,
 # 别在这里重抄一份完整列表:`kb.COLS` 才是源(它和建表语句同序)。
