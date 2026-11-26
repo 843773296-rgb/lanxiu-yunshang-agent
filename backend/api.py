@@ -1188,8 +1188,8 @@ def reschedule_appointment(appointment_id, start=None, end=None, advisor=None):
 
 # ── 店里在推什么:活动 / 内容 / 页面(包四第二块,用户 2026-11-26 拍开工)。口径在 knowledge/promotions ──
 def store_promotions(what="all", status=None, limit=20):
-    """只读。活动(带「能不能推给客户」)、内容(带「能不能对客发」)、页面。门店的人只看全渠道 + 本店的门店活动;
-    跨店角色看全部。**不返回预算,也不返回活动表的报名 / 成交两列(那两列是随机数,见 activity_roi)**。"""
+    """只读。活动(带「能不能推给客户」)、内容(带「能不能对客发」)、页面。所有门店的活动都列,
+    别店的门店活动标「不能推」并说是哪家店的(门店活动名不敏感;藏掉的话模型只能说「没有这个活动」)。**不返回预算,也不返回活动表的报名 / 成交两列(那两列是随机数,见 activity_roi)**。"""
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge"))
     import promotions as _PM, shop_key as _SK, contextlib as _cl
     try: me = _need_me()
@@ -1199,13 +1199,12 @@ def store_promotions(what="all", status=None, limit=20):
         本店码 = _SK.码(_x, 店) if 店 else None
         码 = lambda shop: None if (not shop or shop == _PM.全渠道) else _SK.码(_x, shop)
         w = (what or "all").strip()
-        出 = {"范围": "本店 + 全渠道" if 店 else "全部门店"}
+        出 = {"你的门店": 店 or "跨店角色"}
         if w in ("all", "activity", "活动"):
             acts = []
             for r in _x.execute("SELECT code,name,kind,status,start_d,end_d,shop FROM activity ORDER BY start_d DESC").fetchall():
                 r = dict(r); 店码 = 码(r["shop"])
-                if 店 and 店码 not in (None, 本店码):
-                    continue                      # 别店的门店活动:门店的人不看(不透露别店在办什么)
+                # 别店的门店活动也列出来、标「不能推」(11-26 真跑 MK03:原来藏掉,模型只能说「没有这个活动」,体检判成把范围说成不存在)
                 if status and r["status"] != status:
                     continue
                 能, 为何 = _PM.活动能推吗(r["status"], 店码 or _PM.全渠道, 本店码)
@@ -1353,7 +1352,7 @@ SHOP_SCHEMAS=[
     "agree":{"type":"boolean","description":"true=通过,false=驳回"},
     "note":{"type":"string","description":"批注。必填,至少 4 个字"}},
    "required":["approval_id","agree","note"]}},
- {"name":"store_promotions","description":"**店里现在在推什么**(只读):活动(进行中 / 未开始 / 已结束…,每条带「能不能推给客户」—— 只有进行中 / 未开始、且全渠道或本店的门店活动能推)、内容(品牌故事 / 穿搭 / 工艺科普 / 活动预告,每条带「能不能对客发」—— 只有已发布的能发)、小程序 / Pad 页面。门店的人只看全渠道 + 本店的活动。顾问问「这周有什么活动能跟客户说」「有没有能发给客户看的文章」用它。**不给预算和成交**(那看 activity_roi)。","input_schema":{"type":"object","properties":{"what":{"type":"string","description":"all / activity / content / page,默认 all"},"status":{"type":"string","description":"只看某个状态(可省)"},"limit":{"type":"integer","description":"每类最多几条,默认 20"}}}},
+ {"name":"store_promotions","description":"**店里现在在推什么**(只读):活动(进行中 / 未开始 / 已结束…,每条带「能不能推给客户」—— 只有进行中 / 未开始、且全渠道或本店的门店活动能推;别店的门店活动也列出来、标不能推)、**品牌对外发布的内容**(品牌故事 / 穿搭指南 / 工艺科普 / 活动预告,带标题,每条带「能不能对客发」—— 只有已发布的能发,草稿不能)、小程序 / Pad 页面。顾问问「这周有什么活动能跟客户说」「某个活动我们店能不能参加」「有没有能发给客户看的文章」「把《某篇标题》发给客户」都先用它查 —— **这些文章不在知识库(kb_*)里**。**不给预算和成交**(那看 activity_roi)。","input_schema":{"type":"object","properties":{"what":{"type":"string","description":"all / activity / content / page,默认 all"},"status":{"type":"string","description":"只看某个状态(可省)"},"limit":{"type":"integer","description":"每类最多几条,默认 20"}}}},
  {"name":"activity_roi","description":"**活动投入产出**:花了多少、带来多少成交、投入产出比、单均获客成本。不给 code 就是全部活动的排名,给了就看那一个。⚠️ 三件事别处看不到:① **活动表上的「报名/成交」两列是随机数**,和订单表毫无关系,一律不读也不许引用;② **归因期外的订单分开报,不并进成交** —— 实测有活动 100% 的订单创建于活动期外,要么归因错了要么活动日期错了;③ 成本和成交**各有三个口径**(预算/已发生/已开票、应收/实收/完成),默认「已发生」和「实收」,三个都给。算不出 ROI 的(未开始、已取消)**单独列,不当 0 排最后** —— 那会把「还没开始」和「效果最差」画等号。管理视角,顾问看不到。",
   "input_schema":{"type":"object","properties":{
     "code":{"type":"string","description":"活动编号,如 AC2601。不给就是全部活动的排名。"}},"required":[]}},
