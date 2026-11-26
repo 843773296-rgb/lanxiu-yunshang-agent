@@ -77,7 +77,8 @@ import fsm                     # noqa: E402
 import rating as RT            # noqa: E402  差评口径(差评线 / 自动落待办)只有这一份
 import order_mix as OM         # noqa: E402  只用它的「受保护客户」现扫
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 17 批
+DB = _库路径()
 # ⚠️ 可以指定库(`--db 某个副本`)—— 造数脚本的试跑一律在副本上做,别拿真库当试验台
 for _i, _a in enumerate(sys.argv):
     if _a == "--db" and _i + 1 < len(sys.argv):

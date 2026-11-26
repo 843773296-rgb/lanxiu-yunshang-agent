@@ -154,7 +154,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 import worldclock
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 17 批
+DB = _库路径()
 
 # ⚠️ **只挪生产交付这一段,不碰下单之前的那几列。**
 # `created / recept_at / paid_at / audit_at` 往回挪的话,「下单量体必须在下单之前」

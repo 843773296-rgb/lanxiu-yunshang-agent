@@ -48,7 +48,8 @@ sys.path[:0] = [os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge")]
 import rating as R
 import worldclock
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 17 批
+DB = _库路径()
 种子 = 20260927
 
 # 造数给差评工单的号是 `TR<包裹号>`,而这批里「已关闭」的那些是**直接写库**关的
