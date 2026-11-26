@@ -153,6 +153,8 @@ def _记编辑(me, aid, 改了):
     if not 改了:
         改了 = [{"字段": "(无)", "改前": "", "改后": "", "说明": "这次提交没有改动任何字段"}]
     with contextlib.closing(_w()) as c, c:
+        # 真实时钟:编辑台账记「谁在什么时候真的改了这一下」—— 那是运维痕迹,
+        # 不是演示世界里的事。和 server.log_edit、oplog.py 的 op_log.ts 同一条理由。
         c.execute("INSERT INTO edit_log(ts,actor,actor_no,obj,target,title,source,changes)"
                   " VALUES(datetime('now','localtime'),?,?,?,?,?,?,?)",
                   ((me or {}).get("name") or "?", (me or {}).get("no"), "预约", aid, f"编辑预约 {aid}", "聊天助手",
