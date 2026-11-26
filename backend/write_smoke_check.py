@@ -309,7 +309,9 @@ def 用例表():
     # ⚠️ **时间要往后排** —— 早于当前时间的补录只有店长及以上能做,
     #    用未来时间就绕开了那条规则,测的才是「建得出来」本身。
     if 客 and 员:
-        将来 = (今 + datetime.timedelta(days=3)).replace(microsecond=0)
+        # 11-26:建预约改走 appt_write 之后会查营业时间(10:00–21:00)—— 「现在 + 3 天」晚上九点后跑就落在打烊后,
+        # 门禁第四十七轮 22:1x 红在这里(下午的本地重放是绿的)。固定在三天后下午两点。
+        将来 = (今 + datetime.timedelta(days=3)).replace(hour=14, minute=0, second=0, microsecond=0)
         # ⚠️ 字段名是 `start` / `end` / `way`,**不是** `start_ts` / `type`。
         #    第一版写错了,接口正当地返回 BAD_TIME,而这道检查把它读成
         #    「返回成功但库里没多」—— **坏的是用例,不是接口**。
