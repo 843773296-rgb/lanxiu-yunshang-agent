@@ -34,7 +34,9 @@ import order_write as ow, measure_write as mw, body_gen as B, order_place, fix_o
 from seed import TODAY
 from fix_order_measure import 夹具着装人集
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 15 批(重建配方里的造数步骤跟 seed 同源)
+DB = _库路径()
 # 四种 × 各几张。能确认的给两张,被拦的三种各一张 —— 两面都有,又不至于把「待确认」一栏堆满
 方案 = ["能确认", "能确认", "没量", "缺项", "两件一件没量"]
 

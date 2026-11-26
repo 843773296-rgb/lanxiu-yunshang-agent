@@ -75,7 +75,9 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "backend")]
 import api                       # noqa: E402
 import order_mix as OM           # noqa: E402
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 15 批(重建配方里的造数步骤跟 seed 同源)
+DB = _库路径()
 真库 = DB                        # --试跑 会把 DB 换成副本,这个留着当「别动它」的锚
 批次前缀 = "seed_customer_tasks/"
 台账 = "daily_fresh_batch"       # 复用,不新建表

@@ -31,7 +31,9 @@ sys.path[:0] = [os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge")]
 import worldclock
 import consent_age
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-26 库路径单源第 15 批(重建配方里的造数步骤跟 seed 同源)
+DB = _库路径()
 前缀 = "CST"
 
 
