@@ -1577,6 +1577,9 @@ def g28_scope_as_absence(text, calls):
     for m in _说没有.finditer(text or ""):
         if _有告诫(text, m.start()) or tm.negated(text, m.start()):
             continue
+        # 11-26 预约题 AP03 真跑钉回:「我可以帮你查一下有没有对应的预约」—— 正反疑问「有没有」是在问,不是断言没有
+        if m.group(0) == "没有" and m.start() > 0 and text[m.start() - 1] == "有":
+            continue
         句 = _整句(text, m.start())
         if not _范围限定.search(句):
             丢了.append(句.strip()[:40])
