@@ -115,6 +115,67 @@ def _数们(s):
     return out
 
 
+def _计数组(r):
+    """名单工具**自己报的人数**(顶层整数一组;每个「分类 → 人数」的小字典各一组)。
+    11-27 加:模型写「还有 591 位」(工具给「该联系的 594」、回答列了 3 位)、「低到中风险里 143 人」(中 + 低)——
+    这类数是从工具报的人数里加减出来的。只认这几组人数,不认工具返回里的任意数(那里几百个数,任取凑得出任何数)。"""
+    组 = []
+    if not isinstance(r, dict):
+        return 组
+    顶 = [v for v in r.values() if isinstance(v, int) and not isinstance(v, bool)]
+    if 顶:
+        组.append(顶)
+    for v in r.values():
+        if isinstance(v, dict):
+            小 = [x for x in v.values() if isinstance(x, int) and not isinstance(x, bool)]
+            if 小 and len(小) == len(v):
+                组.append(小)
+    return 组
+
+
+def _人数算得出(计数, 列了们):
+    """计数组里:单个数、同一组里任几个相加(组小于等于 10 个才枚举子集),各自再减「回答列出的人数」。
+    列了们:回答里列出的、在召回名单上的人数 / 在预警名单上的人数 / 两者合计 —— 「还有 591 位」减的是**它自己那份名单**上列出的人
+    (11-27 真跑:召回列 3 位 + 预警列 3 位,594 − 3)。"""
+    import itertools
+    得 = set()
+    for 组 in 计数 or []:
+        和们 = set(组)
+        if len(组) <= 10:
+            for k in range(2, len(组) + 1):
+                和们 |= {sum(c) for c in itertools.combinations(组, k)}
+        得 |= 和们
+        for 列了 in 列了们 or ():
+            if 列了:
+                得 |= {v - 列了 for v in 和们 if v > 列了}
+    return {str(x) for x in 得}
+
+
+_单位 = {"万": 1e4, "千": 1e3, "k": 1e3, "K": 1e3}
+
+
+def _换单位对得上(x, text, 池数):
+    """「6.3万」「2.44 万」「21.5k」:工具给的数换成这个单位后,**四舍五入或去尾**到同样的小数位就是 x。
+    11-27 改成一条:原来只认「万」+ 四舍五入,真跑接连出现去尾(24464 → 2.44 万)和 k(21569 → 21.5k)。"""
+    m = re.search(re.escape(x) + r"\s*(万|千|[kK])(?![a-zA-Z])", text)
+    if not m:
+        return False
+    u = _单位[m.group(1)]
+    位 = len(x.split(".")[1]) if "." in x else 0
+    try:
+        v = float(x)
+    except ValueError:
+        return False
+    格 = 10 ** -位
+    for p in 池数:
+        if not re.fullmatch(r"\d+(\.\d+)?", p) or float(p) < u:
+            continue
+        q = float(p) / u
+        if round(q, 位) == round(v, 位) or 0 <= q - v < 格 - 1e-9:
+            return True
+    return False
+
+
 def _由头事实(话):
     """「为什么是现在」那句话里**可以被引用的具体事实**:数、和「」里的东西名。"""
     事 = {m for m in re.findall(_数, 话 or "")}
@@ -132,6 +193,7 @@ def 取事实(traj, me, 可用工具=None):
     客户 = {}
     名单 = set()
     预警 = set()
+    计数 = []
     with api.as_user(me):
         for t in traj or []:
             n = _短名(t.get("tool"))
@@ -142,6 +204,8 @@ def 取事实(traj, me, 可用工具=None):
             except Exception as e:
                 r = {"error": f"{type(e).__name__}: {e}"}
             池.append(json.dumps(r, ensure_ascii=False))
+            if n in ("revive_list", "churn_watch") and not (t.get("args") or {}).get("customer"):
+                计数 += _计数组(r)
             if n == "revive_list" and not (t.get("args") or {}).get("customer"):
                 名单 |= {x.get("客户号") for x in (r.get("名单") or []) if x.get("客户号")}
             if n == "churn_watch" and isinstance(r.get("名单"), dict):
@@ -153,7 +217,7 @@ def 取事实(traj, me, 可用工具=None):
                   or (m.get("生命周期") or {}).get("生命周期"))
             rv = (api.revive_list(customer=cid) or {}).get("这一个人") or {}
             客户[cid] = dict(档位=档, 由头事实=sorted(_由头事实(rv.get("理由") if rv.get("该不该联系") else "")))
-    return dict(池文=文, 池数=sorted(_数们(文)), 今天=_今天(), 客户=客户, 名单=sorted(名单), 预警=sorted(预警),
+    return dict(池文=文, 池数=sorted(_数们(文)), 今天=_今天(), 客户=客户, 名单=sorted(名单), 预警=sorted(预警), 计数=计数,
                 有get_member=(可用工具 is None or "get_member" in 可用工具))
 
 
@@ -213,11 +277,13 @@ def 判(text, traj, 事实):
     #   ②「后面还有 612 个该联系的」—— 工具给 615,回答列了 3 位 → 615 − 3。减数是**回答里列出的客户人数**
     #     (结构上数得出,不是任取),被减数必须写在回答里且是工具给的
     if 疑:
-        万 = {f"{round(float(x) / 1e4, k)}" for x in 池数 if re.fullmatch(r"\d+(\.\d+)?", x) and float(x) >= 1000 for k in (1, 2)}
-        算得出 |= {x for x in 疑 if x in 万 and re.search(re.escape(x) + r"\s*万", text)}
+        算得出 |= {x for x in 疑 if _换单位对得上(x, text, 池数)}
         列了 = len([c for c in 答号 if c in set(事实.get("名单") or []) | set(事实.get("预警") or [])])
         写着的 = {int(float(x)) for x in set(_数们(text)) & 池数 if re.fullmatch(r"\d+", x)}
         算得出 |= {str(a - 列了) for a in 写着的 if 列了 and a > 列了}
+        _名, _警 = set(事实.get("名单") or []), set(事实.get("预警") or [])
+        列了们 = {列了, len([c for c in 答号 if c in _名]), len([c for c in 答号 if c in _警])}
+        算得出 |= {x for x in 疑 if x in _人数算得出(事实.get("计数"), 列了们)}
     编的数 = sorted(x for x in 疑 if x not in 算得出)
     if 编的数:
         坏.append(f"数:工具返回里没有这些数,也不是拿工具里的数算对的 {编的数[:8]}")

@@ -23599,11 +23599,11 @@
  },
  {
   "script": "agent/recall_eval_judgetest.py",
-  "改坏": "「万」为单位的金额不认了 —— 11-19 夜跑「实付 6.3万」又会被判成编数",
+  "改坏": "「万」为单位的金额不认了 —— 11-19 夜跑「实付 6.3万」又会被判成编数 (11-27:那一枝换成单位规则 _换单位对得上,攻击跟着挪)",
   "file": [
    {
     "path": "agent/recall_eval.py",
-    "old": "        算得出 |= {x for x in 疑 if x in 万 and re.search(re.escape(x) + r\"\\s*万\", text)}\n",
+    "old": "        算得出 |= {x for x in 疑 if _换单位对得上(x, text, 池数)}\n",
     "new": ""
    }
   ],
@@ -24056,5 +24056,41 @@
    }
   ],
   "预期红": "已结束的活动不能推"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "单位换算不认去尾(只留四舍五入)—— 「实付 2.44 万」(24464)又会被判成编数(11-27)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "        if round(q, 位) == round(v, 位) or 0 <= q - v < 格 - 1e-9:",
+    "new": "        if round(q, 位) == round(v, 位):"
+   }
+  ],
+  "预期红": "真跑钉回:「万」去尾到两位小数也不算编数"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "名单工具自己报的人数不认了 —— 「低到中风险里 160 人」(中 + 低)又会被判成编数(11-27)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "        算得出 |= {x for x in 疑 if x in _人数算得出(事实.get(\"计数\"), 列了们)}\n",
+    "new": ""
+   }
+  ],
+  "预期红": "真跑钉回:预警分档人数相加,不算编数"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "剩余人数把两份名单列出的人一起减 —— 「还有 591 位」(594 − 召回列的 3 位)又会被判成编数(11-27)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "        列了们 = {列了, len([c for c in 答号 if c in _名]), len([c for c in 答号 if c in _警])}",
+    "new": "        列了们 = {列了}"
+   }
+  ],
+  "预期红": "真跑钉回:剩余人数只减自己那份名单列出的人"
  }
 ]
