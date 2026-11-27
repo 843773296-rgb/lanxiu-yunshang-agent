@@ -24116,5 +24116,41 @@
    }
   ],
   "预期红": "应该全是「研判」"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "引行号不核谁说的 —— 引顾问那一行(「我们进了一批红色的」)也算客户的诉求(11-27 编号引用)",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "        elif not 行[\"是客户\"]:",
+    "new": "        elif False:"
+   }
+  ],
+  "预期红": "引行号:第 3 行是顾问说的"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "引行号不核那一行里有没有那个东西 —— 客户随口一句也撑得起「颜色=白」(11-27)",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "    if not 坏 and 维 in 点名维度 and not _原话说到(维, str(值 or \"\"), \" \".join(话们)):",
+    "new": "    if False and not _原话说到(维, str(值 or \"\"), \" \".join(话们)):"
+   }
+  ],
+  "预期红": "引行号:第 6 行是客户说的,但里面没有"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "引了行号也照旧拿原话字符串去比 —— 编号引用白做(11-27)",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "        if x.get(\"行\") not in (None, \"\", []):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "引了行号,附的原话改了几个字也不挂"
  }
 ]
