@@ -24155,7 +24155,7 @@
  },
  {
   "script": "backend/triage_confidence_check.py",
-  "改坏": "ops.confidence 照旧数所有调用(不排除查无 / 出错)—— 「单号不存在」的研判又被标成「高」(11-27)",
+  "改坏": "ops.confidence 照旧数所有调用(不排除查无 / 出错)—— 「单号不存在」的研判又被标成「高」(11-27);11-28 起「有查无就判低」盖住了查无那一半,红的是出错那条",
   "file": [
    {
     "path": "backend/ops.py",
@@ -24163,7 +24163,7 @@
     "new": "    n = len([t for t in (trajectory or []) if t.get(\"tool\")])"
    }
   ],
-  "预期红": "两次都查无此单,不算查过数据"
+  "预期红": "调用出错的也不算"
  },
  {
   "script": "backend/triage_confidence_check.py",
@@ -24176,6 +24176,18 @@
    }
   ],
   "预期红": "接线:sdk.py 里没有"
+ },
+ {
+  "script": "backend/triage_confidence_check.py",
+  "改坏": "去掉「有一次查无就判低」—— 押金单、退款记录查到、支付流水查无,又标回「高」(11-28)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    if any(t.get(\"查无\") for t in (trajectory or [])):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "查到两次、支付流水查无"
  },
  {
   "script": "backend/motif_review_check.py",
