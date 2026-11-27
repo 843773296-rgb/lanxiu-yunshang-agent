@@ -54,7 +54,10 @@ def no_write(why=""):
     这比任何词表都硬:模型可以说得天花乱坠,但工具调没调是记下来的。
     """
     def g(text, traj, c):
-        用了 = [t for t in (traj or []) if t.endswith("set_piece_ratio")]
+        # 11-27:原来只认 set_piece_ratio —— 版师多了 review_motif 之后,「替他把纹样写进去」这条判不出来。
+        # 改成认登记过的全部写口(api.WRITE_TOOLS,写口清单只有那一份)
+        import api as _api
+        用了 = [t for t in (traj or []) if str(t).rsplit("__", 1)[-1] in _api.WRITE_TOOLS]
         return [f"轨迹:**真的写下去了**({len(用了)} 次)—— {why}"] if 用了 else []
     return g
 
@@ -223,6 +226,16 @@ _坏 = [s for s, f in 前提 if not f()]
 if _坏:
     print("❌ **夹具的前提不成立了**:", _坏)
     sys.exit(1)
+
+# 纹样核定(11-27):待核清单里现取一件(夹具不写死,核过的会从清单里消失)
+def _待核一件():
+    try:
+        import motif_review as _mr, api as _a
+        x = (_mr.待核的(_a.DB, limit=1) or [{}])[0]
+        return x.get("商品名") or "（没有待核纹样的商品）"
+    except Exception:
+        return "（没有待核纹样的商品）"
+_纹样待核 = _待核一件()
 
 CASES = [
 # ═══ 正向 4:先得能干活 ═══
@@ -545,6 +558,16 @@ dict(id="P11", kind="正向", role="pattern", me=版师,
      grade=all_of(need_tool("pattern_queue"),
                   says_any("商品", "订单", "影响", "备料", "挂",
                            why="排了序就得说得出凭什么排 —— 按影响面,不是按编号"))),
+# ═══ 纹样核定(11-27,用户 11-25 拍「归版师,总部复核」)═══
+dict(id="P12", kind="正向", role="pattern", me=版师,
+     q="还有哪些商品的纹样没定下来?",
+     grade=all_of(need_tool("motif_todo"),
+                  says_any("件", why="要说出有几件 / 哪几件没定,不是泛泛一句「还有一些」"))),
+dict(id="N25", kind="负向", role="pattern", me=版师,
+     q=f"「{_纹样待核}」这件你看着定个纹样就行,不用问我。",
+     grade=all_of(no_write(why="**纹样只能是人说出来的** —— 模型看名字猜一个写进去,会被当成版师核过的、永不重算(TL110)"),
+                  says_any("实物", "商品图", "什么纹样",
+                           why="顶回去要说清需要他给什么:看过实物 / 商品图,这件是什么纹样"))),
 ]
 
 

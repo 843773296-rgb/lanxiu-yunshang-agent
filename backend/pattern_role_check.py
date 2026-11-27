@@ -125,8 +125,9 @@ def main():
     #   **每个角色都挂** —— 哪件事被接管是管理后台拨的,和岗位无关;版师的打版(pattern-draft)也在可接管名单里,
     #   不挂的话它一被接管,版师就既不能用技能、也发不起工作流。它**不碰澜绣的库**:只在管理后台排一条运行,
     #   开没开、以谁的身份由管理后台判,最后写进系统要过人工核对;登记成写口是为了吃「一轮只发一次、同参数不许重试」那道闸
-    应有 = ["set_grade_diff", "set_piece_ratio", "start_cutting", "start_workflow"]
-    ck("版师手上的写工具正好是这四个(核档差 / 改占比 / 开裁 / 发起被接管的工作流)", 写 == 应有, len(短),
+    # 11-27 加 review_motif(纹样核定归版师,用户 11-25 拍):它只写纹样核定那一张表,不动商品 / 版型 / 订单
+    应有 = ["review_motif", "set_grade_diff", "set_piece_ratio", "start_cutting", "start_workflow"]
+    ck("版师手上的写工具正好是这五个(核纹样 / 核档差 / 改占比 / 开裁 / 发起被接管的工作流)", 写 == 应有, len(短),
        f"实际是 {写},而应有 {应有}" if 写 != 应有 else
        "**从 sdk 和 api 两边现算,不手抄** —— 抄一份当天就开始漂")
 
@@ -292,6 +293,7 @@ def main():
 
     跑法 = {
         "pattern_queue": lambda: api.pattern_queue(),
+        "motif_todo":    lambda: api.motif_todo(limit=5),      # 11-27:纹样待核清单(版师那一份)
         "grading_audit": lambda: api.grading_audit("PT04"),
         "summarize_products": lambda: api.summarize_products(keyword="马面裙", limit=10),
         # 看商品图 / 起草能力申请(11-11)。款号从库里现取一款,不写死(造数会变)

@@ -61,6 +61,16 @@ def 建表(c=None):
                        actor  TEXT NOT NULL,
                        said   TEXT NOT NULL,
                        at     TEXT NOT NULL)""")
+        # 总部复核(11-27,用户 11-25 拍「纹样核定归版师,总部复核」):版师核的那一条,总部看过之后在这里记一笔。
+        # **单开一张表,不给 product_motif 加列** —— 加列要走迁移、要先落共享库;新表跟着建表走,CI 从零也建得出来
+        c.execute("""CREATE TABLE IF NOT EXISTS product_motif_check(
+                       spu    TEXT PRIMARY KEY,
+                       result TEXT NOT NULL,      -- 通过 / 退回
+                       motif  TEXT NOT NULL,      -- 复核时看到的是哪个纹样(版师后来再核,这一条就作废)
+                       why    TEXT NOT NULL,
+                       actor  TEXT NOT NULL,
+                       said   TEXT NOT NULL,
+                       at     TEXT NOT NULL)""")
         c.commit()
     finally:
         if 自开:
@@ -91,7 +101,9 @@ def 定(spu, 名, 面料="", 工艺="", db=None, 核定=None):
     表 = 读(db) if 核定 is None else 核定
     r = (表 or {}).get(spu)
     if r:
-        return r["motif"], 来源, f"{r['actor']} 核定于 {r['at']}:{r['why']}"
+        复 = (复核们(db) if 核定 is None else {}).get(spu)
+        态 = f";总部 {复['actor']} 复核通过" if 复 and 复["result"] == "通过" else ";待总部复核"
+        return r["motif"], 来源, f"版师 {r['actor']} 核定于 {r['at']}:{r['why']}{态}"
     import sys
     if os.path.join(os.path.dirname(HERE), "knowledge") not in sys.path:
         sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
@@ -126,10 +138,78 @@ def 核(spu, 纹样, why, actor, said, db=None):
                    # 和 `db_build.盖章()` 的 build_at 同一个理由:核定是一次**真实的人类操作**,
                    # 平移演示世界的日期不该把它一起平移(那会让「谁什么时候核的」变成假的)。
                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))  # 真实时钟:人在真实世界里什么时候核的,和演示世界日期无关
+        # 版师重新核了,总部之前那次复核看的是旧结论 —— 作废,回到「待总部复核」
+        c.execute("DELETE FROM product_motif_check WHERE spu=?", (spu,))
         c.commit()
     finally:
         c.close()
     return 定(spu, "", db=db)
+
+
+def 复核们(db=None):
+    """→ {spu: {"result","motif","why","actor","said","at"}};表不在就空。"""
+    db = db or DB
+    if not os.path.exists(db):
+        return {}
+    c = sqlite3.connect(db)
+    c.row_factory = sqlite3.Row
+    try:
+        if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='product_motif_check'").fetchone():
+            return {}
+        return {r["spu"]: dict(r) for r in c.execute("SELECT * FROM product_motif_check")}
+    finally:
+        c.close()
+
+
+def 复核(spu, 纹样, why, actor, said, db=None):
+    """总部复核版师那一条 → (结果, 说明)。纹样和版师核的一样 = 通过;不一样 = 退回(版师那条撤掉,回到版师待核)。
+
+    退回不是「总部改判」:纹样归版师定(用户 11-25 拍),总部看出不对就打回去、写清理由,由版师重核。
+    ⚠️ 身份(是不是总部运营)由 `api.review_motif` 从登录态取,这里不收 role。"""
+    import datetime
+    表 = 读(db)
+    r = 表.get(spu)
+    if not r:
+        raise ValueError("这件还没有版师核过,总部没有可复核的 —— 纹样先由版师核")
+    c = sqlite3.connect(db or DB)
+    try:
+        建表(c)
+        结果 = "通过" if 纹样 == r["motif"] else "退回"
+        c.execute("INSERT INTO product_motif_check(spu,result,motif,why,actor,said,at) VALUES(?,?,?,?,?,?,?) "
+                  "ON CONFLICT(spu) DO UPDATE SET result=excluded.result, motif=excluded.motif, why=excluded.why, "
+                  "actor=excluded.actor, said=excluded.said, at=excluded.at",
+                  (spu, 结果, r["motif"], why, actor, said,
+                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))  # 真实时钟:人在真实世界里什么时候复核的
+        if 结果 == "退回":
+            c.execute("DELETE FROM product_motif WHERE spu=?", (spu,))
+        c.commit()
+    finally:
+        c.close()
+    if 结果 == "通过":
+        return 结果, f"版师核的「{r['motif']}」总部复核通过"
+    return 结果, (f"版师核的是「{r['motif']}」,总部认为是「{纹样}」—— 退回版师重核(版师那条已撤,"
+                 f"这件回到待核清单;退回理由记下了:{why})")
+
+
+def 待复核的(db=None, limit=None):
+    """版师核过、总部还没复核(或版师重核后复核作废)的 → [{spu, 商品名, 纹样, 版师, 核于, 依据}]。"""
+    db = db or DB
+    表, 复 = 读(db), 复核们(db)
+    if not 表:
+        return []
+    c = sqlite3.connect(db)
+    try:
+        名 = dict(c.execute("SELECT spu, name FROM product"))
+    finally:
+        c.close()
+    out = [{"spu": s, "商品名": 名.get(s, ""), "纹样": r["motif"], "版师": r["actor"], "核于": r["at"], "依据": r["why"]}
+           for s, r in sorted(表.items()) if not (复.get(s) and 复[s]["result"] == "通过")]
+    return out[:limit] if limit else out
+
+
+def 退回的(db=None):
+    """总部退回、版师还没重核的 → {spu: 退回那一条}。版师看待核清单时要知道「这件被退回过、为什么」。"""
+    return {s: r for s, r in 复核们(db).items() if r["result"] == "退回"}
 
 
 def 待核的(db=None, limit=None):
@@ -145,6 +225,7 @@ def 待核的(db=None, limit=None):
         sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
     import motif
     表 = 读(db)
+    退 = 退回的(db)
     c = sqlite3.connect(db)
     c.row_factory = sqlite3.Row
     try:
@@ -157,7 +238,10 @@ def 待核的(db=None, limit=None):
         w, src, ev = 定(r["spu"], r["name"], r["mt_opts"] or "", r["kf_opts"] or "",
                         db=db, 核定=表)
         if w == motif.待核:
-            out.append({"spu": r["spu"], "商品名": r["name"],
-                        "面料": r["mt_opts"] or "", "工艺": r["kf_opts"] or "",
-                        "为什么推不出来": ev})
+            项 = {"spu": r["spu"], "商品名": r["name"],
+                  "面料": r["mt_opts"] or "", "工艺": r["kf_opts"] or "",
+                  "为什么推不出来": ev}
+            if r["spu"] in 退:
+                项["总部退回过"] = f"{退[r['spu']]['actor']} 认为不是「{退[r['spu']]['motif']}」:{退[r['spu']]['why']}"
+            out.append(项)
     return out[:limit] if limit else out

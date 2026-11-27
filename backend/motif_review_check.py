@@ -33,7 +33,9 @@ import api, motif_review as mr, motif      # ← 先 import,再切库
     ("把 motif_review.定() 里「核定优先」那一支改成 `if False:`",
      "核过之后 `定()` 返回核定值,不是推算值"),
     ("把 api.review_motif 里的角色判断改成 `if False:`",
-     "顾问身份 → 拒(要总部运营)"),
+     "顾问身份 → 拒(纹样由版师核、总部运营复核)"),
+    ("总部调 review_motif 也走版师核定那一支(不分复核)", "总部复核:纹样一样 → 通过"),
+    ("版师重核时不作废之前的复核", "版师重核 → 之前的复核作废"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -82,9 +84,14 @@ ck("没登录 → 拒", "error" in api.review_motif(靶, "折枝", why="看了�
 
 api._ME.set({"role": "顾问", "name": "测试顾问"})
 r = api.review_motif(靶, "折枝", why="看了实物", said="这件是折枝")
-ck("顾问身份 → 拒(要总部运营)", "error" in r and "总部运营" in r["error"], True)
+ck("顾问身份 → 拒(纹样由版师核、总部运营复核)", "error" in r and "版师" in r["error"], True)
 
+# 11-27 起纹样归版师核(用户 11-25 拍),总部运营复核 —— 核定这一段换成版师身份
 api._ME.set({"role": "总部运营", "name": "测试运营"})
+r = api.review_motif(靶, "折枝", why="看了实物", said="这件是折枝")
+ck("总部在版师核之前就复核 → 拒(纹样先由版师核)", "error" in r and "还没有版师核过" in r["error"], True)
+
+api._ME.set({"role": "版师", "name": "测试版师"})
 ck("why 空 → 拒", "error" in api.review_motif(靶, "折枝", why="", said="这件是折枝"), True)
 ck("said 空 → 拒", "error" in api.review_motif(靶, "折枝", why="看了实物", said=""), True)
 r = api.review_motif(靶, "折枝", why="看了实物", said="你帮我定一下这件")
@@ -96,9 +103,10 @@ ck("词表外的纹样 → 拒(闭集)", "error" in r and "闭集" in r["error"]
 # ── 正常核定 ────────────────────────────────────────────
 r = api.review_motif(靶, "折枝", why="看了商品图,袖口和前襕都是单枝折花",
                      said="这件是折枝的")
-ck("总部运营 + 齐全 → 写进去了", r.get("纹样"), "折枝")
+ck("版师 + 齐全 → 写进去了", r.get("纹样"), "折枝")
 ck("来源标成「业务核」", r.get("来源"), mr.来源)
-ck("依据里带了是谁核的", "测试运营" in (r.get("依据") or ""), True)
+ck("依据里带了是谁核的", "测试版师" in (r.get("依据") or ""), True)
+ck("版师核完 → 进「待总部复核」", 靶 in [x["spu"] for x in mr.待复核的(副本)], True)
 
 w1, src1, ev1 = mr.定(靶, 靶名, db=副本)
 ck("**核过之后 `定()` 返回核定值,不是推算值**", (w1, src1), ("折枝", mr.来源))
@@ -113,6 +121,24 @@ if 剩:
     w2, src2, _ = mr.定(靶2, 剩[0]["商品名"], db=副本)
     ck("**「无纹样」和「待业务核」是两回事**(核成无纹样后不再是待核)",
        (w2 != motif.待核, src2), (True, mr.来源))
+
+# ── 总部复核(11-27)────────────────────────────────────
+api._ME.set({"role": "总部运营", "name": "测试运营"})
+r = api.review_motif(靶, "折枝", why="看了商品图,对", said="这件折枝没问题")
+ck("总部复核:纹样一样 → 通过", r.get("复核"), "通过")
+ck("复核通过后不在「待总部复核」里", 靶 in [x["spu"] for x in mr.待复核的(副本)], False)
+ck("依据里带上总部复核通过", "复核通过" in mr.定(靶, 靶名, db=副本)[2], True)
+api._ME.set({"role": "版师", "name": "测试版师"})
+api.review_motif(靶, "折枝", why="又看了一遍实物", said="这件还是折枝")
+ck("版师重核 → 之前的复核作废(回到待总部复核)", 靶 in [x["spu"] for x in mr.待复核的(副本)], True)
+api._ME.set({"role": "总部运营", "name": "测试运营"})
+r = api.review_motif(靶, "缠枝", why="袖口是连续的缠枝,不是单枝", said="这件不是折枝,是缠枝")
+ck("总部复核:纹样不一样 → 退回(不直接改判)", r.get("复核"), "退回")
+w3, src3, _ = mr.定(靶, 靶名, db=副本)
+ck("退回后版师那条撤掉,回到推算(不是被总部改成缠枝)", (w3 != "缠枝" or src3 != mr.来源, src3 != mr.来源), (True, True))
+ck("退回的那件回到版师待核清单,并带上退回理由",
+   [x.get("总部退回过", "") for x in mr.待核的(副本) if x["spu"] == 靶][:1] != [""] and
+   any(x["spu"] == 靶 for x in mr.待核的(副本)), True)
 
 api._ME.set(None)
 api.DB = 真DB

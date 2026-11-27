@@ -1070,6 +1070,18 @@ OPPORTUNITY_RULE = Rule("TL34", ("call_opportunity",), """
 """, scope="工具")
 
 
+# ── TL110:纹样核定归版师、总部复核(用户 2026-11-25 拍;11-27 接线;措辞是我拟的)──
+MOTIF_RULE = Rule("TL110", ("motif_todo", "review_motif"), """
+**商品纹样由版师核、总部运营复核;纹样只能是用户说出来的,你不替人定。**
+
+- 先用 `motif_todo` 看清单;一件一件问用户「这件是什么纹样、凭什么(看了实物 / 商品图 / 按面料知识)」。
+- **用户没说出纹样名,就不调 `review_motif`** —— 别看着商品名猜一个(那会被当成人核过的、永不重算);
+  确实是素面要用户说「无纹样」,和「还没定」不是一回事。
+- 版师核完,告诉他「核好了,等总部复核」;总部运营复核:说的纹样和版师核的一样 = 通过,不一样 = **退回版师重核**,
+  要把退回理由说清,**别说成「已改成 X」**(总部不直接改判)。
+- 别的岗位(门店顾问、工坊…)要改纹样:说清由版师核、总部复核,不要试着调写口。
+""")
+
 # ── TL109:店里在推什么(包四第二块,用户 2026-11-26 拍开工;措辞是我拟的)──
 PROMOTIONS_RULE = Rule("TL109", ("store_promotions",), """
 **活动和内容,照 `store_promotions` 返回的「能不能推 / 能不能发」说,不自己判。**
@@ -1321,6 +1333,7 @@ SHIFT_DESC_RULE,
 ROSTER_WRITE_RULE,
 APPT_WRITE_RULE,
 PROMOTIONS_RULE,
+MOTIF_RULE,
 CREDIT_RULE,
 CREDIT_DESC_RULE,
 HISTORY_RULE,
@@ -1991,6 +2004,7 @@ SHIFT_DESC_RULE,
 ROSTER_WRITE_RULE,
 APPT_WRITE_RULE,
 PROMOTIONS_RULE,
+MOTIF_RULE,
 CREDIT_RULE,
 CREDIT_DESC_RULE,
 HISTORY_RULE,
@@ -2336,7 +2350,8 @@ def _pattern_rules():
     pick = {"TL25", "TL26", "TK01", "TK03", "TL07", "TL15", "TL08", "TL27", "TL41",
             "TL71", "TL74", "TL75",
             "TL79",
-            "TL94", "TL107", "TL102", "TL99"}    # TL94(11-14)wear_risk 说明里挪来的读法(率不是绝对数 / 样本不足≠0% / 不显著不报第一 / 种下的规律 / 不接月份)    # TL79(11-11)get_product_images / draft_capability_request:示意图不能当实物、缺工具起草申请
+            "TL94", "TL107", "TL102", "TL99",
+            "TL110"}    # TL110(11-27)纹样核定:版师核、总部复核,不替人定纹样。TL94(11-14)wear_risk 说明里挪来的读法(率不是绝对数 / 样本不足≠0% / 不显著不报第一 / 种下的规律 / 不接月份)    # TL79(11-11)get_product_images / draft_capability_request:示意图不能当实物、缺工具起草申请
     seen, out = set(), []
     for r in (TASK_RULES + KB_RULES + WORKSHOP_RULES):
         if r.id in pick and r.id not in seen:

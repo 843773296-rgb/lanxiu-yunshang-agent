@@ -64,7 +64,7 @@ import uuid
     "create_repair": "高", "decide_repair": "高", "advance_repair": "高", "verify_repair_return": "高",
     "close_bad_rating": "高", "confirm_report": "高", "mark_delay_told": "高", "record_delivery_notice": "高",
     "apply_adjust": "高", "decide_approval": "高", "shift_publish": "高", "start_workflow": "高",
-    "book_appointment": "高", "reschedule_appointment": "高",   # 预约是对客承诺(用户 11-25 拍:高档每次问)
+    "book_appointment": "高", "reschedule_appointment": "高", "review_motif": "高",   # 预约是对客承诺(用户 11-25 拍:高档每次问)
     "assign_task": "中", "dispatch_task": "中", "reassign_task": "中", "assign_batch": "中", "dispatch_batch": "中",
     "recovery_followup": "中", "record_measure": "中", "record_fitting": "中", "set_piece_ratio": "中", "set_grade_diff": "中",
     "save_report": "低", "shift_draft": "低", "finish_task": "低",

@@ -546,19 +546,28 @@ def set_grade_diff(item, verdict, why="", propose=None):
     return api._nz(out)
 
 def motif_todo(limit=50):
-    """**还没定下纹样的商品** —— 推不出来、也没人核过的那些。
+    """**纹样还没定下来的商品**(11-27 起按岗位给):版师看「推不出来、也没人核过」的;总部运营看「版师核过、等总部复核」的。
 
     每条带商品名、面料、工艺,和**为什么推不出来** ——
-    只给一张「待办」清单答不了「我凭什么定」,人看着名字也猜不出来。
+    只给一张「待办」清单答不了「我凭什么定」,人看着名字也猜不出来。被总部退回过的,带上退回理由。
     """
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
     import motif_review as _mr
+    me = api.whoami() or {}
+    if me.get("role") == "总部运营":
+        待 = _mr.待复核的(api.DB)
+        return {"你要做的": "复核版师核过的纹样", "等总部复核的": len(待), "这次列出": min(len(待), limit or len(待)),
+                "清单": 待[: limit or None],
+                "怎么复核": "一件一件说「这件折枝没问题」或「这件不是折枝,是缠枝,因为…」;我会调 review_motif。"
+                          "**和版师核的一样 = 通过;不一样 = 退回版师重核**(纹样由版师定,总部不直接改判)",
+                "版师还没核的": len(_mr.待核的(api.DB))}
     待 = _mr.待核的(api.DB, limit=limit)
     return {"还没定纹样的": len(_mr.待核的(api.DB)), "这次列出": len(待), "清单": 待,
-            "怎么定": "一件一件说,比如「这件是折枝」;我会调 review_motif 写进去。"
+            "怎么定": "一件一件说,比如「这件是折枝」;我会调 review_motif 写进去(核完等总部复核)。"
                       "**确实是素面的要说成「无纹样」** —— 「素面」和「还没定」"
-                      "在统计上长得一模一样,留空就分不开了"}
+                      "在统计上长得一模一样,留空就分不开了",
+            "已核等总部复核的": len(_mr.待复核的(api.DB))}
 
 def review_motif(product, motif="", why="", said=""):
     """**核定一件商品的纹样,标成「业务核」** —— 人核过的不许被重算覆盖。
@@ -581,10 +590,12 @@ def review_motif(product, motif="", why="", said=""):
     me = api.whoami()
     if not me:
         return {"error": "不知道现在是谁在核 —— 请先登录。**核过的数必须查得到是谁核的**"}
-    if me.get("role") != "总部运营":
-        return {"error": f"核商品纹样要由总部运营来做,你的角色是「{me.get('role')}」。"
-                         f"**商品是全店共享的** —— 改一件,所有门店的报价、商机判断、"
-                         f"库存巡检跟着变,而单店看不到别的店"}
+    # 11-27 起(用户 11-25 拍「纹样核定归版师,总部复核」):版师核,总部运营复核;别的岗位都不行。
+    # **商品是全店共享的** —— 改一件,所有门店的报价、商机判断、库存巡检跟着变,所以核和复核两道都要
+    角色 = me.get("role")
+    if 角色 not in ("版师", "总部运营"):
+        return {"error": f"商品纹样由版师核、总部运营复核,你的角色是「{角色}」。"
+                         f"**商品是全店共享的** —— 改一件,所有门店的报价、商机判断、库存巡检跟着变"}
     if not (motif or "").strip():
         return {"error": "没说是什么纹样。确实是素面的请说「无纹样」——"
                          "**「素面」和「还没定」不是一回事**,留空统计上就分不开了"}
@@ -619,14 +630,21 @@ def review_motif(product, motif="", why="", said=""):
         return {"error": f"用户原话里没出现「{归}」的说法(原话:{said!r})。"
                          f"**没写进去** —— 请先问清这件是什么纹样,拿到他的话再核。"
                          f"认的说法:{'、'.join(x for x in 候选 if x)}"}
+    谁 = me.get("name") or me.get("login_name") or "?"
+    if 角色 == "总部运营":
+        try:
+            结果, 说明 = _mr.复核(spu, 归, why.strip(), 谁, said.strip(), db=api.DB)
+        except ValueError as e:
+            return {"error": str(e)}
+        return {"商品": 名, "spu": spu, "复核": 结果, "说明": 说明,
+                "还等总部复核的": len(_mr.待复核的(api.DB))}
     try:
-        w, src, ev = _mr.核(spu, 归, why.strip(), me.get("name") or me.get("login_name") or "?",
-                            said.strip(), db=api.DB)
+        w, src, ev = _mr.核(spu, 归, why.strip(), 谁, said.strip(), db=api.DB)
     except ValueError as e:
         return {"error": str(e)}
     return {"商品": 名, "spu": spu, "纹样": w, "来源": src, "依据": ev,
             "还剩没定的": len(_mr.待核的(api.DB)),
-            "提醒": "核过的不会被重算覆盖了;要改就再核一次"}
+            "提醒": "核过的不会被重算覆盖了;**接下来等总部复核**(总部看出不对会退回给你重核)。要改就再核一次 —— 再核会让之前的复核作废"}
 
 def set_piece_ratio(pattern, piece, ratio, why=""):
     """**改一片的用料占比,并标成「版师核过」。**

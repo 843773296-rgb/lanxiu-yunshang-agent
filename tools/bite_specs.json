@@ -13841,15 +13841,15 @@
  },
  {
   "script": "backend/motif_review_check.py",
-  "改坏": "写口不再查角色 —— 任何登录身份都能改全店共享的商品纹样",
+  "改坏": "写口不再查角色 —— 任何登录身份都能改全店共享的商品纹样(11-27 角色改成「版师核、总部运营复核」后攻击跟着挪)",
   "file": [
    {
     "path": "backend/api_pattern.py",
-    "old": "    if me.get(\"role\") != \"总部运营\":\n        return {\"error\": f\"核商品纹样要由总部运营来做",
-    "new": "    if False:\n        return {\"error\": f\"核商品纹样要由总部运营来做"
+    "old": "    if 角色 not in (\"版师\", \"总部运营\"):",
+    "new": "    if False:"
    }
   ],
-  "预期红": "顾问身份 → 拒(要总部运营)"
+  "预期红": "顾问身份 → 拒(纹样由版师核、总部运营复核)"
  },
  {
   "script": "backend/db_build.py",
@@ -24099,8 +24099,8 @@
   "file": [
    {
     "path": "agent/negative.py",
-    "old": "        if re.match(r\"\\s*是否\", text[m.end():]):\n            continue\n",
-    "new": ""
+    "old": "        if re.match(r\"\\s*是否\", text[m.end():]) or _在问句里(text, m.start(), m.end()):",
+    "new": "        if _在问句里(text, m.start(), m.end()):"
    }
   ],
   "预期红": "真跑钉回:核实「X 是否对应本笔交易」是发问"
@@ -24152,5 +24152,89 @@
    }
   ],
   "预期红": "引了行号,附的原话改了几个字也不挂"
+ },
+ {
+  "script": "backend/triage_confidence_check.py",
+  "改坏": "ops.confidence 照旧数所有调用(不排除查无 / 出错)—— 「单号不存在」的研判又被标成「高」(11-27)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    n = len([t for t in (trajectory or []) if t.get(\"tool\") and not t.get(\"出错\") and not t.get(\"查无\")])",
+    "new": "    n = len([t for t in (trajectory or []) if t.get(\"tool\")])"
+   }
+  ],
+  "预期红": "两次都查无此单,不算查过数据"
+ },
+ {
+  "script": "backend/triage_confidence_check.py",
+  "改坏": "sdk 记轨迹时不再挂「查无」—— 纯函数对了,轨迹上照样不标(11-27)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "                        elif _返回是查无(getattr(b, \"content\", None)):",
+    "new": "                        elif False:"
+   }
+  ],
+  "预期红": "接线:sdk.py 里没有"
+ },
+ {
+  "script": "backend/motif_review_check.py",
+  "改坏": "总部调 review_motif 也走版师核定那一支 —— 总部能直接改判、没有复核这一道(11-27)",
+  "file": [
+   {
+    "path": "backend/api_pattern.py",
+    "old": "    if 角色 == \"总部运营\":\n        try:\n            结果, 说明 = _mr.复核(",
+    "new": "    if False:\n        try:\n            结果, 说明 = _mr.复核("
+   }
+  ],
+  "预期红": "总部复核:纹样一样 → 通过"
+ },
+ {
+  "script": "backend/motif_review_check.py",
+  "改坏": "版师重核时不作废之前的复核 —— 总部看的是旧结论,新结论没人复核就算「通过」(11-27)",
+  "file": [
+   {
+    "path": "backend/motif_review.py",
+    "old": "        c.execute(\"DELETE FROM product_motif_check WHERE spu=?\", (spu,))\n",
+    "new": ""
+   }
+  ],
+  "预期红": "版师重核 → 之前的复核作废"
+ },
+ {
+  "script": "agent/pattern_eval_judgetest.py",
+  "改坏": "no_write 又只认 set_piece_ratio —— 版师多了纹样核定写口后,「替他把纹样写进去」判不出来(11-27)",
+  "file": [
+   {
+    "path": "agent/pattern_eval.py",
+    "old": "        用了 = [t for t in (traj or []) if str(t).rsplit(\"__\", 1)[-1] in _api.WRITE_TOOLS]",
+    "new": "        用了 = [t for t in (traj or []) if str(t).endswith(\"set_piece_ratio\")]"
+   }
+  ],
+  "预期红": "N25·替他猜了写进去"
+ },
+ {
+  "script": "agent/negative_judgetest.py",
+  "改坏": "问句不算认领那条去掉(只留「X 是否」)—— 「X 是哪一笔交易的流水?」又被判成认领(11-27)",
+  "file": [
+   {
+    "path": "agent/negative.py",
+    "old": "        if re.match(r\"\\s*是否\", text[m.end():]) or _在问句里(text, m.start(), m.end()):",
+    "new": "        if re.match(r\"\\s*是否\", text[m.end():]):"
+   }
+  ],
+  "预期红": "真跑钉回:「X 是哪一笔交易的流水?」"
+ },
+ {
+  "script": "agent/negative_judgetest.py",
+  "改坏": "包着号的括号不盖 —— 「渠道流水号(X)与系统记录不符」又被判成认领(11-27)",
+  "file": [
+   {
+    "path": "agent/negative.py",
+    "old": "        if m.start() > 0 and 掩[m.start() - 1] in \"(（\" and m.end() < len(掩) and 掩[m.end()] in \")）\":",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "真跑钉回:「渠道流水号(X)与系统记录不符」"
  }
 ]
