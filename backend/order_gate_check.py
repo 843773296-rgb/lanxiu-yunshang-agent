@@ -33,7 +33,9 @@ import knowledge.order_gate as OG
 # 下面 `kb_fit` 那几条要**真调工具层**,不是照它的样子重写一份
 import api as backend
 
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 21 批
+DB = _库路径()
 FAIL = []
 
 

@@ -7,7 +7,9 @@
 """
 import os, sqlite3, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 21 批
+DB = _库路径()
 c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
 # ── 咬合记录 ──────────────────────────────────────────────────────────
 # 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里

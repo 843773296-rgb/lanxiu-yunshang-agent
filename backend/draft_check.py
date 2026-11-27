@@ -24,7 +24,9 @@ ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "tools", "patterndraw")]
 import draft as _draft
 
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 21 批
+DB = _库路径()
 
 # 咬合记录:左边「改坏了什么」,右边「该红的是哪一条」。可重放的规格在 tools/bite_specs.json。
 # 三处都打**结构**不打数值 —— 数值会随数据漂,漂了之后咬合失效的样子和通过一模一样。

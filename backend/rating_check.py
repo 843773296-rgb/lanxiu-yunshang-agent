@@ -30,7 +30,9 @@ import backfill_rating as SR   # **形状的那几个数只写一处** —— �
 # 撞名,而 `sys.path` 里 backend 在前 —— `import seed_rating` 会**安静地**取到建表那个,
 # 直到读 `门店均分` 才炸。**两个同名模块,谁在前面谁赢,而且不报错。**
 
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 21 批
+DB = _库路径()
 工单类型 = "评价差评"
 FAIL, N = [], [0]
 
