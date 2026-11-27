@@ -75,7 +75,9 @@ import argparse, os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 18 批
+DB = _库路径()
 G, Rd, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 列 = "cust_advisor_no"

@@ -35,7 +35,9 @@
 import argparse, os, sqlite3, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 18 批
+DB = _库路径()
 
 # 操作台账:保留 3 年。(表, 时间列)
 # ⚠️ **列名写死,一张张核过的** —— 第一版我假设六张表的时间列都叫 `ts`,

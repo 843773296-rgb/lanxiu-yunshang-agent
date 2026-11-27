@@ -86,7 +86,8 @@ sys.path.insert(0, os.path.join(ROOT, "fakedata"))
 import ledger as LG          # 台账链:每一行 after = before + 增减,而且接得上上一行
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 sys.path.insert(0, os.path.join(ROOT, "knowledge"))
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 18 批
+DB = _库路径()
 
 BATCH = "simulate_sales/v1"
 SEED = 20260915

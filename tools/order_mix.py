@@ -55,7 +55,8 @@ for p in (HERE, os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge"),
           os.path.join(ROOT, "fakedata")):
     if p not in sys.path:
         sys.path.insert(0, p)
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 18 批
+DB = _库路径()
 
 SEED = 20260918
 BATCH = "order_mix/v1"

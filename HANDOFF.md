@@ -12,6 +12,11 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-27 09:1x · 已推 1a4cb760(库路径 16/17 批,欠债 224;主检出已 ff,只动 tools/ 没重启,curl 200/302);本地又排第 18 批(五个工具,欠债 219)等并行会话这轮推完(Opus 5.5)
+- 下一步第一个动作:并行会话 08:5x 起 ship 4 笔(约 45–70 分钟),收到哈希 → rebase → dbpath_check / db_switchable_check / bite_check 各自单跑看 rc → ship(日志 ship-20261127-<HHMM>a.log)→ ff + curl → 报哈希。
+- 第 18 批:order_mix / simulate_sales / realign_report_periods / purge_expired / add_cust_advisor。筛法:咬合规格里**除描述外**不含 lanxiu.db / DB / connect,且无 sql 型规格。剩下的大多是 backend/*_check.py 检查本身(迁了会让检查在门禁里改读副本),要单独想清楚再做。
+- **待转告 fc(它不在线,会话名单里没有)**:① 主检出有夜跑 03:33 写的未提交 .feynman/select-eval-第一层.json(工具选择评测结果),谁都没动;② 并行会话托:夜报把「没跑成」和「真失败」分开记(fc 的 nightly_eval / agent/nightly,对应 11-23 体检报告「评测补缺」那条)。已报用户。
+
 ### 🟡 11-27 08:3x · 并行会话已推 41b9ef67(11 笔,主检出已 ff、三服务已重启);我 rebase 后 16/17 批 = f03fb34b / 本笔,静态两检绿,ship 中(Opus 5.5)
 - 下一步第一个动作:看 .wip-glossary/ship-20261127-0835a.log 的「被包的命令退出码」→ ff 主检出(merge-base 验)+ kickstart 三服务 + curl 8760/8770 → 报哈希。
 - 并行会话提醒:主检出有夜跑 03:33 写的未提交 .feynman/select-eval-第一层.json(工具选择评测结果),不是它的也不是我的(归 fc),别动,见到 fc 提一句。

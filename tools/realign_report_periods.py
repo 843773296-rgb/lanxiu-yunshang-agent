@@ -98,7 +98,8 @@ ROOT = os.path.dirname(HERE)
 sys.path[:0] = [os.path.join(ROOT, "knowledge"), os.path.join(ROOT, "backend"), HERE]
 
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 18 批
+DB = _库路径()
 任一日期 = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
