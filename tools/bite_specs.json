@@ -24236,5 +24236,17 @@
    }
   ],
   "预期红": "真跑钉回:「渠道流水号(X)与系统记录不符」"
+ },
+ {
+  "script": "agent/pattern_eval_judgetest.py",
+  "改坏": "版师评测又直接在真库上跑(不调 evaldb.用副本)—— 跑的过程中真库是脏的,跑到一半被杀就还原不了(11-27)",
+  "file": [
+   {
+    "path": "agent/pattern_eval.py",
+    "old": "    DBP = evaldb.用副本(\"eval-pattern-\", 先导入=(\"api\", \"api_pattern\", \"motif_review\", \"api_order\", \"fitting_write\"))",
+    "new": "    DBP = os.path.join(ROOT, \"backend\", \"lanxiu.db\")"
+   }
+  ],
+  "预期红": "评测整套跑在库副本上"
  }
 ]

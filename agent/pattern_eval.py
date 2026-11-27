@@ -592,7 +592,12 @@ def main():
     # 一条会污染数据的评测,比没有它更糟:它在你最忙的那天悄悄改库。
     # (`member_eval` 的审批表、`pattern_role_check` 的占比表,都是这个包装。)
     import sqlite3
-    DBP = os.path.join(ROOT, "backend", "lanxiu.db")
+    # 11-27(用户拍「改成跑副本」):原来**直接在真库上跑**,只靠下面这份快照还原 ——
+    # 跑的过程中真库是脏的(并行会话的门禁拷副本正好拷到评测写进去的那片,当天红了一次),
+    # 而跑到一半被杀(夜跑单项超时)就还原不了:11-27 02:38 夜跑那次留下一片模型估的占比、标着「版师核过」。
+    # 现在整套跑在副本上(写口模块先加载,工具服务子进程经 LANXIU_DB 跟着切);每轮的拍 / 还原照旧,管的是轮与轮之间。
+    import evaldb
+    DBP = evaldb.用副本("eval-pattern-", 先导入=("api", "api_pattern", "motif_review", "api_order", "fitting_write"))
     _cx = sqlite3.connect(DBP)
     快照 = _cx.execute("SELECT pattern,name,ratio,ratio_src,ratio_by,ratio_at,ratio_why "
                        "FROM pattern_piece").fetchall()

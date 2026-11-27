@@ -21,7 +21,7 @@
 这句是对的,却含着「核过」。中文里否定一件事必须先把它说出来 ——
 这个项目为这句话栽过八次。
 """
-import os, sys
+import ast, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "backend"),
@@ -401,6 +401,7 @@ T += [
      '报了米数也报了来源'),
     ("no_write 又只认 set_piece_ratio(11-27 之前那样)—— 替版师把纹样写进去判不出来",
      "N25·替他猜了写进去"),
+    ("main 又直接连真库(不调 evaldb.用副本)", "评测整套跑在库副本上"),
     # 2026-10-22:受欢迎与易损那六题的判据,咬合在 `backend/popularity_check.py`
     # 那一组里(工具层⑧–⑫五条),这里钉的是**判分器自己**的边界 ——
     # 见上面「N12·在否定里提到了「结实」」那条:
@@ -442,6 +443,13 @@ def main():
     bad += _pi.查(T, 取文本=lambda r: r[3] or "",
                   判定=lambda r, t: sorted(str(x).replace("，", ",") for x in (C[r[1]]["grade"](t[0], r[2], C[r[1]]) or [])),
                   名="标点不变量(版师判分器)", 最少=60)   # 实测 60 条(11-11)
+    # 跑在库副本上(11-27,用户拍):main() 里要调 evaldb.用副本 —— 不调就又在真库上写、靠轮末还原(跑到一半被杀就还原不了)
+    _源 = open(os.path.join(HERE, "pattern_eval.py"), encoding="utf-8").read()
+    _有 = any(isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "用副本"
+             and getattr(getattr(n.func, "value", None), "id", "") == "evaldb"
+             for f in ast.parse(_源).body if isinstance(f, ast.FunctionDef) and f.name == "main" for n in ast.walk(f))
+    print(f"  {'✅' if _有 else '❌'} 评测整套跑在库副本上(main 里调了 evaldb.用副本)")
+    bad += (not _有)
     print("=" * 104)
     y = sum(1 for t in T if t[4])
     __import__("judgecount").出口("版型与推档", max(0, len(T) - bad), min(bad, len(T)))
