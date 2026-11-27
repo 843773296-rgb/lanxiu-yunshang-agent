@@ -223,6 +223,17 @@ def _价表里的名字(m):
 _结构化上限 = 200_000
 
 
+def _返回是查无(content):
+    """工具返回的是不是一个顶层带 error 的 dict(「X 不存在」「没有权限」这一类)。解析不了一律当不是 —— 宁可少标。"""
+    import json as _j
+    try:
+        t = _tool_result_text(content)
+        d = t if isinstance(t, dict) else (_j.loads(t) if isinstance(t, str) and t.lstrip().startswith("{") else None)
+    except Exception:
+        return False
+    return isinstance(d, dict) and bool(d.get("error"))
+
+
 def _结构化(content):
     """把 ToolResultBlock 的 content 解析成 dict/list。解析不出来返回标注过的原文。
 
@@ -593,6 +604,8 @@ PATTERN_TOOLS = [
     # 它记的是来源标记 + 理由 + **核的时候那个值是多少** ——
     # 少了最后那样,md 改过之后「核过」会漂到一个没人核过的新值上。规矩 TL75。
     "mcp__knowledge__set_grade_diff",
+    # 纹样核定(11-27 接线,用户 11-25 拍「归版师,总部复核」):看待核清单 + 核定(写,高档每次问)。规矩 TL110
+    "mcp__knowledge__motif_todo", "mcp__knowledge__review_motif",
     # 写 —— 开裁(待生产 → 生产中)。**闸在订单状态机上**:白坯该试没试 / 没签字整单拒绝。
     # 版型定了才能裁,所以归版师;规矩 TL41:被拒不许换说法再试。
     "mcp__fulfillment__start_cutting",
@@ -715,7 +728,9 @@ def skills_for(which=None):
 SKILLS = skills_for("own")      # 模块级默认 —— 给不传参数的调用方兜底
 TASK_TOOLS = ["mcp__work__list_tasks", "mcp__finance__get_deposit",
               "mcp__finance__get_refund_trace", "mcp__finance__get_payment_flow",
-              "mcp__customer__get_customer"]
+              "mcp__customer__get_customer",
+              # 纹样复核(11-27):总部运营走这个角色;同一个口,总部调 = 复核 / 退回版师。规矩 TL110
+              "mcp__knowledge__motif_todo", "mcp__knowledge__review_motif"]
 
 # 只给后台运营:会员生命周期判定(八档 + 凭什么 + 有没有被人工覆盖)。
 # 这是**台账活** —— 顾问在跟客户说话的时候不该做分群。
@@ -1523,6 +1538,12 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                         # 表示「这一版还没这个章」,不表示「没出错」。
                         if getattr(b, "is_error", False):
                             traj[_i]["出错"] = True
+                        elif _返回是查无(getattr(b, "content", None)):
+                            # 11-27(用户拍「修」):工具**正常返回了一个 {"error": …}**(「押金单 D7777 不存在」)——
+                            # 协议层把它当成功(isError=False),于是研判置信度把「查无此单」也算成查过一次数据,
+                            # 「单号不存在」的结论被标成「高」。不改 isError 的语义(一堆评测按它判「调了但失败了」),
+                            # 另挂一个键;同「出错」一样**只在是的时候写**,旧轨迹没这个键 ≠ 查到了
+                            traj[_i]["查无"] = True
                         _名 = str(traj[_i].get("tool") or "").rsplit("__", 1)[-1]
                         if _名 in 结构化回前端:
                             traj[_i]["result"] = _结构化(

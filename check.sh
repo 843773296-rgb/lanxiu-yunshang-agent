@@ -874,6 +874,7 @@ run "首次启动 · 建出来的库要和在用的库一样全(5 条咬合)" py
 run "交接门禁 · 那条线从台账学(写死 80% 的从没触发过);交接在项目根、会话在子目录也要找得到;照提示提前刷了要放行" node tools/hooks/handoff-gate.mjs --selftest
 run "库路径单源 · 新代码不许再自己拼 lanxiu.db 的路径(存量登记成欠债,只许少不许多)" python3 tools/dbpath_check.py
 run "对照用例条数 · 32 个判分器统一机读出口,PRD 的数和现算一致" python3 tools/judge_cases_check.py
+run "研判置信度 · 只数查到东西的调用(查无此单 / 出错不算)" ./agentsite/.venv/bin/python backend/triage_confidence_check.py
 run "检查不许往真库的操作台账写(写了就点名是哪个检查)" bash -c '
   # 先自检:故意从门禁里写一笔,它必须被拦下并记进账 —— 拦不下的话,「没有漏写」就什么也说明不了
   python3 -c "import sys; sys.path.insert(0,\"backend\"); import oplog; oplog.log_op(\"门禁自检\",\"check\",\"-\",\"—\",\"—\",True,\"LEAK_CANARY\",\"自检\",{})"

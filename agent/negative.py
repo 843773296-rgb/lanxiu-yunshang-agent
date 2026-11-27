@@ -28,6 +28,14 @@ import textmatch as tm     # 中文否定与子串**统一走这里**
 # 本文件特有的几个词(暂停/作罢/勿再/切莫/不符/不一致/有出入)已并入那份总表。
 
 
+def _在问句里(text, a, b):
+    """[a, b) 所在的那一句是不是以问号收尾。句子按 。!!;; 和换行切,问号本身也是句子的边界。"""
+    头 = max(text.rfind(x, 0, a) for x in "。!！;；\n?？") + 1
+    尾们 = [i for i in (text.find(x, b) for x in "。!！;；\n?？") if i >= 0]
+    尾 = min(尾们) if 尾们 else len(text)
+    return 尾 < len(text) and text[尾] in "?？" and 头 <= a
+
+
 def unnegated(text, pat, win=14):
     """text 里有没有「没被否定的」pat(pat 是正则)。
 
@@ -46,10 +54,16 @@ def unnegated(text, pat, win=14):
         # > **在否定检查眼里长得一模一样。**
         # 盖成等长的占位符(不是删掉)—— 删掉会让前后窗口的距离变短,把窗口外的否定词拉进来。
         掩 = text[:m.start()] + ("○" * (m.end() - m.start())) + text[m.end():]
-        # 「X 是否 …」是拿 X 来**发问**,不是认领 X(11-27 研判专用那条路真跑 N8:
-        # 「核实用户提供的渠道流水号 WX999… 是否对应本笔交易,或来自其他交易」—— 它在怀疑那个号,原来被判成认领)。
-        # 查结构:匹配串后面隔着空白紧跟「是否」。textmatch.find 管的是另一半(「是否 X」),那份文件不归这里改
-        if re.match(r"\s*是否", text[m.end():]):
+        # 匹配串**刚好被一对括号包着**(「渠道流水号(WX999…)与系统记录不符」)时,括号也盖掉 ——
+        # 否定范围不跨标点,而这对括号只是给编号加注,不是句子的边界;不盖的话后面那个「不符」够不着(11-27 N8 第一轮真跑)
+        if m.start() > 0 and 掩[m.start() - 1] in "(（" and m.end() < len(掩) and 掩[m.end()] in ")）":
+            掩 = 掩[:m.start() - 1] + "○" + 掩[m.start():m.end()] + "○" + 掩[m.end() + 1:]
+        # **拿 X 来发问不是认领 X**(11-27 研判专用那条路真跑 N8,两轮两种问法):
+        #   「核实用户提供的渠道流水号 WX999… 是否对应本笔交易,或来自其他交易」
+        #   「- WX999… 是哪一笔交易的流水?」
+        # 第一版只认「X 是否」—— 第二轮就换成「X 是哪一笔…?」。改查结构:**X 所在那一句以问号收尾**,或 X 后面紧跟「是否」
+        # (「是否 X」那一半归 textmatch.find,那份文件不归这里改)
+        if re.match(r"\s*是否", text[m.end():]) or _在问句里(text, m.start(), m.end()):
             continue
         if not tm.negated(掩, m.start(), span=win, both_sides=True):
             return m.group(0)

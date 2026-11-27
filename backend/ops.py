@@ -698,10 +698,13 @@ def confidence(trajectory, parsed, need_tools=2):
     """置信度由**过程信号**推,不看模型自称,也不看答得对不对。
 
     上线后没有标准答案 —— 「对不对」这个信号在生产里根本拿不到。
-    能拿到的只有:查了几次数据、有没有给出可核对的证据、四段是否齐全。
+    能拿到的只有:查了几次数据(**查到东西的那几次**,查无此单不算)、有没有给出可核对的证据、四段是否齐全。
     模型自称的置信度不用,因为它高兴的时候什么都敢说「高」。
     """
-    n = len([t for t in (trajectory or []) if t.get("tool")])
+    # 只数**真查到东西**的调用(11-27,用户拍「修」):调用出错的、返回「X 不存在」的不算 ——
+    # 原来「两次都查无此单」也算查了两次,「单号不存在」的研判被标成「高」(负向集研判专用那条路真跑钉出来的)。
+    # 「出错」「查无」两个键都是 agentsite/sdk.py 记轨迹时挂的,只在是的时候才有
+    n = len([t for t in (trajectory or []) if t.get("tool") and not t.get("出错") and not t.get("查无")])
     full = all(parsed.get(k) for k in ("ai_root_cause", "ai_action", "ai_evidence"))
     if not parsed.get("ai_root_cause"):
         return "低"                                   # 连根因都没给,人必须看
