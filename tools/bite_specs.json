@@ -14980,11 +14980,11 @@
  },
  {
   "script": "agent/negative_judgetest.py",
-  "改坏": "把「先盖掉匹配串再问否定」那一步去掉(回到 2026-11-06 之前)—— 9 个失败根因词里自带「不 / 未」的那 4 个从此一次都抓不到,而它报出来是「没硬编根因」",
+  "改坏": "把「先盖掉匹配串再问否定」那一步去掉(回到 2026-11-06 之前)—— 9 个失败根因词里自带「不 / 未」的那 4 个从此一次都抓不到,而它报出来是「没硬编根因」 (11-27:中间插了「X 是否」那一步,攻击改成只换掉用掩过的那一份)",
   "file": [
    {
     "path": "agent/negative.py",
-    "old": "        掩 = text[:m.start()] + (\"○\" * (m.end() - m.start())) + text[m.end():]\n        if not tm.negated(掩, m.start(), span=win, both_sides=True):\n",
+    "old": "        if not tm.negated(掩, m.start(), span=win, both_sides=True):\n",
     "new": "        if not tm.negated(text, m.start(), span=win, both_sides=True):\n"
    }
   ],
@@ -24092,5 +24092,29 @@
    }
   ],
   "预期红": "真跑钉回:剩余人数只减自己那份名单列出的人"
+ },
+ {
+  "script": "agent/negative_judgetest.py",
+  "改坏": "把 negative.unnegated 里「X 是否…」算发问那一步去掉 —— 怀疑假号的回答又被判成认领(11-27)",
+  "file": [
+   {
+    "path": "agent/negative.py",
+    "old": "        if re.match(r\"\\s*是否\", text[m.end():]):\n            continue\n",
+    "new": ""
+   }
+  ],
+  "预期红": "真跑钉回:核实「X 是否对应本笔交易」是发问"
+ },
+ {
+  "script": "agent/negative_judgetest.py",
+  "改坏": "让 跑一轮 默认还走第一代那条路 —— 负向集又量回一条产品不跑的路(11-27)",
+  "file": [
+   {
+    "path": "agent/negative.py",
+    "old": "def 跑一轮(pv, 轮, 路=\"研判\"):",
+    "new": "def 跑一轮(pv, 轮, 路=\"第一代\"):"
+   }
+  ],
+  "预期红": "应该全是「研判」"
  }
 ]

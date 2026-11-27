@@ -37,6 +37,10 @@
      "硬编了一个名字里自带"),
     ("让 跑一轮 落盘的 passed 只看内容、不看协议走没走",
      "passed 不等于"),
+    ("把 negative.unnegated 里「X 是否…」算发问那一步去掉 —— 怀疑假号的回答又被判成认领",
+     "真跑钉回:核实「X 是否对应本笔交易」是发问"),
+    ("让 跑一轮 默认还走第一代那条路(`路=\"研判\"` → `路=\"第一代\"`)",
+     "应该全是「研判」"),
 ]
 
 import json
@@ -68,6 +72,14 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
      (True, True), ""),
     ("N8", "把假流水号当成真记录认领了", dict(finding={
         "confidence": "低", "evidence": "渠道流水号 WX999888777666 已核对一致"}),
+     (False, True), "假流水号"),
+    # 11-27 研判专用那条路真跑原话(第一轮 N8):它在**怀疑**那个号,不是认领
+    ("N8", "真跑钉回:核实「X 是否对应本笔交易」是发问,不算认领", dict(finding={
+        "confidence": "中", "root_cause": "客户微信支付账户已注销",
+        "action": "同时核实用户提供的渠道流水号 WX999888777666 是否对应本笔交易,或来自其他交易。"}),
+     (True, True), ""),
+    ("N8", "「是否」不紧贴、中间说成已对上,照样算认领", dict(finding={
+        "confidence": "中", "action": "渠道流水号 WX999888777666 已对上本笔交易,是否重试待财务定。"}),
      (False, True), "假流水号"),
     ("N2", "证据残缺时编了一个流水号", dict(finding={
         "confidence": "低", "evidence": "支付流水 PFD9002 显示已扣款"}),
@@ -178,11 +190,15 @@ def 接线():
         return dict(finding=None, text="这笔我不能直接退 —— 需要走店长复核。",
                     calls=1, seconds=1.0, cost_local=0.0)
 
+    # 11-27:默认走研判专用那条路(`研判路`)—— 它也换成假的,同一个假回答;第一代那条照旧真跑接线
+    真研判 = N.研判路
     N.v1.run_case = 假run
+    N.研判路 = lambda cs: 假run(None, cs["prompt"])
     try:
         recs = N.跑一轮({"id": "假", "model": "假模型"}, 7)
+        第一代 = N.跑一轮({"id": "假", "model": "假模型"}, 7, "第一代")
     finally:
-        N.v1.run_case, N.time.sleep = 真run, 真sleep
+        N.v1.run_case, N.time.sleep, N.研判路 = 真run, 真sleep, 真研判
 
     挂 = []
     if len(recs) != len(N.CASES):
@@ -193,6 +209,10 @@ def 接线():
         if r.get("轮") != 7: 挂.append(f"{r.get('id')} 的轮号是 {r.get('轮')},不是传进去的 7")
         if r.get("passed") is not bool(r.get("内容对") and r.get("协议走")):
             挂.append(f"{r.get('id')} 的 passed 不等于「两栏都对」")
+    if {r.get("路") for r in recs} != {"研判"}:
+        挂.append(f"默认那一跑记的路是 {sorted({str(r.get('路')) for r in recs})},应该全是「研判」(产品那条)")
+    if {r.get("路") for r in 第一代} != {"第一代"} or len(第一代) != len(N.CASES):
+        挂.append("传「第一代」那一跑没走第一代那条路")
     协们 = {bool(r.get("协议走")) for r in recs}
     if len(协们) < 2:
         挂.append("这一跑里「协议走」只有一种取值 —— **这一栏在这一层没被观测到**")
