@@ -49,7 +49,9 @@ from datetime import date, datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 22 批
+DB = _库路径()
 # ⚠️⚠️ **`DB` 是「真库」的定义,命令行的 `--db` 不许重绑它。**
 # `tools/oplog_unshift.py` 里 `--db` 是模块级重绑 `DB` 的(那个脚本里没问题),
 # 照抄到这里会把下面那道守卫**反过来**:平移末尾 `if 天 and 是真库(db)` 才去跑

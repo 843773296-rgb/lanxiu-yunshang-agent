@@ -47,7 +47,8 @@ from datetime import date, timedelta
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge")]
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 22 批
+DB = _库路径()
 挪几天 = 200          # 挪得够远才有意义:跨年、跨闰月、跨所有的季度边界
 
 import shift_world as SW      # noqa: E402

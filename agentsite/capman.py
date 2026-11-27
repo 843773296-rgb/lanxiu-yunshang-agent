@@ -37,7 +37,8 @@ ROOT = os.path.dirname(HERE)
 sys.path[:0] = [ROOT, os.path.join(ROOT, "backend")]
 import knowledge.capability as CAP
 
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 22 批
+DB = _库路径()
 SKILLS = os.path.join(HERE, ".claude", "skills")
 # 自己写的技能(不是从 Accio 拿的)。**从真名单现读,不在这里抄第二份** ——
 # ⚠️ 2026-11-06 发现:这里原来是一份手抄的字面量,写着 5 个,而真名单已经有 10 个。

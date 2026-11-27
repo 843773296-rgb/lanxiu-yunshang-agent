@@ -33,7 +33,9 @@ from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只�
 import os, re, sqlite3, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(ROOT, "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, os.path.join(ROOT, "backend"))
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 22 批
+DB = _库路径()
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 咬合 = [
