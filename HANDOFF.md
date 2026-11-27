@@ -12,6 +12,10 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### ✅ 11-27 13:3x · 已推 2a70de28(第 19 批,八个检查,欠债 211;主检出已 ff,只动检查没重启,curl 200/302);本地无待推(Opus 5.5)
+- **待转告 fc 第三件(并行会话托)**:它在 fc 的文件里新增了几处,11-26 没先问,它说用户 11-27 拍「都准,事后告诉它」(我没法独立核,已报用户请其否认则叫停)。① backend/api.py 工具描述区:store_promotions(已推)、motif_todo / review_motif(待推,插在 set_piece_ratio 前);② prompts.py:TL109 店里在推什么(已推)、TL110 纹样核定(待推,也进了 _pattern_rules 的 pick 和规则总表)。都是新增没改原条目;fc 要改措辞或挪位置随时动,告诉并行会话一声。
+- 13:4x 第 20 批(freight / payment_serial / month_query,欠债 208)第一次 ship 红 1 条:待办清单过期 —— 真库里裁片占比版师核过的从 1 片变 2 片(并行会话纹样 / 版师那条线在动),清单里的数现算对不上;门禁顺手重新生成,带进本笔重推。**查实**:是并行会话的版师评测 agent/pattern_eval.py —— 设计上**在真库上跑、跑前快照、轮末还原**;13:2x–13:4x 那轮模型被诱导真写了一片,我 13:45 拷副本正好拷到,轮末已还原(只读核:版师 1 / 行业规范 390)。另:rowid 32(PT07 大袖片 0.1565,标「版师」、署名评测版师身份,02:38 写入)疑似昨夜夜跑版师评测没走到还原留下的,**是否还原由并行会话问用户**(删改数据要用户拍),我不重复问。并行会话提议把这评测改成整套跑副本。重推时请它别跑该评测。验证只比源码(dbpath 默认与旧写法同一文件 + 语法),没 import。下一步第一个动作:逐条看 link / catalog / draft / order_gate / supplier / activity / rating 碰 DB 的规格。
+
 ### 🟡 11-27 10:1x · 已推 3b8bc448(第 18 批,欠债 219;主检出已 ff,重启了 backend,curl 200/302);本地排第 19 批(八个检查,欠债 211)等并行会话 10:0x 那轮(商机引逐字稿行号)推完(Opus 5.5)
 - **查实(别再担心)**:门禁**不设 LANXIU_DB**,是 tools/gate_db/sitecustomize.py 在 sqlite3.connect 那一层把真库路径换成副本。所以检查脚本改走 dbpath.路径() 后,门禁里照样连副本,行为不变 —— 「迁检查会让它在门禁里改读副本」这个顾虑不成立。真正要看的只有:咬合规格是否改库地址那行 / 有没有 sql 或 env 型规格 / 没有主入口保护的脚本 import 即执行(验证时别 import 它)。
 - 第 19 批:backend/{page_smoke,lifecycle,samekey,pattern_grade,order_spread,recording_terms,fixture_intact,opportunity}_check.py。page_smoke import 后 DB 指临时副本是它自己 check_copy.用副本 的本意。

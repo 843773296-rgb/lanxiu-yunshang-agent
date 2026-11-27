@@ -47,7 +47,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 20 批
+DB = _库路径()
 
 G, Rd, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
