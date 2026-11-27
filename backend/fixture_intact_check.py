@@ -54,7 +54,9 @@ ROOT = os.path.dirname(HERE)
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 # ⚠️ 可以指定库(`--db 某个副本`)—— 咬合测试要在**工作区副本**上重放,
 # 别像这个仓库栽过的那次一样去动真库/真工作区。
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 19 批
+DB = _库路径()
 for _i, _a in enumerate(sys.argv):
     if _a == "--db" and _i + 1 < len(sys.argv):
         DB = sys.argv[_i + 1]

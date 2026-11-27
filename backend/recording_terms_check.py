@@ -17,7 +17,9 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
 import recording_terms as K
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 19 批
+DB = _库路径()
 
 咬合 = [
     ("在客户页「通话录音」那一栏加一个「撤回录音同意」按钮", "任何页面都没有「撤回录音同意」的入口"),

@@ -12,6 +12,11 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-27 10:1x · 已推 3b8bc448(第 18 批,欠债 219;主检出已 ff,重启了 backend,curl 200/302);本地排第 19 批(八个检查,欠债 211)等并行会话 10:0x 那轮(商机引逐字稿行号)推完(Opus 5.5)
+- **查实(别再担心)**:门禁**不设 LANXIU_DB**,是 tools/gate_db/sitecustomize.py 在 sqlite3.connect 那一层把真库路径换成副本。所以检查脚本改走 dbpath.路径() 后,门禁里照样连副本,行为不变 —— 「迁检查会让它在门禁里改读副本」这个顾虑不成立。真正要看的只有:咬合规格是否改库地址那行 / 有没有 sql 或 env 型规格 / 没有主入口保护的脚本 import 即执行(验证时别 import 它)。
+- 第 19 批:backend/{page_smoke,lifecycle,samekey,pattern_grade,order_spread,recording_terms,fixture_intact,opportunity}_check.py。page_smoke import 后 DB 指临时副本是它自己 check_copy.用副本 的本意。
+- 下一批候选:没主入口的 freight / payment_serial / month_query(改法一样,验证只做源码比对别 import);link / catalog / draft / order_gate / supplier / activity / rating 有碰 DB 的规格,要逐条看。
+
 ### 🟡 11-27 09:1x · 已推 1a4cb760(库路径 16/17 批,欠债 224;主检出已 ff,只动 tools/ 没重启,curl 200/302);本地又排第 18 批(五个工具,欠债 219)等并行会话这轮推完(Opus 5.5)
 - 下一步第一个动作:并行会话 08:5x 起 ship 4 笔(约 45–70 分钟),收到哈希 → rebase → dbpath_check / db_switchable_check / bite_check 各自单跑看 rc → ship(日志 ship-20261127-<HHMM>a.log)→ ff + curl → 报哈希。
 - 第 18 批:order_mix / simulate_sales / realign_report_periods / purge_expired / add_cust_advisor。筛法:咬合规格里**除描述外**不含 lanxiu.db / DB / connect,且无 sql 型规格。剩下的大多是 backend/*_check.py 检查本身(迁了会让检查在门禁里改读副本),要单独想清楚再做。

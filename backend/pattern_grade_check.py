@@ -28,7 +28,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.dirname(HERE)]
 import fix_product_pattern as F
 
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 19 批
+DB = _库路径()
 
 # (商品名, 顶级品类, 期望档位, 期望候选码集合 或 None=不校验, 钉的坑)
 # ⚠️ 期望值**全部手标**。候选码写 None 的,是这条只关心档位。

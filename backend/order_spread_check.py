@@ -27,7 +27,9 @@ ROOT = os.path.dirname(HERE)
 sys.path[:0] = [os.path.join(ROOT, "tools")]
 import level_customer_orders as LV
 
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 19 批
+DB = _库路径()
 # 无单客户数的**棘轮**:2026-09-26 削峰之后是 103 个。只许降不许涨。
 # 为什么不是 0:新建档、还没下过单的客户本来就该有 —— 一律要求 0 是在逼造假。
 # 无单客户数的**棘轮**。客户从 968 补到约 8065 之后,「还没下过单的人」本来就该多 ——

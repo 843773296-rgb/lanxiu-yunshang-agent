@@ -57,7 +57,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import server  # noqa: E402
 
-DB = os.path.join(HERE, "lanxiu.db")
+import sys as _sys_db; _sys_db.path.insert(0, HERE)
+from dbpath import 路径 as _库路径   # 11-27 库路径单源第 19 批
+DB = _库路径()
 # 在库副本上跑(10-19 改):导出 / 写口都会记台账,原来全记进真库、挂在真员工名下
 import check_copy; check_copy.用副本("pagesmoke-")
 
