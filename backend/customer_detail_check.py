@@ -9,6 +9,9 @@
 import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 27 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -32,7 +35,7 @@ print("客户详情 · 顾问名字和日历的「今天」")
 print("=" * 80)
 import server as SV, worldclock
 
-c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+c = sqlite3.connect(_库路径())
 # 挑一位**有跟进记录、顾问工号在员工表里**的客户;没有就没验,不算通过
 r = c.execute("""SELECT cu.id, cu.advisor_no, s.name FROM customer cu JOIN staff s ON s.no=cu.advisor_no
                  WHERE EXISTS (SELECT 1 FROM followup f JOIN staff s2 ON s2.no=f.advisor_no WHERE f.customer_id=cu.id)

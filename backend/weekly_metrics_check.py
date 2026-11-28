@@ -11,6 +11,9 @@
 """
 import datetime as dt, os, sqlite3, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 27 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT]
 import api
@@ -34,7 +37,7 @@ def ck(名, ok, 说明=""):
         bad.append(名)
 
 
-c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+c = sqlite3.connect(_库路径())
 今 = dt.date.fromisoformat(TODAY)
 一 = 今 - dt.timedelta(days=今.weekday() + 7)          # 上周一,手算
 日 = 一 + dt.timedelta(days=6)

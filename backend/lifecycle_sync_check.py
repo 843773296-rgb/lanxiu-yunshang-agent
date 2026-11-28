@@ -14,6 +14,9 @@
 """
 import os, sys, sqlite3, datetime as dt, collections
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 27 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "knowledge"), os.path.join(os.path.dirname(HERE), "tools")]
 import lifecycle as L
 from seed import TODAY
@@ -32,7 +35,7 @@ def ago(s):
     return (T - dt.date.fromisoformat(str(s)[:10])).days if s else None
 
 
-c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+c = sqlite3.connect(_库路径())
 c.row_factory = sqlite3.Row
 # 一个「2758 个存错」其实是三个病加起来(数据工厂 2026-10-09 拆出来的)——
 # 只报一个总数的话,修掉其中一个,剩下的仍红在同一条判据上,看着像「没修好」。所以分开报:

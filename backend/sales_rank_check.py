@@ -9,6 +9,9 @@
 """
 import os, re, sqlite3, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 27 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT]
 import api
@@ -35,7 +38,7 @@ def ck(名, ok, 说明=""):
         bad.append(名)
 
 
-c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+c = sqlite3.connect(_库路径())
 算 = ("o.status NOT IN ('取消','待付款','待确认') AND COALESCE(o.refund_status,'')<>'已退款'")
 区 = "o.created >= '2026-09-01' AND o.created <= '2026-09-30 23:59:59'"
 
