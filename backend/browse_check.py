@@ -7,7 +7,7 @@
 ## 为什么要有这个
 用户 2026-11-28 拍:虚拟数据加「小程序浏览情况」(一个动作一行、和已有订单对得上、口径拟一份、
 造数据 + 给助手加查询)。造数在 `tools/backfill_browse.py`,口径在 `knowledge/browse.py`,
-查询在 `backend/api_browse.py`(挂到助手上那一步等工具说明区的维护方回来)。
+查询在 `backend/browse_query.py`(挂到助手上那一步等工具说明区的维护方回来)。
 
 **「对得上订单」是这块数据唯一值钱的地方** —— 对不上的话,拿它算「浏览 → 加购 → 下单」得出的是假结论。
 所以这条检查最硬的一段是逐笔对订单。
@@ -76,7 +76,8 @@ def 查口径():
 
 # ── 2. 真库 ──────────────────────────────────────────────────────────
 def _今(db):
-    with sqlite3.connect(db) as c:
+    from contextlib import closing
+    with closing(sqlite3.connect(db)) as c:
         r = c.execute("SELECT v FROM world_meta WHERE k='world_today'").fetchone()
     return dt.date.fromisoformat(r[0]) if r else dt.date.today()
 
@@ -180,7 +181,7 @@ def 查接线(db):
     src = open(os.path.join(ROOT, "tools", "rebuild.sh"), encoding="utf-8").read()
     if '"tools/backfill_browse.py"' not in src:
         bad.append("接线:tools/rebuild.sh 的步骤里没有 tools/backfill_browse.py —— 从零建库(CI)就没有浏览数据")
-    import api, api_browse
+    import api, browse_query as api_browse
     旧 = api.DB
     api.DB = db
     try:

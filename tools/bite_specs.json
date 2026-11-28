@@ -24278,7 +24278,7 @@
   "改坏": "查询去掉范围闸 —— 别店店长看得到这个客户的浏览(11-28)",
   "file": [
    {
-    "path": "backend/api_browse.py",
+    "path": "backend/browse_query.py",
     "old": "        if 拒:\n            return 拒",
     "new": "        if False:\n            return 拒"
    }

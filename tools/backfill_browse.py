@@ -257,7 +257,8 @@ def 铺数(品, 单, 客, 今, rng):
     return p.行
 
 
-def 铺(db=DB, 说=print):
+def 铺(db=None, 说=print):
+    db = db or DB          # 运行时现取 —— 默认参数在 def 那一刻就绑死,`模块.DB = 副本` 会改不动(11-03 丢过数据)
     今 = worldclock.今天()
     with closing(sqlite3.connect(db)) as c:
         建表(c)
