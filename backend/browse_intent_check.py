@@ -133,6 +133,22 @@ def 跑():
         if c.execute("SELECT status FROM opportunity WHERE id=?", (样["商机"],)).fetchone()[0] != "跟进中":
             bad.append("收口:顾问已经答过「想看」的那条被收掉了")
         说.append(f"收口收了 {len(收)} 条(含别的推断提醒)")
+        # 6. 不设名额再扫一遍(干净的一天、清掉冷却来源),每一条都要过信号复核 ——
+        #    有名额时意向强的先进,门槛降到「看 1 次」也挤不进来,那时「信号」那条看不见门槛还在不在(11-28 推前重放挡下)
+        c.execute("DELETE FROM opportunity WHERE source='浏览意向'"); c.execute("DELETE FROM browse_intent_recall")
+        c.execute("DELETE FROM buy_pref_recall"); c.execute("DELETE FROM opportunity_recall"); c.commit()
+        原名额 = K.浏览意向_每顾问每天
+        K.浏览意向_每顾问每天 = 10 ** 6
+        try:
+            with c:
+                全 = S.浏览意向回捞(c, 今)
+        finally:
+            K.浏览意向_每顾问每天 = 原名额
+        不对 = [x for x in 全 if not 复核(c, x["客户"], x["商品"], 今)]
+        说.append(f"不设名额扫出 {len(全)} 条(有名额时 {len(出)})")
+        if 不对:
+            bad.append(f"信号:不设名额时 {len(不对)} 条不满足「加购或收藏 + 看 ≥ {K.浏览意向_最少看几次} 次 + 没买 + 在售」,"
+                       f"如 {不对[0]['客户']} × {不对[0]['商品']}")
         return bad, False
     finally:
         c.close()
