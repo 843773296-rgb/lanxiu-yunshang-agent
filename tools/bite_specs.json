@@ -24260,5 +24260,53 @@
    }
   ],
   "预期红": "评测整套跑在库副本上"
+ },
+ {
+  "script": "backend/browse_check.py",
+  "改坏": "漏斗按次数数加购(一个人加购三次算三个)—— 加购率虚高(11-28)",
+  "file": [
+   {
+    "path": "knowledge/browse.py",
+    "old": "            d[\"加购\"].add(cid)",
+    "new": "            d[\"加购\"].add((cid, len(d[\"加购\"])))"
+   }
+  ],
+  "预期红": "」算成 "
+ },
+ {
+  "script": "backend/browse_check.py",
+  "改坏": "查询去掉范围闸 —— 别店店长看得到这个客户的浏览(11-28)",
+  "file": [
+   {
+    "path": "backend/api_browse.py",
+    "old": "        if 拒:\n            return 拒",
+    "new": "        if False:\n            return 拒"
+   }
+  ],
+  "预期红": "范围:别店店长看到了"
+ },
+ {
+  "script": "backend/browse_check.py",
+  "改坏": "重建流程里删掉造浏览那一步 —— 从零建库(CI)就没有浏览数据(11-28)",
+  "file": [
+   {
+    "path": "tools/rebuild.sh",
+    "old": "            \"tools/backfill_browse.py\" \\\n",
+    "new": ""
+   }
+  ],
+  "预期红": "接线:tools/rebuild.sh 的步骤里没有"
+ },
+ {
+  "script": "tools/backfill_browse.py",
+  "改坏": "小程序订单不铺「下单那次浏览」—— 和订单对不上(11-28)",
+  "file": [
+   {
+    "path": "tools/backfill_browse.py",
+    "old": "            p.下单那次(cid, T, oid, spus, 品)",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "的「下单」行有 "
  }
 ]

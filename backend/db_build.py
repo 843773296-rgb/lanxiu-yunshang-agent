@@ -84,7 +84,7 @@ backend/repair_write.py backend/report_doc.py backend/report_template.py backend
 backend/seed_rating.py backend/shop_key.py backend/simplified.py backend/tasks.py backend/tasktypes.py
 backend/terms_store.py backend/touchpoint.py backend/triage_config.py backend/triage_run.py backend/triage_trial.py
 backend/worldclock.py
-backend/example_pool.py backend/lifecycle_check.py backend/motif_review.py backend/rating_write.py backend/relabel.py knowledge/attribution.py
+backend/example_pool.py backend/lifecycle_check.py backend/motif_review.py backend/rating_write.py backend/relabel.py knowledge/attribution.py knowledge/browse.py
 knowledge/capacity.py knowledge/churn.py knowledge/consent_age.py knowledge/contract_terms.py knowledge/derive_combo.py knowledge/derive_pattern.py
 knowledge/derive_xingzhi.py knowledge/ecom.py knowledge/factory_feed.py knowledge/fitting.py knowledge/freight.py knowledge/grading.py
 knowledge/growth.py knowledge/journey.py knowledge/kb.py knowledge/leadtime.py knowledge/liability.py knowledge/lifecycle.py
