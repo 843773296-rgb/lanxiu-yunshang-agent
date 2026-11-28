@@ -237,9 +237,9 @@ for STEP in "backend/seed.py" "backend/migrate.py" "tools/add_shop_code.py --建
             "tools/backfill_contracts.py --写" \
             "tools/seed_reports.py" \
             "tools/seed_test_customers.py" \
+            "tools/backfill_browse.py" \
             "tools/add_shop_code.py --做" \
             "tools/add_cust_advisor.py --校验" \
-            "tools/backfill_browse.py" \
             "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   STEP_T0=$SECONDS
