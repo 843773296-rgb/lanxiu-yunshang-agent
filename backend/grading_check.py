@@ -39,6 +39,9 @@ def _还有(清单, n):
     return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
 
@@ -80,7 +83,7 @@ def main():
     print("推档 · 检查")
     print("=" * 84)
     import grading as g, api
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(_库路径()); c.row_factory = sqlite3.Row
 
     # ── ① 档差表本身:md 里读得出来,而且和推档那边用的是同一套 ──────
     表 = g.档差()

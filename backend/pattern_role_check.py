@@ -34,6 +34,9 @@ def _还有(清单, n):
     return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "agentsite")]
 
@@ -84,14 +87,14 @@ class 还原:
     原样再来一遍,所以凡是「以某个角色去试写」的检查都要包在这里面。
     """
     def __enter__(self):
-        c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+        c = sqlite3.connect(_库路径())
         self.bak = c.execute(
             "SELECT pattern,name,ratio,ratio_src,ratio_by,ratio_at,ratio_why "
             "FROM pattern_piece").fetchall()
         c.close(); return self
 
     def __exit__(self, *a):
-        c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+        c = sqlite3.connect(_库路径())
         for r in self.bak:
             c.execute("UPDATE pattern_piece SET ratio=?,ratio_src=?,ratio_by=?,"
                       "ratio_at=?,ratio_why=? WHERE pattern=? AND name=?",
@@ -105,7 +108,7 @@ def main():
     print("版师角色 · 检查")
     print("=" * 84)
     import api, prompts, sdk, guards
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(_库路径()); c.row_factory = sqlite3.Row
 
     # ── ① 工具清单:只有一个写的,而且就是它 ──────────────────────────
     tools = sdk._ROLE_TOOLS["pattern"]()

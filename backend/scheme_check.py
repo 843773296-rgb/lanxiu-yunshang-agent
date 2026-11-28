@@ -21,6 +21,9 @@
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 FAIL = []
 
 
@@ -56,7 +59,7 @@ def ck(name, ok, n, msg=""):
 def main():
     print("方案引用 · 检查")
     print("=" * 80)
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(_库路径()); c.row_factory = sqlite3.Row
     rows = [dict(r) for r in c.execute("SELECT * FROM scheme")]
     n = len(rows)
 

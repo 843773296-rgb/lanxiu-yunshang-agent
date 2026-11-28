@@ -27,6 +27,9 @@
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "knowledge")]
 
@@ -106,7 +109,7 @@ def main():
        f" —— **背一句话的话,数据改了而警告还在,那是另一种假话**")
 
     # 自己再独立数一遍,和工具报的对上
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(_库路径()); c.row_factory = sqlite3.Row
     模拟 = {x["order_id"] for x in c.execute("SELECT order_id FROM sim_batch")}
     对 = {}
     for x in c.execute("SELECT id, source, COALESCE(activity,'(无)') a FROM ordr"):

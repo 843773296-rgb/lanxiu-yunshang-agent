@@ -39,6 +39,9 @@
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT]
 
@@ -79,7 +82,7 @@ def ck(name, ok, n, msg=""):
 def main():
     print("字典表 · 检查")
     print("=" * 84)
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(_库路径()); c.row_factory = sqlite3.Row
 
     枚举 = {r["name"] for r in c.execute(
         "SELECT name FROM sys_code WHERE category='订单来源'")}

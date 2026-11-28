@@ -28,6 +28,9 @@
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "knowledge"),
                 os.path.join(ROOT, "agent")]
@@ -141,7 +144,7 @@ def main():
        "**不改结论(那会把老用例judge反),而是把缺口说出来**")
 
     # ── ④ 数据:该试的是算出来的,四种状态都有活用例 ────────────────────
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(_库路径()); c.row_factory = sqlite3.Row
     该, 不必, 判不了 = SF.该试的行(c)
     ck("该试衣的行是按真规则算出来的,不是挑的", len(该) > 0, len(该) + len(不必) + len(判不了),
        f"该试 {len(该)} / 不必 {len(不必)} / 判不了 {len(判不了)} —— "

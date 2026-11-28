@@ -29,6 +29,9 @@ def _还有(清单, n):
     return f" ……还有 {len(清单) - n} 条(共 {len(清单)})" if len(清单) > n else ""
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 # ❹ 那条检查要读 `knowledge/fitting.py` —— 关键尺寸的**第二个来源**在它手里
 sys.path[:0] = [os.path.join(os.path.dirname(HERE), "knowledge")]
 FAIL = []
@@ -54,7 +57,7 @@ def ck(name, ok, n, msg=""):
 def main():
     print("形制与量体模板 · 检查")
     print("=" * 84)
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(_库路径()); c.row_factory = sqlite3.Row
 
     # ⓿ **`xingzhi` 是 `craft`(cat='形制')的结构化投影,必须和它一致。**
     #

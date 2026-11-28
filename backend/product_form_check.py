@@ -20,6 +20,9 @@
 import os, re, sys, json, sqlite3, shutil, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 sys.path[:0] = [HERE]
 FAIL = []
 
@@ -82,7 +85,7 @@ def main():
         print("       旧数据不会报错,只会让页面上少一块图 —— **看起来像没上传过**")
 
     # ④ 备注的署名**从日志派生,不许另存一列**
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+    c = sqlite3.connect(_库路径())
     cols = {r[1] for r in c.execute("PRAGMA table_info(product)")}
     多余 = cols & {"remark_by", "remark_at"}
     ck("备注署名不许另存一列(从编辑日志派生)", not 多余, len(cols),

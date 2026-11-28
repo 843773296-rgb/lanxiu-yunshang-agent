@@ -12,7 +12,8 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
-### 🟡 11-28 15:xx · 第 25 批已在工作树改好、**未提交**(四个迁移脚本:活动码 / 预约列 / 订单着装人 / 积分余额;建表 ensure_tables / 测试客户 / 夹具回填;knowledge 产能 / check_kb 两处 / 形制推导;欠债 178→168)。锁让给并行会话(推荐 + 召回名单两栏,约 1 小时,改 api_member,它自己重启 backend/agentsite)(Opus 5.5)
+### 🟡 11-28 15:xx · 本地两笔待推:第 25 批 31239d90 + 第 26 批(二十个 backend 检查里只读直连改走 dbpath,欠债 168→146;在 gate_db 重定向 + 真库拷贝上逐个实跑 20 个全 rc=0,版师角色那条要用 agentsite/.venv 的解释器)。两笔一起 rebase 后一次 ship;推完重启 backend(capacity 被 workorder_auto 用到)
+- (下面是第 25 批的原记录)第 25 批(四个迁移脚本:活动码 / 预约列 / 订单着装人 / 积分余额;建表 ensure_tables / 测试客户 / 夹具回填;knowledge 产能 / check_kb 两处 / 形制推导;欠债 178→168)。锁让给并行会话(推荐 + 召回名单两栏,约 1 小时,改 api_member,它自己重启 backend/agentsite)(Opus 5.5)
 - 已验(实跑):py_compile 全过;9 个带主入口的模块在 `LANXIU_DB=临时路径` 下 import 后 `DB` 等于该路径、临时文件没被创建;不带 env 时 realpath 等于真库;check_kb / capacity / dbpath_check / db_switchable_check / bite_check / table_origin_check 单跑全 rc=0。
 - 写法:backend 已在 sys.path 的(建表 / 测试客户 / 夹具回填)直接 `from dbpath import 路径`;其余 `sys.path.append(backend)` 追加在末尾再 import。check_kb 第 94 行那处现拼改成复用模块级 `DB`。
 - 咬合:capacity 的 file 锚(不可加人那行)、ensure_tables 的 file 锚(ownership 建表登记那行)、check_kb 的 SQL / md 锚都没动到。

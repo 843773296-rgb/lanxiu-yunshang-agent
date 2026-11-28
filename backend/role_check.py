@@ -23,6 +23,9 @@
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+import sys as _sys_db
+if HERE not in _sys_db.path: _sys_db.path.append(HERE)
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 26 批:库地址走 backend/dbpath(LANXIU_DB 优先)
 sys.path[:0] = [HERE, os.path.dirname(HERE)]
 import tasks as TK
 FAIL = []
@@ -58,7 +61,7 @@ def ck(name, ok, n, msg=""):
 def main():
     print("角色与登录身份 · 检查")
     print("=" * 84)
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c = sqlite3.connect(_库路径()); c.row_factory = sqlite3.Row
 
     # ① 每位工匠都有登录身份,而且桥是**一对一**的。
     n1 = c.execute("SELECT COUNT(*) FROM artisan").fetchone()[0]
