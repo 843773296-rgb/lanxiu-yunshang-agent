@@ -12,6 +12,11 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### ✅ 11-28 09:2x · 已推 266b0dd8(第 22 批,欠债 194);主检出已 ff,agentsite 已重启,curl 200/302;本地无待推(Opus 5.5)
+- 评测那三个(agent/eval.py、agent/chat_eval.py、agentsite/skill_rating_repair_eval.py)**查过、不迁**:evaldb.用副本() 会把 LANXIU_DB 设成副本,所以迁了只会更安全(切库后才 import 的模块直接拿副本),但它们归 fc,等它回来一并提。
+- 第 23 批(本地,欠债 186):backend/{stock,merge,workorder,task_status}_check.py 里函数内直连改走 dbpath。**要认真库的两处用 dbpath.真库()**(merge 的 `_真`、task_status 的「真库里已经有夹具」),拷副本的源头用 路径()。咬合规格都没锚这些行。task_status 没主入口,只做语法验证。
+- 再往下:剩下的多是 fakedata/ 与 knowledge/、agent/triage_* 里的函数内现拼;tools/bite_run.py、tools/backup.py 要认真库别动,backend/boundary_audit.py 归并行会话。
+
 ### 🟡 11-28 08:0x · 本地排第 22 批(打版草稿 / 走旅程 / 排班端到端 / 世界平移 / 表来源检查 / 能力管理,欠债 194),等并行会话这轮(研判置信度「任一次查无就判低」,约 1 小时)推完(Opus 5.5)
 - 下一步第一个动作:收到哈希 → rebase → 三项静态检查单跑 → ship(ship-20261128-<HHMM>a.log)→ ff 主检出 → **kickstart agentsite**(agentsite/capman.py 在它进程里)→ curl → 报哈希。
 - 跳过:agent/eval.py、agent/chat_eval.py、agentsite/skill_rating_repair_eval.py(评测有自己的切库口 evaldb,要先看它和 LANXIU_DB 的关系再动)。

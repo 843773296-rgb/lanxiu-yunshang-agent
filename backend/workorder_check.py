@@ -21,6 +21,7 @@ import os, shutil, sqlite3, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 23 批
 上线日 = "2026-11-17"
 
 # ── 咬合记录(规格在 tools/bite_specs.json)────────────────────────────────
@@ -86,7 +87,7 @@ def 副本上(T):
 
 def 真库上():
     """只读:上线之后经状态机进过待生产的定制单,现在还在待生产 / 生产中的,都该有工单。"""
-    c = sqlite3.connect(f"file:{os.path.join(HERE, 'lanxiu.db')}?mode=ro", uri=True)
+    c = sqlite3.connect(f"file:{_库路径()}?mode=ro", uri=True)
     try:
         单 = [r[0] for r in c.execute(
             "SELECT DISTINCT o.id FROM op_log l JOIN ordr o ON o.id=l.target WHERE l.machine='bk-order' AND l.too='待生产' "
@@ -105,7 +106,7 @@ def main():
     print("=" * 84)
     tmp = tempfile.mkdtemp(prefix="wo-")
     T = os.path.join(tmp, "lanxiu.db")
-    shutil.copy(os.path.join(HERE, "lanxiu.db"), T)
+    shutil.copy(_库路径(), T)
     try:
         副本上(T)
     finally:

@@ -35,6 +35,7 @@ import os, sys, re, sqlite3
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "knowledge")]
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 23 批
 
 # ── 咬合记录 ────────────────────────────────────────────────────────────
 # 每一条都手动改坏过一次,确认对应那条检查**真的会红**。
@@ -225,7 +226,7 @@ def main():
        f"**白名单会静默少算,所以少算了什么要看得见**")
 
     # 工具里数出来的销量,必须在口径认可的范围内 —— 两处各数一遍必然漂。
-    c0 = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c0.row_factory = sqlite3.Row
+    c0 = sqlite3.connect(_库路径()); c0.row_factory = sqlite3.Row
     应算 = sum(1 for x in c0.execute(
         "SELECT o.status, o.refund_status FROM ordr_item i "
         "JOIN ordr o ON o.id=i.order_id WHERE i.sku IS NOT NULL AND i.sku<>''")
@@ -239,7 +240,7 @@ def main():
 
     # **分子分母要同一套口径。** 销量只数卖掉了的,而统计天数如果按所有订单算,
     # 一张一年前的取消单就会把跨度拉长 —— 速度被稀释、可售天数偏大、该报的不报。
-    c1 = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c1.row_factory = sqlite3.Row
+    c1 = sqlite3.connect(_库路径()); c1.row_factory = sqlite3.Row
     卖日 = [x["created"][:10] for x in c1.execute(
         "SELECT created, status, refund_status FROM ordr WHERE created IS NOT NULL")
         if SA.卖掉了(x["status"], x["refund_status"])[0]]
@@ -341,7 +342,7 @@ def main():
     # 明细里一个都看不到 —— 这条一直绿,红的是下面「发不出」那条的样本量 0。
     # 所以再拿**个数**对一遍,个数从库的原始两列现数(在手 ≤ 0 才算断货),不调口径。
     误 = [x for x in (r["断货"].get("明细") or []) if (x.get("在手") or 0) > 0]
-    _c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+    _c = sqlite3.connect(_库路径())
     真断货 = _c.execute("SELECT COUNT(*) FROM sku WHERE status<>'停用' "
                         "AND COALESCE(stock,0)<=0 AND COALESCE(stock,0)-COALESCE(locked,0)<=0").fetchone()[0]
     _c.close()
@@ -360,7 +361,7 @@ def main():
        "一个是催订单释放,一个是补货")
 
     # ── ⑤ 停用的不进预警 ──────────────────────────────────────────────
-    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+    c = sqlite3.connect(_库路径())
     停 = {x[0] for x in c.execute("SELECT code FROM sku WHERE status='停用'")}
     混 = [x["SKU"] for x in 行 if x["SKU"] in 停]
     ck("停用的 SKU 不进预警", not 混, len(停),

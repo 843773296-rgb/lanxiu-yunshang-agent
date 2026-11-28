@@ -51,6 +51,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import api  # noqa: E402
+from dbpath import 路径 as _库路径, 真库 as _真库路径   # 11-28 库路径单源第 23 批
 
 咬合 = [
     # 三条全部实跑验过三关(对照先绿 / 改坏要红 / **红的只有点名那一条**),
@@ -88,7 +89,7 @@ def 库况(名, 文):
 print("按 id 找人工任务,不许绑在某个状态上")
 print("=" * 70)
 
-库 = os.path.join(这里, "lanxiu.db")
+库 = _库路径()
 if not os.path.exists(库):
     print(f"  {Y}⚠️  没有 {库} —— **这不叫通过,这叫没验到**。"
           f"先跑 `python3 backend/seed.py`{D}")
@@ -96,7 +97,7 @@ if not os.path.exists(库):
 
 # ── 自造组:副本上插一条真库里没有的、非「待处理」的任务 ──────────────────
 夹具号 = "TTEST-任务状态夹具-1"
-假 = os.path.join(这里, "lanxiu.db")
+假 = _真库路径()   # 这里要认的是真库(下面报「真库里已经有」),不认 LANXIU_DB
 cx = sqlite3.connect(f"file:{假}?mode=ro", uri=True)
 已有 = cx.execute("SELECT 1 FROM task WHERE id=?", (夹具号,)).fetchone()
 cx.close()

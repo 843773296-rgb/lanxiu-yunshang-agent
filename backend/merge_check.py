@@ -15,6 +15,7 @@ import os, shutil, sqlite3, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), os.path.join(ROOT, "agent")]
+from dbpath import 路径 as _库路径, 真库 as _真库路径   # 11-28 库路径单源第 23 批
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad, n = [], 0
 
@@ -50,7 +51,7 @@ print("客户软合并 · 检查(库的临时副本上跑,真库不动)")
 print("=" * 80)
 tmp = tempfile.mkdtemp(prefix="merge-")
 db = os.path.join(tmp, "lanxiu.db")
-shutil.copy(os.path.join(HERE, "lanxiu.db"), db)
+shutil.copy(_库路径(), db)
 import merge as MG, ops, oplog, server as SV
 MG.DB = ops.DB = oplog.DB = SV.DB = db
 c = sqlite3.connect(db); c.row_factory = sqlite3.Row
@@ -244,7 +245,7 @@ c.close()
 shutil.rmtree(tmp, ignore_errors=True)
 
 # 真库也扫一遍(只读):这条保证不靠「每次 并入 都记得压平」—— 有人直接改库 / 导数据写了两层,这里会红
-_真 = sqlite3.connect(f"file:{os.path.join(HERE, 'lanxiu.db')}?mode=ro", uri=True)
+_真 = sqlite3.connect(f"file:{_真库路径()}?mode=ro", uri=True)
 if "merged_into" in {r[1] for r in _真.execute("PRAGMA table_info(customer)")}:
     _坏 = _真.execute("SELECT a.id, a.merged_into FROM customer a JOIN customer b ON b.id=a.merged_into "
                      "WHERE COALESCE(b.merged_into,'')<>'' LIMIT 3").fetchall()
