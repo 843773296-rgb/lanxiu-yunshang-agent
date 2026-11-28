@@ -79,6 +79,18 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _库路径():
+    """11-28 库路径单源第 24 批:库地址走 backend/dbpath(LANXIU_DB 优先)。
+    backend 追加在 sys.path 末尾,不盖住本目录的同名模块。"""
+    try:
+        import dbpath
+    except ImportError:
+        import sys as _s
+        _s.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
+        import dbpath
+    return dbpath.路径()
 sys.path.insert(0, os.path.join(ROOT, "knowledge"))
 OUT = os.path.join(ROOT, "knowledge", "15-营销SOP.md")
 
@@ -566,7 +578,7 @@ def 节_08_价格():
         "工时单价和定价系数都是代码常量,这一条每次生成时现读。"))
     # 折扣规则在不在空跑 —— **现查库**
     try:
-        c = sqlite3.connect(os.path.join(ROOT, "backend", "lanxiu.db"))
+        c = sqlite3.connect(_库路径())
         折 = c.execute("select count(*) from ordr where amount is not null "
                       "and payable is not null and amount<>payable").fetchone()[0]
         c.close()
@@ -622,7 +634,7 @@ def 节_09_触点():
     # 覆盖率现查 —— **写死会过期**,而过期的覆盖率和准确的长得一样。
     覆盖 = {}
     try:
-        c = sqlite3.connect(os.path.join(ROOT, "backend", "lanxiu.db"))
+        c = sqlite3.connect(_库路径())
         总 = c.execute("select count(*) from customer").fetchone()[0] or 1
         for 名, 表 in (("预约", "appointment"), ("跟进", "followup"),
                      ("日程", "schedule"), ("量体", "measure_rec"),

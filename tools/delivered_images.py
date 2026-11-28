@@ -45,6 +45,18 @@
 import argparse, hashlib, json, os, sqlite3, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _库路径():
+    """11-28 库路径单源第 24 批:库地址走 backend/dbpath(LANXIU_DB 优先)。
+    backend 追加在 sys.path 末尾,不盖住本目录的同名模块。"""
+    try:
+        import dbpath
+    except ImportError:
+        import sys as _s
+        _s.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
+        import dbpath
+    return dbpath.路径()
 清单档 = os.path.join(ROOT, "backend", "交付图清单.json")
 # ⚠️ `自测` 会把 `清单档` 换成临时文件来跑咬合,所以**原值要另存一份** ——
 # 「每条记录的商品号库里都有」那一条只在核真实清单时才适用
@@ -87,7 +99,7 @@ def 扫(目录):
 
 def 商品名():
     try:
-        c = sqlite3.connect(os.path.join(ROOT, "backend", "lanxiu.db"))
+        c = sqlite3.connect(_库路径())
         return {r[0]: r[1] for r in c.execute("SELECT spu,name FROM product")}
     except Exception:
         return {}
@@ -243,7 +255,7 @@ def 验(a):
     # > 在那句「取不到库」上长得一模一样。
     # 善意的 `except` 会**把自己的 bug 吞掉** —— 所以把异常原文带出来。
     _库, _为啥 = None, ""
-    _db = os.path.join(ROOT, "backend", "lanxiu.db")
+    _db = _库路径()
     try:
         import sqlite3 as _s3
         _c = _s3.connect(f"file:{_db}?mode=ro", uri=True)

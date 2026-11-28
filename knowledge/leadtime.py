@@ -22,6 +22,18 @@
 import os, re, sys, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _库路径():
+    """11-28 库路径单源第 24 批:库地址走 backend/dbpath(LANXIU_DB 优先)。
+    backend 追加在 sys.path 末尾,不盖住本目录的同名模块。"""
+    try:
+        import dbpath
+    except ImportError:
+        import sys as _s
+        _s.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
+        import dbpath
+    return dbpath.路径()
 MD = os.path.join(HERE, "07-工期与成本.md")
 sys.path.insert(0, HERE)
 import derive_pattern as dp
@@ -115,7 +127,7 @@ def _in_stock_查(crafts, names, exclude=None):
     工期推算一直有条建议叫「改用现货面料可压缩 20 天」—— 在库里加上现货字段之前,
     **系统根本不知道哪些面料有现货,那条建议只是一句空话。** 现在它能点名了。
     """
-    db = os.path.join(HERE, "..", "backend", "lanxiu.db")
+    db = _库路径()
     if not os.path.exists(db) or not crafts: return []
     import sqlite3
     con = sqlite3.connect(db); con.row_factory = sqlite3.Row
@@ -313,7 +325,7 @@ if __name__ == "__main__":
     import sqlite3, json
     print("工期推算 · 自测\n" + "=" * 78)
     D = craft_days()
-    db = os.path.join(HERE, "..", "backend", "lanxiu.db")
+    db = _库路径()
     con = sqlite3.connect(db)
     N = {r[0]: r[1] for r in con.execute("SELECT code,name FROM craft")}
     kf = {r[0] for r in con.execute("SELECT code FROM craft WHERE cat='工艺'")}

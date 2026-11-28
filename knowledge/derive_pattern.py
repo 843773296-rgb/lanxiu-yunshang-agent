@@ -11,6 +11,18 @@
 import os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _库路径():
+    """11-28 库路径单源第 24 批:库地址走 backend/dbpath(LANXIU_DB 优先)。
+    backend 追加在 sys.path 末尾,不盖住本目录的同名模块。"""
+    try:
+        import dbpath
+    except ImportError:
+        import sys as _s
+        _s.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
+        import dbpath
+    return dbpath.路径()
 MD_PT = os.path.join(HERE, "10-版型库.md")
 MD_BOM = os.path.join(HERE, "11-物料与BOM.md")
 SIZE_NO = {"S": -1, "M": 0, "均码": 0, "L": 1, "XL": 2}
@@ -261,7 +273,7 @@ def estimate(pattern_code, size, material_code, craft_codes=(), scope="局部",
 
 def craft_names_from_db():
     """主料和工艺的名字从 craft 表取,BOM 文件里只写编码 —— 不让同一个名字存两遍。"""
-    db = os.path.join(HERE, "..", "backend", "lanxiu.db")
+    db = _库路径()
     if not os.path.exists(db): return {}
     import sqlite3
     return {r[0]: r[1] for r in sqlite3.connect(db).execute("SELECT code,name FROM craft")}
@@ -314,7 +326,7 @@ if __name__ == "__main__":
     print("  ", estimate("PT05", "S", "MT12", craft_names=NAMES)["error"])
 
     # ── 和数据库对账 ──────────────────────────────────────────────────
-    db = os.path.join(HERE, "..", "backend", "lanxiu.db")
+    db = _库路径()
     if os.path.exists(db):
         import sqlite3
         con = sqlite3.connect(db); con.row_factory = sqlite3.Row

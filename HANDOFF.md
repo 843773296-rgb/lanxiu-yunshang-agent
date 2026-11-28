@@ -12,6 +12,22 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-28 13:0x · 第 24 批本地已提交(交期 / 版型推导 / 营销话术 / 交付图片,欠债 178),等并行会话 mp_event 那轮推完再 rebase ship(Opus 5.5)
+- 并行会话已推 e6b30115(mp_event 27.6 万行、表数 138、重建 53 步,造浏览在回填门店码之前),锁空;我 rebase 后 ship 第 24 批。
+- 写法:这四个在 knowledge/ 与 tools/,模块路径里不一定有 backend,用模块内 `_库路径()` 辅助函数**用到时才** import dbpath,导不到再把 backend **追加到 sys.path 末尾**(不插最前,免得盖住 knowledge/ 的同名模块)。验证:默认指真库、设 LANXIU_DB 后跟着走。knowledge/leadtime 在服务里被用到,推完重启 backend + agentsite + supervise(桥工具在 supervise)。
+- 跳过:agent/triage_*(研判归并行会话那条线)。
+
+### ✅(已解除)11-28 · 并行会话占锁 + 写共享库(Opus 5.5 记)
+- 它在共享库建新表 mp_event(小程序浏览虚拟数据,约 27.6 万行、+35MB,用户要的),随后改文档表数 137→138 再 ship,约 1 小时。**建表后到它推完之间别起 ship**(会红在 doc_numbers 和 browse_check,与改动无关)。等它报哈希再 rebase。
+
+### ✅ 11-28 09:4x · 已推 e4b7c70a(第 23 批,欠债 186;主检出已 ff,只动检查没重启,curl 200/302);本地无待推;下面六项仍有效,「下一步第一个动作」改为:接着挑第 24 批(fakedata/、knowledge/、agent/triage_* 里的函数内现拼,先查咬合锚),第 23 批那条「未验证的预判」已由实跑绿验掉(Opus 5.5)
+- **下一步第一个动作**:看 .wip-glossary/ship-20261128-0945a.log 的「被包的命令退出码」(后台通知的 exit 0 不算)→ 0 则 ff 主检出(merge-base 验)+ curl 8760/8770(只动检查,不重启)→ 报哈希给用户和并行会话「澜绣云裳继续做」;非 0 则 grep ❌ 找红的那条,先判是不是数据漂(SC21341 / 版师评测 / 表数那一族)。
+- **未验证的预判**:第 23 批 SQL / 文件型咬合在沙盒里仍指沙盒库 —— 推理来自 bite_run 改库() + dbpath HERE 相对,第 21 批 ship 实跑过一次绿,但第 23 批四个文件的触及重放还没看到结果。评测三件「迁了只会更安全」是读 evaldb 得出的,没实跑。
+- **判据**:迁移筛法 = 咬合规格除描述外不含 lanxiu.db / DB / connect、无 env 型;本意认真库的用 dbpath.真库();无主入口的只做语法 / 源码验证不 import。门禁副本重定向在 connect 层(sitecustomize),不靠 LANXIU_DB。
+- **作废**:「迁检查会让门禁改读副本」「SQL 型咬合会失效」两个顾虑都已查实不成立。
+- **禁区**:check_copy.py / tools/bite_run.py / tools/backup.py 别迁(要认真库);backend/boundary_audit.py、server/fsm/api/api_wearer/ops/appt_write、agentsite/sdk/app、prompts、管理后台/ 归并行会话;agent/eval.py 等评测归 fc;0 点到夜跑结束不拿锁;删改数据要用户点头。
+- **悬而未决**:转告 fc 四件(见 13:3x / 14:2x 两节)它一直不在线;g8「斜杠枚举状态」误报真跑再撞上再钉用例(放宽要用户)。
+
 ### ✅ 11-28 09:2x · 已推 266b0dd8(第 22 批,欠债 194);主检出已 ff,agentsite 已重启,curl 200/302;本地无待推(Opus 5.5)
 - 评测那三个(agent/eval.py、agent/chat_eval.py、agentsite/skill_rating_repair_eval.py)**查过、不迁**:evaldb.用副本() 会把 LANXIU_DB 设成副本,所以迁了只会更安全(切库后才 import 的模块直接拿副本),但它们归 fc,等它回来一并提。
 - 第 23 批(本地,欠债 186):backend/{stock,merge,workorder,task_status}_check.py 里函数内直连改走 dbpath。**要认真库的两处用 dbpath.真库()**(merge 的 `_真`、task_status 的「真库里已经有夹具」),拷副本的源头用 路径()。咬合规格都没锚这些行。task_status 没主入口,只做语法验证。
