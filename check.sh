@@ -877,6 +877,7 @@ run "对照用例条数 · 32 个判分器统一机读出口,PRD 的数和现算
 run "研判置信度 · 只数查到东西的调用(查无此单 / 出错不算)" ./agentsite/.venv/bin/python backend/triage_confidence_check.py
 run "小程序浏览造数 · 对得上订单 / 时间先后 / 停留成对 / 确定性(合成夹具自证)" python3 tools/backfill_browse.py --selftest
 run "小程序浏览数据 · 结构 / 逐笔对小程序订单 / 不落未来 / 查询收范围" python3 backend/browse_check.py
+run "推荐 · 协同过滤归一化压住爆款 / 矩阵分解确定性 / 找像 A 的人按比重 / 买过 · 不在售 · 不同意营销不推 / 冷却共用 A-266 / 范围" python3 backend/reco_check.py
 run "检查不许往真库的操作台账写(写了就点名是哪个检查)" bash -c '
   # 先自检:故意从门禁里写一笔,它必须被拦下并记进账 —— 拦不下的话,「没有漏写」就什么也说明不了
   python3 -c "import sys; sys.path.insert(0,\"backend\"); import oplog; oplog.log_op(\"门禁自检\",\"check\",\"-\",\"—\",\"—\",True,\"LEAK_CANARY\",\"自检\",{})"

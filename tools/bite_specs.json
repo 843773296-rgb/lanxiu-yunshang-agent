@@ -24308,5 +24308,77 @@
    }
   ],
   "预期红": "的「下单」行有 "
+ },
+ {
+  "script": "backend/reco_check.py",
+  "改坏": "商品相似去掉归一化,只数一起看的次数 —— 推荐被爆款占满(11-28 实测 65%)",
+  "file": [
+   {
+    "path": "knowledge/reco.py",
+    "old": "        s = p / math.sqrt(模[a] * 模[b])",
+    "new": "        s = float(n)"
+   }
+  ],
+  "预期红": "归一化:看了 X 的第一位应是 Y"
+ },
+ {
+  "script": "backend/reco_check.py",
+  "改坏": "去掉「至少 5 人一起看过」—— 两三个人的巧合也算相关(11-28)",
+  "file": [
+   {
+    "path": "knowledge/reco.py",
+    "old": "        if n < 最少人数:\n            continue",
+    "new": "        if False:\n            continue"
+   }
+  ],
+  "预期红": "门槛:X 和 Z 只有 4 个人一起看过"
+ },
+ {
+  "script": "backend/reco_check.py",
+  "改坏": "协同过滤不排除她买过的(11-28)",
+  "file": [
+   {
+    "path": "knowledge/reco.py",
+    "old": "            if y in 买过 or y not in 可推:",
+    "new": "            if y not in 可推:"
+   }
+  ],
+  "预期红": "闸:她买过 Y"
+ },
+ {
+  "script": "backend/reco_check.py",
+  "改坏": "能推吗() 不查营销同意 —— 不同意营销的人也被列为能推(11-28)",
+  "file": [
+   {
+    "path": "backend/reco_query.py",
+    "old": "    if not 能 or 能[0] in (\"注销中\", \"已注销\") or not 能[1]:\n        return \"不同意营销 / 注销 / 没有账户\"",
+    "new": "    if False:\n        return \"不同意营销 / 注销 / 没有账户\""
+   }
+  ],
+  "预期红": "没同意营销 / 已注销,却列在"
+ },
+ {
+  "script": "backend/reco_check.py",
+  "改坏": "推荐查询去掉单客范围闸 —— 别店店长看得到(11-28)",
+  "file": [
+   {
+    "path": "backend/reco_query.py",
+    "old": "    拒 = _m._单客范围(me, cs[0])",
+    "new": "    拒 = None"
+   }
+  ],
+  "预期红": "范围:别店店长用"
+ },
+ {
+  "script": "backend/reco_check.py",
+  "改坏": "给人推荐去掉爆款降权 —— 每个客户都被推那几件爆款(11-28 不降权时前 3 里 75% 是爆款)",
+  "file": [
+   {
+    "path": "knowledge/reco.py",
+    "old": "    if 销量 is not None and 降权:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "爆款降权:H 卖了一百万件"
  }
 ]

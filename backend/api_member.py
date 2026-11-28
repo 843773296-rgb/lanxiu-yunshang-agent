@@ -696,6 +696,46 @@ def deal_credit(order=None, staff=None, limit=20):
         out["还有几单不对"] = max(0, len(异常) - 10)
     return out
 
+def _附小程序(名单, 天=30, 推几件=3):
+    """给名单里每个人挂两栏(用户 2026-11-28 拍「协同过滤 … 连带接进召回名单」):
+      · 「小程序里最近在看」:近 30 天停得最久的 3 件,带看了几次 / 一共停多久 / 加购没有 / 买没买 —— 开口的由头
+      · 「可以推的」:协同过滤前 3 件,每件带「因为她看过 X」(只用协同过滤:快、说得出为什么;
+        矩阵分解在 reco_query.recommend_for 里给,这里不挂)。**没同意营销 / 注销 / 没账户的不推商品**,明写原因
+    库里没有浏览数据(mp_event 不在)就一栏都不挂 —— 名单照旧,不因为推荐取不到而少人。"""
+    if not 名单:
+        return
+    import reco_query as _rq
+    from contextlib import closing as _cl
+    m = _rq._模型(要分解=False)
+    if m is None:
+        return
+    起 = (m["今"] - _dt.timedelta(days=天 - 1)).isoformat()
+    ids = [str(x["客户号"]) for x in 名单]
+    看 = {}
+    with _cl(_rq._连()) as c:
+        for r in c.execute(
+                "SELECT customer_id, event, spu, dwell_s FROM mp_event WHERE customer_id IN (%s) AND ts>=? AND spu IS NOT NULL"
+                % ",".join("?" * len(ids)), ids + [起]):
+            d = 看.setdefault(str(r["customer_id"]), {}).setdefault(r["spu"], {"看了几次": 0, "一共停留秒": 0, "加购了": False, "下单了": False})
+            ev = r["event"]
+            if ev == "进入详情": d["看了几次"] += 1
+            elif ev == "离开详情": d["一共停留秒"] += r["dwell_s"] or 0
+            elif ev == "加购": d["加购了"] = True
+            elif ev == "下单": d["下单了"] = True
+        for x in 名单:
+            u = str(x["客户号"])
+            近 = sorted((看.get(u) or {}).items(), key=lambda kv: (-kv[1]["一共停留秒"], kv[0]))[:3]
+            x["小程序里最近在看"] = [{"商品": s, "商品名": _rq._名(m, s), **v} for s, v in 近] or f"近 {天} 天没在小程序看过商品"
+            why = _rq.能推吗(c, u, m["今"], 查冷却=False)
+            if why:
+                x["可以推的"] = f"不推商品:{why}"
+                continue
+            推 = _rq._R.给人推荐_协同(m["M"].get(u, {}), m["相"], m["可推"], m["买过"].get(u, set()), k=推几件, 销量=m["销量"])
+            x["可以推的"] = [{"商品": y["商品"], "商品名": _rq._名(m, y["商品"]),
+                              "因为她看过": _rq._名(m, y["因为看过"]), "一起看过的人数": y["共同人数"]} for y in 推] \
+                or "协同过滤推不出(她的浏览 / 购买记录太少)"
+
+
 def revive_list(customer=None, limit=20):
     """**这些客户现在该不该联系,以及联系他说什么。**
 
@@ -751,6 +791,7 @@ def revive_list(customer=None, limit=20):
         else:
             不促[码] = 不促.get(码, 0) + 1
     n = max(1, min(int(limit or 20), 100))
+    _附小程序(要促[:n])      # 11-28 用户拍「连带接进召回名单」:最近在看什么 + 可以推的(协同过滤)
     out = {
         "看的范围": 范围,
         "看了几个客户": len(cs),
