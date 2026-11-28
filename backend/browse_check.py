@@ -149,6 +149,14 @@ def 查真库(db):
             if 非小:
                 bad.append(f"别的渠道下的单 {len(非小)} 笔在小程序里有「下单」行:{', '.join(非小[:5])}")
 
+        # 人人都有(11-28 用户补「给所有顾客都模拟上」):世界今天之前建档的、没并入别人的,至少有一次
+        今s = _今(db).isoformat()
+        没有 = [r[0] for r in c.execute(
+            f"SELECT id FROM customer cu WHERE merged_into IS NULL AND substr(created,1,10) < ? "
+            f"AND NOT EXISTS (SELECT 1 FROM {表} e WHERE e.customer_id=cu.id) ORDER BY id", (今s,))]
+        if 没有 and K.每人至少进来一次:
+            bad.append(f"人人都有:{len(没有)} 个客户一次小程序都没进过:{', '.join(map(str, 没有[:5]))}"
+                       + (f" …还有 {len(没有) - 5} 个" if len(没有) > 5 else ""))
         # 不落到世界明天
         明 = (_今(db) + dt.timedelta(days=1)).isoformat()
         x = c.execute(f"SELECT COUNT(*), MAX(ts) FROM {表} WHERE ts>=?", (明,)).fetchone()

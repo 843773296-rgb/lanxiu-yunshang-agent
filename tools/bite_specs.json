@@ -6531,11 +6531,11 @@
  },
  {
   "script": "backend/product_summary_check.py",
-  "改坏": "同一位客户 90 天内被推两次(冷却没合着算)",
+  "改坏": "同一位客户 90 天内被推两次(冷却没合着算);11-28 冷却加了第三种(浏览意向),破坏点跟着改",
   "file": [
    {
     "path": "backend/opportunity_store.py",
-    "old": "    return max([x for x in (a, b) if x] or [None])",
+    "old": "    return max([x for x in (a, b, v) if x] or [None])",
     "new": "    return a"
    }
   ],
@@ -24380,5 +24380,77 @@
    }
   ],
   "预期红": "爆款降权:H 卖了一百万件"
+ },
+ {
+  "script": "tools/backfill_browse.py",
+  "改坏": "保底退回只管「抽到 0 次」—— 建档早、抽到的日子都在商品上架前的人照样一行没有(11-28 第一版漏 26 人)",
+  "file": [
+   {
+    "path": "tools/backfill_browse.py",
+    "old": "        要保底 = K.每人至少进来一次\n",
+    "new": "        要保底 = K.每人至少进来一次 and 次 == 0\n"
+   }
+  ],
+  "预期红": "保底:"
+ },
+ {
+  "script": "backend/browse_intent_check.py",
+  "改坏": "浏览意向扫描不查营销同意(11-28)",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "        if not 能 or 能[0] in (\"注销中\", \"已注销\") or not 能[1]:    # 营销同意(浏览意向)",
+    "new": "        if False:    # 营销同意(浏览意向)"
+   }
+  ],
+  "预期红": "营销同意:"
+ },
+ {
+  "script": "backend/browse_intent_check.py",
+  "改坏": "去掉「看 ≥ 2 次」—— 加购 / 收藏一次就开商机,顾问一周 28 条跟不过来(11-28)",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "d[\"看了几次\"] >= K.浏览意向_最少看几次):",
+    "new": "d[\"看了几次\"] >= 1):"
+   }
+  ],
+  "预期红": "信号:"
+ },
+ {
+  "script": "backend/browse_intent_check.py",
+  "改坏": "名额只按这一次调用数,不算今天已派的 —— 同一天重跑再派一轮(11-28 第一版多派 13 条)",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "        派了[adv] = n\n",
+    "new": "        pass\n"
+   }
+  ],
+  "预期红": "名额按天:同一天再扫"
+ },
+ {
+  "script": "backend/browse_intent_check.py",
+  "改坏": "收口不管浏览意向那一种提醒 —— 没人答的一直挂着(11-28)",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "\"WHERE t.kind='浏览意向回捞' AND t.answer IS NULL",
+    "new": "\"WHERE t.kind='没有这一种' AND t.answer IS NULL"
+   }
+  ],
+  "预期红": "收口:过期没人答的"
+ },
+ {
+  "script": "backend/browse_intent_check.py",
+  "改坏": "每日上新不再调浏览意向回捞 —— 每天没人去扫(11-28)",
+  "file": [
+   {
+    "path": "tools/daily_fresh.py",
+    "old": "        意 = OS.浏览意向回捞(c, 今)",
+    "new": "        意 = []"
+   }
+  ],
+  "预期红": "接线:daily_fresh.收口与放出"
  }
 ]

@@ -80,6 +80,14 @@ CREATE TABLE IF NOT EXISTS buy_pref_recall(
   basis       TEXT NOT NULL,          -- 依据:近 24 个月买过几件、几件是这个色系、和店里一般客人比
   ratio       REAL NOT NULL,          -- 倍数(她的比例 ÷ 全店比例)
   created     TEXT NOT NULL);
+-- 浏览意向回捞(用户 2026-11-28):一周内同一件加购或收藏、又回来看了几次、还没买 → 开「待确认」商机。
+-- 同 buy_pref_recall 一样单独一张表(没有原话,不混进 opportunity_recall);冷却三张表合着算
+CREATE TABLE IF NOT EXISTS browse_intent_recall(
+  opp_id      TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  spu         TEXT NOT NULL,
+  basis       TEXT NOT NULL,          -- {"看了几次":…, "一共停留秒":…, "加购了":…, "收藏了":…, "窗口":"起–止"}
+  created     TEXT NOT NULL);
 """
 
 
@@ -350,7 +358,10 @@ def _上次推送(c, cust):
     a = c.execute("SELECT MAX(created) FROM opportunity_recall WHERE customer_id=?", (cust,)).fetchone()[0]
     b = c.execute("SELECT MAX(created) FROM buy_pref_recall WHERE customer_id=?", (cust,)).fetchone()[0] \
         if c.execute("SELECT 1 FROM sqlite_master WHERE name='buy_pref_recall'").fetchone() else None
-    return max([x for x in (a, b) if x] or [None])
+    # 浏览意向(11-28):第三种回捞,同一个人 90 天内照样只被推一次
+    v = c.execute("SELECT MAX(created) FROM browse_intent_recall WHERE customer_id=?", (cust,)).fetchone()[0] \
+        if c.execute("SELECT 1 FROM sqlite_master WHERE name='browse_intent_recall'").fetchone() else None
+    return max([x for x in (a, b, v) if x] or [None])
 
 
 def 回捞(c, 新品们, 今天):
@@ -517,13 +528,98 @@ def 推断提醒收口(c, 今天):
             "SELECT s.id, t.opp_id FROM opportunity_task t JOIN schedule s ON s.id=t.schedule_id "
             "WHERE t.kind='购买偏好回捞' AND t.answer IS NULL AND s.status='有效' AND substr(s.end_ts,1,10) < ?",
             (今天.isoformat(),)).fetchall():
-        c.execute("UPDATE schedule SET status='取消', cancel_reason=? WHERE id=?",
-                  ("按购买记录推断的提醒,过了期限没人答 —— 自动收口(用户 10-10 定),不算逾期", sid))
-        c.execute("UPDATE opportunity_task SET answer=?, answered_by=?, answered_at=? WHERE schedule_id=?",
-                  ("自动收口", "SYS", 今天.isoformat(), sid))
-        st = c.execute("SELECT status FROM opportunity WHERE id=?", (oid,)).fetchone()
-        if st and st[0] == K.起始状态:
-            改状态(c, oid, "已关闭", 今天.isoformat(), 经手人="SYS",
-                   关闭原因="按购买记录推断的商机,提醒过期没人答 —— 自动收口(不是客户说不要)")
+        _收一条(c, sid, oid, 今天, "按购买记录推断")
         出.append(sid)
+    # 浏览意向回捞(用户 11-28 拍「跟购买喜好推荐同一套」):同一个期限、同一种收法
+    for sid, oid in c.execute(
+            "SELECT s.id, t.opp_id FROM opportunity_task t JOIN schedule s ON s.id=t.schedule_id "
+            "WHERE t.kind='浏览意向回捞' AND t.answer IS NULL AND s.status='有效' AND substr(s.end_ts,1,10) < ?",
+            (今天.isoformat(),)).fetchall():
+        _收一条(c, sid, oid, 今天, "按小程序浏览推断")
+        出.append(sid)
+    return 出
+
+
+def _收一条(c, sid, oid, 今天, 怎么推的):
+    c.execute("UPDATE schedule SET status='取消', cancel_reason=? WHERE id=?",
+              (f"{怎么推的}的提醒,过了期限没人答 —— 自动收口(用户 10-10 定),不算逾期", sid))
+    c.execute("UPDATE opportunity_task SET answer=?, answered_by=?, answered_at=? WHERE schedule_id=?",
+              ("自动收口", "SYS", 今天.isoformat(), sid))
+    st = c.execute("SELECT status FROM opportunity WHERE id=?", (oid,)).fetchone()
+    if st and st[0] == K.起始状态:
+        改状态(c, oid, "已关闭", 今天.isoformat(), 经手人="SYS",
+               关闭原因=f"{怎么推的}的商机,提醒过期没人答 —— 自动收口(不是客户说不要)")
+
+
+def 浏览意向回捞(c, 今天):
+    """每天扫一遍小程序浏览 → 一周内同一件、加购或收藏了、又回来看了 ≥ 2 次、还没买的人,开「待确认」商机 + 派提醒
+    (用户 2026-11-28 拍;门槛 / 名额在 knowledge/oppo_obj.py 的「浏览意向」那一段)。
+
+    一个人一次只推一件(意向最强那件);每位顾问每天最多 `浏览意向_每顾问每天` 条,意向强的先(看的次数,其次停得久);
+    闸同购买推断:不同意营销 / 注销中 / 已注销 / 没账户不推,90 天冷却三种回捞合着算,那件不在售的不推。
+    **推断不直接算商机** —— 顾问联系后点「客户想看」才转跟进中。没有浏览数据(mp_event 不在)→ 返回 [],不报错。
+    谁来调:`tools/daily_fresh.收口与放出`,排在收口之后。"""
+    import datetime as _dt
+    c.executescript(DDL)
+    if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='mp_event'").fetchone():
+        return []
+    起 = (今天 - _dt.timedelta(days=K.浏览意向_窗口天 - 1)).isoformat()
+    止 = (今天 + _dt.timedelta(days=1)).isoformat()
+    聚 = {}
+    for cust, spu, ev, dw in c.execute(
+            "SELECT customer_id, spu, event, dwell_s FROM mp_event WHERE ts>=? AND ts<? AND spu IS NOT NULL", (起, 止)):
+        d = 聚.setdefault((str(cust), spu), {"看了几次": 0, "一共停留秒": 0, "加购了": False, "收藏了": False})
+        if ev == "进入详情": d["看了几次"] += 1
+        elif ev == "离开详情": d["一共停留秒"] += dw or 0
+        elif ev == "加购": d["加购了"] = True
+        elif ev == "收藏": d["收藏了"] = True
+    在售 = {r[0] for r in c.execute("SELECT spu FROM product WHERE status='上架'")}
+    买了 = {(str(a), b) for a, b in c.execute(
+        "SELECT o.customer_id, i.spu FROM ordr o JOIN ordr_item i ON i.order_id=o.id WHERE substr(o.created,1,10)>=? "
+        "AND o.status NOT IN ('取消','已取消')", (起,))}
+    每人 = {}
+    for (cust, spu), d in 聚.items():
+        if not ((d["加购了"] or d["收藏了"]) and d["看了几次"] >= K.浏览意向_最少看几次):
+            continue
+        if spu not in 在售 or (cust, spu) in 买了:
+            continue
+        强 = (d["看了几次"], d["一共停留秒"])
+        if cust not in 每人 or 强 > 每人[cust][0]:
+            每人[cust] = (强, spu, d)
+    候选 = sorted(每人.items(), key=lambda kv: (-kv[1][0][0], -kv[1][0][1], kv[0]))
+    # 名额按「这一天」算,不按「这一次调用」算 —— 同一天扫两次(重跑 / 手动补跑)不许再派一轮(11-28 第一版这样多派了 13 条)
+    派了 = {}
+    for adv, n in c.execute("SELECT advisor_no, COUNT(*) FROM opportunity WHERE source='浏览意向' AND created=? "
+                            "GROUP BY advisor_no", (今天.isoformat(),)):
+        派了[adv] = n
+    出 = []
+    for cust, (_, spu, d) in 候选:
+        adv = (c.execute("SELECT advisor_no FROM customer WHERE id=?", (cust,)).fetchone() or [None])[0]
+        if 派了.get(adv, 0) >= K.浏览意向_每顾问每天:
+            continue
+        能 = c.execute("SELECT a.status, a.marketing_consent FROM customer cu JOIN account a ON a.id=cu.account_id "
+                       "WHERE cu.id=?", (cust,)).fetchone()
+        if not 能 or 能[0] in ("注销中", "已注销") or not 能[1]:    # 营销同意(浏览意向)
+            continue
+        上次 = _上次推送(c, cust)
+        if K.冷却中(_dt_日(上次) if 上次 else None, 今天):
+            continue
+        oid = f"OP-V{cust}-{今天.strftime('%Y%m%d')}"
+        if c.execute("SELECT 1 FROM opportunity WHERE id=?", (oid,)).fetchone():
+            continue
+        名 = (c.execute("SELECT name FROM product WHERE spu=?", (spu,)).fetchone() or [spu])[0]
+        动 = "、".join(x for x, y in (("加购", d["加购了"]), ("收藏", d["收藏了"])) if y)
+        依据 = (f"近 {K.浏览意向_窗口天} 天在小程序看了「{名}」{d['看了几次']} 次、一共停了 {d['一共停留秒'] // 60} 分 "
+              f"{d['一共停留秒'] % 60} 秒,{动}了还没买")
+        时间 = 今天.isoformat()
+        c.execute("INSERT INTO opportunity(id, customer_id, source, status, next_step, advisor_no, created, updated) "
+                  "VALUES(?,?,?,?,?,?,?,?)", (oid, cust, "浏览意向", K.起始状态,
+                                              f"{依据} —— 联系确认", adv, 时间, 时间))
+        c.execute("INSERT INTO browse_intent_recall(opp_id, customer_id, spu, basis, created) VALUES(?,?,?,?,?)",
+                  (oid, cust, spu, json.dumps({**d, "窗口": f"{起}–{今天}"}, ensure_ascii=False), 时间))
+        _派提醒(c, oid, "浏览意向回捞",
+               f"{依据}。这是按小程序浏览推断的,不是她说过的;联系问问她要不要看,做完选结论",
+               今天, dict(商品=spu, **d))
+        派了[adv] = 派了.get(adv, 0) + 1
+        出.append(dict(商机=oid, 客户=cust, 商品=spu, 依据=依据, 顾问=adv))
     return 出

@@ -716,11 +716,12 @@ def _附小程序(名单, 天=30, 推几件=3):
         for r in c.execute(
                 "SELECT customer_id, event, spu, dwell_s FROM mp_event WHERE customer_id IN (%s) AND ts>=? AND spu IS NOT NULL"
                 % ",".join("?" * len(ids)), ids + [起]):
-            d = 看.setdefault(str(r["customer_id"]), {}).setdefault(r["spu"], {"看了几次": 0, "一共停留秒": 0, "加购了": False, "下单了": False})
+            d = 看.setdefault(str(r["customer_id"]), {}).setdefault(r["spu"], {"看了几次": 0, "一共停留秒": 0, "加购了": False, "收藏了": False, "下单了": False})
             ev = r["event"]
             if ev == "进入详情": d["看了几次"] += 1
             elif ev == "离开详情": d["一共停留秒"] += r["dwell_s"] or 0
             elif ev == "加购": d["加购了"] = True
+            elif ev == "收藏": d["收藏了"] = True
             elif ev == "下单": d["下单了"] = True
         for x in 名单:
             u = str(x["客户号"])

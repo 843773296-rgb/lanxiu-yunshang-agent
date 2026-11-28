@@ -12,7 +12,7 @@
     session_id  一次进小程序(从进列表到离开)的编号 MS0000001 …
     customer_id 谁
     ts          什么时候(到秒;每日平移按「整列日期」自动跟着挪)
-    event       进入列表 / 进入详情 / 离开详情 / 加购 / 分享 / 下单(名字在口径模块里定一次)
+    event       进入列表 / 进入详情 / 离开详情 / 加购 / 分享 / 下单 / 收藏(名字在口径模块里定一次;收藏 11-28 补)
     entry       这一次从哪进来的(首页推荐 / 分类列表 / 搜索结果 / 活动专题 / 好友分享)
     spu         看的哪件(进入列表那一行为空)
     dwell_s     只在「离开详情」那一行:这次在详情页停了几秒
@@ -125,6 +125,9 @@ class _铺:
             self.记(sid, cid, t + dt.timedelta(seconds=max(1, int(d * rng.uniform(0.3, 0.9)))), K.加购, entry, spu)
         if rng.random() < p分:
             self.记(sid, cid, t + dt.timedelta(seconds=max(1, int(d * rng.uniform(0.2, 0.95)))), K.分享, entry, spu)
+        p藏 = K.收藏率_有意向 if 有意向 else K.收藏率.get(kind, K.收藏率["标品"])
+        if rng.random() < p藏:
+            self.记(sid, cid, t + dt.timedelta(seconds=max(1, int(d * rng.uniform(0.2, 0.95)))), K.收藏, entry, spu)
         离 = t + dt.timedelta(seconds=d)
         self.记(sid, cid, 离, K.离开详情, entry, spu, dwell=d)
         return 离
@@ -165,6 +168,8 @@ class _铺:
                 self.记(sid, cid, t + dt.timedelta(seconds=max(1, int(d * rng.uniform(0.4, 0.95)))), K.加购, entry, s)
             if rng.random() < K.分享率_有意向:
                 self.记(sid, cid, t + dt.timedelta(seconds=max(1, int(d * rng.uniform(0.2, 0.95)))), K.分享, entry, s)
+            if rng.random() < K.下单那次收藏率:
+                self.记(sid, cid, t + dt.timedelta(seconds=max(1, int(d * rng.uniform(0.2, 0.95)))), K.收藏, entry, s)
             t += dt.timedelta(seconds=d)
             self.记(sid, cid, t, K.离开详情, entry, s, dwell=d)
             t += dt.timedelta(seconds=g)
@@ -232,11 +237,17 @@ def 铺数(品, 单, 客, 今, rng):
             continue
         lam = K.人均次数_小程序买过 if cid in 小程序买过 else K.人均次数_其余
         跨 = (末日 - 起日).days
-        for _ in range(_泊松(rng, lam)):
+        次 = _泊松(rng, lam)
+        # 11-28 用户补「给所有顾客都模拟上」:至少成功一次。只管「抽到 0 次」不够 ——
+        # 建档早的人抽到 1–2 次、偏偏都落在商品上架之前,照样一行没有(第一版这样漏了 26 人)
+        要保底 = K.每人至少进来一次
+        成, 试 = 0, 0
+        while 成 < max(次, 1 if 要保底 else 0) and 试 < 次 + (20 if 要保底 else 0):
+            试 += 1
             日 = 起日 + dt.timedelta(days=rng.randint(0, 跨))
             池 = [s for s in 上架的 if 品[s]["上架"] <= 日]
             if not 池:
-                continue
+                continue                 # 那天一件在售的都没有(建档早、商品上架晚)—— 保底的那次换个日子再抽
             老 = 买过品类.get(cid)
             if 老 and rng.random() < K.看老品类的概率:
                 池2 = [s for s in 池 if 品[s]["category"] in 老]
@@ -253,6 +264,8 @@ def 铺数(品, 单, 客, 今, rng):
             末 = p.一次(cid, 起, 看, 品, False)
             if 末.date() > 末日:          # 晚上 23 点多进来、看到了第二天 —— 整次不要(不落到世界的未来)
                 p.行 = [r for r in p.行 if r[0] != f"MS{p.n会话:07d}"]
+                continue
+            成 += 1
     p.行.sort(key=lambda r: (r[2], r[0]))
     return p.行
 
@@ -282,6 +295,7 @@ def 铺(db=None, 说=print):
 # ── 咬合记录(规格在 tools/bite_specs.json)────────────────────────────────
 咬合 = [
     ("小程序订单不铺「下单那次浏览」", "的「下单」行有 "),
+    ("保底只管「抽到 0 次」(建档早、抽到的日子都在上架前的人照样一行没有)", "保底:"),
 ]
 
 
@@ -298,6 +312,8 @@ def _自测():
         单[f"O{i:04d}"] = {"cid": f"C{i % 60}", "src": 小程序渠道 if i % 2 else "门店 Pad",
                           "created": dt.datetime(2026, 1, 1, 10) + dt.timedelta(hours=13 * i), "spus": [f"P{i % 20}"]}
     客 = [(f"C{i}", dt.date(2025, 6, 1)) for i in range(80)]
+    # 建档早(2023)、商品 2025 才上架的一批:随机抽的日子多半一件在售的都没有 —— 保底要换日子再抽(11-28 第一版漏过 26 人)
+    客 += [(f"E{i}", dt.date(2023, 1, 1)) for i in range(40)]
     行 = 铺数(品, 单, 客, 今, random.Random(种子))
     if 行 != 铺数(品, 单, 客, 今, random.Random(种子)):
         bad.append("同一份输入铺两次结果不同 —— 不确定")
@@ -335,6 +351,12 @@ def _自测():
         bad.append("「看了没买」落到了世界今天或之后")
     if not 没买:
         bad.append("一次「进入列表」都没有 —— 入口分布没起作用")
+    有人 = {r[1] for r in 行}
+    缺 = [cid for cid, d in 客 if d < 今 - dt.timedelta(days=1) and cid not in 有人]
+    if K.每人至少进来一次 and 缺:
+        bad.append(f"保底:{len(缺)} 个客户一次都没进来过(如 {缺[:3]})—— 「给所有顾客都模拟上」没兑现")
+    if not any(r[3] == K.收藏 for r in 行):
+        bad.append("一行「收藏」都没有 —— 收藏没铺上")
     return bad
 
 

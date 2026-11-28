@@ -99,7 +99,7 @@ def browse_history(customer=None, days=30):
         if not s:
             continue
         d = 品.setdefault(s, {"商品": s, "商品名": 名.get(s, ""), "看了几次": 0, "一共停留秒": 0, "最长一次秒": 0,
-                              "加购了": False, "分享了": False, "下单了": False, "最近一次": None})
+                              "加购了": False, "分享了": False, "收藏了": False, "下单了": False, "最近一次": None})
         if r["event"] == _K.进入详情:
             d["看了几次"] += 1; d["最近一次"] = r["ts"]
         elif r["event"] == _K.离开详情 and r["dwell_s"] is not None:
@@ -108,6 +108,8 @@ def browse_history(customer=None, days=30):
             d["加购了"] = True
         elif r["event"] == _K.分享:
             d["分享了"] = True
+        elif r["event"] == _K.收藏:
+            d["收藏了"] = True
         elif r["event"] == _K.下单:
             d["下单了"] = True
     清单 = sorted(品.values(), key=lambda x: (-x["一共停留秒"], x["商品"]))
