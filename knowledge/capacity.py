@@ -15,7 +15,9 @@
 import datetime as dt, math, os, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))  # 11-28 库路径单源第 25 批:走 backend/dbpath(LANXIU_DB 优先);backend 追加在末尾,不盖住本目录同名模块
+from dbpath import 路径 as _库路径
+DB = _库路径()
 
 
 # ── 咬合记录 ──────────────────────────────────────────────────────────

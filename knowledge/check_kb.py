@@ -9,7 +9,9 @@
 """
 import os, re, sqlite3, sys, collections
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
+import sys as _sys_db; _sys_db.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))  # 11-28 库路径单源第 25 批:走 backend/dbpath(LANXIU_DB 优先);backend 追加在末尾,不盖住本目录同名模块
+from dbpath import 路径 as _库路径
+DB = _库路径()
 # 解析只有一份 —— 用 kb.py,不再自己写一套正则(两套解析必然打架)
 sys.path.insert(0, HERE)
 import kb
@@ -90,8 +92,7 @@ if _md is None:
     bad += 1
 else:
     import sqlite3 as _s3, os as _os
-    _c = _s3.connect(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                                   "..", "backend", "lanxiu.db"))
+    _c = _s3.connect(DB)   # 同一个库,走上面那份单源
     _db = {r[0]: (_json.loads(r[1]), _json.loads(r[2]))
            for r in _c.execute("SELECT topic, head, rows FROM kb_table")}
     _c.close()

@@ -21,7 +21,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, "..", "backend"), os.path.join(HERE, ".."), os.path.join(HERE, "..", "knowledge")]
-DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 25 批:走 backend/dbpath(LANXIU_DB 优先)
+DB = _库路径()
 from seed import TODAY  # noqa: E402
 import it_customer as TC  # noqa: E402
 

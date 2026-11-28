@@ -12,6 +12,15 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+### 🟡 11-28 15:xx · 第 25 批已在工作树改好、**未提交**(四个迁移脚本:活动码 / 预约列 / 订单着装人 / 积分余额;建表 ensure_tables / 测试客户 / 夹具回填;knowledge 产能 / check_kb 两处 / 形制推导;欠债 178→168)。锁让给并行会话(推荐 + 召回名单两栏,约 1 小时,改 api_member,它自己重启 backend/agentsite)(Opus 5.5)
+- 已验(实跑):py_compile 全过;9 个带主入口的模块在 `LANXIU_DB=临时路径` 下 import 后 `DB` 等于该路径、临时文件没被创建;不带 env 时 realpath 等于真库;check_kb / capacity / dbpath_check / db_switchable_check / bite_check / table_origin_check 单跑全 rc=0。
+- 写法:backend 已在 sys.path 的(建表 / 测试客户 / 夹具回填)直接 `from dbpath import 路径`;其余 `sys.path.append(backend)` 追加在末尾再 import。check_kb 第 94 行那处现拼改成复用模块级 `DB`。
+- 咬合:capacity 的 file 锚(不可加人那行)、ensure_tables 的 file 锚(ownership 建表登记那行)、check_kb 的 SQL / md 锚都没动到。
+- 下一步第一个动作:等并行会话报哈希 → `git pull --rebase --autostash` → 再跑一遍 dbpath_check(远端可能又少几处,下限按实测改)→ `git add` 这 11 个文件 + tools/dbpath_check.py + HANDOFF.md → `git commit --only` → `./tools/ship.sh`。推完主检出 ff;这批只动离线脚本和检查,**capacity 被 workorder_auto 用到(后台运行态)→ 推完重启 backend**。
+
+### ✅ 11-28 14:2x · 已推 2fa2617f(第 24 批,欠债 178);主检出已 ff,三服务已重启(supervise 新 pid 在跑,-15 是 kickstart 杀旧进程留的上次退出码),curl 200/302;本地无待推(Opus 5.5)
+- 下一步第一个动作:`python3 tools/dbpath_check.py` 看「拼得最多的」现挑第 25 批;剩下的大多是 fakedata/(selftest 5 处、diffreport、bench)和临时目录里的副本名(不是真库,看 dbpath_check 算不算欠债再定)。禁区同上面六项。
+
 ### 🟡 11-28 13:0x · 第 24 批本地已提交(交期 / 版型推导 / 营销话术 / 交付图片,欠债 178),等并行会话 mp_event 那轮推完再 rebase ship(Opus 5.5)
 - 并行会话已推 e6b30115(mp_event 27.6 万行、表数 138、重建 53 步,造浏览在回填门店码之前),锁空;我 rebase 后 ship 第 24 批。
 - 写法:这四个在 knowledge/ 与 tools/,模块路径里不一定有 backend,用模块内 `_库路径()` 辅助函数**用到时才** import dbpath,导不到再把 backend **追加到 sys.path 末尾**(不插最前,免得盖住 knowledge/ 的同名模块)。验证:默认指真库、设 LANXIU_DB 后跟着走。knowledge/leadtime 在服务里被用到,推完重启 backend + agentsite + supervise(桥工具在 supervise)。

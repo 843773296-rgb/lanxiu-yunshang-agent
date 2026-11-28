@@ -28,7 +28,8 @@ import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "backend"))
-DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
+from dbpath import 路径 as _库路径   # 11-28 库路径单源第 25 批:走 backend/dbpath(LANXIU_DB 优先)
+DB = _库路径()
 
 # ⚠️ **静态 import,不用 `__import__`。**
 # `tools/table_origin_check.py` 要从**文本**上看出「这张表是谁建的」——
